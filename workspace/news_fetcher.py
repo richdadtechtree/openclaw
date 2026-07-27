@@ -180,7 +180,7 @@ def main():
         outlet_articles = []
         
         for url in urls:
-            feed_articles = parse_rss_feed(url, max_hours=max_hours)
+            feed_articles = parse_rss_feed(url, outlet, max_hours=max_hours)
             for art in feed_articles:
                 norm_title = clean_text(art["title"]).replace(" ", "")
                 if norm_title not in seen_titles:
@@ -194,7 +194,7 @@ def main():
             seen_titles_relaxed = set()
             relaxed_articles = []
             for url in urls:
-                feed_articles = parse_rss_feed(url, max_hours=48)
+                feed_articles = parse_rss_feed(url, outlet, max_hours=48)
                 for art in feed_articles:
                     norm_title = clean_text(art["title"]).replace(" ", "")
                     if norm_title not in seen_titles_relaxed:
@@ -216,7 +216,7 @@ def main():
             fallback_query = f"site:mk.co.kr" if outlet == "매일경제" else f"site:hankyung.com"
             # Add general economy keywords to find relevant articles
             fallback_query += " 경제 OR 부동산 OR 증권"
-            fallback_arts = fetch_google_news_fallback(fallback_query, count=fallback_needed * 2)
+            fallback_arts = fetch_google_news_fallback(fallback_query, outlet, count=fallback_needed * 2)
             
             for art in fallback_arts:
                 norm_title = clean_text(art["title"]).replace(" ", "")
