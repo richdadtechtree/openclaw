@@ -84,8 +84,8 @@ def fetch_article_body(url):
         print(f"Error fetching article body from {url}: {e}", file=sys.stderr)
         return ""
 
-def parse_rss_feed(feed_url, max_hours=24):
-    """Parses a single RSS feed and filters by time."""
+def parse_rss_feed(feed_url, outlet_name, max_hours=24):
+    """Parses a single RSS feed and filters by time and strict outlet domain."""
     articles = []
     try:
         # Use feedparser first
@@ -102,6 +102,12 @@ def parse_rss_feed(feed_url, max_hours=24):
             title = entry.get('title', '')
             link = entry.get('link', '')
             published = entry.get('published', '')
+            
+            # Domain check
+            if outlet_name == "매일경제" and "mk.co.kr" not in link:
+                continue
+            if outlet_name == "한국경제" and "hankyung.com" not in link:
+                continue
             
             # Convert published time to datetime object
             pub_date = None
@@ -130,22 +136,33 @@ def parse_rss_feed(feed_url, max_hours=24):
         print(f"Error parsing feed {feed_url}: {e}", file=sys.stderr)
     return articles
 
-def fetch_google_news_fallback(keyword, count=5):
-    """Fallback search using Google RSS search feeds to gather recent articles."""
+def fetch_google_news_fallback(keyword, outlet_name, count=5):
+    """Fallback search using Google RSS search feeds to gather recent articles with strict domain."""
     query = urllib.parse.quote(keyword)
     url = f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko"
     articles = []
     try:
         feed = feedparser.parse(url)
-        for entry in feed.entries[:count * 2]:
+        for entry in feed.entries:
+            link = entry.get('link', '')
+            
+            # Domain check
+            if outlet_name == "매일경제" and "mk.co.kr" not in link:
+                continue
+            if outlet_name == "한국경제" and "hankyung.com" not in link:
+                continue
+                
             articles.append({
                 "title": entry.get('title', ''),
-                "link": entry.get('link', ''),
+                "link": link,
                 "published": entry.get('published', '')
             })
+            if len(articles) >= count:
+                break
     except Exception as e:
         print(f"Error in Google News Fallback: {e}", file=sys.stderr)
-    return articles[:count]
+    return articles
+
 
 def main():
     print("Starting news fetcher...")
