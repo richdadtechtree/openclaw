@@ -58,7 +58,7 @@
       "agentId": "main",
       "sessionKey": "agent:main:telegram:direct:7890734506",
       "name": "morning-news-briefing",
-      "enabled": true,
+      "enabled": false,
       "createdAtMs": 1783378712941,
       "schedule": {
         "tz": "Asia/Seoul",
@@ -110,7 +110,7 @@
       "agentId": "main",
       "sessionKey": "agent:main:telegram:direct:7890734506",
       "name": "evening-news-briefing",
-      "enabled": true,
+      "enabled": false,
       "createdAtMs": 1783378712941,
       "schedule": {
         "tz": "Asia/Seoul",
