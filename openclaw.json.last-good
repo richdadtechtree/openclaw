@@ -1,0 +1,171 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": "/home/ubuntu/.openclaw/workspace",
+      "model": {
+        "primary": "google/gemini-3.1-flash-lite-preview",
+        "fallbacks": [
+          "google/gemini-3.1-pro-preview"
+        ]
+      },
+      "models": {
+        "google/gemini-3.1-pro-preview": {},
+        "google/gemini-3-flash-preview": {},
+        "google/gemini-3.1-flash-lite-preview": {}
+      }
+    },
+    "list": [
+      {
+        "id": "main",
+        "default": true,
+        "name": "신문 분석가",
+        "workspace": "/home/ubuntu/.openclaw/workspace"
+      },
+      {
+        "id": "pt-trainer",
+        "name": "PT 트레이너",
+        "workspace": "/home/ubuntu/.openclaw/agents/pt-trainer"
+      }
+    ]
+  },
+  "bindings": [
+    {
+      "agentId": "main",
+      "match": {
+        "channel": "telegram",
+        "accountId": "default"
+      }
+    },
+    {
+      "agentId": "pt-trainer",
+      "match": {
+        "channel": "telegram",
+        "accountId": "pt"
+      }
+    }
+  ],
+  "gateway": {
+    "mode": "local",
+    "auth": {
+      "mode": "token",
+      "token": "d3675886062db338cb46b6fb15c459f7a3cb023e10bcf77d"
+    },
+    "port": 18789,
+    "bind": "loopback",
+    "tailscale": {
+      "mode": "off",
+      "resetOnExit": false
+    },
+    "controlUi": {
+      "allowInsecureAuth": true
+    },
+    "nodes": {
+      "denyCommands": [
+        "camera.snap",
+        "camera.clip",
+        "screen.record",
+        "contacts.add",
+        "calendar.add",
+        "reminders.add",
+        "sms.send",
+        "sms.search"
+      ]
+    }
+  },
+  "session": {
+    "dmScope": "per-channel-peer"
+  },
+  "tools": {
+    "profile": "coding",
+    "web": {
+      "search": {
+        "provider": "brave",
+        "enabled": true
+      }
+    }
+  },
+  "plugins": {
+    "entries": {
+      "google": {
+        "enabled": true
+      },
+      "telegram": {
+        "enabled": true
+      },
+      "brave": {
+        "config": {
+          "webSearch": {
+            "apiKey": "BSA64pwep18TS9HJGQUbVf6-HcAYUeN"
+          }
+        },
+        "enabled": true
+      }
+    }
+  },
+  "auth": {
+    "profiles": {
+      "google:default": {
+        "provider": "google",
+        "mode": "api_key"
+      }
+    }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "allowFrom": [
+        "telegram:7890734506"
+      ],
+      "groups": {
+        "*": {
+          "requireMention": true
+        }
+      },
+      "accounts": {
+        "default": {
+          "botToken": "8900296531:AAHBU2x3w41-0Y-uwaC5_bzlOn4dIbWOAoI"
+        },
+        "pt": {
+          "botToken": "8762142908:AAEne7ef3g6CKfriNYIPYcLi6AAXDSsscIg"
+        }
+      }
+    }
+  },
+  "hooks": {
+    "internal": {
+      "enabled": true,
+      "entries": {
+        "boot-md": {
+          "enabled": true
+        },
+        "bootstrap-extra-files": {
+          "enabled": true
+        },
+        "command-logger": {
+          "enabled": true
+        },
+        "compaction-notifier": {
+          "enabled": true
+        },
+        "session-memory": {
+          "enabled": true
+        }
+      }
+    }
+  },
+  "wizard": {
+    "lastRunAt": "2026-05-23T01:18:09.969Z",
+    "lastRunVersion": "2026.5.20",
+    "lastRunCommand": "onboard",
+    "lastRunMode": "local"
+  },
+  "meta": {
+    "lastTouchedVersion": "2026.5.20",
+    "lastTouchedAt": "2026-06-24T08:27:55.496Z"
+  },
+  "commands": {
+    "ownerAllowFrom": [
+      "telegram:7890734506"
+    ]
+  }
+}

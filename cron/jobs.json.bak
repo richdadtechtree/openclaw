@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "jobs": [
+    {
+      "id": "7288d228-3e86-47b0-af67-59e7a057e356",
+      "agentId": "main",
+      "sessionKey": "agent:main:telegram:direct:7890734506",
+      "name": "Daily Weather Report",
+      "enabled": true,
+      "createdAtMs": 1780264783242,
+      "schedule": {
+        "tz": "Asia/Seoul",
+        "kind": "cron",
+        "expr": "0 6 * * *"
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "강릉의 오늘 날씨를 확인해서 보고해줘. 체감 온도를 고려해서 어떤 옷을 입으면 좋을지도 추천해줘. 형준 님에게 직접 보고하는 형식이니 뚜떵또의 말투(영리하고 유머러스함)를 유지해줘."
+      },
+      "delivery": {
+        "to": "7890734506",
+        "mode": "announce",
+        "channel": "telegram"
+      },
+      "state": {}
+    },
+    {
+      "id": "2f129e88-cfd0-49b0-ad5c-a087be4da4d1",
+      "agentId": "main",
+      "sessionKey": "agent:main:telegram:direct:7890734506",
+      "name": "morning-briefing",
+      "enabled": true,
+      "createdAtMs": 1783330273095,
+      "schedule": {
+        "kind": "cron",
+        "tz": "Asia/Seoul",
+        "expr": "30 6 * * 1-5"
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "model": "google/gemini-3.1-pro-preview",
+        "message": "아침 브리핑 시간이다. 다음 RSS 피드에서 최근 12시간 내 기사를 수집해라. \n요청 시 브라우저 User-Agent 헤더를 붙여라 (없으면 차단될 수 있음).\n[매일경제]\n- https://www.mk.co.kr/rss/30000001/ (헤드라인)\n- https://www.mk.co.kr/rss/30100041/ (경제)\n- https://www.mk.co.kr/rss/50200011/ (증권)\n- https://www.mk.co.kr/rss/50300009/ (부동산)\n- https://www.mk.co.kr/rss/30300018/ (국제)\n[한국경제]\n- https://www.hankyung.com/feed/economy (경제)\n- https://www.hankyung.com/feed/finance (증권)\n- https://www.hankyung.com/feed/realestate (부동산)\n- https://www.hankyung.com/feed/international (국제)\n수집 기사 중 시장 영향이 큰 3~5개를 골라 SOUL.md의 브리핑 규칙대로 분석하고 텔레그램 형식으로 보내라. 기사 원문을 인용하지 말고 네 말로 재구성하고 링크를 첨부해라.",
+        "kind": "agentTurn",
+        "timeoutSeconds": 300
+      },
+      "delivery": {
+        "mode": "announce",
+        "to": "7890734506",
+        "channel": "telegram"
+      },
+      "state": {}
+    },
+    {
+      "id": "21d8e33f-b06d-4def-8d95-9145bb721d02",
+      "agentId": "main",
+      "sessionKey": "agent:main:telegram:direct:7890734506",
+      "name": "morning-news-briefing",
+      "enabled": true,
+      "createdAtMs": 1783378712941,
+      "schedule": {
+        "tz": "Asia/Seoul",
+        "kind": "cron",
+        "expr": "30 6 * * 1-5"
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "매일경제(RSS)와 한국경제 기사를 각각 5개씩 수집해줘. 형준 님의 투자 관점에서 심층 분석하고, 어제와 같은 형식(WHY/WHAT/HOW, 이해관계자, 한 줄 인사이트)으로 브리핑해줘. 각 기사에 대한 관련 링크도 반드시 포함할 것. 분석은 한국어로 작성해줘."
+      },
+      "delivery": {
+        "to": "7890734506",
+        "mode": "announce",
+        "channel": "telegram"
+      },
+      "state": {}
+    }
+  ]
+}
