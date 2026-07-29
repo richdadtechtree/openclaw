@@ -36,7 +36,7 @@
       "schedule": {
         "kind": "cron",
         "tz": "Asia/Seoul",
-        "expr": "30 7 * * *"
+        "expr": "0 7 * * *"
       },
       "sessionTarget": "isolated",
       "wakeMode": "now",
@@ -88,7 +88,7 @@
       "schedule": {
         "kind": "cron",
         "tz": "Asia/Seoul",
-        "expr": "30 19 * * *"
+        "expr": "0 18 * * *"
       },
       "sessionTarget": "isolated",
       "wakeMode": "now",
