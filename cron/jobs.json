@@ -129,6 +129,58 @@
         "channel": "telegram"
       },
       "state": {}
+    },
+    {
+      "id": "f9304e79-c03d-4c32-ad52-d3a364b13ec3",
+      "agentId": "pt-trainer",
+      "sessionKey": "agent:pt-trainer:telegram:direct:7890734506",
+      "name": "pt-daily-report",
+      "enabled": true,
+      "createdAtMs": 1785329360825,
+      "schedule": {
+        "kind": "cron",
+        "tz": "Asia/Seoul",
+        "expr": "0 21 * * *"
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "timeoutSeconds": 180,
+        "message": "일일 PT 리포트 시간이다. `exec` 툴로 `/home/ubuntu/pt_system/venv/bin/python /home/ubuntu/pt_system/reports/daily_report.py`를 실행하고, 출력된 리포트 전문을 형준 님에게 그대로 전송해라. 오늘 기록이 없으면 짧게 알리고 가벼운 운동을 권해라. SOUL.md의 말투를 유지해라."
+      },
+      "delivery": {
+        "mode": "announce",
+        "to": "7890734506",
+        "channel": "telegram"
+      },
+      "state": {}
+    },
+    {
+      "id": "e4abaa75-8429-4925-bd09-46c91ec02b1b",
+      "agentId": "pt-trainer",
+      "sessionKey": "agent:pt-trainer:telegram:direct:7890734506",
+      "name": "pt-weekly-report",
+      "enabled": true,
+      "createdAtMs": 1785329360825,
+      "schedule": {
+        "kind": "cron",
+        "tz": "Asia/Seoul",
+        "expr": "0 20 * * 0"
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "timeoutSeconds": 240,
+        "message": "주간 PT 리포트 시간이다. `exec` 툴로 `/home/ubuntu/pt_system/venv/bin/python /home/ubuntu/pt_system/reports/weekly_report.py`를 실행하고, 출력된 주간 리포트 전문을 형준 님에게 그대로 전송해라. 추세·잘한 점·개선점·다음 주 계획이 담기도록 하고, 데이터가 없으면 짧게 알려라. SOUL.md의 말투를 유지해라."
+      },
+      "delivery": {
+        "mode": "announce",
+        "to": "7890734506",
+        "channel": "telegram"
+      },
+      "state": {}
     }
   ]
 }
