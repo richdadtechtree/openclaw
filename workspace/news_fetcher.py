@@ -98,10 +98,18 @@ def parse_rss_feed(feed_url, outlet_name, max_hours=24):
     """Parses a single RSS feed and filters by time and strict outlet domain."""
     articles = []
     try:
-        feed = feedparser.parse(feed_url)
-        if not feed.entries:
-            res = requests.get(feed_url, headers=HEADERS, timeout=10)
+        # 한경은 봇 요청을 403으로 막으므로, 브라우저 헤더 + Referer 로 요청한다.
+        headers = dict(HEADERS)
+        headers["Referer"] = "https://www.hankyung.com/" if outlet_name == "한국경제" else "https://www.mk.co.kr/"
+        status = None
+        try:
+            res = requests.get(feed_url, headers=headers, timeout=12)
+            status = res.status_code
             feed = feedparser.parse(res.content)
+        except Exception as e:
+            print(f"    · [{outlet_name}] 요청 오류 {feed_url}: {e}", file=sys.stderr)
+            feed = feedparser.parse(feed_url)  # 최후의 수단
+        print(f"    · [{outlet_name}] HTTP {status} entries={len(feed.entries)} {feed_url}", file=sys.stderr)
         now = datetime.now(timezone.utc)
         for entry in feed.entries:
             title = entry.get('title', '')
@@ -145,6 +153,39 @@ def collect_feeds(feed_list, seen, max_hours=24):
     return out
 
 
+def fetch_via_google_news(site_domain, keyword, outlet_name, seen, count=4):
+    """직접 RSS가 막혔을 때(예: 한경 403) 구글뉴스 RSS로 해당 매체 기사를 우회 수집."""
+    q = urllib.parse.quote(f"site:{site_domain} {keyword}")
+    url = f"https://news.google.com/rss/search?q={q}&hl=ko&gl=KR&ceid=KR:ko"
+    out = []
+    try:
+        res = requests.get(url, headers=HEADERS, timeout=12)
+        feed = feedparser.parse(res.content)
+        for e in feed.entries:
+            nt = norm_title(e.get("title", ""))
+            if not nt or nt in seen:
+                continue
+            seen.add(nt)
+            out.append({
+                "title": e.get("title", ""),
+                "link": e.get("link", ""),   # news.google.com 리다이렉트(원문으로 연결됨)
+                "published": e.get("published", ""),
+                "pub_date_parsed": None,
+                "outlet": outlet_name,
+                "via": "google_news",
+            })
+            if len(out) >= count:
+                break
+        print(f"    · [구글뉴스 폴백/{outlet_name}/{keyword}] {len(out)}건", file=sys.stderr)
+    except Exception as ex:
+        print(f"    · 구글뉴스 폴백 실패({outlet_name}/{keyword}): {ex}", file=sys.stderr)
+    return out
+
+
+# 카테고리별 구글뉴스 검색 키워드 (직접 피드 실패 시 보충용)
+CATEGORY_KEYWORDS = {"부동산": "부동산", "주식": "증권 주식", "금융": "금융", "경제": "경제"}
+
+
 def main():
     print("Starting news fetcher (category ratio mode)...")
     seen = set()
@@ -152,9 +193,17 @@ def main():
     # 1) 카테고리별 후보 수집
     pools = {}          # category -> [articles]
     for category, feeds in CATEGORY_FEEDS.items():
+        target = TARGET_RATIO[category]
         arts = collect_feeds(feeds, seen, max_hours=24)
-        if not arts:  # 24h 내 없으면 48h로 완화
-            arts = collect_feeds(feeds, seen, max_hours=48)
+        if len(arts) < target:  # 부족하면 48h로 완화
+            arts += collect_feeds(feeds, seen, max_hours=48)
+        # 직접 피드가 여전히 부족하면(예: 한경 403) 구글뉴스로 보충
+        if len(arts) < target:
+            kw = CATEGORY_KEYWORDS.get(category, category)
+            for dom, outlet in (("hankyung.com", "한국경제"), ("mk.co.kr", "매일경제")):
+                arts += fetch_via_google_news(dom, kw, outlet, seen, count=4)
+                if len(arts) >= target:
+                    break
         for a in arts:
             a["category"] = category
         pools[category] = arts
