@@ -10,11 +10,8 @@ import feedparser
 
 # ─────────────────────────────────────────────────────────────
 # 카테고리별 RSS 피드 (매일경제 + 한국경제)
-# 목표 비중: 부동산 4 / 주식 2 / 사회 2 / 산업 2 = 총 10건
-#
-# ⚠️ 사회·산업 피드 URL은 서버에서 한 번 검증 필요.
-#    `python workspace/news_fetcher.py` 실행 후 로그의 카테고리별 수집 개수를 확인하고,
-#    0건이면 아래 URL을 실제 주소로 교체한다. (부동산/주식 피드는 기존 검증됨)
+# 목표 비중: 부동산 4 / 주식 2 / 금융 2 / 경제 2 = 총 10건
+# (모두 기존 검증된 메인 섹션 피드)
 # ─────────────────────────────────────────────────────────────
 CATEGORY_FEEDS = {
     "부동산": [
@@ -23,26 +20,24 @@ CATEGORY_FEEDS = {
     ],
     "주식": [
         ("매일경제", "https://www.mk.co.kr/rss/50200011/"),   # 증권
-        ("한국경제", "https://www.hankyung.com/feed/finance"),
     ],
-    "사회": [
-        ("매일경제", "https://www.mk.co.kr/rss/50400012/"),   # 사회 (요검증)
-        ("한국경제", "https://www.hankyung.com/feed/society"),  # (요검증)
+    "금융": [
+        ("한국경제", "https://www.hankyung.com/feed/finance"),  # 금융
     ],
-    "산업": [
-        ("매일경제", "https://www.mk.co.kr/rss/50100032/"),   # 기업·산업 (요검증)
-        ("한국경제", "https://www.hankyung.com/feed/industry"),  # (요검증)
+    "경제": [
+        ("매일경제", "https://www.mk.co.kr/rss/30100041/"),   # 경제
+        ("한국경제", "https://www.hankyung.com/feed/economy"),
     ],
 }
 
 # 목표 비중 (총합 = 발송 기사 수)
-TARGET_RATIO = {"부동산": 4, "주식": 2, "사회": 2, "산업": 2}
+TARGET_RATIO = {"부동산": 4, "주식": 2, "금융": 2, "경제": 2}
 
-# 특정 카테고리가 목표에 못 미칠 때 채워 넣을 일반 풀
+# 특정 카테고리가 목표에 못 미칠 때 채워 넣을 일반 풀 (총 10건 보장용)
 GENERAL_FEEDS = [
-    ("매일경제", "https://www.mk.co.kr/rss/30100041/"),   # 경제
     ("매일경제", "https://www.mk.co.kr/rss/30000001/"),   # 헤드라인
-    ("한국경제", "https://www.hankyung.com/feed/economy"),
+    ("매일경제", "https://www.mk.co.kr/rss/30300018/"),   # 국제
+    ("한국경제", "https://www.hankyung.com/feed/international"),
 ]
 
 HEADERS = {
