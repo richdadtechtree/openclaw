@@ -35,35 +35,28 @@ def _load_env():
 _load_env()
 
 # ─────────────────────────────────────────────────────────────
-# 카테고리별 RSS 피드 (매일경제 + 한국경제)
-# 목표 비중: 부동산 4 / 주식 2 / 금융 2 / 경제 2 = 총 10건
-# (모두 기존 검증된 메인 섹션 피드)
+# 매체 균형: 매일경제 5 + 한국경제 5 = 총 10건
+# - 매일경제: 섹션 RSS 피드에서 수집 (카테고리 태그용)
+# - 한국경제: 직접 RSS가 서버 IP를 403으로 차단 → 네이버 검색 API로 확보
+# 각 기사는 category(부동산/주식/금융/경제) 태그를 달아 제목 앞 [장르] 표기에 쓴다.
 # ─────────────────────────────────────────────────────────────
-CATEGORY_FEEDS = {
-    "부동산": [
-        ("매일경제", "https://www.mk.co.kr/rss/50300009/"),
-        ("한국경제", "https://www.hankyung.com/feed/realestate"),
-    ],
-    "주식": [
-        ("매일경제", "https://www.mk.co.kr/rss/50200011/"),   # 증권
-    ],
-    "금융": [
-        ("한국경제", "https://www.hankyung.com/feed/finance"),  # 금융
-    ],
-    "경제": [
-        ("매일경제", "https://www.mk.co.kr/rss/30100041/"),   # 경제
-        ("한국경제", "https://www.hankyung.com/feed/economy"),
-    ],
-}
+TARGET_PER_OUTLET = 5
 
-# 목표 비중 (총합 = 발송 기사 수)
-TARGET_RATIO = {"부동산": 4, "주식": 2, "금융": 2, "경제": 2}
+# 매일경제 섹션 피드 (카테고리, URL)
+MK_FEEDS = [
+    ("부동산", "https://www.mk.co.kr/rss/50300009/"),
+    ("주식",   "https://www.mk.co.kr/rss/50200011/"),   # 증권
+    ("경제",   "https://www.mk.co.kr/rss/30100041/"),
+    ("금융",   "https://www.mk.co.kr/rss/30100041/"),   # mk 별도 금융 섹션 없음 → 경제 피드에서 태그만 금융
+    ("경제",   "https://www.mk.co.kr/rss/30000001/"),   # 헤드라인 보충
+]
 
-# 특정 카테고리가 목표에 못 미칠 때 채워 넣을 일반 풀 (총 10건 보장용)
-GENERAL_FEEDS = [
-    ("매일경제", "https://www.mk.co.kr/rss/30000001/"),   # 헤드라인
-    ("매일경제", "https://www.mk.co.kr/rss/30300018/"),   # 국제
-    ("한국경제", "https://www.hankyung.com/feed/international"),
+# 한국경제: 네이버 검색 키워드 (카테고리, 검색어)
+HK_NAVER_KEYWORDS = [
+    ("부동산", "부동산"),
+    ("주식",   "증권"),
+    ("금융",   "금융"),
+    ("경제",   "경제"),
 ]
 
 HEADERS = {
@@ -251,77 +244,94 @@ def fetch_via_google_news(site_domain, keyword, outlet_name, seen, count=4):
     return out
 
 
-# 카테고리별 구글뉴스 검색 키워드 (직접 피드 실패 시 보충용)
-CATEGORY_KEYWORDS = {"부동산": "부동산", "주식": "증권 주식", "금융": "금융", "경제": "경제"}
+def pick_balanced(pool, n):
+    """카테고리 다양성을 살려 pool에서 n건 선택 (카테고리 라운드로빈)."""
+    from collections import defaultdict, deque
+    buckets = defaultdict(deque)
+    order = []
+    for a in pool:
+        c = a.get("category", "기타")
+        if c not in buckets:
+            order.append(c)
+        buckets[c].append(a)
+    picked = []
+    while len(picked) < n and any(buckets[c] for c in order):
+        for c in order:
+            if buckets[c]:
+                picked.append(buckets[c].popleft())
+                if len(picked) >= n:
+                    break
+    return picked
+
+
+def collect_mk(seen):
+    """매일경제: 섹션 피드에서 카테고리 태그 달아 수집."""
+    pool = []
+    for cat, url in MK_FEEDS:
+        for a in parse_rss_feed(url, "매일경제", max_hours=48):
+            nt = norm_title(a["title"])
+            if nt and nt not in seen:
+                seen.add(nt)
+                a["category"] = cat
+                pool.append(a)
+    return pool
+
+
+def collect_hk(seen):
+    """한국경제: 직접 RSS가 403 → 네이버 API(부족하면 구글뉴스)로 카테고리별 수집."""
+    pool = []
+    for cat, kw in HK_NAVER_KEYWORDS:
+        for a in fetch_via_naver(kw, "hankyung.com", "한국경제", seen, count=3):
+            a["category"] = cat
+            pool.append(a)
+    if len(pool) < TARGET_PER_OUTLET:  # 네이버로 부족하면 구글뉴스 보충
+        for cat, kw in HK_NAVER_KEYWORDS:
+            for a in fetch_via_google_news("hankyung.com", kw, "한국경제", seen, count=3):
+                a["category"] = cat
+                pool.append(a)
+            if len(pool) >= TARGET_PER_OUTLET:
+                break
+    return pool
 
 
 def main():
-    print("Starting news fetcher (category ratio mode)...")
+    print("Starting news fetcher (매체 균형: 매경 5 / 한경 5)...")
     seen = set()
 
-    # 1) 카테고리별 후보 수집
-    pools = {}          # category -> [articles]
-    for category, feeds in CATEGORY_FEEDS.items():
-        target = TARGET_RATIO[category]
-        arts = collect_feeds(feeds, seen, max_hours=24)
-        if len(arts) < target:  # 부족하면 48h로 완화
-            arts += collect_feeds(feeds, seen, max_hours=48)
-        # 직접 피드가 부족하면(예: 한경 403) 보충한다.
-        if len(arts) < target:
-            kw = CATEGORY_KEYWORDS.get(category, category)
-            # 1순위: 네이버 API — 원문(hankyung.com 등) 직접 링크 확보
-            for dom, outlet in (("hankyung.com", "한국경제"), ("mk.co.kr", "매일경제")):
-                if len(arts) >= target:
+    mk_pool = collect_mk(seen)
+    hk_pool = collect_hk(seen)
+    print(f"  [매일경제] 후보 {len(mk_pool)}건 / [한국경제] 후보 {len(hk_pool)}건")
+
+    selected = pick_balanced(mk_pool, TARGET_PER_OUTLET) + pick_balanced(hk_pool, TARGET_PER_OUTLET)
+
+    # 한쪽이 모자라 10건이 안 되면 반대쪽 기사로 채운다.
+    if len(selected) < TARGET_PER_OUTLET * 2:
+        for a in (mk_pool + hk_pool):
+            if a not in selected:
+                selected.append(a)
+                if len(selected) >= TARGET_PER_OUTLET * 2:
                     break
-                arts += fetch_via_naver(kw, dom, outlet, seen, count=target - len(arts) + 2)
-            # 2순위: 구글뉴스 (네이버 키가 없거나 부족할 때)
-            for dom, outlet in (("hankyung.com", "한국경제"), ("mk.co.kr", "매일경제")):
-                if len(arts) >= target:
-                    break
-                arts += fetch_via_google_news(dom, kw, outlet, seen, count=4)
-        for a in arts:
-            a["category"] = category
-        pools[category] = arts
-        print(f"  [{category}] 후보 {len(arts)}건")
 
-    # 2) 백필용 일반 풀
-    general = collect_feeds(GENERAL_FEEDS, seen, max_hours=48)
-    for a in general:
-        a["category"] = "기타"
-
-    # 3) 목표 비중대로 선별 + 부족분 백필
-    selected = []
-    leftovers = []
-    for category, target in TARGET_RATIO.items():
-        arts = pools.get(category, [])
-        selected.extend(arts[:target])
-        leftovers.extend(arts[target:])
-    total_target = sum(TARGET_RATIO.values())
-    backfill = leftovers + general
-    i = 0
-    while len(selected) < total_target and i < len(backfill):
-        selected.append(backfill[i])
-        i += 1
-
-    # 4) 선별된 기사 본문 수집
+    # 본문 수집
     results = {"fetched_at": datetime.now(timezone.utc).isoformat(), "articles": []}
     for idx, art in enumerate(selected):
-        print(f"[{art['category']}/{art['outlet']}] body {idx+1}/{len(selected)}: {art['title']}")
+        print(f"[{art['outlet']}/{art['category']}] body {idx+1}/{len(selected)}: {art['title']}")
         body = fetch_article_body(art["link"])
         art["content"] = body if body else "본문 내용을 가져오는 데 실패했습니다."
         results["articles"].append(art)
         time.sleep(0.5)
 
-    # 5) 저장 + 카테고리 요약
     output_path = os.path.join(os.path.dirname(__file__), "news_data.json")
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
 
-    counts = {}
+    by_outlet, by_cat = {}, {}
     for a in results["articles"]:
-        counts[a["category"]] = counts.get(a["category"], 0) + 1
+        by_outlet[a["outlet"]] = by_outlet.get(a["outlet"], 0) + 1
+        by_cat[a["category"]] = by_cat.get(a["category"], 0) + 1
     print(f"완료: 총 {len(results['articles'])}건 저장 → {output_path}")
-    print(f"카테고리 분포: {counts}  (목표 {TARGET_RATIO})")
+    print(f"매체 분포: {by_outlet}  (목표 매경 5 / 한경 5)")
+    print(f"카테고리 분포: {by_cat}")
 
 
 if __name__ == "__main__":
