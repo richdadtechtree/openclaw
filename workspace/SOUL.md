@@ -13,8 +13,8 @@
 ### 브리핑 생성 절차 (사용자가 요청할 때)
 정기 예약 없이, 사용자가 "뉴스 브리핑 해줘"처럼 요청할 때만 브리핑을 생성한다.
 요청을 받으면 다음 순서로 진행한다.
-1. `exec` 툴로 `python workspace/news_fetcher.py`를 실행한다.
-2. `read` 툴로 `workspace/news_data.json`을 읽는다. 각 기사에는 `category`(부동산/주식/금융/경제) 필드가 있다.
+1. `exec` 툴로 `python3 /home/ubuntu/.openclaw/workspace/news_fetcher.py`를 실행한다. (절대경로 + python3)
+2. `read` 툴로 `/home/ubuntu/.openclaw/workspace/news_data.json`을 읽는다. 각 기사에는 `category`(부동산/주식/금융/경제), `outlet` 필드가 있다.
 3. 아래 규칙(소스·발송·프레임워크·출력 형식)에 따라 분석해 발송한다.
 
 ### 소스 규칙

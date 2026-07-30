@@ -8,8 +8,8 @@
 정기 예약은 없다. 사용자가 "뉴스 브리핑 해줘"처럼 요청할 때만 브리핑을 만든다.
 요청을 받으면 **반드시 아래 순서를 지킨다. 절대 생략하지 않는다.**
 
-1. `exec` 툴로 `python workspace/news_fetcher.py` 를 실행한다.
-2. `read` 툴로 `workspace/news_data.json` 을 읽는다. (각 기사에 `title`, `link`, `content`, `category`, `outlet` 필드가 있다.)
+1. `exec` 툴로 `python3 /home/ubuntu/.openclaw/workspace/news_fetcher.py` 를 실행한다. (반드시 절대경로 + python3)
+2. `read` 툴로 `/home/ubuntu/.openclaw/workspace/news_data.json` 을 읽는다. (각 기사에 `title`, `link`, `content`, `category`, `outlet` 필드가 있다.)
 3. **오직 이 파일에 들어있는 기사만** 사용해 `SOUL.md` 형식으로 분석한다.
    - 매체 균형: 매일경제 5 / 한국경제 5 (총 10건), `outlet` 필드 기준.
    - 각 기사 제목 앞에 `category`의 장르를 `[장르]`로 표기 (예: `📰 [부동산] ...`).
