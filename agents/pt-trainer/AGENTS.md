@@ -35,8 +35,9 @@
 
 1. `exec` 툴로 다음을 실행한다. (인자 없이 실행하면 방금 받은 최신 이미지를 자동 분석·저장한다.)
    ```
-   python3 /home/ubuntu/pt_system/scripts/analyze_photo.py
+   /home/ubuntu/pt_system/venv/bin/python /home/ubuntu/pt_system/scripts/analyze_photo.py
    ```
+   (반드시 venv 파이썬 — openai/dotenv 의존성이 거기 있다.)
    특정 이미지 경로를 알면 인자로 넘겨도 된다: `... analyze_photo.py <이미지경로>`
 2. 스크립트가 출력한 `[기록 완료]`(운동/식단/바이탈 건수)와 분석된 기록 내용을 확인한다.
    스크립트가 이미 DB에 저장까지 완료하므로, `save_message.py`를 또 부르지 않는다.
