@@ -31,7 +31,7 @@
       "agentId": "main",
       "sessionKey": "agent:main:telegram:direct:7890734506",
       "name": "morning-briefing",
-      "enabled": true,
+      "enabled": false,
       "createdAtMs": 1783330273095,
       "schedule": {
         "kind": "cron",
@@ -83,7 +83,7 @@
       "agentId": "main",
       "sessionKey": "agent:main:telegram:direct:7890734506",
       "name": "evening-briefing",
-      "enabled": true,
+      "enabled": false,
       "createdAtMs": 1783330273095,
       "schedule": {
         "kind": "cron",
