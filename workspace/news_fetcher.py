@@ -1,12 +1,38 @@
 import os
+import re
 import sys
+import html
 import json
 import time
 import urllib.parse
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 import requests
 from bs4 import BeautifulSoup
 import feedparser
+
+
+def _load_env():
+    """~/.openclaw/.env 를 명시적으로 읽어 os.environ 에 채운다(이미 있으면 유지)."""
+    candidates = [
+        Path(__file__).resolve().parents[1] / ".env",   # ~/.openclaw/.env
+        Path("~/.openclaw/.env").expanduser(),
+    ]
+    for p in candidates:
+        try:
+            if p.exists():
+                for line in p.read_text(encoding="utf-8").splitlines():
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+                break
+        except Exception:
+            pass
+
+
+_load_env()
 
 # ─────────────────────────────────────────────────────────────
 # 카테고리별 RSS 피드 (매일경제 + 한국경제)
@@ -153,6 +179,49 @@ def collect_feeds(feed_list, seen, max_hours=24):
     return out
 
 
+def fetch_via_naver(keyword, site_domain, outlet_name, seen, count=4):
+    """네이버 검색 API(뉴스)로 특정 매체 기사를 수집. originallink(원문 URL)를 그대로 링크로 쓴다.
+    한경 직접 RSS가 403으로 막혀도, 네이버를 통해 '진짜 hankyung.com 링크'를 확보할 수 있다."""
+    cid = os.getenv("NAVER_CLIENT_ID")
+    csec = os.getenv("NAVER_CLIENT_SECRET")
+    if not (cid and csec):
+        return []
+    out = []
+    try:
+        res = requests.get(
+            "https://openapi.naver.com/v1/search/news.json",
+            headers={"X-Naver-Client-Id": cid, "X-Naver-Client-Secret": csec},
+            params={"query": keyword, "display": 100, "sort": "date"},
+            timeout=12,
+        )
+        if res.status_code != 200:
+            print(f"    · [네이버API/{outlet_name}/{keyword}] HTTP {res.status_code} {res.text[:120]}", file=sys.stderr)
+            return []
+        for item in res.json().get("items", []):
+            link = item.get("originallink", "") or item.get("link", "")
+            if site_domain not in link:
+                continue
+            title = html.unescape(re.sub(r"<[^>]+>", "", item.get("title", ""))).strip()
+            nt = norm_title(title)
+            if not nt or nt in seen:
+                continue
+            seen.add(nt)
+            out.append({
+                "title": title,
+                "link": link,
+                "published": item.get("pubDate", ""),
+                "pub_date_parsed": None,
+                "outlet": outlet_name,
+                "via": "naver",
+            })
+            if len(out) >= count:
+                break
+        print(f"    · [네이버API/{outlet_name}/{keyword}] {len(out)}건", file=sys.stderr)
+    except Exception as ex:
+        print(f"    · 네이버API 실패({outlet_name}/{keyword}): {ex}", file=sys.stderr)
+    return out
+
+
 def fetch_via_google_news(site_domain, keyword, outlet_name, seen, count=4):
     """직접 RSS가 막혔을 때(예: 한경 403) 구글뉴스 RSS로 해당 매체 기사를 우회 수집."""
     q = urllib.parse.quote(f"site:{site_domain} {keyword}")
@@ -197,13 +266,19 @@ def main():
         arts = collect_feeds(feeds, seen, max_hours=24)
         if len(arts) < target:  # 부족하면 48h로 완화
             arts += collect_feeds(feeds, seen, max_hours=48)
-        # 직접 피드가 여전히 부족하면(예: 한경 403) 구글뉴스로 보충
+        # 직접 피드가 부족하면(예: 한경 403) 보충한다.
         if len(arts) < target:
             kw = CATEGORY_KEYWORDS.get(category, category)
+            # 1순위: 네이버 API — 원문(hankyung.com 등) 직접 링크 확보
             for dom, outlet in (("hankyung.com", "한국경제"), ("mk.co.kr", "매일경제")):
-                arts += fetch_via_google_news(dom, kw, outlet, seen, count=4)
                 if len(arts) >= target:
                     break
+                arts += fetch_via_naver(kw, dom, outlet, seen, count=target - len(arts) + 2)
+            # 2순위: 구글뉴스 (네이버 키가 없거나 부족할 때)
+            for dom, outlet in (("hankyung.com", "한국경제"), ("mk.co.kr", "매일경제")):
+                if len(arts) >= target:
+                    break
+                arts += fetch_via_google_news(dom, kw, outlet, seen, count=4)
         for a in arts:
             a["category"] = category
         pools[category] = arts
