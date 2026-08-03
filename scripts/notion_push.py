@@ -18,9 +18,24 @@ import sys
 from datetime import datetime
 
 import requests
-from dotenv import load_dotenv
 
-load_dotenv()
+
+def load_env():
+    """python-dotenv 없이 openclaw 루트의 .env 를 읽어 환경변수로 로드."""
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # openclaw 루트
+    for path in (os.path.join(base, ".env"), ".env"):
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    os.environ.setdefault(k.strip(), v.strip())
+            break
+
+
+load_env()
 
 NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 NOTION_BRIEFING_DB = os.getenv("NOTION_BRIEFING_DB")
