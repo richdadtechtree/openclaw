@@ -1,0 +1,232 @@
+diff --git a/.env.example b/.env.example
+index 41e0fd7..f35ca8b 100644
+--- a/.env.example
++++ b/.env.example
+@@ -19,6 +19,12 @@ KIS_APP_KEY=여기에_앱키
+ KIS_APP_SECRET=여기에_앱시크릿
+ KIS_ACCOUNT_NO=12345678-01     # 계좌번호
+ 
++# ----- 슬랙 브리핑 (매일 15:40 대시보드 캡처를 이 채널에 이미지로 전송) -----
++#  SLACK_BOT_TOKEN: 봇 토큰 (xoxb-...), files:write 스코프 필요, 봇을 채널에 초대
++#  SLACK_BRIEFING_CHANNEL: 채널 ID (C...). 채널명 클릭 → 맨 아래 Channel ID
++SLACK_BOT_TOKEN=여기에_슬랙_봇토큰_xoxb
++SLACK_BRIEFING_CHANNEL=여기에_채널ID_C
++
+ # ----- 웹 서버 (캡처는 이 주소의 화면을 찍습니다) -----
+ HOST=127.0.0.1
+ PORT=8000
+diff --git a/capture.py b/capture.py
+index 2a4656a..c21ad7a 100644
+--- a/capture.py
++++ b/capture.py
+@@ -4,7 +4,7 @@ from datetime import datetime
+ from dotenv import load_dotenv
+ from playwright.sync_api import sync_playwright
+ 
+-from notifier import send_telegram_photo
++from notifier import send_telegram_photo, send_slack_photo
+ 
+ load_dotenv()
+ 
+@@ -89,5 +89,29 @@ def capture_and_send():
+     return False
+ 
+ 
++def capture_and_send_slack():
++    """
++    대시보드를 캡처해서 슬랙(브리핑 채널)으로 전송. 성공 시 True.
++    """
++    if not capture_dashboard(SCREENSHOT_PATH):
++        return False
++
++    date_str = datetime.now().strftime("%Y년 %m월 %d일 %H:%M 마감")
++    caption = (
++        f"📈 주요 시장 지수 마감 브리핑\n"
++        f"📅 일시: {date_str}\n"
++        f"코스피, 코스닥, S&P 500, TQQQ 현황과 투자 타이밍 진행 상태를 공유합니다."
++    )
++    print("Sending photo to Slack...")
++    if send_slack_photo(SCREENSHOT_PATH, caption):
++        print("Slack briefing message sent successfully!")
++        return True
++    return False
++
++
+ if __name__ == "__main__":
+-    capture_and_send()
++    import sys
++    if "--slack" in sys.argv:
++        capture_and_send_slack()
++    else:
++        capture_and_send()
+diff --git a/notifier.py b/notifier.py
+index a59a544..33a5683 100644
+--- a/notifier.py
++++ b/notifier.py
+@@ -1,5 +1,5 @@
+ """
+-텔레그램 알림 전송 모듈 (텍스트 메시지 / 사진 공용)
++알림 전송 모듈 (텔레그램 + 슬랙, 텍스트 / 사진 공용)
+ """
+ import os
+ 
+@@ -15,6 +15,10 @@ load_dotenv()
+ BOT_TOKEN = os.getenv("BRIEFING_BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
+ CHAT_ID = os.getenv("BRIEFING_CHAT_ID") or os.getenv("TELEGRAM_CHAT_ID")
+ 
++# 슬랙 브리핑 전용 설정 (봇 토큰 xoxb-..., 채널 ID C...)
++SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
++SLACK_BRIEFING_CHANNEL = os.getenv("SLACK_BRIEFING_CHANNEL")
++
+ 
+ def send_telegram_message(text, parse_mode="Markdown"):
+     """텔레그램 텍스트 메시지 전송. 성공 시 True."""
+@@ -59,3 +63,67 @@ def send_telegram_photo(photo_path, caption="", parse_mode="Markdown"):
+     except Exception as e:
+         print(f"[Error] Failed to send photo via Telegram: {e}")
+     return False
++
++
++def send_slack_photo(photo_path, caption="", channel=None):
++    """
++    슬랙 채널에 이미지(사진)를 업로드한다. 성공 시 True.
++
++    Slack 최신 업로드 방식(files.getUploadURLExternal → 파일 PUT →
++    files.completeUploadExternal)을 사용한다. (구 files.upload 는 폐지 예정)
++    필요 봇 스코프: files:write  (그리고 봇이 채널에 참여해 있어야 함)
++    """
++    token = SLACK_BOT_TOKEN
++    channel = channel or SLACK_BRIEFING_CHANNEL
++    if not token or not channel:
++        print("[Error] SLACK_BOT_TOKEN 또는 SLACK_BRIEFING_CHANNEL 이 .env 에 없습니다.")
++        return False
++
++    try:
++        filename = os.path.basename(photo_path)
++        length = os.path.getsize(photo_path)
++
++        # 1) 업로드 URL 발급
++        r1 = requests.get(
++            "https://slack.com/api/files.getUploadURLExternal",
++            headers={"Authorization": f"Bearer {token}"},
++            params={"filename": filename, "length": length},
++            timeout=30,
++        )
++        d1 = r1.json()
++        if not d1.get("ok"):
++            print(f"[Error] Slack getUploadURLExternal 실패: {d1}")
++            return False
++        upload_url = d1["upload_url"]
++        file_id = d1["file_id"]
++
++        # 2) 파일 바이트 업로드
++        with open(photo_path, "rb") as f:
++            r2 = requests.post(upload_url, data=f.read(), timeout=60)
++        if r2.status_code != 200:
++            print(f"[Error] Slack 파일 업로드 실패: HTTP {r2.status_code}")
++            return False
++
++        # 3) 업로드 완료 + 채널 게시
++        payload = {
++            "files": [{"id": file_id, "title": caption or filename}],
++            "channel_id": channel,
++        }
++        if caption:
++            payload["initial_comment"] = caption
++        r3 = requests.post(
++            "https://slack.com/api/files.completeUploadExternal",
++            headers={
++                "Authorization": f"Bearer {token}",
++                "Content-Type": "application/json; charset=utf-8",
++            },
++            json=payload,
++            timeout=30,
++        )
++        d3 = r3.json()
++        if d3.get("ok"):
++            return True
++        print(f"[Error] Slack completeUploadExternal 실패: {d3}")
++    except Exception as e:
++        print(f"[Error] Failed to send photo via Slack: {e}")
++    return False
+diff --git a/scheduler.py b/scheduler.py
+index 51f1c99..c81d210 100644
+--- a/scheduler.py
++++ b/scheduler.py
+@@ -8,7 +8,7 @@ from datetime import datetime
+ from dotenv import load_dotenv
+ from apscheduler.schedulers.blocking import BlockingScheduler
+ 
+-from capture import capture_and_send
++from capture import capture_and_send, capture_and_send_slack
+ from market_data import get_snapshot, load_ath_from_history, get_custom_stocks_snapshot
+ from trigger_engine import TriggerEngine, format_events, format_custom_events, format_sidecar_events
+ from notifier import send_telegram_message
+@@ -40,6 +40,15 @@ def daily_job():
+     print(f"[{datetime.now()}] Scheduled job completed. Status: {'SUCCESS' if success else 'FAILED'}")
+ 
+ 
++def daily_slack_job():
++    """
++    Triggered daily at 15:40 — 대시보드 캡처 후 슬랙 전송.
++    """
++    print(f"[{datetime.now()}] Starting scheduled Slack briefing capture...")
++    success = capture_and_send_slack()
++    print(f"[{datetime.now()}] Slack briefing job completed. Status: {'SUCCESS' if success else 'FAILED'}")
++
++
+ def alert_job():
+     """
+     지수 투자 타이밍 트리거 및 관심 종목/ETF 급등락 알림을 체크합니다.
+@@ -97,6 +106,8 @@ def main():
+                         help="Run the capture and send function immediately and exit")
+     parser.add_argument("--check-alerts", action="store_true",
+                         help="Run the investment timing trigger check immediately and exit")
++    parser.add_argument("--test-slack", action="store_true",
++                        help="Run the capture and Slack send immediately and exit")
+     parser.add_argument("--summary", action="store_true",
+                         help="Print the current market & timing summary text and exit")
+     args = parser.parse_args()
+@@ -129,6 +140,14 @@ def main():
+         print("Exiting test mode.")
+         sys.exit(0)
+ 
++    if args.test_slack:
++        print("--- Running Slack Test Mode ---")
++        print("Triggering capture and Slack send immediately...")
++        success = capture_and_send_slack()
++        print(f"Slack Test Run Completed. Status: {'SUCCESS' if success else 'FAILED'}")
++        print("Exiting Slack test mode.")
++        sys.exit(0)
++
+     # ATH 초기 로딩 (트리거 판정 정확도를 위해 시작 시 1회)
+     load_ath_from_history()
+ 
+@@ -146,6 +165,17 @@ def main():
+         name='Daily Stock Market Briefing at 15:30'
+     )
+ 
++    # Schedule job: Monday to Friday at 15:40 — 마감 브리핑 캡처 → 슬랙 전송
++    scheduler.add_job(
++        daily_slack_job,
++        'cron',
++        day_of_week='mon-fri',
++        hour=15,
++        minute=40,
++        id='daily_briefing_slack',
++        name='Daily Stock Market Briefing (Slack) at 15:40'
++    )
++
+     # Schedule job: 투자 타이밍 트리거 체크 (미장 시간대 포함 24시간 주기 체크)
+     scheduler.add_job(
+         alert_job,
+@@ -157,7 +187,8 @@ def main():
+ 
+     print("--------------------------------------------------")
+     print("Stock Briefing Scheduler is now running.")
+-    print("Schedule: Mon-Fri at 15:30 KST (briefing capture)")
++    print("Schedule: Mon-Fri at 15:30 KST (briefing capture -> Telegram)")
++    print("Schedule: Mon-Fri at 15:40 KST (briefing capture -> Slack)")
+     print(f"Schedule: every {ALERT_CHECK_INTERVAL_MIN} min (investment timing alerts)")
+     print("Press Ctrl+C to exit.")
+     print("--------------------------------------------------")
