@@ -3,6 +3,7 @@
 2. read 툴로 `workspace/news_data.json` 을 읽는다.
 3. 수집된 매일경제(mk.co.kr) 기사 5개와 한국경제(hankyung.com) 기사 5개 (총 10개) 전체를 하나도 빠짐없이 SOUL.md의 컴팩트 압축 형식(기사당 5문장 이내로 팩트/배경, 영향/전망, 투자 인사이트, 원문 링크 구성)으로 분석한다. 다른 신문사 기사는 절대 포함하지 않는다. 원문 링크는 반드시 news_data.json의 link 필드에 있는 URL을 그대로 사용하고, 절대 추측하거나 다른 사이트로 대체하지 않는다.
 4. 분석 결과 전체를 하나의 마크다운 문서로 정리해서 write 툴로 `/home/ubuntu/.openclaw/workspace/briefing_notion_morning.md` 파일에 저장한다. 매일경제 섹션은 `## 매일경제`, 한국경제 섹션은 `## 한국경제` 헤딩으로 구분하고, 기사별로 소제목과 원문 링크를 포함한다.
-5. exec 툴로 `python /home/ubuntu/.openclaw/scripts/notion_push.py /home/ubuntu/.openclaw/workspace/briefing_notion_morning.md 아침` 을 실행한다.
-6. 실행 출력에 "노션 저장 성공"이 보이면 작업 완료다. 실패 메시지가 나오면 원인을 한 줄로 보고한다.
+5. exec 툴로 `python /home/ubuntu/.openclaw/scripts/notion_push.py /home/ubuntu/.openclaw/workspace/briefing_notion_morning.md 아침` 을 실행한다. (노션 저장)
+6. exec 툴로 `python /home/ubuntu/.openclaw/scripts/slack_text.py /home/ubuntu/.openclaw/workspace/briefing_notion_morning.md` 을 실행한다. (슬랙 전송)
+7. 두 실행 출력에 각각 "노션 저장 성공", "슬랙 전송 성공"이 보이면 작업 완료다. 실패 메시지가 나오면 원인을 한 줄로 보고한다.
 모든 분석은 한국어로 작성하고 절대 생략하거나 도중에 끊지 않는다.
