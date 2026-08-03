@@ -85,7 +85,8 @@ def create_page(title, date_str, session, blocks):
         "properties": {
             PROP_TITLE: {"title": [{"text": {"content": title}}]},
             PROP_DATE: {"date": {"start": date_str}},
-            PROP_SESSION: {"select": {"name": session}},
+            # 시간대는 multi_select 타입 (DB 스키마 기준)
+            PROP_SESSION: {"multi_select": [{"name": session}]},
         },
         "children": blocks[:MAX_BLOCKS_PER_CALL],
     }
