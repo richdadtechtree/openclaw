@@ -18,11 +18,11 @@
 2. `read` 툴로 `workspace/news_data.json` 을 읽는다.
 3. 아래 소스/분석/링크 규칙과 출력 형식에 따라 매경 5 + 한경 5 (총 10개)를 분석해 **요청한 사용자에게 답변**한다.
 4. 답변과 동시에, 분석 전체를 하나의 마크다운으로 `write` 툴로
-   `/home/ubuntu/.openclaw/workspace/briefing_notion.md` 에 저장한다
+   `/home/ubuntu/.openclaw/workspace/briefing_sheet.md` 에 저장한다
    (`## 매일경제`, `## 한국경제` 헤딩으로 구분, 기사별 소제목과 원문 링크 포함).
    이어서 `exec` 툴로
-   `python /home/ubuntu/.openclaw/scripts/notion_push.py /home/ubuntu/.openclaw/workspace/briefing_notion.md 요청`
-   을 실행해 **노션 DB에 저장**한다. 저장 결과는 사용자에게 한 줄로만 알린다(예: "노션에도 저장 완료").
+   `python /home/ubuntu/.openclaw/scripts/sheets_push.py /home/ubuntu/.openclaw/workspace/briefing_sheet.md 요청`
+   을 실행해 **구글 시트에 저장**한다. 저장 결과는 사용자에게 한 줄로만 알린다(예: "구글 시트에도 저장 완료").
 
 ### 소스 규칙
 - **매일경제(mk.co.kr)**와 **한국경제(hankyung.com)** 기사만 브리핑한다.
