@@ -34,6 +34,10 @@ jq '
        then .channels.telegram.accounts.default.botToken = "${TELEGRAM_BOT_TOKEN_DEFAULT}" else . end)
   | (if .channels.telegram.accounts.pt.botToken
        then .channels.telegram.accounts.pt.botToken = "${TELEGRAM_BOT_TOKEN_PT}" else . end)
+  | (if .channels.slack.appToken
+       then .channels.slack.appToken = "${SLACK_APP_TOKEN}" else . end)
+  | (if .channels.slack.botToken
+       then .channels.slack.botToken = "${SLACK_BOT_TOKEN}" else . end)
 ' "$CONF" > "$tmp"
 
 # 유효한 JSON 인지 확인 후 교체
@@ -44,7 +48,9 @@ jq '{
   gateway_token: .gateway.auth.token,
   brave: .plugins.entries.brave.config.webSearch.apiKey,
   tg_default: .channels.telegram.accounts.default.botToken,
-  tg_pt: .channels.telegram.accounts.pt.botToken
+  tg_pt: .channels.telegram.accounts.pt.botToken,
+  slack_app: .channels.slack.appToken,
+  slack_bot: .channels.slack.botToken
 }' "$CONF"
 
 echo

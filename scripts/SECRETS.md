@@ -4,13 +4,20 @@
 `.env` 는 git 에 올라가지 않고(`.gitignore`), openclaw 가 시작할 때 자동으로 읽어
 `openclaw.json` 안의 `${변수명}` 을 실제 값으로 채웁니다.
 
-## .env 에 넣어야 하는 키 목록 (총 5개)
+> 💡 **openclaw 네이티브 방식 추천**: openclaw 에는 자체 비밀 관리자가 있습니다.
+> `openclaw secrets audit --check` 로 평문 비밀을 확인하고,
+> `openclaw secrets configure` 로 env 기반 SecretRef 로 옮길 수 있습니다.
+> 아래 `.env` 방식(수동)과 결과는 같으며, 둘 중 편한 쪽을 쓰면 됩니다.
+
+## .env 에 넣어야 하는 키 목록 (총 7개)
 
 | 변수명 | 무엇 | 어디서 받나 | 형식 |
 |---|---|---|---|
 | `TELEGRAM_BOT_TOKEN_DEFAULT` | 텔레그램 봇토큰 (신문 분석가 봇) | 텔레그램 **@BotFather** → `/mybots` → 봇 선택 → **API Token** | `숫자:영문숫자` |
 | `TELEGRAM_BOT_TOKEN_PT` | 텔레그램 봇토큰 (PT 트레이너 봇) | @BotFather → `/mybots` → PT 봇 → API Token | `숫자:영문숫자` |
 | `BRAVE_API_KEY` | Brave 웹검색 키 | https://api-dashboard.search.brave.com/ → **API Keys** | `BSA...` |
+| `SLACK_APP_TOKEN` | Slack 앱 토큰 | https://api.slack.com/apps → 앱 → Basic Information → App-Level Tokens | `xapp-...` |
+| `SLACK_BOT_TOKEN` | Slack 봇 토큰 | 같은 앱 → OAuth & Permissions → Bot User OAuth Token | `xoxb-...` |
 | `GEMINI_API_KEY` | Gemini(Google) 키 | https://aistudio.google.com/apikey → **Create API key** | `AIza...` |
 | `GATEWAY_TOKEN` | 게이트웨이 접속 토큰 | 아무 랜덤 문자열 (`openssl rand -hex 24`) | 임의 |
 
@@ -22,7 +29,7 @@
 cd ~/.openclaw
 scripts/setup-env.sh        # 키를 하나씩 물어봄. 모르면 엔터로 건너뛰기
 scripts/apply-env-refs.sh   # openclaw.json 을 ${참조} 로 자동 교체
-sudo systemctl restart openclaw   # 서비스명은 실제 이름으로
+openclaw daemon restart           # 이 서버의 재시작 명령
 ```
 
 끝입니다. `setup-env.sh` 가 각 키의 발급처를 안내하며 하나씩 받아 `.env`(권한 600)에 저장하고,
@@ -36,7 +43,7 @@ sudo systemctl restart openclaw   # 서비스명은 실제 이름으로
 cd ~/.openclaw
 scripts/extract-secrets-to-env.sh   # openclaw.json → .env 로 값 복사
 scripts/apply-env-refs.sh           # openclaw.json 을 ${참조} 로 교체
-sudo systemctl restart openclaw
+openclaw daemon restart
 ```
 
 ## 방법 C: 손으로 직접
@@ -47,7 +54,7 @@ cp .env.example .env
 nano .env            # 위 표를 보고 값 5개 채우기
 chmod 600 .env
 scripts/apply-env-refs.sh
-sudo systemctl restart openclaw
+openclaw daemon restart
 ```
 
 ## 확인

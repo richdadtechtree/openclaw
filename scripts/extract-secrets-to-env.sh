@@ -27,6 +27,8 @@ val() { jq -r "$1 // empty" "$CONF" | grep -v '^\${' || true; }
 tg_default="$(val '.channels.telegram.accounts.default.botToken')"
 tg_pt="$(val '.channels.telegram.accounts.pt.botToken')"
 brave="$(val '.plugins.entries.brave.config.webSearch.apiKey // .tools.web.search.apiKey')"
+slack_app="$(val '.channels.slack.appToken')"
+slack_bot="$(val '.channels.slack.botToken')"
 gemini="$(val '.auth.profiles."google:default".apiKey // .models.providers.google.apiKey')"
 gwtoken="$(val '.gateway.auth.token')"
 
@@ -37,14 +39,15 @@ gwtoken="$(val '.gateway.auth.token')"
   echo "TELEGRAM_BOT_TOKEN_DEFAULT=${tg_default}"
   echo "TELEGRAM_BOT_TOKEN_PT=${tg_pt}"
   echo "BRAVE_API_KEY=${brave}"
+  echo "SLACK_APP_TOKEN=${slack_app}"
+  echo "SLACK_BOT_TOKEN=${slack_bot}"
   echo "GEMINI_API_KEY=${gemini}"
   echo "GATEWAY_TOKEN=${gwtoken}"
 } > "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 
 echo "[extract] .env 생성 완료: $ENV_FILE (권한 600)"
-for var in TELEGRAM_BOT_TOKEN_DEFAULT TELEGRAM_BOT_TOKEN_PT BRAVE_API_KEY GEMINI_API_KEY GATEWAY_TOKEN; do :; done
-for pair in "TELEGRAM_BOT_TOKEN_DEFAULT:$tg_default" "TELEGRAM_BOT_TOKEN_PT:$tg_pt" "BRAVE_API_KEY:$brave" "GEMINI_API_KEY:$gemini" "GATEWAY_TOKEN:$gwtoken"; do
+for pair in "TELEGRAM_BOT_TOKEN_DEFAULT:$tg_default" "TELEGRAM_BOT_TOKEN_PT:$tg_pt" "BRAVE_API_KEY:$brave" "SLACK_APP_TOKEN:$slack_app" "SLACK_BOT_TOKEN:$slack_bot" "GEMINI_API_KEY:$gemini" "GATEWAY_TOKEN:$gwtoken"; do
   name="${pair%%:*}"; v="${pair#*:}"
   if [ -n "$v" ]; then echo "  ✓ $name = ${v:0:6}… (${#v}자)"; else echo "  ✗ $name  (설정에 없음 — setup-env.sh 로 입력)"; fi
 done

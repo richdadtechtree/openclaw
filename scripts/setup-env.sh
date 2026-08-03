@@ -43,6 +43,8 @@ echo "각 키를 하나씩 입력하세요. 모르면 엔터로 건너뛰고 나
 ask TELEGRAM_BOT_TOKEN_DEFAULT "1) 텔레그램 봇토큰 (신문 분석가/기본 봇)" "@BotFather → /mybots → 봇 선택 → API Token"
 ask TELEGRAM_BOT_TOKEN_PT      "2) 텔레그램 봇토큰 (PT 트레이너 봇)"     "@BotFather → /mybots → PT 봇 → API Token"
 ask BRAVE_API_KEY              "3) Brave 웹검색 API 키"                  "https://api-dashboard.search.brave.com/ → API Keys"
+ask SLACK_APP_TOKEN            "3-1) Slack 앱 토큰 (xapp-)"              "https://api.slack.com/apps → 앱 → Basic Information → App-Level Tokens"
+ask SLACK_BOT_TOKEN            "3-2) Slack 봇 토큰 (xoxb-)"              "같은 앱 → OAuth & Permissions → Bot User OAuth Token"
 ask GEMINI_API_KEY             "4) Gemini(Google) API 키"               "https://aistudio.google.com/apikey → Create API key"
 
 # 게이트웨이 토큰: 엔터 시 자동 생성
@@ -66,7 +68,7 @@ fi
   echo "# openclaw 비밀 키 (setup-env.sh 로 저장: $(date '+%F %T'))"
   echo "# .gitignore 로 git 에 올라가지 않음"
   echo
-  for var in TELEGRAM_BOT_TOKEN_DEFAULT TELEGRAM_BOT_TOKEN_PT BRAVE_API_KEY GEMINI_API_KEY GATEWAY_TOKEN; do
+  for var in TELEGRAM_BOT_TOKEN_DEFAULT TELEGRAM_BOT_TOKEN_PT BRAVE_API_KEY SLACK_APP_TOKEN SLACK_BOT_TOKEN GEMINI_API_KEY GATEWAY_TOKEN; do
     echo "${var}=${cur[$var]:-}"
   done
 } > "$ENV_FILE"
@@ -74,7 +76,7 @@ chmod 600 "$ENV_FILE"
 
 echo
 echo "=== 저장 완료: $ENV_FILE (권한 600) ==="
-for var in TELEGRAM_BOT_TOKEN_DEFAULT TELEGRAM_BOT_TOKEN_PT BRAVE_API_KEY GEMINI_API_KEY GATEWAY_TOKEN; do
+for var in TELEGRAM_BOT_TOKEN_DEFAULT TELEGRAM_BOT_TOKEN_PT BRAVE_API_KEY SLACK_APP_TOKEN SLACK_BOT_TOKEN GEMINI_API_KEY GATEWAY_TOKEN; do
   v="${cur[$var]:-}"
   if [ -n "$v" ]; then echo "  ✓ $var = ${v:0:6}… (${#v}자)"; else echo "  ✗ $var  (비어있음)"; fi
 done

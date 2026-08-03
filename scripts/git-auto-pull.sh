@@ -18,14 +18,14 @@
 #   OPENCLAW_DIR          리포 경로            (기본: 스크립트 상위 디렉토리)
 #   OPENCLAW_GIT_BRANCH   추적 브랜치          (기본: main)
 #   OPENCLAW_RESTART_CMD  pull 후 실행할 재시작 명령
-#                         (기본: "sudo systemctl restart openclaw")
+#                         (기본: "openclaw daemon restart")
 #                         재시작이 필요 없으면 OPENCLAW_RESTART_CMD=":" 로 설정
 #
 set -euo pipefail
 
 REPO_DIR="${OPENCLAW_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 BRANCH="${OPENCLAW_GIT_BRANCH:-main}"
-RESTART_CMD="${OPENCLAW_RESTART_CMD:-sudo systemctl restart openclaw}"
+RESTART_CMD="${OPENCLAW_RESTART_CMD:-openclaw daemon restart}"
 LOCK="/tmp/openclaw-auto-pull.lock"
 
 log() { echo "[auto-pull] $(date '+%F %T') $*"; }
