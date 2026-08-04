@@ -77,7 +77,7 @@ done
 pkill -9 -f "scheduler.py" 2>/dev/null || true
 sleep 1
 
-nohup "$PY" scheduler.py > "$DST/scheduler.log" 2>&1 &
+nohup "$PY" -u scheduler.py > "$DST/scheduler.log" 2>&1 &   # -u: 로그 실시간 flush(버퍼링 방지)
 sleep 3
 # 정상 구조 = 2 프로세스(스케줄러 본체 + uvicorn 웹 워커). 3개 이상이면 중복 의심.
 count="$(pgrep -f 'scheduler.py' 2>/dev/null | wc -l | tr -d ' ')"
