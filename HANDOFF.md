@@ -5,7 +5,11 @@
 
 ## 🗂️ 무엇이 어디서 도나 (편집 위치)
 - **openclaw 폴더에서 돎(=claude.ai 편집·동기화 가능)**: 뉴스 브리핑(`cron/jobs.json` + `workspace/news_fetcher.py` + `workspace/SOUL.md`), PT 트레이너(`agents/pt-trainer/`), 날씨 브리핑(`cron/jobs.json`). 단 `openclaw.json`/`.env`(비밀)는 서버 전용.
-- **주식 프로젝트**: 실행은 `~/stock/stock`(nohup `scheduler.py`). 소스를 openclaw repo `stock/` 로 **vendoring 도입**(A안) → `git-auto-pull.sh` 후 `scripts/sync-stock.sh` 가 코드만 rsync + 변경 시 scheduler 재시작. **최초 씨딩 필요**(`stock/README.md` 참고).
+- **주식 프로젝트**: 실행은 `~/stock/stock`(nohup `scheduler.py`). ✅ **소스 vendoring 완료**(2026-08-04): openclaw repo `stock/` 에 40개 `.py` 반입됨 → 이제 **claude.ai 에서 stock 코드 편집 가능**. `git-auto-pull.sh` 후 `scripts/sync-stock.sh` 가 코드만 rsync + 변경 시 scheduler 재시작.
+  - **env 통합**: 서버에서 `~/stock/stock/.env` 를 `~/.openclaw/.env` 로 심볼릭 링크(비밀 한 곳). 둘 다 gitignore.
+  - **텔레그램 폐기**: stock 알림은 이제 **슬랙 전용**. `TELEGRAM_BOT_TOKEN`/`BRIEFING_BOT_TOKEN` 미설정이어도 `send_telegram_message`는 조용히 False 반환(무해). 로그 노이즈 제거하려면 `stock/notifier.py`/`scheduler.py` 정리 가능.
+  - **KIS 키**: `market_data` 가 KIS 우선·yfinance 폴백. KIS 키 없으면 yfinance 로 자동 폴백(동작하나 가끔 `^GSPC` 등 불안정). 신뢰도 위해 `~/.openclaw/.env` 에 `KIS_APP_KEY/KIS_APP_SECRET/KIS_ACCOUNT_NO` 있으면 좋음.
+  - seed-stock 임시 브랜치(origin) 잔존 — VS Code 에서 `git push origin --delete seed-stock` 로 정리.
 
 ## ✅ 완료된 것
 1. **자동 git 동기화**: 클로드에서 openclaw main에 push → 서버 cron(1분)이 pull + `openclaw daemon restart`. 런타임 파일 추적 제외.
