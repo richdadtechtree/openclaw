@@ -16,8 +16,8 @@ Git으로 서버와 자동 동기화됩니다. 별도 프로젝트인 **stock**(
   - 서버에서 즉시 반영: `OPENCLAW_GIT_BRANCH=main OPENCLAW_RESTART_CMD="openclaw daemon restart" ~/.openclaw/scripts/git-auto-pull.sh`
 - **openclaw.json**: `.gitignore` 대상(비밀 포함) → 서버에서 **jq로 직접 편집**. 백업(`cp openclaw.json openclaw.json.bak-*.$(date +%s)`) 후 `jq ... > /tmp/oc.json && jq empty /tmp/oc.json && mv /tmp/oc.json openclaw.json`.
 - **openclaw 모델 등록**: 모델을 쓰려면 **①`agents.defaults.model`(+ list agents) ②`models.providers.<provider>.models[]`(id/name 등록)** 둘 다 필요. 안 하면 "Unknown model".
-- **Gemini via openclaw**: openclaw가 기본적으로 google을 OpenAI 엔드포인트로 보내 401남. 반드시
-  `models.providers.google.api="openai-chat"` + `baseUrl="https://generativelanguage.googleapis.com/v1beta/openai/"` 설정.
+- **Gemini via openclaw**: ⚠️ **openclaw 2026.7.1-2 에선 `models.providers.google.api="openai-chat"` 값이 무효**(config invalid → 게이트웨이 기동 실패). 이 버전 허용값: `openai-completions`, `openai-responses`, `openai-chatgpt-responses`, `anthropic-messages`, `google-generative-ai`, `google-vertex`, `github-copilot`, `bedrock-converse-stream`, `ollama`, `azure-openai-responses`.
+  → Gemini는 **네이티브 `google-generative-ai`** api 권장(별도 baseUrl 우회 불필요). OpenAI-호환 엔드포인트를 굳이 쓰려면 `openai-completions` + `baseUrl=".../v1beta/openai/"` 로 시도(검증 필요).
   Gemini 키는 게이트웨이 env `GEMINI_API_KEY`로 읽힘(systemd 유닛 `Environment=`에 있음).
 
 ## 비밀/키

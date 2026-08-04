@@ -15,9 +15,11 @@
 
 ## ⏳ 진행 중 / 다음 할 일 (우선순위 순)
 
-### A. Gemini 백업(fallback) 적용 — **jq 준비 완료, 서버에서 실행만 하면 됨**
-GPT 주력 유지 + Gemini 무료 백업(`gemini-flash-lite-latest` → `gemini-flash-latest`). 엔드포인트 문제 해결됨(curl로 200 확인).
-서버에서:
+### A. Gemini 백업(fallback) 적용 — ⚠️ **아래 jq 는 이 버전에서 무효(수정 필요)**
+GPT 주력 유지 + Gemini 무료 백업(`gemini-flash-lite-latest` → `gemini-flash-latest`).
+> ⚠️ **openclaw 2026.7.1-2 는 `google.api="openai-chat"` 를 거부**한다(2026-08-04 확인: config invalid → 게이트웨이 기동 실패). 실제로 이 값이 openclaw.json 에 남아 restart 가 깨졌고, `jq 'del(.models.providers.google)'` 로 제거해 복구함. **다음에 Gemini 붙일 땐 아래 jq 의 `.api="openai-chat"` 부분을 이 버전 허용값으로 바꿔야 함** — 네이티브 `google-generative-ai`(권장, baseUrl 우회 불필요) 또는 OpenAI-호환이면 `openai-completions`. `openclaw config validate` 로 반드시 선검증 후 restart.
+
+서버에서(⚠️ api 값 교체 후 사용):
 ```bash
 cd ~/.openclaw
 GKEY=$(grep '^GEMINI_API_KEY=' .env | cut -d= -f2-)
@@ -46,10 +48,12 @@ python3 -c "import ast; ast.parse(open('scheduler.py').read()); print('OK')"
 # 반영: systemctl --user restart stock-dashboard  (없으면 수동 nohup 재시작)
 ```
 
-### C. 관심종목 알림 → 슬랙에도 + 국장/미장 시간대 게이팅 — **모듈 준비 완료, 서버에서 연결만 하면 됨**
+### C. 관심종목 알림 → 슬랙에도 + 국장/미장 시간대 게이팅 — **서버 삽입 완료(2026-08-04), scheduler 재시작으로 반영**
 요구사항: **국장(숫자 코드 종목)은 KRX 정규장(평일 09:00~15:30 KST)에만, 미장(영문 티커)은 24시간** 알림. 그리고 텔레그램뿐 아니라 **슬랙에도** 전송.
 
 **정책**(확정): **슬랙만 게이팅, 텔레그램은 그대로.** 텔레그램은 지금처럼 모든 `custom_events` 전송(코드 미변경), 슬랙은 게이팅 통과분만 추가 전송.
+
+**상태**: `patch_scheduler_slack.py` 로 서버 `~/stock/stock/scheduler.py` 에 삽입 완료(백업 `scheduler.py.bak-slack-*`). `stock_alert_slack.py` 도 stock 폴더에 복사됨. **반영은 scheduler 프로세스 재시작 필요**(아래 ⚠️ 운영 메모 참고).
 
 **✅ 재사용 모듈 완성**: `scripts/stock_alert_slack.py`. **엔진 이벤트 기반**(스냅샷 재스캔 X — `TriggerEngine`의 '한 번만 발동' 상태를 존중해 중복 전송 방지). 게이팅(국장=KRX 정규장/미장=24h) + 슬랙 전송 캡슐화. `event["message"]`가 텔레그램/슬랙 공용 mrkdwn이라 **포맷 그대로 재사용**. 게이팅·경계(15:30/15:31)·빈/전부게이팅 케이스 오프라인 테스트 통과.
 
@@ -70,8 +74,17 @@ cd ~/stock/stock && venv/bin/python stock_alert_slack.py     # 맨 python 아님
 cp ~/.openclaw/scripts/stock_alert_slack.py ~/stock/stock/
 cd ~/stock/stock && venv/bin/python ~/.openclaw/scripts/patch_scheduler_slack.py
 #   → 백업(scheduler.py.bak-slack-*) 후 삽입 + ast 문법검증. 멱등(재실행 안전).
-systemctl --user restart stock-dashboard   # 또는 scheduler 재실행
 ```
+⚠️ **scheduler 재시작 = systemd 아님**(2026-08-04 확인: `stock-dashboard.service` 없음). scheduler 는 `venv/bin/python scheduler.py` (nohup) 로 돎. **다중 인스턴스가 뜨면 알림 중복 발송**되므로 전부 끄고 하나만:
+```bash
+cd ~/stock/stock
+pkill -f "scheduler.py"; sleep 2
+ps aux | grep "scheduler.py" | grep -v grep          # 없어야 정상
+nohup venv/bin/python scheduler.py > ~/stock/stock/scheduler.log 2>&1 &
+sleep 3; ps aux | grep "scheduler.py" | grep -v grep # 딱 1개
+tail -30 ~/stock/stock/scheduler.log
+```
+(nohup 은 재부팅 시 꺼짐 → systemd user 유닛 `stock-scheduler` 로 상시화 권장.)
 삽입되는 블록(텔레그램은 그대로, 슬랙만 추가):
 ```python
                 try:
