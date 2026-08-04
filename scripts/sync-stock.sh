@@ -79,10 +79,11 @@ sleep 1
 
 nohup "$PY" scheduler.py > "$DST/scheduler.log" 2>&1 &
 sleep 3
+# 정상 구조 = 2 프로세스(스케줄러 본체 + uvicorn 웹 워커). 3개 이상이면 중복 의심.
 count="$(pgrep -f 'scheduler.py' 2>/dev/null | wc -l | tr -d ' ')"
 pids="$(pgrep -f 'scheduler.py' 2>/dev/null | tr '\n' ' ')"
-if [ "${count:-0}" -gt 1 ]; then
-  log "⚠️ scheduler ${count}개 감지(예상 1) — 중복 가능. pid: $pids"
+if [ "${count:-0}" -gt 2 ]; then
+  log "⚠️ scheduler 프로세스 ${count}개(정상 1~2 초과) — 중복 의심. pid: $pids"
 else
-  log "scheduler 재시작 완료 (pid: ${pids:-없음})"
+  log "scheduler 재시작 완료 (${count}개: 본체+웹, pid: $pids)"
 fi
