@@ -1,0 +1,72 @@
+# HANDOFF — 현재 상태 & 다음 할 일
+
+> 먼저 `CLAUDE.md`(규칙/함정)를 읽으세요. 이 문서는 진행 현황과 남은 작업입니다.
+> 서버: openclaw = `/home/ubuntu/.openclaw`, stock = `/home/ubuntu/stock/stock`.
+
+## ✅ 완료된 것
+1. **자동 git 동기화**: 클로드에서 openclaw main에 push → 서버 cron(1분)이 pull + `openclaw daemon restart`. 런타임 파일 추적 제외.
+2. **비밀 → .env 정리** + `SECRETS.md`/`.env.example`. (일부는 아직 openclaw.json 평문 — 감사 남음. 노출 키 재발급 권장.)
+3. **뚜떵또(openclaw AI) 모델**: **주 = GPT(OpenAI)** 로 살림(어제 크레딧 충전 + `onboard --classic`). 정상 동작 중.
+4. **온디맨드 신문 브리핑**: 정해진 시각 자동 브리핑 **OFF**. 사용자가 봇에 "신문 브리핑 해줘" 요청 시에만 → 분석 답변 + **구글 시트 저장**(`sheets_push.py`, `workspace/SOUL.md`에 규칙 있음).
+   - 구글 시트: Apps Script 웹앱. `.env`에 `SHEETS_WEBAPP_URL`, `SHEETS_WEBAPP_SECRET`.
+   - (노션은 폐기 — 시트로 전환. `notion_push.py`는 남겨둠, 미사용.)
+5. **stock 대시보드 → 슬랙**: 평일 **15:40** openclaw cron `stock-slack-briefing`(command job) → `slack_briefing.py`. 채널 `C0BMJENDF62`. AI 미사용, 정상.
+6. **stock 관심종목 급등락 알림**: `scheduler.py alert_job`(약 10분) → 텔레그램 `briefing-bot`. 2% 단위. AI 미사용, 정상.
+
+## ⏳ 진행 중 / 다음 할 일 (우선순위 순)
+
+### A. Gemini 백업(fallback) 적용 — **jq 준비 완료, 서버에서 실행만 하면 됨**
+GPT 주력 유지 + Gemini 무료 백업(`gemini-flash-lite-latest` → `gemini-flash-latest`). 엔드포인트 문제 해결됨(curl로 200 확인).
+서버에서:
+```bash
+cd ~/.openclaw
+GKEY=$(grep '^GEMINI_API_KEY=' .env | cut -d= -f2-)
+UNIT=~/.config/systemd/user/openclaw-gateway.service
+sed -i '/^Environment=GEMINI_API_KEY=/d' "$UNIT"; sed -i "/^\[Service\]/a Environment=GEMINI_API_KEY=$GKEY" "$UNIT"
+systemctl --user daemon-reload
+cp openclaw.json openclaw.json.bak-fb.$(date +%s)
+jq '.agents.defaults.model.fallbacks=([ (.agents.defaults.model.fallbacks // [])[] | select(startswith("openai/")) ] + ["google/gemini-flash-lite-latest","google/gemini-flash-latest"]) | .agents.defaults.models=((.agents.defaults.models // {}) + {"google/gemini-flash-lite-latest":{},"google/gemini-flash-latest":{}}) | .models.providers.google.api="openai-chat" | .models.providers.google.baseUrl="https://generativelanguage.googleapis.com/v1beta/openai/" | .models.providers.google.models=((.models.providers.google.models // []) + [{"id":"gemini-flash-lite-latest","name":"gemini-flash-lite-latest"},{"id":"gemini-flash-latest","name":"gemini-flash-latest"}] | unique_by(.id)) | .agents.list |= map(if .model then .model.fallbacks=([ (.model.fallbacks // [])[] | select(startswith("openai/")) ] + ["google/gemini-flash-lite-latest","google/gemini-flash-latest"]) else . end)' openclaw.json > /tmp/oc.json && jq empty /tmp/oc.json && mv /tmp/oc.json openclaw.json
+openclaw daemon restart
+jq '.agents.defaults.model' openclaw.json
+```
+검증: `curl -s https://generativelanguage.googleapis.com/v1beta/openai/chat/completions -H "Authorization: Bearer $GKEY" -H "Content-Type: application/json" -d '{"model":"gemini-flash-latest","messages":[{"role":"user","content":"hi"}]}'` → `choices` 오면 정상.
+
+### B. 텔레그램 15:30~40 "지수 브리핑"(대시보드 캡처) 끄기 — 요청됨
+`stock/scheduler.py`의 `daily_job` add_job 블록을 주석 처리(파이썬 패처 준비됨). 슬랙 15:40·관심종목 알림은 유지.
+```bash
+cd ~/stock/stock; cp scheduler.py scheduler.py.bak-$(date +%s)
+python3 - <<'PY'
+import re
+f="scheduler.py"; s=open(f,encoding="utf-8").read()
+pat=re.compile(r"(^[ \t]*)scheduler\.add_job\(\s*\n\s*daily_job\b.*?\n[ \t]*\)[ \t]*$", re.DOTALL|re.MULTILINE)
+cm=lambda m:"\n".join(("# "+l if l.strip() else l) for l in m.group(0).splitlines())
+new,n=pat.subn(cm,s); open(f,"w",encoding="utf-8").write(new); print("주석 처리:",n)
+PY
+python3 -c "import ast; ast.parse(open('scheduler.py').read()); print('OK')"
+# 반영: systemctl --user restart stock-dashboard  (없으면 수동 nohup 재시작)
+```
+
+### C. 관심종목 알림 → 슬랙에도 + 국장/미장 시간대 게이팅 — **요청됨, 서버 코드 필요**
+요구사항: **국장(숫자 코드 종목)은 KRX 정규장(평일 09:00~15:30 KST)에만, 미장(영문 티커)은 24시간** 알림. 그리고 텔레그램뿐 아니라 **슬랙에도** 전송.
+- 우선 `test_slack_alert.py`로 슬랙 전송 확인 (서버 파이썬 이슈로 미완):
+  ```bash
+  cp ~/.openclaw/scripts/test_slack_alert.py ~/stock/stock/
+  cd ~/stock/stock && venv/bin/python test_slack_alert.py   # 맨 python 아님!
+  ```
+- 실제 반영은 서버 파일 편집 필요(GitHub와 다름). **다음 세션에서 아래를 받아 정확히 패치**:
+  ```bash
+  sed -n '/def alert_job/,/^def [a-zA-Z]/p' ~/stock/stock/scheduler.py
+  tail -40 ~/stock/stock/notifier.py
+  ```
+  계획: `notifier.py`에 `send_slack_message()` 추가 → `alert_job`에서 텔레그램 옆에 슬랙 전송 + 스냅샷을 `symbol.isdigit()`(국장) 여부와 KRX 장시간으로 필터.
+
+## 참고 상수/값
+- Slack 대시보드 채널: `C0BMJENDF62` (`SLACK_BRIEFING_CHANNEL`). 알림 전용 원하면 `SLACK_ALERT_CHANNEL` 추가.
+- 구글 시트 DB(신문 브리핑): Apps Script 웹앱(`SHEETS_WEBAPP_URL`).
+- (폐기)노션 DB id: `3b1d470c68bd80c88009ec6e91c5da3d`.
+- stock 감시종목: `~/stock/stock/monitored_stocks.json` (국장=숫자코드, 미장=영문). 알림 기준: `CUSTOM_ALERT_STEP`(기본 2%).
+- 관심종목 데이터: `market_data.get_custom_stocks_snapshot()` → `{symbol:{name,current,change_rate,is_etf}}`.
+
+## ⚠️ 잊지 말 것
+- 노출된 키 **재발급**(텔레그램봇, Slack, Brave, Gateway, Gemini).
+- stock `scheduler.py`가 상시 실행돼야 15:40 캡처/알림 동작 (systemd user `stock-dashboard` 권장; 아니면 재부팅 시 꺼짐).
