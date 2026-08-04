@@ -65,9 +65,24 @@ if [ ! -x "$PY" ]; then
   exit 1
 fi
 cd "$DST" || { log "cd 실패: $DST"; exit 1; }
+
+# 기존 인스턴스 확실히 종료: graceful(SIGTERM) → 최대 8s 대기 → SIGKILL.
+# (scheduler 는 1 프로세스여야 함. 2개 이상 뜨면 alert_job 이 중복 실행돼
+#  슬랙 알림이 배로 나가므로, 새로 띄우기 전에 반드시 0개로 만든다.)
 pkill -f "scheduler.py" 2>/dev/null || true
-sleep 2
+for _ in 1 2 3 4 5 6 7 8; do
+  pgrep -f "scheduler.py" >/dev/null 2>&1 || break
+  sleep 1
+done
+pkill -9 -f "scheduler.py" 2>/dev/null || true
+sleep 1
+
 nohup "$PY" scheduler.py > "$DST/scheduler.log" 2>&1 &
-sleep 2
-pids="$(pgrep -f 'scheduler.py' | tr '\n' ' ')"
-log "scheduler 재시작 완료 (pid: ${pids:-없음})"
+sleep 3
+count="$(pgrep -f 'scheduler.py' 2>/dev/null | wc -l | tr -d ' ')"
+pids="$(pgrep -f 'scheduler.py' 2>/dev/null | tr '\n' ' ')"
+if [ "${count:-0}" -gt 1 ]; then
+  log "⚠️ scheduler ${count}개 감지(예상 1) — 중복 가능. pid: $pids"
+else
+  log "scheduler 재시작 완료 (pid: ${pids:-없음})"
+fi
