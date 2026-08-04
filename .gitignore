@@ -50,3 +50,9 @@ stock/screenshots/
 stock/*.png
 stock/*.jpg
 stock/*.db
+
+# openclaw 런타임/툴 생성물 (서버에만 존재, git 추적 금지)
+#   git-auto-push.sh 의 `git add -A` 가 실수로 담는 것을 방지.
+tools/
+workspace-attestations/
+*.migrated
