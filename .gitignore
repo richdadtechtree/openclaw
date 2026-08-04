@@ -41,3 +41,12 @@ media/outbound/
 
 # 동기화해야 하는 설정 파일은 위의 *.json 규칙에서 예외 처리 (추적 유지)
 !cron/jobs.json
+
+# stock vendor: 코드(.py)만 추적. 런타임/미디어/데이터/비밀은 서버 전용.
+#   (venv/ *.sqlite* *.log __pycache__ *.json *.env 는 위 전역 규칙에서 이미 제외됨.
+#    monitored_stocks.json = 감시종목 데이터 → *.json 규칙으로 추적 안 됨(서버 유지).)
+stock/venv/
+stock/screenshots/
+stock/*.png
+stock/*.jpg
+stock/*.db

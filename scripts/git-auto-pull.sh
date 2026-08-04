@@ -75,6 +75,14 @@ git checkout --quiet --force -- .
 
 log "설정 동기화 완료 (런타임 파일 보존됨)"
 
+# --- stock 소스 동기화 (vendor 폴더가 있을 때만) -------------------------------
+# openclaw repo 의 stock/ 소스를 실행 폴더(~/stock/stock)로 반영하고, 코드가
+# 바뀐 경우에만 scheduler 를 재시작한다. 실패해도 openclaw 재시작은 계속 진행.
+STOCK_SYNC="$REPO_DIR/scripts/sync-stock.sh"
+if [ -x "$STOCK_SYNC" ]; then
+  "$STOCK_SYNC" || log "stock 동기화 실패(무시하고 계속)" >&2
+fi
+
 # --- 서비스 재시작 -------------------------------------------------------------
 if [ -n "$RESTART_CMD" ] && [ "$RESTART_CMD" != ":" ]; then
   if eval "$RESTART_CMD"; then
