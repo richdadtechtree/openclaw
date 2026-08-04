@@ -239,9 +239,9 @@ def _fetch_naver_quote(name):
             if res.status_code == 200:
                 data = res.json()
                 current = float(data.get("closePrice").replace(",", ""))
-                diff = float(data.get("compareToPreviousClosePrice", "0").replace(",", ""))
-                prev = current - diff
-                change_rate = (diff / prev) * 100 if prev else 0.0
+                # 네이버의 부호 있는 등락률을 직접 사용. (전일대비 '금액'을 역산하면
+                #  하락한 날 부호가 뒤집혀 QLD/TQQQ 등락률이 어긋남 — 지수 분기와 동일.)
+                change_rate = float(str(data.get("fluctuationsRatio", "0")).replace(",", ""))
                 return {"current": current, "change_rate": change_rate}
     except Exception as e:
         print(f"Naver quote error for {name}: {e}")
