@@ -65,7 +65,14 @@ cp ~/.openclaw/scripts/stock_alert_slack.py ~/stock/stock/
 # 2) (선택) 단독 미리보기 — 지금 기준 넘고 게이팅 통과한 종목만 슬랙 전송
 cd ~/stock/stock && venv/bin/python stock_alert_slack.py     # 맨 python 아님!
 ```
-**연결(딱 한 곳)** — `alert_job` 의 `sent = send_telegram_message(custom_message)` **다음 줄**에 추가:
+**연결(자동 패처)** — `alert_job` 의 `sent = send_telegram_message(custom_message)` 다음 줄에 슬랙 호출을 자동 삽입:
+```bash
+cp ~/.openclaw/scripts/stock_alert_slack.py ~/stock/stock/
+cd ~/stock/stock && venv/bin/python ~/.openclaw/scripts/patch_scheduler_slack.py
+#   → 백업(scheduler.py.bak-slack-*) 후 삽입 + ast 문법검증. 멱등(재실행 안전).
+systemctl --user restart stock-dashboard   # 또는 scheduler 재실행
+```
+삽입되는 블록(텔레그램은 그대로, 슬랙만 추가):
 ```python
                 try:
                     import stock_alert_slack as sas
@@ -73,7 +80,6 @@ cd ~/stock/stock && venv/bin/python stock_alert_slack.py     # 맨 python 아님
                 except Exception as _e:
                     print(f"[Warn] Slack custom alert failed: {_e}")
 ```
-반영: `systemctl --user restart stock-dashboard` (또는 scheduler 재실행).
 `.env`: `SLACK_BOT_TOKEN` + (선택) `SLACK_ALERT_CHANNEL`(없으면 `SLACK_BRIEFING_CHANNEL` 폴백).
 
 > ⚠️ **주의**: alert_job 연결엔 반드시 `notify_events(custom_events)` 사용. 스냅샷 기반 `preview_moves()`/단독 `main()`은 엔진 dedup을 모르므로 **미리보기 전용**(반복 호출 시 중복 전송). 구 계획의 `notifier.py send_slack_message()` 신설은 이 모듈로 대체됨.
