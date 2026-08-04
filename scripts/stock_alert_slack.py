@@ -4,32 +4,39 @@ stock_alert_slack.py — 관심 종목 급등락 알림을 슬랙으로도 보�
 
 목적(HANDOFF.md C):
   1) 텔레그램(briefing-bot)뿐 아니라 **슬랙에도** 급등락 알림 전송.
-  2) 시간대 게이팅:
+  2) 시간대 게이팅(슬랙에만 적용):
        - 국장(숫자 코드 종목)  → KRX 정규장(평일 09:00~15:30 KST)에만 알림
        - 미장(영문 티커 종목)  → 24시간 알림
   3) 기존 stock 코드는 최소 수정. 이 파일을 ~/stock/stock/ 에 두고 import 만 하면 됨.
+
+핵심: scheduler.alert_job 은 스냅샷을 직접 스캔하지 않고, 상태를 기억하는
+TriggerEngine.check_custom_stocks() 가 돌려주는 **custom_events**(새로 기준을
+넘은 종목만)로 알림을 보낸다. 슬랙도 반드시 이 events 를 기반으로 해야 중복
+전송이 없다(스냅샷 재스캔 금지). event 구조:
+    {"symbol": "005930", "stage": "...", "message": "…Telegram/Slack 공용 mrkdwn…"}
 
 ────────────────────────────────────────────────────────────────────────
 서버 적용 방법
   1) 이 파일을 stock 폴더로 복사:
        cp ~/.openclaw/scripts/stock_alert_slack.py ~/stock/stock/
-  2) scheduler.py 의 alert_job 안, 종목 하나가 기준을 넘어 **텔레그램을 보내는
-     바로 그 지점 옆**에 아래 한 줄을 추가:
-       import stock_alert_slack as sas
-       sas.notify_move(symbol, snap[symbol])   # 게이팅은 내부에서 처리(막히면 조용히 skip)
-     (snap = market_data.get_custom_stocks_snapshot() 결과 dict)
-  3) 혹은 한 번에 여러 종목을 모아 보내려면:
-       import stock_alert_slack as sas
-       sas.notify_moves(snap)                  # 기준·게이팅 통과분만 한 메시지로 전송
-  4) 반영: systemctl --user restart stock-dashboard  (또는 scheduler 재실행)
+  2) scheduler.py 의 alert_job, 관심 종목 텔레그램을 보내는 지점 **바로 뒤**에
+     아래를 추가(텔레그램 로직은 그대로 두고 슬랙만 추가):
+       try:
+           import stock_alert_slack as sas
+           sas.notify_events(custom_events)   # 게이팅 통과분만 슬랙 전송
+       except Exception as _e:
+           print(f"[Warn] Slack custom alert failed: {_e}")
+     → 위치: `sent = send_telegram_message(custom_message)` 다음 줄.
+  3) 반영: systemctl --user restart stock-dashboard  (또는 scheduler 재실행)
 
 .env (stock/.env 또는 ~/.openclaw/.env):
   SLACK_BOT_TOKEN        슬랙 봇 토큰 (xoxb-..., chat:write 스코프)
   SLACK_ALERT_CHANNEL    알림 전용 채널(C...) — 없으면 SLACK_BRIEFING_CHANNEL 로 폴백
-  CUSTOM_ALERT_STEP      급등락 기준 %(기본 2.0)
+  CUSTOM_ALERT_STEP      급등락 기준 %(기본 2.0) — 미리보기(main)용
 
-단독 테스트(실제로 지금 알림이 나갈 종목만 미리보기 전송):
+단독 미리보기(지금 스냅샷 기준으로 게이팅·기준 통과 종목만 슬랙 전송):
   cd ~/stock/stock && venv/bin/python stock_alert_slack.py
+  ※ 미리보기는 엔진의 '한 번만 발동' 상태를 모르므로 alert_job 연결엔 쓰지 말 것.
 """
 import os
 from datetime import datetime
@@ -106,31 +113,16 @@ def krx_open(now=None):
 
 
 def alert_allowed(symbol, now=None):
-    """이 종목을 지금 알려도 되는지.
+    """이 종목을 지금 슬랙으로 알려도 되는지.
     국장 → KRX 정규장에만, 미장 → 항상.
+    (symbol 이 비었거나 숫자가 아니면 미장으로 간주 → 허용)
     """
     if is_kr(symbol):
         return krx_open(now)
     return True
 
 
-# ── 포맷 / 전송 ──────────────────────────────────────────────────────────────
-def format_alert_line(symbol, data, step=None):
-    """한 종목의 알림 한 줄. (test_slack_alert.fmt 과 동일 규칙)"""
-    step = _step() if step is None else step
-    cr = data.get("change_rate", 0.0)
-    cur = data.get("current", 0)
-    price = f"{cur:,.0f}원" if is_kr(symbol) else f"${cur:,.2f}"
-    if cr >= step:
-        emoji, tag = "🚀", " *(급등)*"
-    elif cr <= -step:
-        emoji, tag = "📉", " *(급락)*"
-    else:
-        emoji, tag = "▪️", ""
-    name = data.get("name", symbol)
-    return f"{emoji} {name} ({symbol}): {cr:+.2f}% / {price}{tag}"
-
-
+# ── 슬랙 전송 ────────────────────────────────────────────────────────────────
 def send_slack(text):
     """슬랙 채널에 텍스트 전송. 성공 시 True."""
     token, channel = _token(), _channel()
@@ -154,27 +146,52 @@ def send_slack(text):
         return False
 
 
-# ── 고수준 API (scheduler.alert_job 에서 호출) ───────────────────────────────
-def notify_move(symbol, data, now=None, step=None):
-    """종목 하나의 급등락을 슬랙으로 알림.
+# ── 고수준 API: alert_job 연결용 (엔진 events 기반) ──────────────────────────
+def filter_events_for_slack(events, now=None):
+    """엔진 events 중 지금 슬랙으로 보내도 되는 것만 남긴다(시간대 게이팅)."""
+    now = now or now_kst()
+    return [e for e in (events or []) if alert_allowed(e.get("symbol", ""), now)]
 
-    게이팅(국장 장시간)과 기준(±step%)을 내부에서 검사하므로,
-    alert_job 에서 텔레그램 전송 옆에 그냥 호출하면 됨.
-    실제로 전송했을 때만 True.
+
+def notify_events(events, now=None):
+    """TriggerEngine.check_custom_stocks() 가 준 events 를 슬랙으로 전송.
+
+    - 게이팅(국장 장시간/미장 24h) 통과분만 전송.
+    - event["message"] 는 텔레그램/슬랙 공용 mrkdwn 이라 그대로 재사용.
+    - alert_job 에서 텔레그램 전송 뒤에 그냥 호출하면 됨.
+    반환: 슬랙으로 보낸 종목 수(대상 없음/전송 실패면 0).
     """
+    kept = filter_events_for_slack(events, now)
+    if not kept:
+        return 0
+    now = now or now_kst()
+    header = f"📢 *관심 종목 변동 알림* ({now:%Y-%m-%d %H:%M})"
+    body = "\n\n".join(e["message"] for e in kept)
+    return len(kept) if send_slack(header + "\n\n" + body) else 0
+
+
+# ── 미리보기 전용(스냅샷 기반) — alert_job 에는 쓰지 말 것 ────────────────────
+def format_alert_line(symbol, data, step=None):
+    """한 종목의 미리보기 한 줄."""
     step = _step() if step is None else step
-    if not alert_allowed(symbol, now):
-        return False
     cr = data.get("change_rate", 0.0)
-    if abs(cr) < step:
-        return False
-    return send_slack(format_alert_line(symbol, data, step))
+    cur = data.get("current", 0)
+    price = f"{cur:,.0f}원" if is_kr(symbol) else f"${cur:,.2f}"
+    if cr >= step:
+        emoji, tag = "🚀", " *(급등)*"
+    elif cr <= -step:
+        emoji, tag = "📉", " *(급락)*"
+    else:
+        emoji, tag = "▪️", ""
+    name = data.get("name", symbol)
+    return f"{emoji} {name} ({symbol}): {cr:+.2f}% / {price}{tag}"
 
 
-def notify_moves(snapshot, now=None, step=None):
-    """스냅샷 전체에서 게이팅·기준을 통과한 종목만 모아 한 메시지로 전송.
+def preview_moves(snapshot, now=None, step=None):
+    """[미리보기 전용] 스냅샷에서 게이팅·기준 통과 종목만 한 메시지로 전송.
 
-    반환: 전송한 종목 수(전송 실패/대상 없음이면 0).
+    엔진의 '한 번만 발동' 상태를 모르므로 반복 호출 시 중복 전송됨.
+    반드시 수동 단독 실행에서만 사용. 반환: 전송한 종목 수.
     """
     step = _step() if step is None else step
     now = now or now_kst()
@@ -187,17 +204,17 @@ def notify_moves(snapshot, now=None, step=None):
         lines.append(format_alert_line(symbol, data, step))
     if not lines:
         return 0
-    header = f"🔔 *관심 종목 급등락* ({now:%m-%d %H:%M} KST · ±{step:.0f}% 기준)"
+    header = f"🔔 *관심 종목 급등락(미리보기)* ({now:%m-%d %H:%M} KST · ±{step:.0f}% 기준)"
     return len(lines) if send_slack("\n".join([header, *lines])) else 0
 
 
 def main():
-    """단독 실행: 지금 스냅샷 기준으로 '실제 알림이 나갈' 종목만 슬랙에 전송."""
+    """단독 실행(미리보기): 지금 스냅샷 기준으로 게이팅·기준 통과 종목만 슬랙 전송."""
     from market_data import get_custom_stocks_snapshot  # stock 폴더에서만 존재
 
     snap = get_custom_stocks_snapshot(use_cache=False)
     now = now_kst()
-    sent = notify_moves(snap, now)
+    sent = preview_moves(snap, now)
     if sent:
         print(f"✅ 슬랙 전송 성공 — {sent}개 종목")
     else:

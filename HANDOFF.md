@@ -49,32 +49,34 @@ python3 -c "import ast; ast.parse(open('scheduler.py').read()); print('OK')"
 ### C. 관심종목 알림 → 슬랙에도 + 국장/미장 시간대 게이팅 — **모듈 준비 완료, 서버에서 연결만 하면 됨**
 요구사항: **국장(숫자 코드 종목)은 KRX 정규장(평일 09:00~15:30 KST)에만, 미장(영문 티커)은 24시간** 알림. 그리고 텔레그램뿐 아니라 **슬랙에도** 전송.
 
-**✅ 재사용 모듈 완성**: `scripts/stock_alert_slack.py`. 게이팅(국장 장시간/미장 24h) + 기준(±`CUSTOM_ALERT_STEP`%) + 슬랙 전송을 캡슐화. 순수 로직(요일/장시간/포맷/게이팅) 오프라인 테스트 통과. **`notifier.py` 신규 함수 없이** import 한 줄로 붙임.
+**정책**(확정): **슬랙만 게이팅, 텔레그램은 그대로.** 텔레그램은 지금처럼 모든 `custom_events` 전송(코드 미변경), 슬랙은 게이팅 통과분만 추가 전송.
+
+**✅ 재사용 모듈 완성**: `scripts/stock_alert_slack.py`. **엔진 이벤트 기반**(스냅샷 재스캔 X — `TriggerEngine`의 '한 번만 발동' 상태를 존중해 중복 전송 방지). 게이팅(국장=KRX 정규장/미장=24h) + 슬랙 전송 캡슐화. `event["message"]`가 텔레그램/슬랙 공용 mrkdwn이라 **포맷 그대로 재사용**. 게이팅·경계(15:30/15:31)·빈/전부게이팅 케이스 오프라인 테스트 통과.
+
+서버 코드 위치 확인됨:
+- `scheduler.py alert_job` 2번 블록: `custom_events = engine.check_custom_stocks(custom_snapshot)` → `send_telegram_message(format_custom_events(custom_events))`.
+- `trigger_engine.py:322 check_custom_stocks` event 구조: `{"symbol","stage","message"}`.
+- `notifier.py:19 send_telegram_message` (단순 POST).
 
 서버 적용:
 ```bash
-# 1) 모듈 복사
+# 1) 모듈 복사 (※ main 에 머지돼야 서버 auto-pull 이 가져옴. 급하면 수동 복사)
 cp ~/.openclaw/scripts/stock_alert_slack.py ~/stock/stock/
-# 2) 단독 테스트: '지금 실제로 알림 나갈' 종목만 슬랙 전송 (게이팅 적용됨)
+# 2) (선택) 단독 미리보기 — 지금 기준 넘고 게이팅 통과한 종목만 슬랙 전송
 cd ~/stock/stock && venv/bin/python stock_alert_slack.py     # 맨 python 아님!
-# 3) 현재 alert_job 구조 확인 (텔레그램 보내는 지점 찾기)
-sed -n '/def alert_job/,/^def [a-zA-Z]/p' ~/stock/stock/scheduler.py
 ```
-연결(둘 중 하나):
-- **종목별**(alert_job 이 종목 하나 넘을 때마다 텔레그램 보내는 그 옆):
-  ```python
-  import stock_alert_slack as sas
-  sas.notify_move(symbol, snap[symbol])   # 게이팅·기준 내부 처리, 막히면 조용히 skip
-  ```
-- **일괄**(스냅샷 한 번에):
-  ```python
-  import stock_alert_slack as sas
-  sas.notify_moves(snap)                   # 통과분만 한 메시지로
-  ```
+**연결(딱 한 곳)** — `alert_job` 의 `sent = send_telegram_message(custom_message)` **다음 줄**에 추가:
+```python
+                try:
+                    import stock_alert_slack as sas
+                    sas.notify_events(custom_events)   # 게이팅 통과분만 슬랙 전송
+                except Exception as _e:
+                    print(f"[Warn] Slack custom alert failed: {_e}")
+```
 반영: `systemctl --user restart stock-dashboard` (또는 scheduler 재실행).
 `.env`: `SLACK_BOT_TOKEN` + (선택) `SLACK_ALERT_CHANNEL`(없으면 `SLACK_BRIEFING_CHANNEL` 폴백).
 
-> 남은 서버 작업은 **alert_job 안 텔레그램 전송 지점에 위 import+호출 한 줄 추가**뿐. (구 계획의 `notifier.py send_slack_message()` 신설은 이 모듈로 대체됨. `test_slack_alert.py`는 표시용 미리보기로 계속 사용 가능.)
+> ⚠️ **주의**: alert_job 연결엔 반드시 `notify_events(custom_events)` 사용. 스냅샷 기반 `preview_moves()`/단독 `main()`은 엔진 dedup을 모르므로 **미리보기 전용**(반복 호출 시 중복 전송). 구 계획의 `notifier.py send_slack_message()` 신설은 이 모듈로 대체됨.
 
 ## 참고 상수/값
 - Slack 대시보드 채널: `C0BMJENDF62` (`SLACK_BRIEFING_CHANNEL`). 알림 전용 원하면 `SLACK_ALERT_CHANNEL` 추가.
