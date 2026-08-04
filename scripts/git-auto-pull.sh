@@ -65,6 +65,21 @@ fi
 
 log "새 커밋 감지: ${LOCAL:0:8} → ${REMOTE:0:8}"
 
+# openclaw 게이트웨이 재시작이 필요한 변경인지 판단.
+#   stock/ · scripts/ · 루트 문서만 바뀌면 openclaw 재시작 불필요(뚜떵또 대화 중단 방지).
+#   stock scheduler 는 sync-stock.sh 가 따로 재시작하고, scripts/문서는 런타임 무관.
+#   workspace/ · agents/ · cron/ · openclaw 설정 등이 바뀔 때만 게이트웨이 재시작.
+CHANGED="$(git diff --name-only "$LOCAL" "$REMOTE" 2>/dev/null || true)"
+NEED_OC_RESTART=0
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  case "$f" in
+    stock/*|scripts/*) : ;;
+    HANDOFF.md|CLAUDE.md|README.md|.gitignore|.env.example|requirements.txt) : ;;
+    *) NEED_OC_RESTART=1 ;;
+  esac
+done <<< "$CHANGED"
+
 # --- 설정 파일만 안전하게 원격 상태로 동기화 -----------------------------------
 # reset --mixed: HEAD 와 index 를 원격에 맞추되 working tree 는 건드리지 않음
 #                → 추적 해제되는 런타임 파일이 untracked 로 남아 디스크에 보존됨
@@ -83,8 +98,10 @@ if [ -x "$STOCK_SYNC" ]; then
   "$STOCK_SYNC" || log "stock 동기화 실패(무시하고 계속)" >&2
 fi
 
-# --- 서비스 재시작 -------------------------------------------------------------
-if [ -n "$RESTART_CMD" ] && [ "$RESTART_CMD" != ":" ]; then
+# --- openclaw 게이트웨이 재시작 (필요할 때만) ----------------------------------
+if [ "$NEED_OC_RESTART" -eq 0 ]; then
+  log "openclaw 재시작 불필요(stock/scripts/문서 변경만) — 건너뜀"
+elif [ -n "$RESTART_CMD" ] && [ "$RESTART_CMD" != ":" ]; then
   if eval "$RESTART_CMD"; then
     log "서비스 재시작 완료: $RESTART_CMD"
   else
