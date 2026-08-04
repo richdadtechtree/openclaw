@@ -46,19 +46,35 @@ python3 -c "import ast; ast.parse(open('scheduler.py').read()); print('OK')"
 # 반영: systemctl --user restart stock-dashboard  (없으면 수동 nohup 재시작)
 ```
 
-### C. 관심종목 알림 → 슬랙에도 + 국장/미장 시간대 게이팅 — **요청됨, 서버 코드 필요**
+### C. 관심종목 알림 → 슬랙에도 + 국장/미장 시간대 게이팅 — **모듈 준비 완료, 서버에서 연결만 하면 됨**
 요구사항: **국장(숫자 코드 종목)은 KRX 정규장(평일 09:00~15:30 KST)에만, 미장(영문 티커)은 24시간** 알림. 그리고 텔레그램뿐 아니라 **슬랙에도** 전송.
-- 우선 `test_slack_alert.py`로 슬랙 전송 확인 (서버 파이썬 이슈로 미완):
-  ```bash
-  cp ~/.openclaw/scripts/test_slack_alert.py ~/stock/stock/
-  cd ~/stock/stock && venv/bin/python test_slack_alert.py   # 맨 python 아님!
+
+**✅ 재사용 모듈 완성**: `scripts/stock_alert_slack.py`. 게이팅(국장 장시간/미장 24h) + 기준(±`CUSTOM_ALERT_STEP`%) + 슬랙 전송을 캡슐화. 순수 로직(요일/장시간/포맷/게이팅) 오프라인 테스트 통과. **`notifier.py` 신규 함수 없이** import 한 줄로 붙임.
+
+서버 적용:
+```bash
+# 1) 모듈 복사
+cp ~/.openclaw/scripts/stock_alert_slack.py ~/stock/stock/
+# 2) 단독 테스트: '지금 실제로 알림 나갈' 종목만 슬랙 전송 (게이팅 적용됨)
+cd ~/stock/stock && venv/bin/python stock_alert_slack.py     # 맨 python 아님!
+# 3) 현재 alert_job 구조 확인 (텔레그램 보내는 지점 찾기)
+sed -n '/def alert_job/,/^def [a-zA-Z]/p' ~/stock/stock/scheduler.py
+```
+연결(둘 중 하나):
+- **종목별**(alert_job 이 종목 하나 넘을 때마다 텔레그램 보내는 그 옆):
+  ```python
+  import stock_alert_slack as sas
+  sas.notify_move(symbol, snap[symbol])   # 게이팅·기준 내부 처리, 막히면 조용히 skip
   ```
-- 실제 반영은 서버 파일 편집 필요(GitHub와 다름). **다음 세션에서 아래를 받아 정확히 패치**:
-  ```bash
-  sed -n '/def alert_job/,/^def [a-zA-Z]/p' ~/stock/stock/scheduler.py
-  tail -40 ~/stock/stock/notifier.py
+- **일괄**(스냅샷 한 번에):
+  ```python
+  import stock_alert_slack as sas
+  sas.notify_moves(snap)                   # 통과분만 한 메시지로
   ```
-  계획: `notifier.py`에 `send_slack_message()` 추가 → `alert_job`에서 텔레그램 옆에 슬랙 전송 + 스냅샷을 `symbol.isdigit()`(국장) 여부와 KRX 장시간으로 필터.
+반영: `systemctl --user restart stock-dashboard` (또는 scheduler 재실행).
+`.env`: `SLACK_BOT_TOKEN` + (선택) `SLACK_ALERT_CHANNEL`(없으면 `SLACK_BRIEFING_CHANNEL` 폴백).
+
+> 남은 서버 작업은 **alert_job 안 텔레그램 전송 지점에 위 import+호출 한 줄 추가**뿐. (구 계획의 `notifier.py send_slack_message()` 신설은 이 모듈로 대체됨. `test_slack_alert.py`는 표시용 미리보기로 계속 사용 가능.)
 
 ## 참고 상수/값
 - Slack 대시보드 채널: `C0BMJENDF62` (`SLACK_BRIEFING_CHANNEL`). 알림 전용 원하면 `SLACK_ALERT_CHANNEL` 추가.
