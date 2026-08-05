@@ -23,17 +23,20 @@ DB_PATH = os.getenv("ALERT_DB_PATH", "alert_state.db")
 KR_STAGES = [-30.0, -40.0, -50.0, -60.0, -70.0]
 KR_STAGE_RATIO = 20  # 단계당 시드 투자 비중 (%)
 
+# 나스닥 분할 매수 단계 (역대 최고가 대비 %)
+NASDAQ_STAGES = [-5.0, -10.0, -15.0, -20.0, -25.0, -30.0, -35.0, -40.0, -45.0, -50.0, -55.0, -60.0]
+
 # 미국 동반 하락 판정: S&P500 ATH 대비 -10% 이상 하락
 US_CRASH_THRESHOLD = -10.0
 
-# TQQQ 1차 구간: -10%부터 1%p 간격 40회 (-10% ~ -49%)
+# TQQQ 1차 구간: -10%부터 1%p 간격 41회 (-10% ~ -50%)
 TQQQ_P1_START = 10
-TQQQ_P1_COUNT = 40
+TQQQ_P1_COUNT = 41
 # TQQQ 2차 구간: -50% 도달 시점 가격 P를 10등분
 TQQQ_P2_TRIGGER_DD = -50.0
 TQQQ_P2_COUNT = 10
 
-TRACKED = ("KOSPI", "KOSDAQ", "S&P 500", "TQQQ")
+TRACKED = ("KOSPI", "KOSDAQ", "S&P 500", "NASDAQ", "TQQQ")
 
 
 class TriggerEngine:
@@ -179,6 +182,21 @@ class TriggerEngine:
                                 f"(기준선 {int(stage)}%)\n"
                                 f"→ 시드 {KR_STAGE_RATIO}% 투자 시점\n"
                                 f"→ {allocation}"),
+                        })
+
+            # ---- 나스닥
+            if "NASDAQ" in dd:
+                for stage in NASDAQ_STAGES:
+                    key = f"NDX{int(stage)}"
+                    if dd["NASDAQ"] <= stage and not self._is_triggered(conn, "NASDAQ", key):
+                        self._mark(conn, "NASDAQ", key, now_str)
+                        events.append({
+                            "symbol": "NASDAQ",
+                            "stage": key,
+                            "message": (
+                                f"🚨 *나스닥(NASDAQ)* 역대 최고가 대비 *{dd['NASDAQ']:.1f}%* 도달 "
+                                f"(기준선 {int(stage)}%)\n"
+                                f"→ 추가 매수 알림"),
                         })
 
             # ---- TQQQ
@@ -415,13 +433,15 @@ class TriggerEngine:
                     "us_crash": us_dd <= US_CRASH_THRESHOLD,
                 }
 
-            for sym in ("KOSPI", "KOSDAQ"):
+            for sym in ("KOSPI", "KOSDAQ", "NASDAQ"):
                 if sym not in dd:
                     continue
                 stages = []
                 next_stage = None
-                for stage in KR_STAGES:
-                    key = f"KR{int(stage)}"
+                stages_list = KR_STAGES if sym in ("KOSPI", "KOSDAQ") else NASDAQ_STAGES
+                prefix = "KR" if sym in ("KOSPI", "KOSDAQ") else "NDX"
+                for stage in stages_list:
+                    key = f"{prefix}{int(stage)}"
                     row = conn.execute(
                         "SELECT triggered_at FROM trigger_state WHERE symbol=? AND stage=?",
                         (sym, key)).fetchone()
@@ -440,7 +460,7 @@ class TriggerEngine:
                     "drawdown": round(dd[sym], 2),
                     "stages": stages,
                     "done": done,
-                    "total": len(KR_STAGES),
+                    "total": len(stages_list),
                     "next_stage": next_stage,
                     "gap_pp": round(dd[sym] - next_stage, 1) if next_stage is not None else None,
                 }
@@ -565,20 +585,20 @@ if __name__ == "__main__":
     print("--- 1) 고점 설정 (알람 없음)")
     ev = engine.check({
         "KOSPI": {"current": 3300}, "KOSDAQ": {"current": 1060},
-        "S&P 500": {"current": 5600}, "TQQQ": {"current": 90}})
+        "S&P 500": {"current": 5600}, "NASDAQ": {"current": 18000}, "TQQQ": {"current": 90}})
     print(f"events: {len(ev)}")
 
-    print("--- 2) 코스피 -32%, TQQQ -13% (S&P500 -12% 동반 하락)")
+    print("--- 2) 코스피 -32%, 나스닥 -12%, TQQQ -13% (S&P500 -12% 동반 하락)")
     ev = engine.check({
         "KOSPI": {"current": 3300 * 0.68}, "KOSDAQ": {"current": 1060 * 0.75},
-        "S&P 500": {"current": 5600 * 0.88}, "TQQQ": {"current": 90 * 0.87}})
+        "S&P 500": {"current": 5600 * 0.88}, "NASDAQ": {"current": 18000 * 0.88}, "TQQQ": {"current": 90 * 0.87}})
     for e in ev:
         print(e["stage"], "|", e["message"].replace("\n", " / "))
 
     print("--- 3) 동일 스냅샷 재체크 (중복 알람 없음)")
     ev = engine.check({
         "KOSPI": {"current": 3300 * 0.68}, "KOSDAQ": {"current": 1060 * 0.75},
-        "S&P 500": {"current": 5600 * 0.88}, "TQQQ": {"current": 90 * 0.87}})
+        "S&P 500": {"current": 5600 * 0.88}, "NASDAQ": {"current": 18000 * 0.88}, "TQQQ": {"current": 90 * 0.87}})
     print(f"events: {len(ev)}")
 
     print("--- 4) TQQQ -55% (2차 구간 진입)")
@@ -589,5 +609,5 @@ if __name__ == "__main__":
     print("--- 5) 상태 조회")
     st = engine.status({
         "KOSPI": {"current": 3300 * 0.68}, "KOSDAQ": {"current": 1060 * 0.75},
-        "S&P 500": {"current": 5600 * 0.88}, "TQQQ": {"current": 90 * 0.45}})
+        "S&P 500": {"current": 5600 * 0.88}, "NASDAQ": {"current": 18000 * 0.88}, "TQQQ": {"current": 90 * 0.45}})
     print(json.dumps(st, indent=2, ensure_ascii=False))

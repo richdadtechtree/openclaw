@@ -33,11 +33,11 @@
 
 ## ⏳ 진행 중 / 다음 할 일 (우선순위 순)
 
-### A. Gemini 백업(fallback) 적용 — ⚠️ **아래 jq 는 이 버전에서 무효(수정 필요)**
+### A. Gemini 백업(fallback) 적용
 GPT 주력 유지 + Gemini 무료 백업(`gemini-flash-lite-latest` → `gemini-flash-latest`).
-> ⚠️ **openclaw 2026.7.1-2 는 `google.api="openai-chat"` 를 거부**한다(2026-08-04 확인: config invalid → 게이트웨이 기동 실패). 실제로 이 값이 openclaw.json 에 남아 restart 가 깨졌고, `jq 'del(.models.providers.google)'` 로 제거해 복구함. **다음에 Gemini 붙일 땐 아래 jq 의 `.api="openai-chat"` 부분을 이 버전 허용값으로 바꿔야 함** — 네이티브 `google-generative-ai`(권장, baseUrl 우회 불필요) 또는 OpenAI-호환이면 `openai-completions`. `openclaw config validate` 로 반드시 선검증 후 restart.
+> 💡 **openclaw 2026.7.1-2 는 `google.api="openai-chat"` 를 거부**하므로 native `google-generative-ai` API 규격을 사용하도록 `jq` 커맨드를 업데이트했습니다. `openclaw config validate` 로 선검증 후 daemon을 restart 하십시오.
 
-서버에서(⚠️ api 값 교체 후 사용):
+서버에서:
 ```bash
 cd ~/.openclaw
 GKEY=$(grep '^GEMINI_API_KEY=' .env | cut -d= -f2-)
@@ -45,11 +45,12 @@ UNIT=~/.config/systemd/user/openclaw-gateway.service
 sed -i '/^Environment=GEMINI_API_KEY=/d' "$UNIT"; sed -i "/^\[Service\]/a Environment=GEMINI_API_KEY=$GKEY" "$UNIT"
 systemctl --user daemon-reload
 cp openclaw.json openclaw.json.bak-fb.$(date +%s)
-jq '.agents.defaults.model.fallbacks=([ (.agents.defaults.model.fallbacks // [])[] | select(startswith("openai/")) ] + ["google/gemini-flash-lite-latest","google/gemini-flash-latest"]) | .agents.defaults.models=((.agents.defaults.models // {}) + {"google/gemini-flash-lite-latest":{},"google/gemini-flash-latest":{}}) | .models.providers.google.api="openai-chat" | .models.providers.google.baseUrl="https://generativelanguage.googleapis.com/v1beta/openai/" | .models.providers.google.models=((.models.providers.google.models // []) + [{"id":"gemini-flash-lite-latest","name":"gemini-flash-lite-latest"},{"id":"gemini-flash-latest","name":"gemini-flash-latest"}] | unique_by(.id)) | .agents.list |= map(if .model then .model.fallbacks=([ (.model.fallbacks // [])[] | select(startswith("openai/")) ] + ["google/gemini-flash-lite-latest","google/gemini-flash-latest"]) else . end)' openclaw.json > /tmp/oc.json && jq empty /tmp/oc.json && mv /tmp/oc.json openclaw.json
+jq '.agents.defaults.model.fallbacks=([ (.agents.defaults.model.fallbacks // [])[] | select(startswith("openai/")) ] + ["google/gemini-flash-lite-latest","google/gemini-flash-latest"]) | .agents.defaults.models=((.agents.defaults.models // {}) + {"google/gemini-flash-lite-latest":{},"google/gemini-flash-latest":{}}) | .models.providers.google.api="google-generative-ai" | del(.models.providers.google.baseUrl) | .models.providers.google.models=((.models.providers.google.models // []) + [{"id":"gemini-flash-lite-latest","name":"gemini-flash-lite-latest"},{"id":"gemini-flash-latest","name":"gemini-flash-latest"}] | unique_by(.id)) | .agents.list |= map(if .model then .model.fallbacks=([ (.model.fallbacks // [])[] | select(startswith("openai/")) ] + ["google/gemini-flash-lite-latest","google/gemini-flash-latest"]) else . end)' openclaw.json > /tmp/oc.json && jq empty /tmp/oc.json && mv /tmp/oc.json openclaw.json
 openclaw daemon restart
+openclaw config validate
 jq '.agents.defaults.model' openclaw.json
 ```
-검증: `curl -s https://generativelanguage.googleapis.com/v1beta/openai/chat/completions -H "Authorization: Bearer $GKEY" -H "Content-Type: application/json" -d '{"model":"gemini-flash-latest","messages":[{"role":"user","content":"hi"}]}'` → `choices` 오면 정상.
+검증: `curl -H "x-goog-api-key: $GKEY" https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent -H "Content-Type: application/json" -d '{"contents": [{"parts":[{"text": "Explain quantum computing in one sentence."}]}]}'` -> 정상 응답 확인.
 
 ### B. 텔레그램 15:30~40 "지수 브리핑"(대시보드 캡처) 끄기 — 요청됨
 `stock/scheduler.py`의 `daily_job` add_job 블록을 주석 처리(파이썬 패처 준비됨). 슬랙 15:40·관심종목 알림은 유지.

@@ -35,7 +35,7 @@ def build_summary_text():
     lines.append("")
     lines.append("🔔 *투자 타이밍*")
 
-    for key in ("KOSPI", "KOSDAQ"):
+    for key in ("KOSPI", "KOSDAQ", "NASDAQ"):
         s = status.get(key)
         if not s:
             continue
