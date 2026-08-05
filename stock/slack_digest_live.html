@@ -112,6 +112,8 @@ const CATS={
   "stock-briefing":{label:"주식 브리핑",color:"var(--c-brief)"},
   "custom-alert":{label:"급등락",color:"var(--c-alert)"},
   "sidecar":{label:"사이드카",color:"var(--c-side)"},
+  "bot":{label:"뚜떵또 답변",color:"var(--accent-bright)"},
+  "user":{label:"사용자 질문",color:"var(--c-other)"},
   "unknown":{label:"기타",color:"var(--c-other)"},
 };
 const cat=s=>CATS[s]||CATS.unknown;
@@ -150,7 +152,7 @@ function render(){
   const counts={};msgs.forEach(m=>{const k=CATS[m.source]?m.source:"unknown";counts[k]=(counts[k]||0)+1});
   const tb=document.getElementById("toolbar");tb.innerHTML="";
   tb.appendChild(chip("all","전체",msgs.length,null));
-  ["news","stock-briefing","custom-alert","sidecar","unknown"].forEach(k=>{if(counts[k])tb.appendChild(chip(k,cat(k).label,counts[k],cat(k).color))});
+  ["news","stock-briefing","custom-alert","sidecar","bot","user","unknown"].forEach(k=>{if(counts[k])tb.appendChild(chip(k,cat(k).label,counts[k],cat(k).color))});
   syncChips();
   const feed=document.getElementById("feed");feed.innerHTML="";
   if(msgs.length){const bd=document.createElement("div");bd.className="daybreak";bd.textContent="시간순";feed.appendChild(bd)}

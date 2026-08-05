@@ -39,9 +39,73 @@ except Exception:
 _SLACK_LOG_DIR = os.path.expanduser("~/.openclaw/slack_logs")
 
 
+def _fetch_slack_history_api(date_str):
+    import requests
+    from datetime import datetime, timezone, timedelta
+    try:
+        token = os.getenv("SLACK_BOT_TOKEN")
+        channel = os.getenv("SLACK_ALERT_CHANNEL") or os.getenv("SLACK_BRIEFING_CHANNEL")
+        if not token or not channel:
+            return []
+        
+        # Start and end of the day in KST (UTC+9)
+        dt_start = datetime.strptime(date_str, "%Y-%m-%d")
+        kst_tz = timezone(timedelta(hours=9))
+        dt_start_kst = datetime(dt_start.year, dt_start.month, dt_start.day, tzinfo=kst_tz)
+        ts_start = dt_start_kst.timestamp()
+        ts_end = ts_start + 24 * 3600
+        
+        headers = {"Authorization": f"Bearer {token}"}
+        params = {
+            "channel": channel,
+            "oldest": str(ts_start),
+            "latest": str(ts_end),
+            "limit": 200
+        }
+        res = requests.get("https://slack.com/api/conversations.history", headers=headers, params=params, timeout=15).json()
+        if not res.get("ok"):
+            return []
+            
+        messages = []
+        for msg in reversed(res.get("messages", [])):
+            ts_val = float(msg.get("ts", 0))
+            dt = datetime.fromtimestamp(ts_val, kst_tz)
+            ts_iso = dt.isoformat(timespec="seconds")
+            text = msg.get("text", "")
+            
+            bot_id = msg.get("bot_id")
+            source = "unknown"
+            if bot_id:
+                if "투자 타이밍 알림" in text:
+                    source = "index-alert"
+                elif "시장 변동성 경보" in text:
+                    source = "sidecar"
+                elif "관심 종목" in text:
+                    source = "custom-alert"
+                elif "신문 브리핑" in text:
+                    source = "news"
+                elif "시장 브리핑" in text or "주식 브리핑" in text:
+                    source = "stock-briefing"
+                else:
+                    source = "bot"
+            else:
+                source = "user"
+                
+            messages.append({
+                "ts": ts_iso,
+                "source": source,
+                "kind": "text",
+                "text": text
+            })
+        return messages
+    except Exception as e:
+        print(f"[Slack API History] Fetch failed: {e}")
+        return []
+
+
 def _read_slack_log(date):
     path = os.path.join(_SLACK_LOG_DIR, "%s.jsonl" % date)
-    msgs = []
+    local_msgs = []
     if os.path.isfile(path):
         with open(path, encoding="utf-8") as f:
             for line in f:
@@ -52,10 +116,26 @@ def _read_slack_log(date):
                     r = _json.loads(line)
                 except Exception:
                     continue
-                msgs.append({"ts": r.get("ts", ""), "source": r.get("source", "unknown"),
+                local_msgs.append({"ts": r.get("ts", ""), "source": r.get("source", "unknown"),
                              "kind": r.get("kind", "text"), "text": r.get("text", "")})
-    msgs.sort(key=lambda m: m.get("ts", ""))
-    return msgs
+    
+    api_msgs = _fetch_slack_history_api(date)
+    seen = set()
+    merged = []
+    
+    for m in api_msgs:
+        key = (m["ts"][:16], m["text"][:50])
+        seen.add(key)
+        merged.append(m)
+        
+    for m in local_msgs:
+        key = (m["ts"][:16], m["text"][:50])
+        if key not in seen:
+            seen.add(key)
+            merged.append(m)
+            
+    merged.sort(key=lambda m: m["ts"])
+    return merged
 
 
 @app.get("/slack", response_class=HTMLResponse)
