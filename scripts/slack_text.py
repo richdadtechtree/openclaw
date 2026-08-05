@@ -32,7 +32,7 @@ def load_env():
 
 load_env()
 TOKEN = os.getenv("SLACK_BOT_TOKEN")
-CHANNEL = os.getenv("SLACK_NEWS_CHANNEL") or os.getenv("SLACK_BRIEFING_CHANNEL")
+CHANNEL = os.getenv("SLACK_NEWS_CHANNEL")
 
 
 def md_to_mrkdwn(md):
