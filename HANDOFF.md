@@ -25,6 +25,12 @@
 6. **stock 관심종목 급등락 알림**: `scheduler.py alert_job`(약 10분) → 텔레그램 `briefing-bot`. 2% 단위. AI 미사용, 정상.
 7. **관심종목 알림 슬랙 확장(+시간대 게이팅)**: 텔레그램 그대로 두고 **슬랙에도** 전송. 국장(숫자코드)=KRX 장중만, 미장=24h. `scripts/stock_alert_slack.py`(`notify_events`) + `patch_scheduler_slack.py` 로 서버 반영·검증 완료. (상세: 아래 C)
 
+## 🗞️ 슬랙 데일리 다이제스트 (뷰어)
+슬랙 접속 불가 환경에서 '그날 시스템이 슬랙에 보낸 내용'을 claude.ai 아티팩트로 읽는 기능.
+- **로그 수집**: `scripts/slack_log.py`(+`stock/slack_log.py`) `log_slack()` → `~/.openclaw/slack_logs/YYYY-MM-DD.jsonl`(KST, gitignored). 훅: 신문(`slack_text`), 주식 브리핑(`slack_briefing`), 급등락/사이드카(`stock_alert_slack.send_slack` source 태깅). **시스템 발신분만**(뚜떵또 대화·사용자 메시지는 미포함 — 원하면 Slack API 읽기 권한 추가 필요).
+- **뷰어**: claude.ai 아티팩트(시간축 원장 타임라인, 카테고리 필터, 라이트/다크). 현재 샘플 데이터로 게시됨.
+- **실데이터 갱신 워크플로**: 서버에서 `python3 ~/.openclaw/scripts/slack_digest.py [날짜]` → 출력 JSON 한 줄을 Claude 에게 붙이면 아티팩트를 그날 실데이터로 갱신(같은 URL 유지).
+
 ## ⏳ 진행 중 / 다음 할 일 (우선순위 순)
 
 ### A. Gemini 백업(fallback) 적용 — ⚠️ **아래 jq 는 이 버전에서 무효(수정 필요)**
