@@ -87,6 +87,11 @@ def alert_job():
             if events:
                 message = format_events(events)
                 sent = send_telegram_message(message)
+                try:
+                    import stock_alert_slack as sas
+                    sas.send_slack(message, source="index-alert")
+                except Exception as _e:
+                    print(f"[Warn] Slack index alert failed: {_e}")
                 print(f"[{datetime.now()}] {len(events)} index trigger(s) fired. Telegram: {'SENT' if sent else 'FAILED'}")
             else:
                 print(f"[{datetime.now()}] No new index triggers.")
