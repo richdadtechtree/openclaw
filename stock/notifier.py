@@ -19,7 +19,6 @@ CHAT_ID = os.getenv("BRIEFING_CHAT_ID") or os.getenv("TELEGRAM_CHAT_ID")
 def send_telegram_message(text, parse_mode="Markdown"):
     """텔레그램 텍스트 메시지 전송. 성공 시 True."""
     if not BOT_TOKEN or not CHAT_ID:
-        print("[Error] TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing in .env.")
         return False
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     try:
@@ -41,7 +40,6 @@ def send_telegram_message(text, parse_mode="Markdown"):
 def send_telegram_photo(photo_path, caption="", parse_mode="Markdown"):
     """텔레그램 사진 전송. 성공 시 True."""
     if not BOT_TOKEN or not CHAT_ID:
-        print("[Error] TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing in .env.")
         return False
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
     try:
