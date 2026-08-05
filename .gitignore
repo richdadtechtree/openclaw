@@ -56,3 +56,6 @@ stock/*.db
 tools/
 workspace-attestations/
 *.migrated
+
+# 슬랙 발신 로그 (슬랙 뷰어용 원천 데이터 — 서버 전용, 내용 포함)
+slack_logs/

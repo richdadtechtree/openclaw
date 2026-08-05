@@ -71,6 +71,12 @@ def send_slack_photo(path, caption=""):
             timeout=30,
         ).json()
         if d3.get("ok"):
+            try:
+                from slack_log import log_slack
+                log_slack((caption or filename) + "\n[대시보드 이미지]",
+                          source="stock-briefing", channel=channel, kind="image")
+            except Exception:
+                pass
             return True
         print(f"[Error] completeUploadExternal 실패: {d3}")
     except Exception as e:

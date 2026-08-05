@@ -123,8 +123,8 @@ def alert_allowed(symbol, now=None):
 
 
 # ── 슬랙 전송 ────────────────────────────────────────────────────────────────
-def send_slack(text):
-    """슬랙 채널에 텍스트 전송. 성공 시 True."""
+def send_slack(text, source="stock"):
+    """슬랙 채널에 텍스트 전송. 성공 시 True. (성공분은 slack_log 로 기록)"""
     token, channel = _token(), _channel()
     if not token or not channel:
         print("[stock_alert_slack] SLACK_BOT_TOKEN 또는 채널(.env)이 없습니다.")
@@ -138,9 +138,16 @@ def send_slack(text):
                   "unfurl_links": False, "unfurl_media": False},
             timeout=15,
         ).json()
-        if not r.get("ok"):
+        ok = bool(r.get("ok"))
+        if not ok:
             print("[stock_alert_slack] slack 오류:", r)
-        return bool(r.get("ok"))
+        else:
+            try:
+                from slack_log import log_slack
+                log_slack(text, source=source, channel=channel)
+            except Exception:
+                pass
+        return ok
     except Exception as e:  # pragma: no cover - 네트워크 예외
         print("[stock_alert_slack] slack 예외:", e)
         return False
@@ -167,7 +174,7 @@ def notify_events(events, now=None):
     now = now or now_kst()
     header = f"📢 *관심 종목 변동 알림* ({now:%Y-%m-%d %H:%M})"
     body = "\n\n".join(e["message"] for e in kept)
-    return len(kept) if send_slack(header + "\n\n" + body) else 0
+    return len(kept) if send_slack(header + "\n\n" + body, source="custom-alert") else 0
 
 
 # ── 미리보기 전용(스냅샷 기반) — alert_job 에는 쓰지 말 것 ────────────────────

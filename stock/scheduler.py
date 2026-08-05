@@ -99,7 +99,7 @@ def alert_job():
                     sent = send_telegram_message(sidecar_message)
                     try:
                         import stock_alert_slack as sas
-                        sas.send_slack(sidecar_message)   # 사이드카는 장중 발동 → 슬랙에도 전송
+                        sas.send_slack(sidecar_message, source="sidecar")   # 사이드카는 장중 발동 → 슬랙에도 전송
                     except Exception as _e:
                         print(f"[Warn] Slack sidecar alert failed: {_e}")
                     print(f"[{datetime.now()}] {len(sidecar_events)} sidecar trigger(s) fired. Telegram: {'SENT' if sent else 'FAILED'}")

@@ -99,6 +99,12 @@ def main():
         if not ok:
             print(f"[Error] 슬랙 전송 실패: {r}")
             ok_all = False
+        else:
+            try:
+                from slack_log import log_slack
+                log_slack(prefix + p, source="news", channel=CHANNEL)
+            except Exception:
+                pass
     print("✅ 슬랙 전송 성공!" if ok_all else "❌ 슬랙 전송 실패")
     sys.exit(0 if ok_all else 1)
 
