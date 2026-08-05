@@ -50,7 +50,7 @@ def _fetch_slack_history_api(date_str):
         # Configure channels to pull from
         news_ch = os.getenv("SLACK_NEWS_CHANNEL")
         alert_ch = os.getenv("SLACK_ALERT_CHANNEL")
-        brief_ch = os.getenv("SLACK_BRIEFING_CHANNEL")
+        brief_ch = os.getenv("SLACK_STOCK_CHANNEL") or os.getenv("SLACK_BRIEFING_CHANNEL")
         
         channels = []
         if news_ch:
@@ -134,7 +134,7 @@ def _read_slack_log(date):
     
     news_ch = os.getenv("SLACK_NEWS_CHANNEL")
     alert_ch = os.getenv("SLACK_ALERT_CHANNEL")
-    brief_ch = os.getenv("SLACK_BRIEFING_CHANNEL")
+    brief_ch = os.getenv("SLACK_STOCK_CHANNEL") or os.getenv("SLACK_BRIEFING_CHANNEL")
     
     if os.path.isfile(path):
         with open(path, encoding="utf-8") as f:

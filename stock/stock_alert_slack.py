@@ -82,7 +82,7 @@ def _token():
 
 
 def _channel():
-    return os.getenv("SLACK_ALERT_CHANNEL") or os.getenv("SLACK_BRIEFING_CHANNEL")
+    return os.getenv("SLACK_ALERT_CHANNEL") or os.getenv("SLACK_STOCK_CHANNEL") or os.getenv("SLACK_BRIEFING_CHANNEL")
 
 
 def _step():
