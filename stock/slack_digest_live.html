@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>슬랙 데일리 다이제스트</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg:#eef0f4; --surface:#fff; --ink:#191c24; --muted:#5c6675; --faint:#8a93a3;
+    --line:#dfe3ea; --line-strong:#cfd5df; --accent:#2f4272; --accent-bright:#3a5bd0;
+    --c-news:#45589e; --c-brief:#0d7f72; --c-alert:#a86413; --c-side:#bd3529; --c-other:#6a7180;
+    --live:#12a150;
+    --shadow:0 1px 2px rgba(20,26,40,.05),0 8px 24px -14px rgba(20,26,40,.18);
+    --sans:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR","Segoe UI",Roboto,sans-serif;
+    --mono:"SF Mono","JetBrains Mono","D2Coding",ui-monospace,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#0e1118; --surface:#161a23; --ink:#e7eaf1; --muted:#9aa3b4; --faint:#6f7889;
+    --line:#242a36; --line-strong:#313848; --accent:#9fb2ef; --accent-bright:#7f9bf5;
+    --c-news:#8aa0f0; --c-brief:#33c3af; --c-alert:#e0a552; --c-side:#f0776d; --c-other:#8b93a4;
+    --live:#34d178; --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px -18px rgba(0,0,0,.7);
+  }}
+  :root[data-theme="light"]{
+    --bg:#eef0f4;--surface:#fff;--ink:#191c24;--muted:#5c6675;--faint:#8a93a3;--line:#dfe3ea;--line-strong:#cfd5df;
+    --accent:#2f4272;--accent-bright:#3a5bd0;--c-news:#45589e;--c-brief:#0d7f72;--c-alert:#a86413;--c-side:#bd3529;--c-other:#6a7180;--live:#12a150;
+    --shadow:0 1px 2px rgba(20,26,40,.05),0 8px 24px -14px rgba(20,26,40,.18);
+  }
+  :root[data-theme="dark"]{
+    --bg:#0e1118;--surface:#161a23;--ink:#e7eaf1;--muted:#9aa3b4;--faint:#6f7889;--line:#242a36;--line-strong:#313848;
+    --accent:#9fb2ef;--accent-bright:#7f9bf5;--c-news:#8aa0f0;--c-brief:#33c3af;--c-alert:#e0a552;--c-side:#f0776d;--c-other:#8b93a4;--live:#34d178;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px -18px rgba(0,0,0,.7);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.65;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  .wrap{max-width:720px;margin:0 auto;padding:0 20px 96px}
+  header.mast{padding:40px 0 18px}
+  .eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--faint);font-weight:600;display:flex;align-items:center;gap:10px}
+  .eyebrow .live{display:inline-flex;align-items:center;gap:6px;color:var(--live);letter-spacing:.08em}
+  .eyebrow .live .pulse{width:8px;height:8px;border-radius:50%;background:var(--live)}
+  .eyebrow::after{content:"";flex:1;height:1px;background:var(--line-strong)}
+  h1.date{font-size:clamp(27px,6vw,38px);font-weight:800;letter-spacing:-.02em;margin:14px 0 6px;line-height:1.12;text-wrap:balance;font-variant-numeric:tabular-nums}
+  .lede{color:var(--muted);font-size:15px;margin:0 0 16px;max-width:52ch}
+  .datebar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+  .datebar input[type=date]{font-family:var(--mono);font-size:13px;color:var(--ink);background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;padding:6px 10px}
+  .btn{font-family:var(--sans);font-size:13px;font-weight:600;color:var(--muted);background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;padding:6px 12px;cursor:pointer}
+  .btn:hover{color:var(--ink);border-color:var(--accent)}
+  .btn:focus-visible,input:focus-visible{outline:2px solid var(--accent-bright);outline-offset:2px}
+  .updated{font-family:var(--mono);font-size:11.5px;color:var(--faint);margin-left:auto}
+
+  .toolbar{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);margin:14px -20px 0;padding:12px 20px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .chip{font-size:13px;font-weight:600;color:var(--muted);background:var(--surface);border:1px solid var(--line-strong);border-radius:999px;padding:6px 12px 6px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:border-color .15s,color .15s,background .15s;user-select:none}
+  .chip .dot{width:8px;height:8px;border-radius:50%;background:var(--dot,var(--c-other));flex:none}
+  .chip .n{font-family:var(--mono);font-size:11.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+  .chip[aria-pressed="true"]{color:var(--ink);border-color:var(--dot,var(--accent));background:color-mix(in srgb,var(--dot,var(--accent)) 9%,var(--surface))}
+  .chip[aria-pressed="true"] .n{color:var(--dot,var(--accent))}
+  .chip:focus-visible{outline:2px solid var(--accent-bright);outline-offset:2px}
+  .chip.all .dot{background:linear-gradient(120deg,var(--c-news),var(--c-brief),var(--c-alert),var(--c-side))}
+
+  .feed{margin-top:26px;position:relative}
+  .entry{position:relative;padding:0 0 26px 78px}
+  .entry::before{content:"";position:absolute;left:63px;top:6px;bottom:-6px;width:2px;background:var(--line-strong)}
+  .entry:last-child::before{display:none}
+  .entry .node{position:absolute;left:57px;top:4px;width:14px;height:14px;border-radius:50%;background:var(--surface);border:2.5px solid var(--dot,var(--c-other));z-index:1}
+  .entry .time{position:absolute;left:0;top:1px;width:46px;text-align:right;font-family:var(--mono);font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:14px 16px 15px;overflow:hidden}
+  .card .meta{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .tag{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--dot);padding:2px 7px;border-radius:5px;background:color-mix(in srgb,var(--dot) 12%,transparent)}
+  .kind{font-family:var(--mono);font-size:11px;color:var(--faint)}
+  .body{font-size:15.5px;line-height:1.72;word-break:break-word}
+  .body strong{font-weight:700}
+  .body em{font-style:italic;color:var(--muted)}
+  .body code{font-family:var(--mono);font-size:.9em;background:color-mix(in srgb,var(--muted) 14%,transparent);padding:1px 5px;border-radius:4px}
+  .body a{color:var(--accent-bright);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent-bright) 40%,transparent)}
+  .body .imgnote{display:inline-flex;align-items:center;gap:6px;margin-top:8px;font-family:var(--mono);font-size:12px;color:var(--faint);border:1px dashed var(--line-strong);border-radius:6px;padding:4px 9px}
+  .daybreak{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin:4px 0 20px 78px}
+  .empty{text-align:center;color:var(--muted);padding:56px 20px}
+  .empty .big{font-size:17px;color:var(--ink);font-weight:700;margin-bottom:6px}
+  footer{margin-top:40px;padding-top:18px;border-top:1px solid var(--line);font-family:var(--mono);font-size:11.5px;color:var(--faint);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  @media (max-width:520px){.entry{padding-left:66px}.entry .time{width:40px;font-size:12px}.entry .node{left:47px}.entry::before{left:53px}.daybreak{margin-left:66px}}
+  @media (prefers-reduced-motion:no-preference){
+    .entry{animation:rise .4s ease both}
+    @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+    .pulse{animation:blink 2s ease-in-out infinite}
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="mast">
+    <div class="eyebrow"><span>Daily Slack Digest</span><span class="live"><span class="pulse"></span>LIVE</span></div>
+    <h1 class="date" id="date">불러오는 중…</h1>
+    <p class="lede">슬랙에 접속하지 않아도, 그날 채널에 올라온 브리핑과 알림을 시간순으로 한눈에.</p>
+    <div class="datebar">
+      <input type="date" id="datepick" aria-label="날짜 선택">
+      <button class="btn" id="today">오늘</button>
+      <span class="updated" id="updated"></span>
+    </div>
+  </header>
+  <div class="toolbar" id="toolbar"></div>
+  <main class="feed" id="feed"></main>
+  <footer>
+    <span id="foot-count">—</span>
+    <span>시스템 발신 메시지 기준 · 20초마다 자동 갱신 · KST</span>
+  </footer>
+</div>
+
+<script>
+const CATS={
+  "news":{label:"신문",color:"var(--c-news)"},
+  "stock-briefing":{label:"주식 브리핑",color:"var(--c-brief)"},
+  "custom-alert":{label:"급등락",color:"var(--c-alert)"},
+  "sidecar":{label:"사이드카",color:"var(--c-side)"},
+  "unknown":{label:"기타",color:"var(--c-other)"},
+};
+const cat=s=>CATS[s]||CATS.unknown;
+function esc(s){return s.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))}
+function mrkdwn(raw){
+  let o=esc(raw);
+  o=o.replace(/&lt;(https?:\/\/[^|&]+)\|([^&>]+)&gt;/g,'<a href="$1" target="_blank" rel="noopener noreferrer">$2</a>');
+  o=o.replace(/&lt;(https?:\/\/[^&>]+)&gt;/g,'<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+  o=o.replace(/`([^`]+)`/g,"<code>$1</code>");
+  o=o.replace(/(^|[\s(])\*(?!\s)([^*\n]+?)\*(?=[\s).,!?]|$)/g,"$1<strong>$2</strong>");
+  o=o.replace(/(^|[\s(])_(?!\s)([^_\n]+?)_(?=[\s).,!?]|$)/g,"$1<em>$2</em>");
+  o=o.replace(/\[대시보드 이미지\]/g,'<span class="imgnote">🖼 대시보드 이미지 (원본은 슬랙)</span>');
+  return o.replace(/\n/g,"<br>");
+}
+const hhmm=iso=>{const m=(iso||"").match(/T(\d{2}):(\d{2})/);return m?`${m[1]}:${m[2]}`:""};
+function krDate(d){const[y,mo,da]=d.split("-").map(Number);const w=["일","월","화","수","목","금","토"][new Date(Date.UTC(y,mo-1,da)).getUTCDay()];return `${y}년 ${mo}월 ${da}일 (${w})`}
+function todayKST(){const n=new Date(Date.now()+9*3600*1000);return n.toISOString().slice(0,10)}
+
+const state={date:todayKST(),active:new Set(),data:{date:todayKST(),messages:[]}};
+
+async function load(){
+  try{
+    const r=await fetch(`/slack/data?date=${state.date}`,{cache:"no-store"});
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    state.data=await r.json();
+    document.getElementById("updated").textContent="마지막 갱신 "+new Date().toTimeString().slice(0,8);
+  }catch(e){
+    document.getElementById("updated").textContent="갱신 실패 — 재시도 중";
+  }
+  render();
+}
+function render(){
+  const msgs=[...(state.data.messages||[])].sort((a,b)=>(a.ts||"").localeCompare(b.ts||""));
+  document.getElementById("date").textContent=krDate(state.data.date||state.date);
+  document.getElementById("datepick").value=state.data.date||state.date;
+  const counts={};msgs.forEach(m=>{const k=CATS[m.source]?m.source:"unknown";counts[k]=(counts[k]||0)+1});
+  const tb=document.getElementById("toolbar");tb.innerHTML="";
+  tb.appendChild(chip("all","전체",msgs.length,null));
+  ["news","stock-briefing","custom-alert","sidecar","unknown"].forEach(k=>{if(counts[k])tb.appendChild(chip(k,cat(k).label,counts[k],cat(k).color))});
+  syncChips();
+  const feed=document.getElementById("feed");feed.innerHTML="";
+  if(msgs.length){const bd=document.createElement("div");bd.className="daybreak";bd.textContent="시간순";feed.appendChild(bd)}
+  const shown=msgs.filter(m=>state.active.size===0||state.active.has(CATS[m.source]?m.source:"unknown"));
+  if(!shown.length){
+    feed.insertAdjacentHTML("beforeend",'<div class="empty"><div class="big">아직 표시할 메시지가 없어요</div>이 날짜에 시스템이 슬랙으로 보낸 브리핑·알림이 없습니다.</div>');
+  }
+  shown.forEach(m=>{
+    const c=cat(m.source);const el=document.createElement("article");el.className="entry";el.style.setProperty("--dot",c.color);
+    el.innerHTML=`<span class="time">${hhmm(m.ts)}</span><span class="node"></span>`+
+      `<div class="card"><div class="meta"><span class="tag">${c.label}</span>`+
+      (m.kind==="image"?`<span class="kind">이미지</span>`:``)+`</div>`+
+      `<div class="body">${mrkdwn(m.text||"")}</div></div>`;
+    feed.appendChild(el);
+  });
+  document.getElementById("foot-count").textContent=`메시지 ${msgs.length} · 표시 ${shown.length}`;
+}
+function chip(key,label,n,color){
+  const b=document.createElement("button");b.className="chip"+(key==="all"?" all":"");b.dataset.key=key;
+  if(color)b.style.setProperty("--dot",color);
+  b.innerHTML=`<span class="dot"></span><span>${label}</span><span class="n">${n}</span>`;
+  b.onclick=()=>{if(key==="all")state.active.clear();else if(state.active.has(key))state.active.delete(key);else state.active.add(key);render()};
+  return b;
+}
+function syncChips(){document.querySelectorAll(".chip").forEach(ch=>{const k=ch.dataset.key;const on=k==="all"?state.active.size===0:state.active.has(k);ch.setAttribute("aria-pressed",on?"true":"false")})}
+
+document.getElementById("datepick").addEventListener("change",e=>{state.date=e.target.value;load()});
+document.getElementById("today").addEventListener("click",()=>{state.date=todayKST();load()});
+
+load();
+setInterval(()=>{ if(state.date===todayKST()) load(); },20000); // 오늘 볼 때만 자동 갱신
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden) load(); });
+</script>
+</body>
+</html>

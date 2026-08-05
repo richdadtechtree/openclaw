@@ -25,6 +25,63 @@ os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
+# ── 슬랙 데일리 다이제스트 (실시간 뷰어) ──────────────────────────────────────
+# 슬랙 접속 불가 환경에서 '그날 시스템이 슬랙에 보낸 내용'을 웹으로 실시간 열람.
+# 데이터 출처: slack_log.py 가 쌓는 ~/.openclaw/slack_logs/<날짜>.jsonl
+import json as _json
+
+try:
+    from zoneinfo import ZoneInfo as _ZoneInfo
+    _KST = _ZoneInfo("Asia/Seoul")
+except Exception:
+    _KST = None
+
+_SLACK_LOG_DIR = os.path.expanduser("~/.openclaw/slack_logs")
+
+
+def _read_slack_log(date):
+    path = os.path.join(_SLACK_LOG_DIR, "%s.jsonl" % date)
+    msgs = []
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    r = _json.loads(line)
+                except Exception:
+                    continue
+                msgs.append({"ts": r.get("ts", ""), "source": r.get("source", "unknown"),
+                             "kind": r.get("kind", "text"), "text": r.get("text", "")})
+    msgs.sort(key=lambda m: m.get("ts", ""))
+    return msgs
+
+
+@app.get("/slack", response_class=HTMLResponse)
+def slack_view():
+    """슬랙 데일리 다이제스트 실시간 뷰어 페이지."""
+    try:
+        p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "slack_digest_live.html")
+        with open(p, encoding="utf-8") as f:
+            return HTMLResponse(f.read())
+    except Exception as e:
+        return HTMLResponse("<h1>slack 뷰어 로드 실패</h1><pre>%s</pre>" % e, status_code=500)
+
+
+@app.get("/slack/data")
+def slack_data(date: str = ""):
+    """그날 슬랙 발신 로그 JSON. date 미지정 시 오늘(KST)."""
+    if not date:
+        now = _dt_now()
+        date = now.strftime("%Y-%m-%d")
+    return JSONResponse({"date": date, "messages": _read_slack_log(date)})
+
+
+def _dt_now():
+    return datetime.now(_KST) if _KST else datetime.now()
+
+
 @app.on_event("startup")
 def startup_event():
     # Load historical ATH values in a background thread

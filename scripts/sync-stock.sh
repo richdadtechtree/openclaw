@@ -43,6 +43,7 @@ fi
 CHANGES="$(rsync -rcim \
   --include='*/' \
   --include='*.py' \
+  --include='*.html' \
   --exclude='*' \
   "$SRC"/ "$DST"/ 2>&1)"
 rc=$?
