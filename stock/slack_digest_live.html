@@ -77,6 +77,33 @@
   .empty{text-align:center;color:var(--muted);padding:56px 20px}
   .empty .big{font-size:17px;color:var(--ink);font-weight:700;margin-bottom:6px}
   footer{margin-top:40px;padding-top:18px;border-top:1px solid var(--line);font-family:var(--mono);font-size:11.5px;color:var(--faint);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .room-selector {
+    display: flex;
+    gap: 4px;
+    margin-top: 20px;
+    border-bottom: 2px solid var(--line);
+    padding-bottom: 1px;
+  }
+  .room-tab {
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--muted);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 8px 16px;
+    cursor: pointer;
+    margin-bottom: -2px;
+    transition: color .2s, border-color .2s;
+  }
+  .room-tab:hover {
+    color: var(--ink);
+  }
+  .room-tab.active {
+    color: var(--accent-bright);
+    border-bottom-color: var(--accent-bright);
+  }
   @media (max-width:520px){.entry{padding-left:66px}.entry .time{width:40px;font-size:12px}.entry .node{left:47px}.entry::before{left:53px}.daybreak{margin-left:66px}}
   @media (prefers-reduced-motion:no-preference){
     .entry{animation:rise .4s ease both}
@@ -96,6 +123,11 @@
       <input type="date" id="datepick" aria-label="날짜 선택">
       <button class="btn" id="today">오늘</button>
       <span class="updated" id="updated"></span>
+    </div>
+    <div class="room-selector">
+      <button class="room-tab active" data-room="all">전체 대화방</button>
+      <button class="room-tab" data-room="stock">📈 주식 브리핑 방</button>
+      <button class="room-tab" data-room="news">📰 신문 브리핑 방</button>
     </div>
   </header>
   <div class="toolbar" id="toolbar"></div>
@@ -132,7 +164,7 @@ const hhmm=iso=>{const m=(iso||"").match(/T(\d{2}):(\d{2})/);return m?`${m[1]}:$
 function krDate(d){const[y,mo,da]=d.split("-").map(Number);const w=["일","월","화","수","목","금","토"][new Date(Date.UTC(y,mo-1,da)).getUTCDay()];return `${y}년 ${mo}월 ${da}일 (${w})`}
 function todayKST(){const n=new Date(Date.now()+9*3600*1000);return n.toISOString().slice(0,10)}
 
-const state={date:todayKST(),active:new Set(),data:{date:todayKST(),messages:[]}};
+const state={date:todayKST(),room:"all",active:new Set(),data:{date:todayKST(),messages:[]}};
 
 async function load(){
   try{
@@ -149,16 +181,21 @@ function render(){
   const msgs=[...(state.data.messages||[])].sort((a,b)=>(a.ts||"").localeCompare(b.ts||""));
   document.getElementById("date").textContent=krDate(state.data.date||state.date);
   document.getElementById("datepick").value=state.data.date||state.date;
-  const counts={};msgs.forEach(m=>{const k=CATS[m.source]?m.source:"unknown";counts[k]=(counts[k]||0)+1});
+  
+  // Filter messages by room first
+  const activeRoom = state.room || "all";
+  const filteredByRoom = msgs.filter(m => activeRoom === "all" || m.room === activeRoom);
+
+  const counts={};filteredByRoom.forEach(m=>{const k=CATS[m.source]?m.source:"unknown";counts[k]=(counts[k]||0)+1});
   const tb=document.getElementById("toolbar");tb.innerHTML="";
-  tb.appendChild(chip("all","전체",msgs.length,null));
+  tb.appendChild(chip("all","전체",filteredByRoom.length,null));
   ["news","stock-briefing","custom-alert","sidecar","bot","user","unknown"].forEach(k=>{if(counts[k])tb.appendChild(chip(k,cat(k).label,counts[k],cat(k).color))});
   syncChips();
   const feed=document.getElementById("feed");feed.innerHTML="";
-  if(msgs.length){const bd=document.createElement("div");bd.className="daybreak";bd.textContent="시간순";feed.appendChild(bd)}
-  const shown=msgs.filter(m=>state.active.size===0||state.active.has(CATS[m.source]?m.source:"unknown"));
+  if(filteredByRoom.length){const bd=document.createElement("div");bd.className="daybreak";bd.textContent="시간순";feed.appendChild(bd)}
+  const shown=filteredByRoom.filter(m=>state.active.size===0||state.active.has(CATS[m.source]?m.source:"unknown"));
   if(!shown.length){
-    feed.insertAdjacentHTML("beforeend",'<div class="empty"><div class="big">아직 표시할 메시지가 없어요</div>이 날짜에 시스템이 슬랙으로 보낸 브리핑·알림이 없습니다.</div>');
+    feed.insertAdjacentHTML("beforeend",'<div class="empty"><div class="big">아직 표시할 메시지가 없어요</div>이 대화방/날짜에 시스템이 슬랙으로 보낸 브리핑·알림이 없습니다.</div>');
   }
   shown.forEach(m=>{
     const c=cat(m.source);const el=document.createElement("article");el.className="entry";el.style.setProperty("--dot",c.color);
@@ -168,7 +205,7 @@ function render(){
       `<div class="body">${mrkdwn(m.text||"")}</div></div>`;
     feed.appendChild(el);
   });
-  document.getElementById("foot-count").textContent=`메시지 ${msgs.length} · 표시 ${shown.length}`;
+  document.getElementById("foot-count").textContent=`메시지 ${filteredByRoom.length} · 표시 ${shown.length}`;
 }
 function chip(key,label,n,color){
   const b=document.createElement("button");b.className="chip"+(key==="all"?" all":"");b.dataset.key=key;
@@ -181,6 +218,17 @@ function syncChips(){document.querySelectorAll(".chip").forEach(ch=>{const k=ch.
 
 document.getElementById("datepick").addEventListener("change",e=>{state.date=e.target.value;load()});
 document.getElementById("today").addEventListener("click",()=>{state.date=todayKST();load()});
+
+// Handle room selector tabs
+document.querySelectorAll(".room-tab").forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll(".room-tab").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+    state.room = tab.dataset.room;
+    state.active.clear(); // Clear category filters when switching rooms
+    render();
+  };
+});
 
 load();
 setInterval(()=>{ if(state.date===todayKST()) load(); },20000); // 오늘 볼 때만 자동 갱신

@@ -31,10 +31,32 @@ def _fetch_slack_history_api(date_str):
     from datetime import timezone, timedelta
     try:
         token = os.getenv("SLACK_BOT_TOKEN")
-        channel = os.getenv("SLACK_ALERT_CHANNEL") or os.getenv("SLACK_BRIEFING_CHANNEL")
-        if not token or not channel:
+        if not token:
             return []
         
+        # Configure channels to pull from
+        news_ch = os.getenv("SLACK_NEWS_CHANNEL")
+        alert_ch = os.getenv("SLACK_ALERT_CHANNEL")
+        brief_ch = os.getenv("SLACK_BRIEFING_CHANNEL")
+        
+        channels = []
+        if news_ch:
+            channels.append((news_ch, "news"))
+        if alert_ch:
+            channels.append((alert_ch, "stock"))
+        if brief_ch:
+            channels.append((brief_ch, "stock"))
+        
+        seen_channels = set()
+        unique_channels = []
+        for ch, room_name in channels:
+            if ch not in seen_channels:
+                seen_channels.add(ch)
+                unique_channels.append((ch, room_name))
+                
+        if not unique_channels:
+            return []
+
         # Start and end of the day in KST (UTC+9)
         dt_start = datetime.strptime(date_str, "%Y-%m-%d")
         kst_tz = timezone(timedelta(hours=9))
@@ -43,48 +65,51 @@ def _fetch_slack_history_api(date_str):
         ts_end = ts_start + 24 * 3600
         
         headers = {"Authorization": f"Bearer {token}"}
-        params = {
-            "channel": channel,
-            "oldest": str(ts_start),
-            "latest": str(ts_end),
-            "limit": 200
-        }
-        res = requests.get("https://slack.com/api/conversations.history", headers=headers, params=params, timeout=15).json()
-        if not res.get("ok"):
-            return []
-            
-        messages = []
-        for msg in reversed(res.get("messages", [])):
-            ts_val = float(msg.get("ts", 0))
-            dt = datetime.fromtimestamp(ts_val, kst_tz)
-            ts_iso = dt.isoformat(timespec="seconds")
-            text = msg.get("text", "")
-            
-            bot_id = msg.get("bot_id")
-            source = "unknown"
-            if bot_id:
-                if "투자 타이밍 알림" in text:
-                    source = "index-alert"
-                elif "시장 변동성 경보" in text:
-                    source = "sidecar"
-                elif "관심 종목" in text:
-                    source = "custom-alert"
-                elif "신문 브리핑" in text:
-                    source = "news"
-                elif "시장 브리핑" in text or "주식 브리핑" in text:
-                    source = "stock-briefing"
-                else:
-                    source = "bot"
-            else:
-                source = "user"
+        
+        all_messages = []
+        for channel, room_name in unique_channels:
+            params = {
+                "channel": channel,
+                "oldest": str(ts_start),
+                "latest": str(ts_end),
+                "limit": 200
+            }
+            res = requests.get("https://slack.com/api/conversations.history", headers=headers, params=params, timeout=15).json()
+            if not res.get("ok"):
+                continue
                 
-            messages.append({
-                "ts": ts_iso,
-                "source": source,
-                "kind": "text",
-                "text": text
-            })
-        return messages
+            for msg in reversed(res.get("messages", [])):
+                ts_val = float(msg.get("ts", 0))
+                dt = datetime.fromtimestamp(ts_val, kst_tz)
+                ts_iso = dt.isoformat(timespec="seconds")
+                text = msg.get("text", "")
+                
+                bot_id = msg.get("bot_id")
+                source = "unknown"
+                if bot_id:
+                    if "투자 타이밍 알림" in text:
+                        source = "index-alert"
+                    elif "시장 변동성 경보" in text:
+                        source = "sidecar"
+                    elif "관심 종목" in text:
+                        source = "custom-alert"
+                    elif "신문 브리핑" in text:
+                        source = "news"
+                    elif "시장 브리핑" in text or "주식 브리핑" in text:
+                        source = "stock-briefing"
+                    else:
+                        source = "bot"
+                else:
+                    source = "user"
+                    
+                all_messages.append({
+                    "ts": ts_iso,
+                    "source": source,
+                    "kind": "text",
+                    "text": text,
+                    "room": room_name
+                })
+        return all_messages
     except Exception as e:
         print(f"[Slack API History] Fetch failed: {e}", file=sys.stderr)
         return []
@@ -111,6 +136,11 @@ def main():
 
     path = os.path.join(LOG_DIR, f"{date}.jsonl")
     local_msgs = []
+    
+    news_ch = os.getenv("SLACK_NEWS_CHANNEL")
+    alert_ch = os.getenv("SLACK_ALERT_CHANNEL")
+    brief_ch = os.getenv("SLACK_BRIEFING_CHANNEL")
+    
     if os.path.isfile(path):
         with open(path, encoding="utf-8") as f:
             for line in f:
@@ -121,12 +151,24 @@ def main():
                     rec = json.loads(line)
                 except Exception:
                     continue
-                # 아티팩트에 필요한 필드만 추림
+                
+                ch_id = rec.get("channel", "")
+                room_name = "other"
+                if news_ch and ch_id == news_ch:
+                    room_name = "news"
+                elif (alert_ch and ch_id == alert_ch) or (brief_ch and ch_id == brief_ch):
+                    room_name = "stock"
+                elif rec.get("source") in ["index-alert", "sidecar", "custom-alert", "stock-briefing"]:
+                    room_name = "stock"
+                elif rec.get("source") in ["news"]:
+                    room_name = "news"
+                    
                 local_msgs.append({
                     "ts": rec.get("ts", ""),
                     "source": rec.get("source", "unknown"),
                     "kind": rec.get("kind", "text"),
                     "text": rec.get("text", ""),
+                    "room": room_name
                 })
                 
     api_msgs = _fetch_slack_history_api(date)
