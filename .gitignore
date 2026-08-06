@@ -59,3 +59,7 @@ workspace-attestations/
 
 # 슬랙 발신 로그 (슬랙 뷰어용 원천 데이터 — 서버 전용, 내용 포함)
 slack_logs/
+
+# npm 플러그인 폴더 보호 (git clean -fd 로부터 보호)
+npm/
+plugin-skills/
