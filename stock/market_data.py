@@ -223,7 +223,7 @@ def _fetch_naver_quote(name):
             if res.status_code == 200:
                 data = res.json()
                 current = float(data.get("closePrice").replace(",", ""))
-                change_rate = float(data.get("compareToPreviousCloseRate", 0))
+                change_rate = float(str(data.get("fluctuationsRatio", "0")).replace(",", ""))
                 return {"current": current, "change_rate": change_rate}
         elif name in ["S&P 500", "NASDAQ"]:
             url = f"https://api.stock.naver.com/index/{code}/basic"
