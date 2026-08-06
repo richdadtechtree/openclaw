@@ -23,7 +23,7 @@ from capture import capture_dashboard, SCREENSHOT_PATH
 load_dotenv()
 
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
-SLACK_BRIEFING_CHANNEL = os.getenv("SLACK_BRIEFING_CHANNEL")
+SLACK_BRIEFING_CHANNEL = os.getenv("SLACK_BRIEFING_CHANNEL") or os.getenv("SLACK_STOCK_CHANNEL")
 
 
 def send_slack_photo(path, caption=""):
