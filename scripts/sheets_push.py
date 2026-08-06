@@ -55,12 +55,15 @@ def main():
         print("[Error] 내용이 비어 있습니다.")
         sys.exit(1)
 
+    # 구글 시트에 복제될 때는 불필요한 마크다운 기호 (*, _) 제거
+    content_clean = content.replace("*", "").replace("_", "")
+
     title = f"{date_str} {session} 신문 브리핑"
     try:
         r = requests.post(
             URL,
             json={"token": SECRET, "date": date_str, "session": session,
-                  "title": title, "content": content},
+                  "title": title, "content": content_clean},
             timeout=30,
         )
         ok = False
