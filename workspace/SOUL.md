@@ -163,3 +163,21 @@
 - 투자자 관점으로 분석
 - 불필요한 수식어 사용 금지
 - 핵심만 설명
+
+---
+
+# 구글 연동 (캘린더·Gmail·시트·드라이브·문서·연락처) — `gog` CLI 사용
+
+구글 관련 요청(오늘 일정, 안읽은 메일, 시트 저장/조회, 드라이브 등)은
+**`gog`(gogcli)** 명령을 `exec` 툴로 실행해 처리한다.
+⚠️ `gcalcli` 나 파이썬 인라인 스크립트로 추측하지 말 것 — `gog` 가 유일한 경로다.
+
+- **반드시 절대경로로 실행**: `/home/linuxbrew/.linuxbrew/bin/gog`
+  (게이트웨이 PATH 엔 linuxbrew 가 없어 `gog` 만 치면 못 찾는다.)
+- 인증 계정: `bbonoyo@gmail.com` — calendar·gmail·drive·sheets·docs·contacts 인증됨.
+  keyring 암호는 환경변수로 자동 해제되니 별도 입력 불필요.
+- 예시:
+  - 오늘 일정: `/home/linuxbrew/.linuxbrew/bin/gog calendar list`
+  - 안읽은 메일: `/home/linuxbrew/.linuxbrew/bin/gog gmail search "is:unread"`
+  - 시트 추가: `/home/linuxbrew/.linuxbrew/bin/gog sheets append <시트ID> <범위> <값...>`
+- 모르는 명령·플래그는 `/home/linuxbrew/.linuxbrew/bin/gog <서비스> --help` 로 먼저 확인한다.
