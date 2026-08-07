@@ -1,0 +1,27 @@
+[Unit]
+# PT 대시보드 (stdlib http.server). systemd --user 유닛.
+# 설치:
+#   mkdir -p ~/.config/systemd/user
+#   cp ~/.openclaw/pt_system/pt-dashboard.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now pt-dashboard
+#   loginctl enable-linger $USER      # 로그아웃/재부팅에도 유지
+# 상태/로그:
+#   systemctl --user status pt-dashboard
+#   journalctl --user -u pt-dashboard -f
+Description=openclaw PT dashboard (stdlib http.server, DB-backed)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.openclaw
+# 포트/DB 경로는 필요 시 조정
+Environment=PT_DASH_PORT=8770
+Environment=PT_DASH_HOST=127.0.0.1
+Environment=PT_DB_PATH=%h/.openclaw/pt_system/pt.sqlite
+ExecStart=/usr/bin/python3 %h/.openclaw/pt_system/app.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
