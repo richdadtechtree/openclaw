@@ -8,9 +8,12 @@ notion_setup_db.py — 지정한 노션 '페이지' 안에 브리핑용 데이�
   직접 DB를 생성하면, 같은 API 를 쓰는 notion_push.py 가 100% 읽고 쓸 수 있다.
 
 사용:
-  python3 scripts/notion_setup_db.py [부모페이지ID] [DB제목]
+  python3 scripts/notion_setup_db.py [부모페이지ID] [DB제목] [--page "중간페이지제목"]
   - 부모페이지ID 생략 시 기본값 = "⭐ AI꿀팁 모음" 페이지.
-  - DB제목    생략 시 기본값 = "신문 브리핑".
+  - DB제목       생략 시 기본값 = "신문 브리핑".
+  - --page "제목" 주면: 부모 안에 그 이름의 '페이지'를 먼저 만들고, DB를 그 페이지 안에 넣는다.
+      예) python3 scripts/notion_setup_db.py --page "AI꿀팁"
+          → ⭐ AI꿀팁 모음 / AI꿀팁(새 페이지) / 신문 브리핑(DB) 구조 생성.
 
 필요 (.env): NOTION_TOKEN
 
@@ -53,13 +56,48 @@ def create_database(parent_page_id, db_title):
     return r.json()
 
 
+def create_wrapper_page(parent_page_id, title):
+    """부모 페이지 안에 하위 '페이지'를 만든다. 성공 시 새 페이지 id 반환."""
+    payload = {
+        "parent": {"type": "page_id", "page_id": parent_page_id},
+        "properties": {"title": {"title": [{"text": {"content": title}}]}},
+    }
+    r = requests.post(f"{API}/pages", headers=_headers(), json=payload, timeout=30)
+    if r.status_code != 200:
+        print(f"[Error] 페이지 생성 실패: HTTP {r.status_code} {r.text[:400]}")
+        return None
+    return r.json()
+
+
 def main():
     if not NOTION_TOKEN:
         print("[Error] .env 에 NOTION_TOKEN 이 없습니다.")
         sys.exit(1)
-    parent = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_PARENT_PAGE
-    title = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_DB_TITLE
 
+    # --page "제목" : DB를 부모 바로 밑이 아니라, 새로 만든 하위 페이지 안에 넣는다.
+    args = sys.argv[1:]
+    wrapper_title = None
+    if "--page" in args:
+        i = args.index("--page")
+        if i + 1 >= len(args):
+            print("[Error] --page 뒤에 페이지 제목을 적어주세요. 예: --page \"AI꿀팁\"")
+            sys.exit(1)
+        wrapper_title = args[i + 1]
+        del args[i:i + 2]
+
+    parent = args[0] if len(args) > 0 else DEFAULT_PARENT_PAGE
+    title = args[1] if len(args) > 1 else DEFAULT_DB_TITLE
+
+    # 1) (옵션) 중간 페이지 생성 → 그 페이지를 DB의 부모로 사용
+    if wrapper_title:
+        page = create_wrapper_page(parent, wrapper_title)
+        if not page:
+            print("❌ 실패 — 통합이 부모 페이지에 공유(연결)돼 있는지 확인하세요.")
+            sys.exit(1)
+        parent = page["id"]
+        print(f"✅ 페이지 생성: '{wrapper_title}'  ({page.get('url', '')})")
+
+    # 2) DB 생성
     db = create_database(parent, title)
     if not db:
         print("❌ 실패 — 통합이 부모 페이지에 공유(연결)돼 있는지 확인하세요.")
@@ -68,10 +106,10 @@ def main():
     db_id = db["id"].replace("-", "")
     url = db.get("url", "")
     print("✅ DB 생성 성공!")
-    print(f"   제목      : {title}")
+    print(f"   제목       : {title}")
     print(f"   database_id: {db_id}")
     if url:
-        print(f"   url       : {url}")
+        print(f"   url        : {url}")
     print()
     print("아래 한 줄을 .env 에 반영하세요(기존 값 대체):")
     print(f"   NOTION_BRIEFING_TARGET={db_id}")
