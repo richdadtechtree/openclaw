@@ -147,12 +147,13 @@ def build_db_properties(schema, title, date_str, session, url=None):
     return props
 
 
-def create_page(title, date_str, session, blocks, url=None):
-    if not NOTION_TOKEN or not NOTION_TARGET:
-        print("[Error] .env 에 NOTION_TOKEN / NOTION_BRIEFING_TARGET(또는 NOTION_BRIEFING_DB) 가 없습니다.")
+def create_page(title, date_str, session, blocks, url=None, target=None):
+    tgt = target or NOTION_TARGET
+    if not NOTION_TOKEN or not tgt:
+        print("[Error] .env 에 NOTION_TOKEN / 저장 대상(NOTION_BRIEFING_TARGET 등) 이 없습니다.")
         return False
 
-    kind, schema = detect_target(NOTION_TARGET)
+    kind, schema = detect_target(tgt)
     if kind is None:
         return False
 
@@ -163,13 +164,13 @@ def create_page(title, date_str, session, blocks, url=None):
 
     if kind == "database":
         properties = build_db_properties(schema, title, date_str, session, url)
-        parent = {"database_id": NOTION_TARGET}
+        parent = {"database_id": tgt}
     else:  # page → 하위 페이지로 생성 (title 외 속성 불가 → 날짜/시간대는 본문에)
         meta = f"📅 {date_str}" + (f" · 🕘 {session}" if session else "")
         leading.append({"object": "block", "type": "paragraph",
                         "paragraph": {"rich_text": _rt(meta)}})
         properties = {"title": {"title": [{"text": {"content": title}}]}}
-        parent = {"page_id": NOTION_TARGET}
+        parent = {"page_id": tgt}
 
     all_blocks = leading + blocks
     first_content = all_blocks[:MAX_BLOCKS_PER_CALL]

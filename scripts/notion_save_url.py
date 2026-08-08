@@ -11,10 +11,14 @@ notion_save_url.py — 웹주소(URL) 하나를 받아 그 페이지의 제목/�
             골라 링크 아래에 붙인다.
 
 사용:
-  python3 scripts/notion_save_url.py <URL> [YYYY-MM-DD]
+  python3 scripts/notion_save_url.py <URL> [--to ai|book|article] [YYYY-MM-DD]
+  - --to 로 저장할 표를 고른다(기본 ai). 한글 별칭도 허용: 책=book, 좋은글=article.
 
-필요 (.env): NOTION_TOKEN, NOTION_BRIEFING_TARGET(또는 NOTION_BRIEFING_DB)
-  → notion_push.py 와 동일한 대상 DB/페이지에 저장한다.
+저장 대상(.env) — 카테고리별 대상 DB ID:
+  ai      : NOTION_BRIEFING_TARGET (또는 하위호환 NOTION_BRIEFING_DB)  → AI꿀팁 표
+  book    : NOTION_BOOK_TARGET                                        → 책 추천 표
+  article : NOTION_ARTICLE_TARGET                                     → 좋은글 표
+필요 (.env): NOTION_TOKEN + 위 카테고리 대상 중 사용하는 것.
 """
 import html
 import json
@@ -209,12 +213,57 @@ def sanitize_url(raw):
     return u
 
 
+# 카테고리 → (.env 대상 변수 후보들, 표시이름). 첫 번째로 값이 있는 변수를 사용.
+CATEGORIES = {
+    "ai": (("NOTION_BRIEFING_TARGET", "NOTION_BRIEFING_DB"), "AI꿀팁"),
+    "book": (("NOTION_BOOK_TARGET",), "책 추천"),
+    "article": (("NOTION_ARTICLE_TARGET",), "좋은글"),
+}
+# 한글/별칭 → 표준 카테고리 키
+CATEGORY_ALIASES = {
+    "ai": "ai", "ai꿀팁": "ai", "꿀팁": "ai",
+    "book": "book", "책": "book", "책추천": "book", "도서": "book",
+    "article": "article", "좋은글": "article", "글": "article", "좋은": "article",
+}
+
+
+def resolve_category(name):
+    key = CATEGORY_ALIASES.get((name or "").strip().lower())
+    return key or "ai"
+
+
+def target_for(category):
+    """카테고리의 대상 DB ID 를 .env 에서 찾는다. 없으면 (None, 표시이름)."""
+    env_vars, label = CATEGORIES[category]
+    for v in env_vars:
+        val = os.getenv(v)
+        if val:
+            return val, label
+    return None, label
+
+
 def main():
-    if len(sys.argv) < 2 or not sys.argv[1].strip():
-        print("사용법: python3 notion_save_url.py <URL> [YYYY-MM-DD]")
+    args = sys.argv[1:]
+    category = "ai"
+    if "--to" in args:
+        i = args.index("--to")
+        if i + 1 < len(args):
+            category = resolve_category(args[i + 1])
+            del args[i:i + 2]
+        else:
+            del args[i:i + 1]
+
+    if not args or not args[0].strip():
+        print("사용법: python3 notion_save_url.py <URL> [--to ai|book|article] [YYYY-MM-DD]")
         sys.exit(1)
-    url = sanitize_url(sys.argv[1])
-    date_str = sys.argv[2] if len(sys.argv) > 2 else datetime.now().strftime("%Y-%m-%d")
+    url = sanitize_url(args[0])
+    date_str = args[1] if len(args) > 1 else datetime.now().strftime("%Y-%m-%d")
+
+    target, label = target_for(category)
+    if not target:
+        env_name = CATEGORIES[category][0][0]
+        print(f"[Error] '{label}' 표의 대상 ID 가 없습니다. .env 에 {env_name}=<database_id> 를 설정하세요.")
+        sys.exit(1)
 
     try:
         title, body = fetch(url)
@@ -223,12 +272,11 @@ def main():
         sys.exit(1)
 
     blocks = np.md_to_blocks(body) if body else []
-    # session 은 없음(신문 브리핑의 아침/저녁과 무관) → None.
-    ok = np.create_page(title, date_str, None, blocks, url=url)
+    ok = np.create_page(title, date_str, None, blocks, url=url, target=target)
     if ok:
-        print(f"✅ 노션 저장 성공! 제목: {title}")
+        print(f"✅ [{label}] 노션 저장 성공! 제목: {title}")
     else:
-        print("❌ 노션 저장 실패")
+        print(f"❌ [{label}] 노션 저장 실패")
     sys.exit(0 if ok else 1)
 
 
