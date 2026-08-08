@@ -4,9 +4,11 @@ notion_save_url.py — 웹주소(URL) 하나를 받아 그 페이지의 제목/�
 
 슬랙에서 사용자가 링크를 보내면 뚜떵또가 이 스크립트를 실행한다.
 저장되는 것:
-  - 제목  : 웹페이지 제목(og:title 또는 <title>). 없으면 URL.
+  - 제목  : 내용 제목(og:title/JSON-LD headline/<title>). 사이트 이름(스레드 등)만
+            나오면 본문 첫 줄을 제목으로 대체.
   - 웹주소: 본문 맨 위 북마크 블록 + (DB에 url 타입 칸이 있으면) 해당 속성.
-  - 본문  : 페이지 본문 텍스트(article/main 우선 추출).
+  - 본문  : 여러 소스(JSON-LD·article/main·og:description)에서 가장 완전한 텍스트를
+            골라 링크 아래에 붙인다.
 
 사용:
   python3 scripts/notion_save_url.py <URL> [YYYY-MM-DD]
@@ -15,6 +17,7 @@ notion_save_url.py — 웹주소(URL) 하나를 받아 그 페이지의 제목/�
   → notion_push.py 와 동일한 대상 DB/페이지에 저장한다.
 """
 import html
+import json
 import os
 import re
 import sys
@@ -30,6 +33,13 @@ UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 MAX_BODY_CHARS = 15000  # 본문 저장 상한(너무 긴 페이지 방지)
 
+# 사이트 이름만 나오는(=내용 제목이 아닌) 흔한 값들. 이러면 본문 첫 줄을 제목으로 쓴다.
+GENERIC_TITLES = {
+    "threads", "thread", "스레드", "instagram", "인스타그램", "facebook", "페이스북",
+    "x", "twitter", "트위터", "youtube", "유튜브", "naver", "네이버", "tiktok", "틱톡",
+    "블로그", "blog", "home", "홈",
+}
+
 
 def fetch(url):
     """URL 을 받아 (제목, 본문텍스트) 반환."""
@@ -38,36 +48,104 @@ def fetch(url):
     if not r.encoding or r.encoding.lower() == "iso-8859-1":
         r.encoding = r.apparent_encoding or "utf-8"
     doc = r.text
-    return extract_title(doc) or url, extract_text(doc)
+    metas = collect_metas(doc)
+    ld = collect_jsonld(doc)
+    body = pick_body(doc, metas, ld)
+    title = pick_title(doc, metas, ld, body) or url
+    return title, body
 
 
-def extract_title(doc):
-    m = re.search(r'<meta[^>]+(?:property|name)=["\']og:title["\'][^>]*content=["\']([^"\']+)',
-                  doc, re.I)
-    if m:
-        return html.unescape(m.group(1)).strip()
-    m = re.search(r"<title[^>]*>(.*?)</title>", doc, re.I | re.S)
-    if m:
-        return html.unescape(re.sub(r"\s+", " ", m.group(1))).strip()
-    return None
+def collect_metas(doc):
+    """<meta> 의 property/name → content 매핑(og:*, twitter:*, description 등)."""
+    metas = {}
+    for m in re.finditer(r"<meta\s+([^>]+?)/?>", doc, re.I | re.S):
+        attrs = dict((k.lower(), v) for k, v in
+                     re.findall(r'([\w:-]+)\s*=\s*"([^"]*)"', m.group(1)))
+        key = attrs.get("property") or attrs.get("name")
+        if key and "content" in attrs:
+            metas[key.lower()] = html.unescape(attrs["content"]).strip()
+    return metas
 
 
-def extract_text(doc):
-    """본문 텍스트 대략 추출(외부 라이브러리 없이). article/main 우선."""
-    m = (re.search(r"<article[^>]*>(.*?)</article>", doc, re.I | re.S)
-         or re.search(r"<main[^>]*>(.*?)</main>", doc, re.I | re.S))
-    seg = m.group(1) if m else doc
-    # 안 보이는/부수 영역 제거
+def collect_jsonld(doc):
+    """application/ld+json 블록들을 파싱해 dict 리스트로."""
+    out = []
+    for m in re.finditer(
+            r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+            doc, re.I | re.S):
+        try:
+            data = json.loads(m.group(1).strip())
+        except Exception:
+            continue
+        items = data if isinstance(data, list) else [data]
+        for d in items:
+            if isinstance(d, dict):
+                out.append(d)
+                if isinstance(d.get("@graph"), list):
+                    out.extend(x for x in d["@graph"] if isinstance(x, dict))
+    return out
+
+
+def _is_generic(t):
+    tt = re.sub(r"[\W_]+", " ", t or "").strip().lower()
+    return (not tt) or tt in GENERIC_TITLES or len(tt) <= 2
+
+
+def _clean_html_text(seg):
     seg = re.sub(r"<(script|style|noscript|nav|header|footer|aside|form|svg)[^>]*>.*?</\1>",
                  " ", seg, flags=re.I | re.S)
-    # 블록 종료 태그 → 줄바꿈
     seg = re.sub(r"(?i)</(p|div|br|li|h[1-6]|tr|section|article)>", "\n", seg)
-    seg = re.sub(r"<[^>]+>", " ", seg)          # 남은 태그 제거
+    seg = re.sub(r"<[^>]+>", " ", seg)
     seg = html.unescape(seg)
     lines = [re.sub(r"[ \t ]+", " ", ln).strip() for ln in seg.splitlines()]
-    lines = [ln for ln in lines if ln]
-    text = "\n".join(lines)
-    return text[:MAX_BODY_CHARS]
+    return "\n".join(ln for ln in lines if ln)
+
+
+def pick_body(doc, metas, ld):
+    """여러 소스에서 본문 후보를 모아 가장 완전한(긴) 것을 고른다."""
+    cands = []
+    # 1) JSON-LD 의 구조화된 본문
+    for d in ld:
+        for k in ("articleBody", "text", "description", "caption", "headline"):
+            v = d.get(k)
+            if isinstance(v, str) and v.strip():
+                cands.append(v.strip())
+    # 2) article/main 본문
+    m = (re.search(r"<article[^>]*>(.*?)</article>", doc, re.I | re.S)
+         or re.search(r"<main[^>]*>(.*?)</main>", doc, re.I | re.S))
+    if m:
+        cands.append(_clean_html_text(m.group(1)))
+    # 3) 메타 설명(SNS는 여기 본문이 담기는 경우가 많음)
+    for k in ("og:description", "twitter:description", "description"):
+        if metas.get(k):
+            cands.append(metas[k])
+    # 4) 그래도 없으면 페이지 전체 텍스트
+    if not cands:
+        cands.append(_clean_html_text(doc))
+    body = max(cands, key=len) if cands else ""
+    return body[:MAX_BODY_CHARS]
+
+
+def pick_title(doc, metas, ld, body):
+    """내용 제목을 고른다. 사이트 이름만 나오면 본문 첫 줄로 대체."""
+    cands = []
+    for d in ld:
+        for k in ("headline", "name"):
+            if isinstance(d.get(k), str):
+                cands.append(d[k])
+    cands += [metas.get("og:title"), metas.get("twitter:title")]
+    m = re.search(r"<title[^>]*>(.*?)</title>", doc, re.I | re.S)
+    if m:
+        cands.append(html.unescape(re.sub(r"\s+", " ", m.group(1))).strip())
+    for c in cands:
+        if c and not _is_generic(c):
+            return c.strip()
+    # 내용 제목이 없으면 본문 첫 줄(최대 80자)을 제목으로.
+    first = next((ln.strip() for ln in body.splitlines() if ln.strip()), "")
+    if first:
+        return first[:80] + ("…" if len(first) > 80 else "")
+    # 마지막 폴백: 그래도 있던 후보 아무거나.
+    return next((c.strip() for c in cands if c), None)
 
 
 def main():
