@@ -136,8 +136,8 @@ tail -30 ~/stock/stock/scheduler.log
   - `notion_push.py` 는 대상이 DB인지 페이지인지 **자동 감지**: DB면 행(제목/날짜/시간대), 페이지면 하위 페이지(날짜·시간대는 본문 첫 줄).
   - `notion_setup_db.py`: REST API로 브리핑용 DB 생성(인라인/신형 DB는 REST 400 → 직접 생성 필요). `--page "제목"` 주면 중간 페이지 먼저 생성 후 그 안에 DB.
   - 🔗 **웹링크 저장(+표 분류)**: `notion_save_url.py <URL> --to ai|book|article` → 링크 제목/웹주소(북마크·URL칸)/본문을 카테고리별 표에 저장. SNS(스레드 등)는 크롤러 UA로 og 확보 + 게시물 첫 줄을 제목.
-    - 슬랙 키워드 라우팅(SOUL.md): `ai`/링크만→AI꿀팁, `책`→책 추천, `좋은글`→좋은글.
-    - `.env` 대상 변수: `NOTION_BRIEFING_TARGET`(ai), `NOTION_BOOK_TARGET`(책), `NOTION_ARTICLE_TARGET`(좋은글).
+    - 슬랙 키워드 라우팅(SOUL.md): `ai`/링크만→AI꿀팁, `책`→책 추천, `좋은글`→좋은글, `꿀팁`→꿀팁.
+    - `.env` 대상 변수: `NOTION_BRIEFING_TARGET`(ai), `NOTION_BOOK_TARGET`(책), `NOTION_ARTICLE_TARGET`(좋은글), `NOTION_TIP_TARGET`(꿀팁).
     - 표 생성: `notion_setup_db.py <부모페이지ID> "<표이름>" --env <변수명>` (제목/날짜/URL 컬럼 자동).
 - stock 감시종목: `~/stock/stock/monitored_stocks.json` (국장=숫자코드, 미장=영문). 알림 기준: `CUSTOM_ALERT_STEP`(기본 2%).
 - 관심종목 데이터: `market_data.get_custom_stocks_snapshot()` → `{symbol:{name,current,change_rate,is_etf}}`.

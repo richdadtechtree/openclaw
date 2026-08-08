@@ -11,13 +11,14 @@ notion_save_url.py — 웹주소(URL) 하나를 받아 그 페이지의 제목/�
             골라 링크 아래에 붙인다.
 
 사용:
-  python3 scripts/notion_save_url.py <URL> [--to ai|book|article] [YYYY-MM-DD]
-  - --to 로 저장할 표를 고른다(기본 ai). 한글 별칭도 허용: 책=book, 좋은글=article.
+  python3 scripts/notion_save_url.py <URL> [--to ai|book|article|tip] [YYYY-MM-DD]
+  - --to 로 저장할 표를 고른다(기본 ai). 한글 별칭: 책=book, 좋은글=article, 꿀팁=tip.
 
 저장 대상(.env) — 카테고리별 대상 DB ID:
   ai      : NOTION_BRIEFING_TARGET (또는 하위호환 NOTION_BRIEFING_DB)  → AI꿀팁 표
   book    : NOTION_BOOK_TARGET                                        → 책 추천 표
   article : NOTION_ARTICLE_TARGET                                     → 좋은글 표
+  tip     : NOTION_TIP_TARGET                                         → 꿀팁 표
 필요 (.env): NOTION_TOKEN + 위 카테고리 대상 중 사용하는 것.
 """
 import html
@@ -218,12 +219,14 @@ CATEGORIES = {
     "ai": (("NOTION_BRIEFING_TARGET", "NOTION_BRIEFING_DB"), "AI꿀팁"),
     "book": (("NOTION_BOOK_TARGET",), "책 추천"),
     "article": (("NOTION_ARTICLE_TARGET",), "좋은글"),
+    "tip": (("NOTION_TIP_TARGET",), "꿀팁"),
 }
 # 한글/별칭 → 표준 카테고리 키
 CATEGORY_ALIASES = {
-    "ai": "ai", "ai꿀팁": "ai", "꿀팁": "ai",
+    "ai": "ai", "ai꿀팁": "ai", "aitip": "ai",
     "book": "book", "책": "book", "책추천": "book", "도서": "book",
     "article": "article", "좋은글": "article", "글": "article", "좋은": "article",
+    "tip": "tip", "꿀팁": "tip", "팁": "tip",
 }
 
 
