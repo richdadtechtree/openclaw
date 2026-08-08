@@ -29,9 +29,22 @@ import requests
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import notion_push as np  # noqa: E402
 
-UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+# 요청 UA 후보: SNS(스레드/인스타/X 등)는 일반 브라우저엔 빈 껍데기를 주고,
+# 링크 미리보기용 '크롤러 UA' 에게만 og 태그(게시물 텍스트)를 내려주는 경우가 많다.
+# → 크롤러 UA 를 먼저 시도하고, og:description 이 담긴 응답을 채택한다.
+UA_BROWSER = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+UAS = [
+    "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)",
+    "Mozilla/5.0 (compatible; Twitterbot/1.0)",
+    "Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)",
+    UA_BROWSER,
+]
 MAX_BODY_CHARS = 15000  # 본문 저장 상한(너무 긴 페이지 방지)
+
+# 게시물 자체가 곧 내용인 SNS 호스트 → 제목은 본문(게시물) 첫 줄을 쓴다.
+SNS_HOSTS = ("threads.com", "threads.net", "instagram.com", "x.com",
+             "twitter.com", "facebook.com", "tiktok.com")
 
 # 사이트 이름만 나오는(=내용 제목이 아닌) 흔한 값들. 이러면 본문 첫 줄을 제목으로 쓴다.
 GENERIC_TITLES = {
@@ -41,17 +54,38 @@ GENERIC_TITLES = {
 }
 
 
-def fetch(url):
-    """URL 을 받아 (제목, 본문텍스트) 반환."""
-    r = requests.get(url, headers={"User-Agent": UA}, timeout=30)
+def _get(url, ua):
+    r = requests.get(url, headers={"User-Agent": ua,
+                                   "Accept-Language": "ko,en;q=0.8"}, timeout=30)
     r.raise_for_status()
     if not r.encoding or r.encoding.lower() == "iso-8859-1":
         r.encoding = r.apparent_encoding or "utf-8"
-    doc = r.text
-    metas = collect_metas(doc)
-    ld = collect_jsonld(doc)
-    body = pick_body(doc, metas, ld)
-    title = pick_title(doc, metas, ld, body) or url
+    return r.text
+
+
+def fetch(url):
+    """URL 을 받아 (제목, 본문텍스트) 반환. 여러 UA 로 시도해 og 본문이 가장 많은 응답 채택."""
+    best_doc, best_score = None, -1
+    last_err = None
+    for ua in UAS:
+        try:
+            doc = _get(url, ua)
+        except Exception as e:
+            last_err = e
+            continue
+        score = len(collect_metas(doc).get("og:description", "") or "")
+        if score > best_score:
+            best_doc, best_score = doc, score
+        if score > 0:            # 게시물 텍스트를 얻었으면 충분
+            break
+    if best_doc is None:
+        raise last_err or RuntimeError("요청 실패")
+
+    metas = collect_metas(best_doc)
+    ld = collect_jsonld(best_doc)
+    body = pick_body(best_doc, metas, ld)
+    is_sns = any(h in url.lower() for h in SNS_HOSTS)
+    title = pick_title(best_doc, metas, ld, body, is_sns=is_sns) or url
     return title, body
 
 
@@ -126,8 +160,20 @@ def pick_body(doc, metas, ld):
     return body[:MAX_BODY_CHARS]
 
 
-def pick_title(doc, metas, ld, body):
-    """내용 제목을 고른다. 사이트 이름만 나오면 본문 첫 줄로 대체."""
+def _first_line_title(body):
+    first = next((ln.strip() for ln in body.splitlines() if ln.strip()), "")
+    if first:
+        return first[:80] + ("…" if len(first) > 80 else "")
+    return None
+
+
+def pick_title(doc, metas, ld, body, is_sns=False):
+    """내용 제목을 고른다. SNS이거나 사이트 이름만 나오면 본문(게시물) 첫 줄로."""
+    # SNS 게시물은 og:title 이 작성자명이라 내용 제목이 아님 → 본문 첫 줄 우선.
+    if is_sns:
+        t = _first_line_title(body)
+        if t and not _is_generic(t):
+            return t
     cands = []
     for d in ld:
         for k in ("headline", "name"):
@@ -141,9 +187,9 @@ def pick_title(doc, metas, ld, body):
         if c and not _is_generic(c):
             return c.strip()
     # 내용 제목이 없으면 본문 첫 줄(최대 80자)을 제목으로.
-    first = next((ln.strip() for ln in body.splitlines() if ln.strip()), "")
-    if first:
-        return first[:80] + ("…" if len(first) > 80 else "")
+    t = _first_line_title(body)
+    if t:
+        return t
     # 마지막 폴백: 그래도 있던 후보 아무거나.
     return next((c.strip() for c in cands if c), None)
 
