@@ -116,12 +116,13 @@ def detect_target(target_id):
     return None, {}
 
 
-def build_db_properties(schema, title, date_str, session):
+def build_db_properties(schema, title, date_str, session, url=None):
     """대상 DB의 실제 스키마에 맞춰 채울 속성만 만든다(없는 칸은 건너뜀).
 
     - title  : DB에 반드시 하나 있는 title 타입 칸(이름이 무엇이든) 에 제목 기록.
     - date   : PROP_DATE(기본 '날짜') 칸이 date 타입으로 있으면 날짜 기록.
-    - session: PROP_SESSION(기본 '시간대') 칸이 select/multi_select 로 있으면 아침/저녁 기록.
+    - session: PROP_SESSION(기본 '시간대') 칸이 select/multi_select 로 있고 session 값이 있으면 기록.
+    - url    : url 타입 칸이 있으면(이름 무관) 웹주소 기록.
     """
     props = {}
     # 제목: title 타입 칸을 이름과 무관하게 찾는다(모든 DB는 title 칸이 정확히 1개).
@@ -132,16 +133,21 @@ def build_db_properties(schema, title, date_str, session):
     dmeta = schema.get(PROP_DATE)
     if dmeta and dmeta.get("type") == "date":
         props[PROP_DATE] = {"date": {"start": date_str}}
-    # 시간대 (select / multi_select 모두 대응)
+    # 시간대 (select / multi_select 모두 대응) — 값이 있을 때만
     smeta = schema.get(PROP_SESSION)
-    if smeta and smeta.get("type") == "multi_select":
+    if session and smeta and smeta.get("type") == "multi_select":
         props[PROP_SESSION] = {"multi_select": [{"name": session}]}
-    elif smeta and smeta.get("type") == "select":
+    elif session and smeta and smeta.get("type") == "select":
         props[PROP_SESSION] = {"select": {"name": session}}
+    # URL: url 타입 칸을 이름과 무관하게 찾아서 채운다.
+    if url:
+        url_key = next((n for n, m in schema.items() if m.get("type") == "url"), None)
+        if url_key:
+            props[url_key] = {"url": url}
     return props
 
 
-def create_page(title, date_str, session, blocks):
+def create_page(title, date_str, session, blocks, url=None):
     if not NOTION_TOKEN or not NOTION_TARGET:
         print("[Error] .env 에 NOTION_TOKEN / NOTION_BRIEFING_TARGET(또는 NOTION_BRIEFING_DB) 가 없습니다.")
         return False
@@ -150,26 +156,24 @@ def create_page(title, date_str, session, blocks):
     if kind is None:
         return False
 
+    # 앞머리 블록(선택): 웹주소 북마크 → 본문 어디에 저장되든 링크가 남는다.
+    leading = []
+    if url:
+        leading.append({"object": "block", "type": "bookmark", "bookmark": {"url": url}})
+
     if kind == "database":
-        first_content = blocks[:MAX_BLOCKS_PER_CALL]
-        payload = {
-            "parent": {"database_id": NOTION_TARGET},
-            "properties": build_db_properties(schema, title, date_str, session),
-            "children": first_content,
-        }
-        consumed = len(first_content)
+        properties = build_db_properties(schema, title, date_str, session, url)
+        parent = {"database_id": NOTION_TARGET}
     else:  # page → 하위 페이지로 생성 (title 외 속성 불가 → 날짜/시간대는 본문에)
-        meta_block = {"object": "block", "type": "paragraph",
-                      "paragraph": {"rich_text": _rt(f"📅 {date_str} · 🕘 {session}")}}
-        first_content = blocks[:MAX_BLOCKS_PER_CALL - 1]  # 메타 블록 1개 자리 확보
-        payload = {
-            "parent": {"page_id": NOTION_TARGET},
-            "properties": {
-                "title": {"title": [{"text": {"content": title}}]},
-            },
-            "children": [meta_block] + first_content,
-        }
-        consumed = len(first_content)
+        meta = f"📅 {date_str}" + (f" · 🕘 {session}" if session else "")
+        leading.append({"object": "block", "type": "paragraph",
+                        "paragraph": {"rich_text": _rt(meta)}})
+        properties = {"title": {"title": [{"text": {"content": title}}]}}
+        parent = {"page_id": NOTION_TARGET}
+
+    all_blocks = leading + blocks
+    first_content = all_blocks[:MAX_BLOCKS_PER_CALL]
+    payload = {"parent": parent, "properties": properties, "children": first_content}
 
     r = requests.post(f"{API}/pages", headers=_headers(), json=payload, timeout=30)
     if r.status_code != 200:
@@ -178,7 +182,7 @@ def create_page(title, date_str, session, blocks):
     page_id = r.json()["id"]
 
     # 첫 요청에 못 담은 초과분은 append 로 이어붙임
-    rest = blocks[consumed:]
+    rest = all_blocks[MAX_BLOCKS_PER_CALL:]
     while rest:
         batch, rest = rest[:MAX_BLOCKS_PER_CALL], rest[MAX_BLOCKS_PER_CALL:]
         ra = requests.patch(f"{API}/blocks/{page_id}/children",

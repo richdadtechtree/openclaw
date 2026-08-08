@@ -134,6 +134,8 @@ tail -30 ~/stock/stock/scheduler.log
   - ✅ **원하는 대상 = 페이지 "⭐ AI꿀팁 모음"** `3b5d470c68bd80c1a88dfa79b4581de8` → 하위 페이지로 저장.
   - (구/오연동) DB "신문 브리핑" `3b1d470c68bd80c88009ec6e91c5da3d` → 여기로 잘못 저장되고 있었음.
   - `notion_push.py` 는 대상이 DB인지 페이지인지 **자동 감지**: DB면 행(제목/날짜/시간대), 페이지면 하위 페이지(날짜·시간대는 본문 첫 줄).
+  - `notion_setup_db.py`: REST API로 브리핑용 DB 생성(인라인/신형 DB는 REST 400 → 직접 생성 필요). `--page "제목"` 주면 중간 페이지 먼저 생성 후 그 안에 DB.
+  - 🔗 **웹링크 저장**: `notion_save_url.py <URL>` → 링크 제목/웹주소(북마크)/본문을 같은 DB에 저장. 슬랙에서 URL 보내면 뚜떵또가 실행(SOUL.md '웹링크 저장' 규칙). DB에 url 타입 칸이 있으면 그 칸도 자동 채움.
 - stock 감시종목: `~/stock/stock/monitored_stocks.json` (국장=숫자코드, 미장=영문). 알림 기준: `CUSTOM_ALERT_STEP`(기본 2%).
 - 관심종목 데이터: `market_data.get_custom_stocks_snapshot()` → `{symbol:{name,current,change_rate,is_etf}}`.
 
