@@ -20,7 +20,18 @@
 3. **뚜떵또(openclaw AI) 모델**: **주 = GPT(OpenAI)** 로 살림(어제 크레딧 충전 + `onboard --classic`). 정상 동작 중.
 4. **온디맨드 신문 브리핑**: 정해진 시각 자동 브리핑 **OFF**. 사용자가 봇에 "신문 브리핑 해줘" 요청 시에만 → 분석 답변 + **구글 시트 저장**(`sheets_push.py`, `workspace/SOUL.md`에 규칙 있음).
    - 구글 시트: Apps Script 웹앱. `.env`에 `SHEETS_WEBAPP_URL`, `SHEETS_WEBAPP_SECRET`.
-   - (노션은 폐기 — 시트로 전환. `notion_push.py`는 남겨둠, 미사용.)
+   - (노션은 시트와 병행 사용 중. `notion_push.py`로 저장.)
+     - ⚠️ **저장 대상 바로잡기(오연동 → 원하는 페이지)**: 브리핑이 엉뚱한 DB(`신문 브리핑` `3b1d470c…`)에 저장되던 것을 사용자가 지정한 페이지 **"⭐ AI꿀팁 모음"** `3b5d470c68bd80c1a88dfa79b4581de8` 로 변경. 서버에서 `.env` 만 바꾸면 됨:
+       ```bash
+       cd ~/.openclaw
+       # 신규 변수(권장). 하위호환으로 NOTION_BRIEFING_DB 도 계속 읽힘.
+       grep -q '^NOTION_BRIEFING_TARGET=' .env \
+         && sed -i 's#^NOTION_BRIEFING_TARGET=.*#NOTION_BRIEFING_TARGET=3b5d470c68bd80c1a88dfa79b4581de8#' .env \
+         || echo 'NOTION_BRIEFING_TARGET=3b5d470c68bd80c1a88dfa79b4581de8' >> .env
+       # (구 변수 NOTION_BRIEFING_DB 가 있으면 같이 맞춰두면 혼동 없음)
+       sed -i 's#^NOTION_BRIEFING_DB=.*#NOTION_BRIEFING_DB=3b5d470c68bd80c1a88dfa79b4581de8#' .env
+       ```
+       그리고 노션 통합(Integration)이 "⭐ AI꿀팁 모음" 페이지에 **연결(공유)** 돼 있어야 함(⋯ → 연결 → 통합 선택). 안 돼 있으면 `detect_target_kind` 가 접근 불가로 실패.
 5. **stock 대시보드 → 슬랙**: 평일 **15:40** openclaw cron `stock-slack-briefing`(command job) → `slack_briefing.py`. 채널 `C0BMJENDF62`. AI 미사용, 정상.
 6. **stock 관심종목 급등락 알림**: `scheduler.py alert_job`(약 10분) → 텔레그램 `briefing-bot`. 2% 단위. AI 미사용, 정상.
 7. **관심종목 알림 슬랙 확장(+시간대 게이팅)**: 텔레그램 그대로 두고 **슬랙에도** 전송. 국장(숫자코드)=KRX 장중만, 미장=24h. `scripts/stock_alert_slack.py`(`notify_events`) + `patch_scheduler_slack.py` 로 서버 반영·검증 완료. (상세: 아래 C)
@@ -119,7 +130,10 @@ tail -30 ~/stock/stock/scheduler.log
 ## 참고 상수/값
 - Slack 대시보드 채널: `C0BMJENDF62` (`SLACK_BRIEFING_CHANNEL`). 알림 전용 원하면 `SLACK_ALERT_CHANNEL` 추가.
 - 구글 시트 DB(신문 브리핑): Apps Script 웹앱(`SHEETS_WEBAPP_URL`).
-- (폐기)노션 DB id: `3b1d470c68bd80c88009ec6e91c5da3d`.
+- 노션 저장 대상(`notion_push.py`): `.env` 의 `NOTION_BRIEFING_TARGET`(하위호환 `NOTION_BRIEFING_DB`).
+  - ✅ **원하는 대상 = 페이지 "⭐ AI꿀팁 모음"** `3b5d470c68bd80c1a88dfa79b4581de8` → 하위 페이지로 저장.
+  - (구/오연동) DB "신문 브리핑" `3b1d470c68bd80c88009ec6e91c5da3d` → 여기로 잘못 저장되고 있었음.
+  - `notion_push.py` 는 대상이 DB인지 페이지인지 **자동 감지**: DB면 행(제목/날짜/시간대), 페이지면 하위 페이지(날짜·시간대는 본문 첫 줄).
 - stock 감시종목: `~/stock/stock/monitored_stocks.json` (국장=숫자코드, 미장=영문). 알림 기준: `CUSTOM_ALERT_STEP`(기본 2%).
 - 관심종목 데이터: `market_data.get_custom_stocks_snapshot()` → `{symbol:{name,current,change_rate,is_etf}}`.
 
