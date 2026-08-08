@@ -15,9 +15,16 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BRIEFING_BOT_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("BRIEFING_CHAT_ID") or os.getenv("TELEGRAM_CHAT_ID")
 
+# 텔레그램 발신 전면 비활성화(정책: 알림은 Slack 전용).
+# 토큰/CHAT_ID 설정 여부와 무관하게 모든 텔레그램 전송을 막는다.
+# 환경변수 TELEGRAM_ENABLE=1 로만 다시 켤 수 있다(기본 꺼짐).
+TELEGRAM_DISABLED = os.getenv("TELEGRAM_ENABLE", "").strip() not in ("1", "true", "True")
+
 
 def send_telegram_message(text, parse_mode="Markdown"):
     """텔레그램 텍스트 메시지 전송. 성공 시 True."""
+    if TELEGRAM_DISABLED:
+        return False
     if not BOT_TOKEN or not CHAT_ID:
         return False
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -39,6 +46,8 @@ def send_telegram_message(text, parse_mode="Markdown"):
 
 def send_telegram_photo(photo_path, caption="", parse_mode="Markdown"):
     """텔레그램 사진 전송. 성공 시 True."""
+    if TELEGRAM_DISABLED:
+        return False
     if not BOT_TOKEN or not CHAT_ID:
         return False
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
