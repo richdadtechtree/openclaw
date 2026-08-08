@@ -98,20 +98,47 @@ def md_to_blocks(md):
     return blocks
 
 
-def detect_target_kind(target_id):
+def detect_target(target_id):
     """대상 ID 가 데이터베이스인지 일반 페이지인지 자동 감지.
 
-    반환: "database" | "page" | None(둘 다 아님/접근 불가)
+    반환: (kind, schema)
+      kind   = "database" | "page" | None(둘 다 아님/접근 불가)
+      schema = DB일 때 properties(dict), 아니면 {}
     """
     rd = requests.get(f"{API}/databases/{target_id}", headers=_headers(), timeout=30)
     if rd.status_code == 200:
-        return "database"
+        return "database", rd.json().get("properties", {})
     rp = requests.get(f"{API}/pages/{target_id}", headers=_headers(), timeout=30)
     if rp.status_code == 200:
-        return "page"
+        return "page", {}
     print(f"[Error] 대상 ID 확인 실패 (DB {rd.status_code} / 페이지 {rp.status_code}). "
           f"통합이 해당 페이지/DB에 공유돼 있는지 확인하세요.")
-    return None
+    return None, {}
+
+
+def build_db_properties(schema, title, date_str, session):
+    """대상 DB의 실제 스키마에 맞춰 채울 속성만 만든다(없는 칸은 건너뜀).
+
+    - title  : DB에 반드시 하나 있는 title 타입 칸(이름이 무엇이든) 에 제목 기록.
+    - date   : PROP_DATE(기본 '날짜') 칸이 date 타입으로 있으면 날짜 기록.
+    - session: PROP_SESSION(기본 '시간대') 칸이 select/multi_select 로 있으면 아침/저녁 기록.
+    """
+    props = {}
+    # 제목: title 타입 칸을 이름과 무관하게 찾는다(모든 DB는 title 칸이 정확히 1개).
+    title_key = next((n for n, m in schema.items() if m.get("type") == "title"), None)
+    if title_key:
+        props[title_key] = {"title": [{"text": {"content": title}}]}
+    # 날짜
+    dmeta = schema.get(PROP_DATE)
+    if dmeta and dmeta.get("type") == "date":
+        props[PROP_DATE] = {"date": {"start": date_str}}
+    # 시간대 (select / multi_select 모두 대응)
+    smeta = schema.get(PROP_SESSION)
+    if smeta and smeta.get("type") == "multi_select":
+        props[PROP_SESSION] = {"multi_select": [{"name": session}]}
+    elif smeta and smeta.get("type") == "select":
+        props[PROP_SESSION] = {"select": {"name": session}}
+    return props
 
 
 def create_page(title, date_str, session, blocks):
@@ -119,7 +146,7 @@ def create_page(title, date_str, session, blocks):
         print("[Error] .env 에 NOTION_TOKEN / NOTION_BRIEFING_TARGET(또는 NOTION_BRIEFING_DB) 가 없습니다.")
         return False
 
-    kind = detect_target_kind(NOTION_TARGET)
+    kind, schema = detect_target(NOTION_TARGET)
     if kind is None:
         return False
 
@@ -127,12 +154,7 @@ def create_page(title, date_str, session, blocks):
         first_content = blocks[:MAX_BLOCKS_PER_CALL]
         payload = {
             "parent": {"database_id": NOTION_TARGET},
-            "properties": {
-                PROP_TITLE: {"title": [{"text": {"content": title}}]},
-                PROP_DATE: {"date": {"start": date_str}},
-                # 시간대는 multi_select 타입 (DB 스키마 기준)
-                PROP_SESSION: {"multi_select": [{"name": session}]},
-            },
+            "properties": build_db_properties(schema, title, date_str, session),
             "children": first_content,
         }
         consumed = len(first_content)
