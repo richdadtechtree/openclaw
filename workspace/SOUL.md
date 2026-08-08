@@ -179,13 +179,18 @@
 | `좋은글`, `글` | `article` | 좋은글 |
 | `꿀팁`, `팁` | `tip` | 꿀팁 |
 
+**메시지 해석**: `<키워드> [제목텍스트] <링크>` 형식이다.
+  - 맨 앞 단어 = 분류 키워드(위 표).
+  - 키워드와 링크 **사이에 쓴 글**이 있으면 그게 **제목**이다 → `--title "그 글"` 로 넘긴다.
+  - 사이에 아무것도 없으면 `--title` 을 생략한다(스크립트가 웹페이지 제목을 자동 사용).
+
 - 실행: `exec` 툴로 아래를 실행한다. 실제 주소만 넣고 꺾쇠(`< >`)는 붙이지 않는다.
   ```
-  python3 ~/.openclaw/scripts/notion_save_url.py "https://실제주소..." --to <ai|book|article>
+  python3 ~/.openclaw/scripts/notion_save_url.py "https://실제주소..." --to <ai|book|article|tip> [--title "제목"]
   ```
-  - 예) "책 https://…"  → `... "https://…" --to book`
-  - 예) "좋은글 https://…" → `... "https://…" --to article`
-  - 예) "꿀팁 https://…" → `... "https://…" --to tip`
+  - 예) "책 부자아빠 가난한아빠 https://…" → `... "https://…" --to book --title "부자아빠 가난한아빠"`
+  - 예) "꿀팁 노션 자동화 팁 https://…" → `... "https://…" --to tip --title "노션 자동화 팁"`
+  - 예) "좋은글 https://…" (제목 없음) → `... "https://…" --to article`
   - 예) "ai https://…" 또는 링크만 → `... "https://…" --to ai`
   (꺾쇠/따옴표가 섞여도 스크립트가 벗겨낸다. `--to` 생략 시 ai.)
 - 저장되는 것: 제목(내용 제목) · 웹주소(북마크/URL 칸) · 본문 텍스트.

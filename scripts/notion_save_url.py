@@ -245,19 +245,27 @@ def target_for(category):
     return None, label
 
 
+def _take_opt(args, name):
+    """--name VALUE 를 args 에서 꺼내 값 반환(없으면 None). args 는 제자리 수정."""
+    if name in args:
+        i = args.index(name)
+        if i + 1 < len(args):
+            val = args[i + 1]
+            del args[i:i + 2]
+            return val
+        del args[i:i + 1]
+    return None
+
+
 def main():
     args = sys.argv[1:]
-    category = "ai"
-    if "--to" in args:
-        i = args.index("--to")
-        if i + 1 < len(args):
-            category = resolve_category(args[i + 1])
-            del args[i:i + 2]
-        else:
-            del args[i:i + 1]
+    category = resolve_category(_take_opt(args, "--to") or "ai")
+    manual_title = _take_opt(args, "--title")   # 지정 시 제목 열에 이 값을 사용
+    if manual_title is not None:
+        manual_title = manual_title.strip()
 
     if not args or not args[0].strip():
-        print("사용법: python3 notion_save_url.py <URL> [--to ai|book|article] [YYYY-MM-DD]")
+        print("사용법: python3 notion_save_url.py <URL> [--to ai|book|article|tip] [--title \"제목\"] [YYYY-MM-DD]")
         sys.exit(1)
     url = sanitize_url(args[0])
     date_str = args[1] if len(args) > 1 else datetime.now().strftime("%Y-%m-%d")
@@ -273,6 +281,10 @@ def main():
     except Exception as e:
         print(f"[Error] URL 가져오기 실패: {e}")
         sys.exit(1)
+
+    # 사용자가 키워드 뒤에 제목을 직접 적었으면 그 값을 제목으로 사용.
+    if manual_title:
+        title = manual_title
 
     blocks = np.md_to_blocks(body) if body else []
     ok = np.create_page(title, date_str, None, blocks, url=url, target=target)
