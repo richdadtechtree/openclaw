@@ -148,13 +148,26 @@ def pick_title(doc, metas, ld, body):
     return next((c.strip() for c in cands if c), None)
 
 
+def sanitize_url(raw):
+    """붙여넣기 과정에서 붙는 포장 제거: 공백·꺾쇠·따옴표·Slack 링크표기(<url|텍스트>)."""
+    u = (raw or "").strip()
+    u = u.strip("<>").strip().strip("\"'` ")   # <...>, 따옴표, 백틱
+    if "|" in u:                                # Slack 형식 <url|표시텍스트>
+        u = u.split("|", 1)[0].strip()
+    # 텍스트 안에 URL이 섞여 있으면 http(s) 부분만 추출.
+    m = re.search(r"https?://\S+", u, re.I)
+    if m:
+        u = m.group(0).strip("<>\"'` )]")
+    elif not re.match(r"^https?://", u, re.I):
+        u = "https://" + u
+    return u
+
+
 def main():
     if len(sys.argv) < 2 or not sys.argv[1].strip():
         print("사용법: python3 notion_save_url.py <URL> [YYYY-MM-DD]")
         sys.exit(1)
-    url = sys.argv[1].strip()
-    if not re.match(r"^https?://", url, re.I):
-        url = "https://" + url
+    url = sanitize_url(sys.argv[1])
     date_str = sys.argv[2] if len(sys.argv) > 2 else datetime.now().strftime("%Y-%m-%d")
 
     try:
