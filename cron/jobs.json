@@ -129,6 +129,33 @@
         "channel": "telegram"
       },
       "state": {}
+    },
+    {
+      "id": "9c352202-aa11-4920-b530-1a10252267ad",
+      "agentId": "main",
+      "sessionKey": "agent:main:telegram:direct:7890734506",
+      "name": "troubleshoot-log-daily",
+      "enabled": true,
+      "createdAtMs": 1786396276050,
+      "schedule": {
+        "tz": "Asia/Seoul",
+        "kind": "cron",
+        "expr": "50 23 * * *"
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "model": "openai/gpt-4o-mini",
+        "kind": "agentTurn",
+        "message": "트러블슈팅 로그 자동 저장 시간이다. openclaw 리포의 '오늘 git 커밋'을 정리해 노션 'openclaw 트러블슈팅 로그' DB에 저장한다. 아래 순서를 정확히 따라라.\n\n1. `exec` 툴로 `python3 scripts/troubleshoot_log.py --collect` 를 실행해 오늘(KST) 커밋 목록(JSON)을 얻어라.\n2. 결과가 빈 배열 `[]` 이면: 저장할 것이 없다. 텔레그램에 '🛠 오늘은 기록할 트러블슈팅이 없어요' 한 줄만 보내고 종료해라.\n3. 커밋이 있으면: 서로 관련된 커밋(같은 기능/주제)은 하나로 묶고, 별개면 각각 하나의 '트러블슈팅 항목'으로 만들어라. 문서/오타 등 사소한 수정만 있는 커밋은 굳이 넣지 마라(트러블슈팅 가치가 있는 것 위주).\n4. 각 항목을 아래 JSON 객체로 만들어 하나의 배열에 담아라:\n   - title: 무엇을 고쳤는지 간결한 제목\n   - category: 다음 중 가장 가까운 하나 — 주식 / 슬랙 / 노션 / 뉴스브리핑 / 인프라 / 설정\n   - status: 보통 '완료' (아직 진행 중이면 '진행중')\n   - summary: 한 줄 요약(표의 '내용' 칸에 들어감)\n   - body: 비개발자도 이해할 수 있는 쉬운 한국어 설명. 마크다운으로 다음 소제목 구조를 써라 — '### 🔎 한 줄 요약', '### 😵 무엇이 문제였나', '### 🛠️ 어떻게 해결했나', '### ✅ 결과' (필요하면 '### 📌 배경', '### 💡 참고' 추가). 전문용어는 괄호로 풀어써라.\n5. `write` 툴로 그 JSON 배열을 `workspace/troubleshoot_entries.json` 파일에 저장해라(순수 JSON만; 앞뒤 설명 문구 금지).\n6. `exec` 툴로 `python3 scripts/troubleshoot_log.py --file workspace/troubleshoot_entries.json --dedupe` 를 실행해 노션에 저장해라.\n7. 실행 결과(저장 N건)를 확인하고 텔레그램에 '🛠 오늘 트러블슈팅 N건을 노션에 저장했어요' 처럼 한 줄로 짧게 보고하고, 저장한 항목 제목을 불릿으로 덧붙여라.\n\n주의: 반드시 '오늘' 커밋만 다뤄라. 이미 저장된 항목은 --dedupe 가 걸러준다. 모든 텍스트는 한국어로 작성해라.",
+        "timeoutSeconds": 300
+      },
+      "delivery": {
+        "to": "7890734506",
+        "mode": "announce",
+        "channel": "telegram"
+      },
+      "state": {}
     }
   ]
 }
