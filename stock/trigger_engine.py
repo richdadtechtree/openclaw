@@ -29,9 +29,10 @@ NASDAQ_STAGES = [-5.0, -10.0, -15.0, -20.0, -25.0, -30.0, -35.0, -40.0, -45.0, -
 # 미국 동반 하락 판정: S&P500 ATH 대비 -10% 이상 하락
 US_CRASH_THRESHOLD = -10.0
 
-# TQQQ 1차 구간: -10%부터 1%p 간격 41회 (-10% ~ -50%)
+# TQQQ 1차 구간: 고점대비 -10%부터 -1%p 하락마다 1회차, 총 40회 (-10% ~ -49%).
+# (-50% 도달 시 아래 2차 구간으로 전환)
 TQQQ_P1_START = 10
-TQQQ_P1_COUNT = 41
+TQQQ_P1_COUNT = 40
 # TQQQ 2차 구간: -50% 도달 시점 가격 P를 10등분
 TQQQ_P2_TRIGGER_DD = -50.0
 TQQQ_P2_COUNT = 10
@@ -115,10 +116,13 @@ class TriggerEngine:
             (key, value))
 
     # ---------------------------------------------------------- drawdowns
-    def _compute_drawdowns(self, conn, snapshot, now_str, readonly=False):
+    def _compute_drawdowns(self, conn, snapshot, now_str, readonly=False, use_stored=True):
         """
         스냅샷 기준 각 종목의 (drawdown %, current, ath) 계산.
         readonly=False이면 신고점 갱신 시 ATH 저장 + 트리거 리셋 수행.
+        use_stored=False이면 엔진 DB(ath_state)를 무시하고 스냅샷의 역대최고가(ath)만 사용한다.
+          → 웹 '투자 타이밍 현황'의 점등은 대시보드에 표시되는 '역대 최고가 대비 현재값'과
+            정확히 일치해야 하므로 status()에서 이 경로를 쓴다.
         """
         dd, cur_px, ath_px = {}, {}, {}
         for sym in TRACKED:
@@ -127,19 +131,22 @@ class TriggerEngine:
                 continue
             cur = float(quote["current"])
             candidate = max(cur, float(quote.get("ath") or 0))
-            stored = self._get_ath(conn, sym)
-            if stored is None:
+            if not use_stored:
                 ath = candidate
-                if not readonly:
-                    self._set_ath(conn, sym, ath, now_str)
-            elif candidate > stored:
-                ath = candidate
-                if not readonly:
-                    # 신고점 갱신 → 이후 하락은 새 고점 기준으로 모든 단계 리셋
-                    self._set_ath(conn, sym, ath, now_str)
-                    self._reset_symbol(conn, sym)
             else:
-                ath = stored
+                stored = self._get_ath(conn, sym)
+                if stored is None:
+                    ath = candidate
+                    if not readonly:
+                        self._set_ath(conn, sym, ath, now_str)
+                elif candidate > stored:
+                    ath = candidate
+                    if not readonly:
+                        # 신고점 갱신 → 이후 하락은 새 고점 기준으로 모든 단계 리셋
+                        self._set_ath(conn, sym, ath, now_str)
+                        self._reset_symbol(conn, sym)
+                else:
+                    ath = stored
             dd[sym] = (cur - ath) / ath * 100 if ath > 0 else 0.0
             cur_px[sym] = cur
             ath_px[sym] = ath
@@ -421,7 +428,10 @@ class TriggerEngine:
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         conn = self._connect()
         try:
-            dd, cur_px, ath_px = self._compute_drawdowns(conn, snapshot, now_str, readonly=True)
+            # 점등은 오직 '역대 최고가 대비 현재값'(낙폭)으로만 판정 →
+            # 대시보드에 표시되는 역대최고가(스냅샷)만 사용(use_stored=False).
+            dd, cur_px, ath_px = self._compute_drawdowns(
+                conn, snapshot, now_str, readonly=True, use_stored=False)
             out = {}
 
             us_dd = dd.get("S&P 500")
@@ -442,10 +452,14 @@ class TriggerEngine:
                 prefix = "KR" if sym in ("KOSPI", "KOSDAQ") else "NDX"
                 for stage in stages_list:
                     key = f"{prefix}{int(stage)}"
+                    # 불(점등)은 오직 '역대 최고가 대비 현재값'(낙폭)으로 판정한다.
+                    # 현재 낙폭이 기준선에 도달(이하)하면 점등, 회복하면 소등.
+                    # (알림 발송 이력 DB(trigger_state)와 무관 — 실시간 낙폭만 반영)
+                    # +1e-6: 정확히 -30.00% 같은 경계도 부동소수 오차 없이 점등되게 함.
+                    triggered = dd[sym] <= stage + 1e-6
                     row = conn.execute(
                         "SELECT triggered_at FROM trigger_state WHERE symbol=? AND stage=?",
                         (sym, key)).fetchone()
-                    triggered = row is not None
                     stages.append({
                         "stage": int(stage),
                         "triggered": triggered,
@@ -466,9 +480,15 @@ class TriggerEngine:
                 }
 
             if "TQQQ" in dd:
-                p1_done = conn.execute(
-                    "SELECT COUNT(*) FROM trigger_state WHERE symbol='TQQQ' AND stage LIKE 'P1-%'"
-                ).fetchone()[0]
+                # 1차 회차(점등·회차수)는 오직 '역대 최고가 대비 현재값'(낙폭)으로 실시간 산정.
+                # 고점대비 -10%부터 -1%p 내려갈 때마다 1회차씩(-10%→1, -11%→2 …),
+                # 최대 40회차(-49%). 낙폭이 -10%보다 얕으면 0회차.
+                # 낙폭(양수 %) + 부동소수 경계 보정(1e-6) → -10.00%도 정확히 1회차로 잡음.
+                drop_tqqq = -dd["TQQQ"] + 1e-6
+                if drop_tqqq >= TQQQ_P1_START:
+                    p1_done = min(TQQQ_P1_COUNT, int(drop_tqqq) - TQQQ_P1_START + 1)
+                else:
+                    p1_done = 0
                 p2_done = conn.execute(
                     "SELECT COUNT(*) FROM trigger_state WHERE symbol='TQQQ' AND stage LIKE 'P2-__'"
                 ).fetchone()[0]
