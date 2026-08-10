@@ -40,7 +40,7 @@ SYMBOLS = {
     "KOSDAQ":  {"yf": "^KQ11", "kis_type": "domestic", "kis_code": "1001", "default_ath": 1229.42, "max_valid_ath": 2000.0},
     "S&P 500": {"yf": "^GSPC", "kis_type": "overseas", "kis_code": ("AMS", "SPY"), "default_ath": 7620.90, "max_valid_ath": 8500.0},
     "NASDAQ":  {"yf": "^IXIC", "kis_type": "overseas", "kis_code": ("NAS", "QQQ"), "default_ath": 27190.21, "max_valid_ath": 30000.0},
-    "QLD":     {"yf": "QLD",   "kis_type": "overseas", "kis_code": ("NAS", "QLD"),  "default_ath": 105.00, "max_valid_ath": 120.0},
+    "QLD":     {"yf": "QLD",   "kis_type": "overseas", "kis_code": ("NAS", "QLD"),  "default_ath": 101.19, "max_valid_ath": 120.0},
     "TQQQ":    {"yf": "TQQQ",  "kis_type": "overseas", "kis_code": ("NAS", "TQQQ"), "default_ath": 88.09, "max_valid_ath": 100.0},
 }
 
