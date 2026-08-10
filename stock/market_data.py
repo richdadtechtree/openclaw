@@ -31,12 +31,16 @@ YF_SESSION.headers.update({
 # kis_type: 'domestic' (국내지수), 'overseas' (해외주식), None (yfinance 전용)
 # S&P 500의 경우 yfinance 차단을 우회하기 위해 KIS 해외주식 API로 SPY ETF를 조회한 뒤 10배를 곱해 지수로 환산합니다.
 SYMBOLS = {
-    "KOSPI":   {"yf": "^KS11", "kis_type": "domestic", "kis_code": "0001", "default_ath": 9385.59, "max_valid_ath": 12000.0},
-    "KOSDAQ":  {"yf": "^KQ11", "kis_type": "domestic", "kis_code": "1001", "default_ath": 1229.42, "max_valid_ath": 2000.0},
-    "S&P 500": {"yf": "^GSPC", "kis_type": "overseas", "kis_code": ("AMS", "SPY"), "default_ath": 7620.90, "max_valid_ath": 8500.0},
-    "NASDAQ":  {"yf": "^IXIC", "kis_type": "overseas", "kis_code": ("NAS", "QQQ"), "default_ath": 27190.21, "max_valid_ath": 30000.0},
-    "QLD":     {"yf": "QLD",   "kis_type": "overseas", "kis_code": ("NAS", "QLD"),  "default_ath": 105.00, "max_valid_ath": 120.0},
-    "TQQQ":    {"yf": "TQQQ",  "kis_type": "overseas", "kis_code": ("NAS", "TQQQ"), "default_ath": 88.09, "max_valid_ath": 100.0},
+    # max_valid_ath = 명백한 글리치(비정상 폭등 틱)만 차단하는 상한.
+    # 실제 신고점을 막지 않도록 현실 고가보다 넉넉히 위(대략 2배)로 둔다.
+    # (QLD/TQQQ는 레버리지 ETF라 상승 여지가 커서 특히 여유가 필요 — 과거 120/100은
+    #  실제 고가 153.33/121.37을 오히려 차단하고 있었다.)
+    "KOSPI":   {"yf": "^KS11", "kis_type": "domestic", "kis_code": "0001", "default_ath": 9385.59, "max_valid_ath": 15000.0},
+    "KOSDAQ":  {"yf": "^KQ11", "kis_type": "domestic", "kis_code": "1001", "default_ath": 1229.42, "max_valid_ath": 2500.0},
+    "S&P 500": {"yf": "^GSPC", "kis_type": "overseas", "kis_code": ("AMS", "SPY"), "default_ath": 7620.90, "max_valid_ath": 15000.0},
+    "NASDAQ":  {"yf": "^IXIC", "kis_type": "overseas", "kis_code": ("NAS", "QQQ"), "default_ath": 27190.21, "max_valid_ath": 45000.0},
+    "QLD":     {"yf": "QLD",   "kis_type": "overseas", "kis_code": ("NAS", "QLD"),  "default_ath": 105.00, "max_valid_ath": 500.0},
+    "TQQQ":    {"yf": "TQQQ",  "kis_type": "overseas", "kis_code": ("NAS", "TQQQ"), "default_ath": 88.09, "max_valid_ath": 400.0},
 }
 
 
