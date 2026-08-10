@@ -202,11 +202,27 @@ def main():
         name=f'Investment Timing Trigger Check (every {ALERT_CHECK_INTERVAL_MIN} min)'
     )
 
+    # Schedule job: 매일 역대 최고가(ATH) 갱신.
+    # 미국장 마감(대략 05:00~06:00 KST) 이후 아침에 돌려, 국내·해외 지수/종목의
+    # '오늘 신고점 갱신' 여부를 확인해 ATH 캐시(및 대시보드의 역대최고가·대비 등락률)를
+    # 최신으로 유지합니다. 야후가 막힌 서버에서도 네이버 일별 고가로 동작합니다.
+    ath_hour = int(os.getenv("ATH_REFRESH_HOUR", "6"))
+    ath_minute = int(os.getenv("ATH_REFRESH_MINUTE", "30"))
+    scheduler.add_job(
+        load_ath_from_history,
+        'cron',
+        hour=ath_hour,
+        minute=ath_minute,
+        id='ath_refresh',
+        name=f'Daily ATH refresh at {ath_hour:02d}:{ath_minute:02d}'
+    )
+
     print("--------------------------------------------------")
     print("Stock Briefing Scheduler is now running.")
     print(f"Timezone: {SCHEDULER_TZ}")
     print(f"Schedule: Mon-Fri at {briefing_label} (briefing capture)")
     print(f"Schedule: every {ALERT_CHECK_INTERVAL_MIN} min (investment timing alerts)")
+    print(f"Schedule: daily at {ath_hour:02d}:{ath_minute:02d} (ATH all-time-high refresh)")
     print("Press Ctrl+C to exit.")
     print("--------------------------------------------------")
 
