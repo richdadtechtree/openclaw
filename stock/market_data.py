@@ -31,11 +31,16 @@ YF_SESSION.headers.update({
 # kis_type: 'domestic' (국내지수), 'overseas' (해외주식), None (yfinance 전용)
 # S&P 500의 경우 yfinance 차단을 우회하기 위해 KIS 해외주식 API로 SPY ETF를 조회한 뒤 10배를 곱해 지수로 환산합니다.
 SYMBOLS = {
+    # max_valid_ath = 명백한 글리치(비정상 폭등 틱)를 차단하는 상한.
+    # 지수는 분할이 없어 네이버 일별 고가로 ATH를 갱신하지만, QLD·TQQQ는 액면분할이 있는
+    # 레버리지 ETF라 네이버 일별 시세가 '수정주가(분할 반영)'가 아니어서 분할 전 옛 고가가
+    # 부풀려 잡힌다. 그래서 이 둘은 네이버 히스토리 대상에서 제외(NAVER_HISTORY)하고,
+    # 상한도 종전 값으로 유지해 부풀린 값이 들어와도 걸러지게 한다.
     "KOSPI":   {"yf": "^KS11", "kis_type": "domestic", "kis_code": "0001", "default_ath": 9385.59, "max_valid_ath": 12000.0},
     "KOSDAQ":  {"yf": "^KQ11", "kis_type": "domestic", "kis_code": "1001", "default_ath": 1229.42, "max_valid_ath": 2000.0},
     "S&P 500": {"yf": "^GSPC", "kis_type": "overseas", "kis_code": ("AMS", "SPY"), "default_ath": 7620.90, "max_valid_ath": 8500.0},
     "NASDAQ":  {"yf": "^IXIC", "kis_type": "overseas", "kis_code": ("NAS", "QQQ"), "default_ath": 27190.21, "max_valid_ath": 30000.0},
-    "QLD":     {"yf": "QLD",   "kis_type": "overseas", "kis_code": ("NAS", "QLD"),  "default_ath": 105.00, "max_valid_ath": 120.0},
+    "QLD":     {"yf": "QLD",   "kis_type": "overseas", "kis_code": ("NAS", "QLD"),  "default_ath": 101.19, "max_valid_ath": 120.0},
     "TQQQ":    {"yf": "TQQQ",  "kis_type": "overseas", "kis_code": ("NAS", "TQQQ"), "default_ath": 88.09, "max_valid_ath": 100.0},
 }
 
@@ -45,6 +50,22 @@ SYMBOLS = {
 # 네이버는 6개 모두 정확했습니다. 그래서 전부 네이버를 1순위로 두고 한투는 폴백으로만 씁니다.
 # (코스피·코스닥=네이버 국내지수, S&P500·나스닥=네이버 해외지수 .INX/.IXIC, TQQQ·QLD=네이버 해외주식)
 NAVER_FIRST_SYMBOLS = {"KOSPI", "KOSDAQ", "S&P 500", "NASDAQ", "QLD", "TQQQ"}
+
+# 네이버 금융 '일별 시세'(고가) 조회용 매핑 — 역대 최고가(ATH)를 매일 갱신하는 데 사용.
+# 서버에서 야후(yfinance)가 막혀도 네이버로 각 심볼의 최근 일별 고가를 받아
+# '오늘 신고점이 갱신됐는지'를 매일 확인할 수 있습니다.
+# kind: 'domestic_index'(국내지수) / 'world_index'(해외지수)
+#
+# ⚠️ 지수(코스피·코스닥·S&P500·나스닥)만 넣는다. QLD·TQQQ 같은 미국 레버리지 ETF는
+#    액면분할 이력이 있는데 네이버 일별 시세가 '수정주가(분할 반영)'가 아니라서
+#    분할 전 옛 고가(≈2배)가 잡혀 ATH가 부풀려진다(예: QLD 153.33, TQQQ 121.37).
+#    이 종목들은 기본값(default_ath) + 장중 실시간 신고점(get_ath_and_drawdown)으로만 관리.
+NAVER_HISTORY = {
+    "KOSPI":   {"kind": "domestic_index", "code": "KOSPI"},
+    "KOSDAQ":  {"kind": "domestic_index", "code": "KOSDAQ"},
+    "S&P 500": {"kind": "world_index",    "code": ".INX"},
+    "NASDAQ":  {"kind": "world_index",    "code": ".IXIC"},
+}
 
 # 역대 최고가 캐시 (기본값은 안전용, 시작 시 load_ath_from_history()로 갱신)
 ATH_CACHE = {name: info["default_ath"] for name, info in SYMBOLS.items()}
@@ -108,43 +129,65 @@ def _save_persisted_ath():
 
 def load_ath_from_history():
     """
-    각 심볼의 역대(최근) 최고가(ATH)를 계산해 캐시를 갱신. 프로세스 시작 시 1회 호출 권장.
+    각 심볼의 역대(최근) 최고가(ATH)를 계산해 캐시를 갱신.
+    프로세스 시작 시 1회, 그리고 매일 1회(스케줄러 cron) 호출해 신고점 갱신을 반영한다.
 
-    - 국내 지수(코스피·코스닥): 한투(KIS) 기간별 지수 시세로 계산 (서버에서 야후가 막혀도 동작).
+    데이터 소스(가능한 것을 모두 모아 '최댓값'을 취함 — 서버에서 야후가 막혀도 동작):
+    - 국내 지수(코스피·코스닥): 한투(KIS) 기간별 지수 시세.
       기본 2010년부터 조회해 2000년 닷컴버블 같은 옛 고점은 제외하고 '최근 고점'을 잡음.
-    - 그 외(S&P500·나스닥·QLD·TQQQ): 야후(yfinance) 전체 기간 데이터로 계산.
+    - 모든 심볼: 네이버 금융 일별 '고가'(야후 차단 우회 핵심 — S&P500/나스닥 신고점도 매일 확인).
+    - 그 외(가능하면): 야후(yfinance) 전체 기간 데이터.
+
     - 비정상 아웃라이어는 상한선(max_valid_ath)으로 차단.
-    - 재시작 대비로 저장된 값(_load/_save_persisted_ath)과 함께 관리.
+    - ATH는 단조 증가(내려가지 않음) + 파일 영속화(_load/_save_persisted_ath).
     """
     print("Loading historical ATH values...")
     _load_persisted_ath()
     client = get_kis_client()
     for name, info in SYMBOLS.items():
         try:
-            max_val = None
+            candidates = []
 
-            # 국내 지수는 KIS 과거시세로 (야후 차단 우회)
+            # 1) 국내 지수는 KIS 기간별 시세로 (야후 차단 우회)
             if info.get("kis_type") == "domestic" and client:
-                max_val = client.get_domestic_index_high(info["kis_code"])
-                if max_val:
-                    print(f"[ATH] {name}: KIS history high = {max_val}")
+                kis_high = client.get_domestic_index_high(info["kis_code"])
+                if kis_high:
+                    candidates.append(kis_high)
+                    print(f"[ATH] {name}: KIS history high = {kis_high}")
 
-            # KIS로 못 구했거나 해외 종목이면 야후로 시도
-            if max_val is None:
+            # 2) 네이버 일별 고가 — 서버에서도 동작(해외 지수/종목의 '오늘 신고점' 확인 핵심)
+            naver_high = _fetch_naver_daily_high(name)
+            if naver_high:
+                candidates.append(naver_high)
+                print(f"[ATH] {name}: Naver history high = {naver_high}")
+
+            # 3) 야후 전체기간 (서버에선 대개 막힘 — 되면 보강)
+            try:
                 hist = yf.Ticker(info["yf"], session=YF_SESSION).history(period="max")
                 if not hist.empty:
-                    max_val = float(hist["High"].max())
+                    candidates.append(float(hist["High"].max()))
+            except Exception as e:
+                print(f"[ATH] yfinance history skip for {name}: {e}")
 
-            if max_val is None:
+            if not candidates:
                 continue
 
             max_limit = info.get("max_valid_ath", 999999.0)
-            if max_val > max_limit:
-                print(f"[ATH] Ignored glitchy high value {max_val} for {name} (Limit: {max_limit})")
+            valid = []
+            for c in candidates:
+                if not c:
+                    continue
+                if c > max_limit:
+                    print(f"[ATH] Ignored glitchy high value {c} for {name} (Limit: {max_limit})")
+                    continue
+                valid.append(c)
+            if not valid:
                 continue
+
+            max_val = max(valid)
             if max_val > ATH_CACHE.get(name, 0):
                 ATH_CACHE[name] = round(max_val, 2)
-                print(f"[ATH] {name}: {ATH_CACHE[name]}")
+                print(f"[ATH] {name}: updated to {ATH_CACHE[name]}")
         except Exception as e:
             print(f"[ATH] Error fetching history for {name}: {e}")
 
@@ -246,6 +289,84 @@ def _fetch_naver_quote(name):
     except Exception as e:
         print(f"Naver quote error for {name}: {e}")
     return None
+
+
+def _naver_history_url(kind, code, page, page_size):
+    """네이버 금융 일별 시세 URL 생성."""
+    if kind == "domestic_index":
+        return f"https://m.stock.naver.com/api/index/{code}/price?pageSize={page_size}&page={page}"
+    if kind == "world_index":
+        return f"https://api.stock.naver.com/index/{code}/price?pageSize={page_size}&page={page}"
+    # world_stock
+    return f"https://api.stock.naver.com/stock/{code}/price?pageSize={page_size}&page={page}"
+
+
+def _extract_price_rows(payload):
+    """네이버 일별 시세 응답에서 행 리스트를 추출 (list 또는 감싼 dict 모두 지원)."""
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        for key in ("priceInfos", "prices", "priceList", "result", "datas", "list", "items"):
+            v = payload.get(key)
+            if isinstance(v, list):
+                return v
+    return []
+
+
+def _fetch_naver_daily_high(name, days=260):
+    """
+    네이버 금융 일별 시세로 최근 'days' 거래일의 '고가(highPrice)' 최댓값을 반환.
+
+    야후(yfinance)가 막힌 서버에서도 각 심볼(특히 해외지수 S&P500·나스닥)의
+    신고점 여부를 매일 확인하기 위한 용도입니다. 종가 스냅샷만으로는 장중에 잠깐
+    찍은 신고점을 놓칠 수 있어(마감 종가 < 장중 고가), 일별 '고가'를 직접 훑습니다.
+
+    반환: float(최근 최고가) 또는 None.
+    """
+    meta = NAVER_HISTORY.get(name)
+    if not meta:
+        return None
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                      '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+    # ⚠️ 네이버는 큰 pageSize를 거부한다(pageSize=100 → 비정상 응답으로 JSONDecodeError).
+    # 실측상 50까지는 정상 리스트를 준다. 그래서 50으로 고정하고 페이지를 넘겨 가며 모은다.
+    # 페이지 수는 pageSize로 역산하지 않고 '빈 페이지 / 목표 일수 / 페이지 상한'까지 순회한다
+    # (네이버가 pageSize를 캡하거나 같은 페이지를 반복 반환해도 안전).
+    page_size = 50
+    max_pages = 20
+    best = None
+    fetched = 0
+    try:
+        for page in range(1, max_pages + 1):
+            url = _naver_history_url(meta["kind"], meta["code"], page, page_size)
+            try:
+                res = requests.get(url, headers=headers, timeout=8)
+                if res.status_code != 200:
+                    break
+                rows = _extract_price_rows(res.json())
+            except Exception as e:
+                print(f"Naver daily-high page error for {name} (page {page}): {e}")
+                break
+            if not rows:
+                break
+            for r in rows:
+                raw = r.get("highPrice") or r.get("high") or r.get("hgpr")
+                if raw in (None, "", "0"):
+                    continue
+                try:
+                    v = float(str(raw).replace(",", ""))
+                except (TypeError, ValueError):
+                    continue
+                if v > 0 and (best is None or v > best):
+                    best = v
+            fetched += len(rows)
+            if fetched >= days:
+                break
+    except Exception as e:
+        print(f"Naver daily-high error for {name}: {e}")
+    return best
 
 
 def _fetch_sparklines():
