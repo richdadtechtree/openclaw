@@ -42,14 +42,6 @@
 - **뷰어**: claude.ai 아티팩트(시간축 원장 타임라인, 카테고리 필터, 라이트/다크). 현재 샘플 데이터로 게시됨.
 - **실데이터 갱신 워크플로**: 서버에서 `python3 ~/.openclaw/scripts/slack_digest.py [날짜]` → 출력 JSON 한 줄을 Claude 에게 붙이면 아티팩트를 그날 실데이터로 갱신(같은 URL 유지).
 
-## 🛠️ 트러블슈팅 로그 자동 저장 (노션)
-그날 git 커밋을 요약해 노션 **'openclaw 트러블슈팅 로그' DB**(일자별·제목별)에 매일 자동 저장.
-- **왜 서버에서 도나**: claude.ai 샌드박스는 `api.notion.com` 이그레스가 막혀 있고, 예약 세션엔 노션 커넥터가 안 붙음 → **노션 접근 가능한 서버(openclaw 크론)에서만** 저장 가능.
-- **스크립트**: `scripts/troubleshoot_log.py`. `--collect`(그날 KST 커밋 JSON 출력), `--file/--stdin`(항목 배열 저장), `--dedupe`(같은 날 동일 제목 스킵), `--dry-run`. 노션 REST 사용(2022-06-28 database_id → 실패 시 2025-09-03 data_source_id 폴백). 대상 DB `283037a9…` / DS `940b2105…`.
-- **크론**: openclaw `cron/jobs.json` 의 `troubleshoot-log-daily`(평일/매일 **23:50 KST**, agentTurn, gpt-4o-mini). 뚜떵또가 `--collect`로 오늘 커밋을 받아 쉬운 설명(🔎/😵/🛠️/✅ 구조)으로 정리 → `workspace/troubleshoot_entries.json` 에 쓰고 → 스크립트로 저장 → 텔레그램에 한 줄 보고. 커밋 없는 날은 스킵.
-- ⚠️ **1회성 설정(서버)**: `.env` 에 **`NOTION_TROUBLESHOOT_TOKEN=<이 DB에 공유된 통합 토큰>`** 추가(없으면 `NOTION_TOKEN` 사용). 그리고 노션에서 그 통합을 이 DB에 **연결(공유)** 해야 함. 수동 검증: `python3 scripts/troubleshoot_log.py --file <샘플> --dry-run` 후 `--dedupe` 로 실제 저장.
-- **DB URL**: https://app.notion.com/p/283037a905024ab281346680fa6dbb4d (8/4~8/8 항목은 이미 정리됨).
-
 ## ⏳ 진행 중 / 다음 할 일 (우선순위 순)
 
 ### A. Gemini 백업(fallback) 적용
