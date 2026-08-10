@@ -322,9 +322,13 @@ def _fetch_naver_daily_high(name, days=260):
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
                       '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
+    # 네이버가 pageSize를 그대로 지켜준다는 보장이 없어(캡을 둘 수 있음) 페이지 수를
+    # pageSize로 역산하지 않는다. 대신 '빈 페이지가 나오거나' / '목표 일수를 다 모으거나' /
+    # '페이지 상한'에 도달할 때까지만 순회한다. (같은 페이지를 반복 반환하는 API도 안전)
     page_size = 100
-    max_pages = max(1, (days + page_size - 1) // page_size)
+    max_pages = 20
     best = None
+    fetched = 0
     try:
         for page in range(1, max_pages + 1):
             url = _naver_history_url(meta["kind"], meta["code"], page, page_size)
@@ -344,8 +348,8 @@ def _fetch_naver_daily_high(name, days=260):
                     continue
                 if v > 0 and (best is None or v > best):
                     best = v
-            # 마지막 페이지(요청보다 적게 옴)면 종료
-            if len(rows) < page_size:
+            fetched += len(rows)
+            if fetched >= days:
                 break
     except Exception as e:
         print(f"Naver daily-high error for {name}: {e}")
