@@ -7,7 +7,7 @@ from datetime import date, timedelta
 sys.path.append(str(Path("/home/ubuntu/pt_system")))
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from flask import Flask, render_template_string, request
+from flask import Flask, render_template_string, request, redirect, url_for
 from scripts.db import get_conn
 
 app = Flask(__name__)
@@ -620,6 +620,7 @@ HTML = """
   </style>
 </head>
 <body>
+  <a href="/add" style="position:fixed;right:18px;bottom:18px;z-index:999;background:#06b6d4;color:#00121a;font-weight:700;text-decoration:none;padding:12px 18px;border-radius:999px;box-shadow:0 6px 20px rgba(0,0,0,.4);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">➕ 기록 추가</a>
   <header>
     <div class="brand-section">
       <div class="brand-icon">
@@ -1359,6 +1360,166 @@ def delete_record(category, record_id):
     finally:
         conn.close()
     return "OK", 200
+
+
+ADD_HTML = """
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>기록 수동 입력</title>
+  <style>
+    :root { --bg:#0b0f19; --card:#131a26; --line:#243048; --text:#f3f4f6; --muted:#9ca3af;
+            --cyan:#06b6d4; --emerald:#10b981; --purple:#8b5cf6; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text);
+           font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; padding:20px; }
+    .wrap { max-width:640px; margin:0 auto; }
+    h1 { font-size:1.4rem; margin:0 0 4px; }
+    .sub { color:var(--muted); margin:0 0 18px; font-size:.9rem; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:14px;
+            padding:16px 18px; margin-bottom:16px; }
+    .card h2 { font-size:1.05rem; margin:0 0 12px; display:flex; align-items:center; gap:8px; }
+    .row { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:10px; }
+    label { display:flex; flex-direction:column; font-size:.8rem; color:var(--muted); gap:4px; flex:1; min-width:120px; }
+    input, select { background:#0b0f19; border:1px solid var(--line); border-radius:8px;
+            color:var(--text); padding:9px 10px; font-size:.95rem; }
+    button { background:var(--cyan); color:#00121a; border:0; border-radius:9px;
+             padding:10px 16px; font-weight:700; font-size:.95rem; cursor:pointer; }
+    button:hover { filter:brightness(1.08); }
+    .ok { background:rgba(16,185,129,.15); border:1px solid var(--emerald); color:var(--emerald);
+          border-radius:10px; padding:10px 14px; margin-bottom:16px; font-weight:600; }
+    a.back { color:var(--cyan); text-decoration:none; font-size:.9rem; }
+    .badge-w h2 { color:var(--cyan); } .badge-m h2 { color:var(--emerald); } .badge-v h2 { color:var(--purple); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>📝 기록 수동 입력</h1>
+    <p class="sub">웹에서 직접 넣은 기록도 슬랙 입력과 같은 DB에 저장되어 일일/주간 브리핑에 반영됩니다.</p>
+    {% if saved %}<div class="ok">✅ {{ saved }} 기록을 저장했습니다.</div>{% endif %}
+
+    <div class="card badge-w">
+      <h2>🏋️ 운동</h2>
+      <form method="post" action="/add">
+        <input type="hidden" name="category" value="workouts">
+        <div class="row">
+          <label>날짜<input type="date" name="record_date" value="{{ today }}"></label>
+          <label>운동명<input name="exercise_name" placeholder="예: 벤치프레스" required></label>
+        </div>
+        <div class="row">
+          <label>무게(kg)<input name="weight_kg" type="number" step="0.1" placeholder="선택"></label>
+          <label>횟수<input name="reps" type="number" placeholder="선택"></label>
+          <label>세트<input name="sets" type="number" placeholder="선택"></label>
+        </div>
+        <div class="row"><label>메모<input name="memo" placeholder="선택"></label></div>
+        <button type="submit">운동 추가</button>
+      </form>
+    </div>
+
+    <div class="card badge-m">
+      <h2>🍽️ 식단</h2>
+      <form method="post" action="/add">
+        <input type="hidden" name="category" value="meals">
+        <div class="row">
+          <label>날짜<input type="date" name="record_date" value="{{ today }}"></label>
+          <label>끼니
+            <select name="meal_type">
+              <option value="아침">아침</option><option value="점심">점심</option>
+              <option value="저녁">저녁</option><option value="간식">간식</option>
+            </select>
+          </label>
+        </div>
+        <div class="row"><label>음식<input name="food_text" placeholder="예: 닭가슴살 샐러드" required></label></div>
+        <div class="row"><label>메모<input name="memo" placeholder="선택"></label></div>
+        <button type="submit">식단 추가</button>
+      </form>
+    </div>
+
+    <div class="card badge-v">
+      <h2>❤️ 바이탈</h2>
+      <form method="post" action="/add">
+        <input type="hidden" name="category" value="vitals">
+        <div class="row">
+          <label>날짜<input type="date" name="record_date" value="{{ today }}"></label>
+          <label>체중(kg)<input name="body_weight_kg" type="number" step="0.1" placeholder="선택"></label>
+          <label>수면(시간)<input name="sleep_hours" type="number" step="0.1" placeholder="선택"></label>
+        </div>
+        <div class="row"><label>컨디션<input name="condition_text" placeholder="선택"></label></div>
+        <div class="row"><label>메모<input name="memo" placeholder="선택"></label></div>
+        <button type="submit">바이탈 추가</button>
+      </form>
+    </div>
+
+    <a class="back" href="/">← 대시보드로 돌아가기</a>
+  </div>
+</body>
+</html>
+"""
+
+
+def _to_float(value):
+    value = (value or "").strip()
+    try:
+        return float(value) if value else None
+    except ValueError:
+        return None
+
+
+def _to_int(value):
+    value = (value or "").strip()
+    try:
+        return int(float(value)) if value else None
+    except ValueError:
+        return None
+
+
+@app.route("/add", methods=["GET", "POST"])
+def add_record():
+    if request.method == "POST":
+        category = request.form.get("category")
+        record_date = (request.form.get("record_date") or "").strip() or date.today().isoformat()
+        memo = request.form.get("memo") or None
+        conn = get_conn()
+        try:
+            if category == "workouts":
+                conn.execute(
+                    "INSERT INTO workouts (record_date, exercise_name, weight_kg, reps, sets, memo) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (record_date, (request.form.get("exercise_name") or "").strip(),
+                     _to_float(request.form.get("weight_kg")), _to_int(request.form.get("reps")),
+                     _to_int(request.form.get("sets")), memo),
+                )
+                saved = "운동"
+            elif category == "meals":
+                conn.execute(
+                    "INSERT INTO meals (record_date, meal_type, food_text, memo) VALUES (?, ?, ?, ?)",
+                    (record_date, request.form.get("meal_type"),
+                     (request.form.get("food_text") or "").strip(), memo),
+                )
+                saved = "식단"
+            elif category == "vitals":
+                conn.execute(
+                    "INSERT INTO vitals (record_date, body_weight_kg, sleep_hours, condition_text, memo) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (record_date, _to_float(request.form.get("body_weight_kg")),
+                     _to_float(request.form.get("sleep_hours")),
+                     (request.form.get("condition_text") or "").strip() or None, memo),
+                )
+                saved = "바이탈"
+            else:
+                return "Invalid category", 400
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            return f"Error: {e}", 500
+        finally:
+            conn.close()
+        return redirect(url_for("add_record", saved=saved))
+
+    return render_template_string(ADD_HTML, today=date.today().isoformat(),
+                                  saved=request.args.get("saved"))
 
 
 @app.route("/")
