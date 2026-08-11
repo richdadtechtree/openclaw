@@ -15,12 +15,43 @@ import os
 from datetime import datetime
 
 import requests
-from dotenv import load_dotenv
 
 # 기존 capture.py 의 캡처 함수/경로 재사용 (파일 수정 없음)
 from capture import capture_dashboard, SCREENSHOT_PATH
 
-load_dotenv()
+
+# ── .env 로딩 ────────────────────────────────────────────────────────────────
+# ⚠️ 예전엔 bare load_dotenv() 라 '실행 폴더의 .env'만 읽었다. 이 스크립트는 보통
+#    ~/stock/stock 에서 돌지만, Slack 키(SLACK_BOT_TOKEN/SLACK_BRIEFING_CHANNEL)는
+#    ~/.openclaw/.env 에 있어 못 찾고 "없습니다" 로 전송이 실패했다.
+#    → stock_alert_slack.py 와 동일하게 여러 위치의 .env 를 모두 훑는다(기존값 우선).
+def _load_env():
+    """stock/.env 와 openclaw/.env 를 모두 훑어 os.environ 에 채운다(기존값 우선)."""
+    candidates = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
+        os.path.join(os.getcwd(), ".env"),
+        os.path.expanduser("~/stock/stock/.env"),
+        os.path.expanduser("~/.openclaw/.env"),
+    ]
+    seen = set()
+    for path in candidates:
+        rp = os.path.realpath(path)
+        if rp in seen or not os.path.isfile(rp):
+            continue
+        seen.add(rp)
+        try:
+            with open(rp, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    os.environ.setdefault(k.strip(), v.strip())
+        except Exception as e:
+            print(f"[Warn] .env 로드 실패({rp}): {e}")
+
+
+_load_env()
 
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 SLACK_BRIEFING_CHANNEL = os.getenv("SLACK_BRIEFING_CHANNEL") or os.getenv("SLACK_STOCK_CHANNEL")
