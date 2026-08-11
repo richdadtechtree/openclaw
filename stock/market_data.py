@@ -63,6 +63,18 @@ try:
 except ValueError:
     KIS_ETF_SANITY_BAND = 0.07
 
+# 미국 ETF의 '시간외(애프터마켓)' 체결가를 현재가로 우선 노출할지 여부.
+# investing.com의 "After Hours"에 해당하는 값은 네이버 해외주식 basic 응답의
+# overMarketPriceInfo(시간외) 필드다. 정규장 마감 후 이 값이 있으면 종가 대신
+# 현재가로 보여준다(사용자 요청). 값이 없거나 파싱 실패 시 기존 종가로 안전 폴백.
+USE_AFTER_HOURS = os.getenv("USE_AFTER_HOURS", "1") not in ("0", "false", "False", "")
+AFTER_HOURS_SYMBOLS = {"QLD", "TQQQ"}
+# 시간외 값이 정규장 종가 대비 이 비율(기본 15%)을 넘게 벗어나면 이상치로 보고 무시(종가 폴백).
+try:
+    AFTER_HOURS_SANITY_BAND = float(os.getenv("AFTER_HOURS_SANITY_BAND", "0.15"))
+except ValueError:
+    AFTER_HOURS_SANITY_BAND = 0.15
+
 # 네이버 금융 '일별 시세'(고가) 조회용 매핑 — 역대 최고가(ATH)를 매일 갱신하는 데 사용.
 # 서버에서 야후(yfinance)가 막혀도 네이버로 각 심볼의 최근 일별 고가를 받아
 # '오늘 신고점이 갱신됐는지'를 매일 확인할 수 있습니다.
@@ -311,6 +323,18 @@ def _fetch_realtime_etf_quote(name):
     반환: (quote, source) 또는 None.  quote={"current","change_rate"}
     """
     naver_q = _fetch_naver_quote(name)
+    # 정규장 마감 후 '시간외(애프터마켓)' 값이 있으면 investing.com "After Hours"처럼
+    # 이를 현재가로 우선 노출한다. 단 종가 대비 과도한 괴리는 이상치로 보고 무시(폴백).
+    if (USE_AFTER_HOURS and name in AFTER_HOURS_SYMBOLS
+            and naver_q and naver_q.get("after_hours")):
+        ah = naver_q["after_hours"]
+        reg = naver_q.get("current", 0)
+        if reg > 0 and abs(ah["current"] - reg) / reg <= AFTER_HOURS_SANITY_BAND:
+            print(f"[{name}] 시간외(애프터마켓) {ah['current']} 사용 (정규장 종가 {reg})")
+            return {"current": ah["current"], "change_rate": ah["change_rate"]}, \
+                "Naver Finance (After Hours)"
+        print(f"[{name}] 시간외 {ah['current']} ↔ 종가 {reg} 괴리 "
+              f">{AFTER_HOURS_SANITY_BAND:.0%} → 무시(종가 사용)")
     kis_q = _fetch_kis_etf_realtime(name)
     if kis_q:
         ref = naver_q.get("current", 0) if naver_q else 0
@@ -322,6 +346,60 @@ def _fetch_realtime_etf_quote(name):
     if naver_q:
         return naver_q, "Naver Finance"
     return None
+
+
+def _parse_num(v):
+    """콤마 포함 문자열/숫자를 float으로 관대하게 파싱. 실패 시 None."""
+    if v in (None, "", "-"):
+        return None
+    try:
+        return float(str(v).replace(",", "").replace("%", "").strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_naver_after_hours(data, reg_close=None):
+    """
+    네이버 해외주식 basic 응답에서 '시간외(애프터마켓)' 체결가를 추출한다.
+    investing.com의 "After Hours" 값이 여기에 해당(네이버 overMarketPriceInfo).
+
+    ⚠️ 네이버가 하위 키명을 버전마다 바꿀 수 있어(문서화 안 됨) 여러 후보 키를
+       방어적으로 훑는다. 그리고 실제 스키마 확인용으로 원본 dict를 1회 로그로 남긴다.
+       하나도 못 뽑으면 None을 반환해 호출부가 '정규장 종가'로 안전 폴백하게 한다.
+
+    반환: {"current", "change_rate"} 또는 None.
+    """
+    info = None
+    for k in ("overMarketPriceInfo", "overMarketPrice", "afterMarketPriceInfo",
+              "afterMarketPrice", "preMarketPriceInfo", "overMarket", "afterMarket"):
+        v = data.get(k)
+        if isinstance(v, dict) and v:
+            info = v
+            try:
+                print(f"[AfterHours] naver '{k}' raw = {json.dumps(v, ensure_ascii=False)}")
+            except Exception:
+                pass
+            break
+    if not info:
+        return None
+    price = None
+    for pk in ("overPrice", "price", "closePrice", "nowPrice", "currentPrice",
+               "tradePrice", "lastPrice", "prevClosePrice"):
+        price = _parse_num(info.get(pk))
+        if price and price > 0:
+            break
+    if not price or price <= 0:
+        return None
+    ratio = None
+    for rk in ("fluctuationsRatio", "overFluctuationsRatio", "fluctuationRatio",
+               "ratio", "changeRate", "rateOfChange"):
+        ratio = _parse_num(info.get(rk))
+        if ratio is not None:
+            break
+    # 등락률을 못 받으면 정규장 종가 대비로 역산(부호 포함).
+    if ratio is None and reg_close:
+        ratio = (price - reg_close) / reg_close * 100
+    return {"current": price, "change_rate": ratio if ratio is not None else 0.0}
 
 
 def _fetch_naver_quote(name):
@@ -366,7 +444,12 @@ def _fetch_naver_quote(name):
                 # 네이버의 부호 있는 등락률을 직접 사용. (전일대비 '금액'을 역산하면
                 #  하락한 날 부호가 뒤집혀 QLD/TQQQ 등락률이 어긋남 — 지수 분기와 동일.)
                 change_rate = float(str(data.get("fluctuationsRatio", "0")).replace(",", ""))
-                return {"current": current, "change_rate": change_rate}
+                quote = {"current": current, "change_rate": change_rate}
+                # 시간외(애프터마켓) 체결가가 있으면 함께 실어 보낸다(호출부가 우선 노출 판단).
+                ah = _extract_naver_after_hours(data, current)
+                if ah:
+                    quote["after_hours"] = ah
+                return quote
     except Exception as e:
         print(f"Naver quote error for {name}: {e}")
     return None
