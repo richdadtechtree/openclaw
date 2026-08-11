@@ -51,6 +51,18 @@ SYMBOLS = {
 # (코스피·코스닥=네이버 국내지수, S&P500·나스닥=네이버 해외지수 .INX/.IXIC, TQQQ·QLD=네이버 해외주식)
 NAVER_FIRST_SYMBOLS = {"KOSPI", "KOSDAQ", "S&P 500", "NASDAQ", "QLD", "TQQQ"}
 
+# 실시간 우선으로 가져올 미국 레버리지 ETF.
+# 네이버 미국 시세는 ~15분 지연이라, 이 종목들은 KIS 해외 '실시간 체결가'를 우선 사용한다.
+# 단 과거 KIS가 값이 튄 이력이 있어(그래서 네이버로 전환했던 배경) 네이버와 교차검증한다.
+REALTIME_KIS_ETF = {"QLD", "TQQQ"}
+# KIS 해외 거래소 순차 시도 코드. QLD는 NYSE Arca 계열이라 AMS/NYS를 먼저, TQQQ는 나스닥.
+KIS_ETF_EXCHANGES = {"QLD": ("AMS", "NYS", "NAS"), "TQQQ": ("NAS", "NYS", "AMS")}
+# KIS 실시간값이 네이버(참조) 대비 이 비율(기본 7%)을 넘게 벗어나면 글리치로 보고 네이버 사용.
+try:
+    KIS_ETF_SANITY_BAND = float(os.getenv("KIS_ETF_SANITY_BAND", "0.07"))
+except ValueError:
+    KIS_ETF_SANITY_BAND = 0.07
+
 # 네이버 금융 '일별 시세'(고가) 조회용 매핑 — 역대 최고가(ATH)를 매일 갱신하는 데 사용.
 # 서버에서 야후(yfinance)가 막혀도 네이버로 각 심볼의 최근 일별 고가를 받아
 # '오늘 신고점이 갱신됐는지'를 매일 확인할 수 있습니다.
@@ -243,6 +255,48 @@ def _fetch_kis_quote(name):
     return None
 
 
+def _fetch_kis_etf_realtime(name):
+    """
+    KIS 해외 '실시간 체결가'로 미국 ETF 시세 조회 (거래소 순차 시도).
+    QLD는 NYSE Arca 계열이라 AMS/NYS를, TQQQ는 나스닥(NAS)을 우선 시도한다.
+    반환: {"current", "change_rate"} 또는 None.
+    """
+    client = get_kis_client()
+    if not client:
+        return None
+    symbol = SYMBOLS[name]["kis_code"][1]
+    for ex in KIS_ETF_EXCHANGES.get(name, ("NAS", "NYS", "AMS")):
+        try:
+            res = client.get_overseas_price(symbol, ex)
+            if res and res.get("current", 0) > 0:
+                return {"current": res["current"], "change_rate": res["change_rate"]}
+        except Exception as e:
+            print(f"KIS ETF realtime error {name}/{ex}: {e}")
+    return None
+
+
+def _fetch_realtime_etf_quote(name):
+    """
+    미국 레버리지 ETF(QLD·TQQQ)를 '실시간 우선'으로 가져온다.
+    - KIS 해외 실시간 체결가를 우선 사용.
+    - 단 과거 KIS가 값이 튄 이력이 있어, 네이버(지연이지만 정확)와 교차검증한다:
+      KIS가 네이버 대비 KIS_ETF_SANITY_BAND(기본 7%)를 벗어나면 글리치로 보고 네이버 사용.
+    반환: (quote, source) 또는 None.  quote={"current","change_rate"}
+    """
+    naver_q = _fetch_naver_quote(name)
+    kis_q = _fetch_kis_etf_realtime(name)
+    if kis_q:
+        ref = naver_q.get("current", 0) if naver_q else 0
+        if ref > 0 and abs(kis_q["current"] - ref) / ref > KIS_ETF_SANITY_BAND:
+            print(f"[{name}] KIS 실시간 {kis_q['current']} ↔ 네이버 {ref} 괴리 "
+                  f">{KIS_ETF_SANITY_BAND:.0%} → 네이버(안전) 사용")
+            return naver_q, "Naver Finance"
+        return kis_q, "Korea Investment API (real-time)"
+    if naver_q:
+        return naver_q, "Naver Finance"
+    return None
+
+
 def _fetch_naver_quote(name):
     """네이버 금융 비공식 API로 주가/등락률 조회 (해외주식/국내지수 폴백용)."""
     naver_codes = {
@@ -403,10 +457,17 @@ def get_snapshot(include_sparkline=False, use_cache=True):
                 quote = None
                 source = "None"
 
+                # 실시간 우선: 미국 레버리지 ETF(QLD·TQQQ)는 KIS 해외 '실시간 체결가'를 우선
+                # 사용하고 네이버(지연)와 교차검증한다. 네이버 15분 지연을 피해 실시간 반영.
+                if name in REALTIME_KIS_ETF:
+                    picked = _fetch_realtime_etf_quote(name)
+                    if picked:
+                        quote, source = picked
+
                 # 지수(코스피·코스닥·S&P500·나스닥)는 네이버 금융이 '지수 실값'을 정확히 제공하므로
                 # 네이버를 1순위로 사용합니다. 한투 API는 모의투자/지연 시세라 마감 지수가 어긋나서
-                # 폴백으로만 씁니다. (TQQQ·QLD 같은 개별 ETF는 기존대로 한투 우선)
-                if name in NAVER_FIRST_SYMBOLS:
+                # 폴백으로만 씁니다.
+                if not quote and name in NAVER_FIRST_SYMBOLS:
                     quote = _fetch_naver_quote(name)
                     if quote:
                         source = "Naver Finance"
