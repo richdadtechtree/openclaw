@@ -219,7 +219,8 @@ class KISClient:
 
         try:
             headers = self.get_headers("HHDFS00000300")
-            response = requests.get(url, headers=headers, params=params)
+            # 실시간 스냅샷 경로에서 호출되므로 타임아웃 필수(KIS 지연 시 대시보드 멈춤 방지).
+            response = requests.get(url, headers=headers, params=params, timeout=5)
             response.raise_for_status()
             data = response.json()
 
