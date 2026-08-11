@@ -1,6 +1,13 @@
 import os
 from pathlib import Path
-from dotenv import load_dotenv
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    # python-dotenv 가 없는 환경(예: openclaw 게이트웨이 python3)에서도
+    # 저장 경로가 죽지 않도록 no-op 로 대체. .env 는 서버 systemd/venv 에서 이미 로드됨.
+    def load_dotenv(*args, **kwargs):
+        return False
 
 DEFAULT_BASE_DIR = Path("/home/ubuntu/pt_system")
 BASE_DIR = DEFAULT_BASE_DIR if DEFAULT_BASE_DIR.exists() else Path(__file__).resolve().parents[1]

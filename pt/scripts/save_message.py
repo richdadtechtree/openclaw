@@ -1,11 +1,18 @@
+import os
 import re
 import sys
 from datetime import date
 from pathlib import Path
 
+# 이 벤더링된 openclaw 복사본(dotenv 선택적)을 우선 임포트하도록 자기 패키지를 맨 앞에 둔다.
+# (DB 경로는 config.py 가 /home/ubuntu/pt_system 존재 시 그쪽 pt_data.db 를 가리켜 대시보드와 공유)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.append(str(Path("/home/ubuntu/pt_system")))
-sys.path.append(str(Path(__file__).resolve().parents[1]))
 from scripts.db import get_conn
+
+# 기록 출처(raw_messages.source). 슬랙 전환 이후 기본값은 "slack".
+# 환경변수 PT_SOURCE 또는 실행 시 `--source <이름>` 로 덮어쓸 수 있음(텔레그램 호환).
+DEFAULT_SOURCE = os.getenv("PT_SOURCE", "slack")
 
 def find_weight(text):
     match = re.search(r"체중\s*([0-9]+(?:\.[0-9]+)?)\s*kg", text, re.IGNORECASE) 
@@ -15,12 +22,12 @@ def find_sleep(text):
     match = re.search(r"수면\s*([0-9]+(?:\.[0-9]+)?)\s*시간", text) 
     return float(match.group(1)) if match else None
 
-def save_raw_message(text):
+def save_raw_message(text, source=DEFAULT_SOURCE):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute(
         "INSERT INTO raw_messages (source, message_text, processed) VALUES (?, ?, ?)",
-        ("telegram", text, 1),
+        (source, text, 1),
     )
     conn.commit()
     conn.close()
@@ -117,22 +124,32 @@ def save_meal_if_present(text):
     return count
 
 def main():
-    text = " ".join(sys.argv[1:]).strip()
+    args = sys.argv[1:]
+    source = DEFAULT_SOURCE
+    # 선택적 `--source <이름>` 플래그(맨 앞) 파싱 — 나머지는 메시지 본문.
+    if len(args) >= 2 and args[0] == "--source":
+        source = args[1]
+        args = args[2:]
+
+    text = " ".join(args).strip()
     if not text:
         text = sys.stdin.read().strip()
     if not text:
-        print("입력된 메시지가 없습니다.") 
+        print("입력된 메시지가 없습니다.")
         return
 
-    save_raw_message(text)
+    save_raw_message(text, source)
     workout_count = save_workout_if_present(text)
     meal_count = save_meal_if_present(text)
     vitals_saved = save_vitals_if_present(text)
-    
+
     print("[기록 완료]")
     print(f"- 운동: {workout_count}개")
     print(f"- 식단: {meal_count}개")
     print(f"- 바이탈: {'저장됨' if vitals_saved else '없음'}")
+    # 파싱된 기록이 하나도 없으면 호출자(에이전트)가 감지해 사용자에게 경고하도록 표시.
+    if workout_count == 0 and meal_count == 0 and not vitals_saved:
+        print("[미저장] 인식된 운동/식단/바이탈 키워드가 없어 raw_messages 에만 남았습니다.")
     print("- 오늘의 한마디: 기록을 남긴 것 자체가 가장 중요한 시작입니다.")
 
 if __name__ == "__main__":
