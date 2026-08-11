@@ -82,6 +82,14 @@ NAVER_HISTORY = {
 # 역대 최고가 캐시 (기본값은 안전용, 시작 시 load_ath_from_history()로 갱신)
 ATH_CACHE = {name: info["default_ath"] for name, info in SYMBOLS.items()}
 
+# ATH 강제 재교정 (SSH 불필요): 캐시(.ath_cache.json)에 잘못 높게 박힌 역대최고가를
+# 코드 배포만으로 한 번에 바로잡는 장치. 아래 버전을 올리면, 다음 로드 때 캐시의 저장값을
+# 무시하고 RESET_VALUES 로 강제(내림 포함) 세팅한 뒤 캐시에 버전을 기록한다.
+# 그 이후로는 다시 실시간 신고점이 정상적으로 갱신·저장된다(1회성 교정).
+ATH_RESET_VERSION = 1
+ATH_RESET_VALUES = {"QLD": 101.19}
+ATH_RESET_META_KEY = "__reset_version__"
+
 _kis_client = None
 _kis_init_tried = False
 
@@ -110,14 +118,25 @@ def get_kis_client():
 
 
 def _load_persisted_ath():
-    """저장해 둔 ATH를 읽어 캐시에 반영 (상한선 이하 & 현재 캐시보다 큰 값만)."""
+    """저장해 둔 ATH를 읽어 캐시에 반영 (상한선 이하 & 현재 캐시보다 큰 값만).
+    잘못 박힌 값은 ATH_RESET_VERSION 로 1회성 강제 교정한다(SSH 불필요)."""
     try:
         if not os.path.exists(ATH_PERSIST_FILE):
             return
         with open(ATH_PERSIST_FILE, "r") as f:
             saved = json.load(f)
+        if not isinstance(saved, dict):
+            return
+        # 저장된 리셋버전이 낮으면, 이번 로드에서 RESET_VALUES 심볼을 강제 교정한다.
+        try:
+            force_reset = int(saved.get(ATH_RESET_META_KEY, 0)) < ATH_RESET_VERSION
+        except (TypeError, ValueError):
+            force_reset = True
         for name, val in saved.items():
-            if name not in ATH_CACHE:
+            if name == ATH_RESET_META_KEY or name not in ATH_CACHE:
+                continue
+            # 강제 교정 대상은 저장값을 무시(아래에서 리셋값으로 세팅)
+            if force_reset and name in ATH_RESET_VALUES:
                 continue
             max_limit = SYMBOLS.get(name, {}).get("max_valid_ath", float("inf"))
             try:
@@ -126,6 +145,12 @@ def _load_persisted_ath():
                 continue
             if v <= max_limit and v > ATH_CACHE.get(name, 0):
                 ATH_CACHE[name] = round(v, 2)
+        if force_reset:
+            for name, val in ATH_RESET_VALUES.items():
+                if name in ATH_CACHE:
+                    ATH_CACHE[name] = round(float(val), 2)   # 내림 포함 강제
+                    print(f"[ATH] reset {name} → {ATH_CACHE[name]} (reset v{ATH_RESET_VERSION})")
+            _save_persisted_ath()   # 교정값 + 버전 기록
     except Exception as e:
         print(f"[ATH] persist load error: {e}")
 
@@ -133,8 +158,10 @@ def _load_persisted_ath():
 def _save_persisted_ath():
     """현재 ATH 캐시를 파일에 저장 (재시작해도 최고가를 기억하도록)."""
     try:
+        data = dict(ATH_CACHE)
+        data[ATH_RESET_META_KEY] = ATH_RESET_VERSION   # 리셋 버전 기록
         with open(ATH_PERSIST_FILE, "w") as f:
-            json.dump(ATH_CACHE, f, indent=2, ensure_ascii=False)
+            json.dump(data, f, indent=2, ensure_ascii=False)
     except Exception as e:
         print(f"[ATH] persist save error: {e}")
 
