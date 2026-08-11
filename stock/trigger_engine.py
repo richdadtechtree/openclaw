@@ -460,10 +460,14 @@ class TriggerEngine:
                     row = conn.execute(
                         "SELECT triggered_at FROM trigger_state WHERE symbol=? AND stage=?",
                         (sym, key)).fetchone()
+                    # 점등은 '현재 낙폭'만으로 판정한다. 과거 알람 이력(triggered_at)은
+                    # 지금 그 선을 회복했으면(triggered=False) 함께 감춘다 —
+                    # 안 그러면 프론트가 옛 이력으로 색을 칠해, 이미 회복한 단계까지
+                    # 계속 켜져 보인다(예: 코스닥 -30.2%인데 -40%도 점등).
                     stages.append({
                         "stage": int(stage),
                         "triggered": triggered,
-                        "triggered_at": row[0] if row else None,
+                        "triggered_at": row[0] if (row and triggered) else None,
                     })
                     if not triggered and next_stage is None:
                         next_stage = int(stage)
