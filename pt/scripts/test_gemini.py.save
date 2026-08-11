@@ -1,0 +1,11 @@
+from google import genai
+from scripts.config import GEMINI_MODEL
+
+client = genai.Client()
+
+response = client.models.generate_content(
+    model=GEMINI_MODEL,
+    contents="한국어로 한 문장만 답하세요. AI PT 시스템 테스트입니다."
+)
+
+print(response.text)
