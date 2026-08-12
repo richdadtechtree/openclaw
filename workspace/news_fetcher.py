@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timedelta, timezone
 import requests
 from bs4 import BeautifulSoup
+import urllib.parse
 import feedparser
 
 # RSS URLs config
@@ -17,10 +18,7 @@ FEEDS = {
         "https://www.mk.co.kr/rss/30300018/"   # 국제
     ],
     "한국경제": [
-        "https://www.hankyung.com/feed/economy",
-        "https://www.hankyung.com/feed/finance",
-        "https://www.hankyung.com/feed/realestate",
-        "https://www.hankyung.com/feed/international"
+        "https://www.hankyung.com/feed/all-news"
     ]
 }
 
