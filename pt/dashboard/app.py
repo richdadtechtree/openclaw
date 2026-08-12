@@ -382,10 +382,40 @@ HTML = """
     }
 
     @media (max-width: 768px) {
-      header { padding: 20px; flex-direction: column; align-items: stretch; }
+      header { padding: 16px 18px; flex-direction: column; align-items: stretch; gap: 14px; }
+      header h1 { font-size: 22px; }
+      header p { font-size: 13px; }
       .nav-tabs { width: 100%; justify-content: space-around; }
-      main { padding: 20px; }
-      .grid-stats { grid-template-columns: 1fr; }
+      .tab-btn { flex: 1; justify-content: center; padding: 9px 8px; font-size: 13px; }
+      main { padding: 16px; }
+      .grid-stats { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+      .stat-card { padding: 18px; }
+      .stat-value { font-size: 26px; }
+      .card { padding: 20px; }
+      .card-title { font-size: 18px; }
+      th { padding: 12px 14px; }
+      td { padding: 12px 14px; font-size: 13px; }
+    }
+
+    @media (max-width: 480px) {
+      header { padding: 14px; }
+      header h1 { font-size: 20px; }
+      header p { font-size: 12px; }
+      .brand-section { gap: 12px; }
+      .tab-btn { padding: 8px 6px; font-size: 12px; gap: 5px; }
+      main { padding: 12px; }
+      .grid-stats { gap: 10px; }
+      .stat-card { padding: 14px; gap: 10px; }
+      .stat-value { font-size: 23px; }
+      .stat-label { font-size: 12px; }
+      .stat-icon { width: 40px; height: 40px; }
+      .card { padding: 15px; }
+      .card-title { font-size: 16px; }
+      th { padding: 10px 12px; font-size: 11px; letter-spacing: 0.3px; }
+      td { padding: 10px 12px; font-size: 12.5px; }
+      .report-box { padding: 18px; font-size: 14px; }
+      .report-box::after { font-size: 48px; }
+      .challenge-grid { gap: 12px; }
     }
 
     .delete-btn {
