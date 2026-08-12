@@ -79,3 +79,13 @@ workspace/MEMORY.md
 workspace/get_notion_book.py
 workspace/bookman/TOOLS.md
 workspace/agents/bookman/TOOLS.md
+
+# openclaw agent 캐시/임시 폴더
+agents/*/agent/codex-home/.tmp/
+agents/*/agent/codex-home/tmp/
+agents/*/agent/codex-home/sessions/
+workspace/*/agent/codex-home/.tmp/
+workspace/*/agent/codex-home/tmp/
+
+# 미디어 수신 임시 폴더
+agents/*/media/inbound/openclaw-staged-*/
