@@ -63,3 +63,19 @@ slack_logs/
 # npm 플러그인 폴더 보호 (git clean -fd 로부터 보호)
 npm/
 plugin-skills/
+
+# 시크릿/민감 정보 파일
+openclaw.json.bak*
+openclaw.json.clobbered*
+workspace/MEMORY.md
+workspace/get_notion_book.py
+agents/main/agent/codex-home/shell_snapshots/
+
+# 민감 정보 제외
+openclaw.json.bak*
+openclaw.json.clobbered*
+agents/main/agent/codex-home/shell_snapshots/
+workspace/MEMORY.md
+workspace/get_notion_book.py
+workspace/bookman/TOOLS.md
+workspace/agents/bookman/TOOLS.md
