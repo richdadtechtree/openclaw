@@ -191,12 +191,7 @@
 형준이 보낸 원문을 그대로 큰따옴표 안에 넣는다.
 
 ```
-SAVE_SCRIPT=$(find /home/ubuntu -name "save_message.py" 2>/dev/null | head -1)
-if [ -z "$SAVE_SCRIPT" ]; then echo "ERROR: save_message.py 파일을 찾을 수 없음"; exit 1; fi
-PYTHON=$(dirname "$SAVE_SCRIPT")/../venv/bin/python
-[ ! -f "$PYTHON" ] && PYTHON=$(dirname "$SAVE_SCRIPT")/../../venv/bin/python
-[ ! -f "$PYTHON" ] && PYTHON=python3
-"$PYTHON" "$SAVE_SCRIPT" "형준이 보낸 원문 그대로"
+python3 /home/ubuntu/.openclaw/scripts/save_message.py "형준이 보낸 원문 그대로"
 ```
 
 실행 결과(운동 N개 / 식단 N개 / 바이탈)를 보고 판단한다.
