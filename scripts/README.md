@@ -67,9 +67,10 @@ scripts/setup-server-cron.sh
 
 ### 서비스 이름 / 재시작 방식
 
-- systemd **시스템 서비스**라면: `OPENCLAW_RESTART_CMD="sudo systemctl restart <서비스명>"`
-- systemd **유저 서비스**라면: `OPENCLAW_RESTART_CMD="systemctl --user restart <서비스명>"`
-- 재시작이 필요 없다면: `OPENCLAW_RESTART_CMD=":"`
+- 실제 서비스명: **`openclaw-gateway.service`** (systemd user 서비스)
+- 재시작: `systemctl --user restart openclaw-gateway.service`
+- 상태: `systemctl --user status openclaw-gateway.service`
+- 로그: `journalctl --user -u openclaw-gateway.service -f`
 
 `sudo` 로 재시작한다면 cron 이 비밀번호 없이 실행되도록 sudoers 설정이 필요합니다
 (`setup-server-cron.sh` 실행 시 안내 문구 출력). 예:
