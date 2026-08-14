@@ -1,0 +1,1281 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>주가 및 투자 타이밍 대시보드 | OpenClaw Stock Briefing</title>
+  <meta name="description" content="실시간 주가지수, 역대 최고가(ATH) 대비 하락률, 단계별 분할 매수 타이밍, 관심 종목 및 ETF 변동성 모니터링 대시보드">
+  
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      /* Base Color Tokens - Modern Dark Visual System */
+      --bg-body: #090d16;
+      --bg-surface: #111726;
+      --bg-surface-hover: #182033;
+      --bg-card: #161e31;
+      --bg-card-subtle: #1c273e;
+      --border-color: #232f48;
+      --border-color-strong: #334466;
+      
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-faint: #64748b;
+      
+      /* Primary & Accent Palette */
+      --accent-primary: #6366f1;
+      --accent-primary-hover: #4f46e5;
+      --accent-glow: rgba(99, 102, 241, 0.25);
+      
+      /* Financial Metric Colors */
+      --color-up: #10b981;
+      --color-up-bg: rgba(16, 185, 129, 0.12);
+      --color-up-border: rgba(16, 185, 129, 0.3);
+      
+      --color-down: #ef4444;
+      --color-down-bg: rgba(239, 68, 68, 0.12);
+      --color-down-border: rgba(239, 68, 68, 0.3);
+      
+      --color-warning: #f59e0b;
+      --color-warning-bg: rgba(245, 158, 11, 0.12);
+      --color-warning-border: rgba(245, 158, 11, 0.3);
+      
+      --color-slack: #4a154b;
+      --color-slack-accent: #e01e5a;
+      
+      /* Component Tokens */
+      --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.2);
+      --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.3);
+      --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.45);
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --radius-full: 9999px;
+      
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', sans-serif;
+      --font-display: 'Outfit', var(--font-sans);
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    [data-theme="light"] {
+      --bg-body: #f4f6fb;
+      --bg-surface: #ffffff;
+      --bg-surface-hover: #f1f5f9;
+      --bg-card: #ffffff;
+      --bg-card-subtle: #f8fafc;
+      --border-color: #e2e8f0;
+      --border-color-strong: #cbd5e1;
+      
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --text-faint: #94a3b8;
+      
+      --accent-primary: #4f46e5;
+      --accent-primary-hover: #4338ca;
+      --accent-glow: rgba(79, 70, 229, 0.15);
+      
+      --color-up: #059669;
+      --color-up-bg: #ecfdf5;
+      --color-up-border: #a7f3d0;
+      
+      --color-down: #dc2626;
+      --color-down-bg: #fef2f2;
+      --color-down-border: #fecaca;
+      
+      --color-warning: #d97706;
+      --color-warning-bg: #fffbeb;
+      --color-warning-border: #fde68a;
+      
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+      --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.12);
+    }
+
+    /* Reset & Base Styling */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-body);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      padding-bottom: 80px;
+      transition: background-color 0.3s ease, color 0.3s ease;
+    }
+
+    /* Layout Construction */
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 24px 20px;
+    }
+
+    /* Header Nav Bar */
+    header.nav-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 24px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      margin-bottom: 28px;
+      box-shadow: var(--shadow-md);
+      backdrop-filter: blur(12px);
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-logo {
+      width: 44px;
+      height: 44px;
+      background: linear-gradient(135deg, #6366f1, #a855f7);
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      box-shadow: 0 4px 12px var(--accent-glow);
+    }
+
+    .brand-titles h1 {
+      font-family: var(--font-display);
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-titles p {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--color-up);
+      background: var(--color-up-bg);
+      border: 1px solid var(--color-up-border);
+      padding: 6px 12px;
+      border-radius: var(--radius-full);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background-color: var(--color-up);
+      border-radius: 50%;
+      animation: pulse-dot 2s infinite ease-in-out;
+    }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-sans);
+      font-size: 13.5px;
+      font-weight: 600;
+      padding: 9px 16px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border-color-strong);
+      background: var(--bg-card-subtle);
+      color: var(--text-main);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-decoration: none;
+      user-select: none;
+    }
+
+    .btn:hover {
+      background: var(--bg-surface-hover);
+      border-color: var(--accent-primary);
+      transform: translateY(-1px);
+    }
+
+    .btn-slack {
+      background: linear-gradient(135deg, #4a154b, #611f69);
+      color: #ffffff;
+      border-color: #611f69;
+      box-shadow: 0 4px 12px rgba(74, 21, 75, 0.35);
+    }
+
+    .btn-slack:hover {
+      background: linear-gradient(135deg, #611f69, #7c2587);
+      border-color: #7c2587;
+      color: #ffffff;
+    }
+
+    /* Section Styling */
+    .section-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .section-title h2 {
+      font-family: var(--font-display);
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-title .subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+
+    /* Top Grid: Major Stock Indices */
+    .indices-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 18px;
+      margin-bottom: 32px;
+    }
+
+    .market-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      box-shadow: var(--shadow-sm);
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .market-card:hover {
+      transform: translateY(-3px);
+      box-shadow: var(--shadow-lg);
+      border-color: var(--border-color-strong);
+    }
+
+    .market-card.sidecar-active {
+      border: 2px solid var(--color-down);
+      animation: pulse-border 1.5s infinite;
+    }
+
+    @keyframes pulse-border {
+      0%, 100% { border-color: var(--color-down); box-shadow: 0 0 15px rgba(239, 68, 68, 0.4); }
+      50% { border-color: var(--border-color); box-shadow: none; }
+    }
+
+    .card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+
+    .index-name {
+      font-family: var(--font-display);
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .flag-icon {
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    .source-tag {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: var(--text-faint);
+      background: var(--bg-card-subtle);
+      padding: 3px 7px;
+      border-radius: 4px;
+      border: 1px solid var(--border-color);
+    }
+
+    .price-value {
+      font-family: var(--font-mono);
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--text-main);
+      line-height: 1.2;
+      margin-bottom: 6px;
+      letter-spacing: -0.02em;
+    }
+
+    .price-change-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .change-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: var(--radius-sm);
+    }
+
+    .change-pill.up {
+      color: var(--color-up);
+      background: var(--color-up-bg);
+      border: 1px solid var(--color-up-border);
+    }
+
+    .change-pill.down {
+      color: var(--color-down);
+      background: var(--color-down-bg);
+      border: 1px solid var(--color-down-border);
+    }
+
+    .change-pill.flat {
+      color: var(--text-muted);
+      background: var(--bg-card-subtle);
+    }
+
+    /* ATH Metrics & Progress Bar */
+    .ath-box {
+      background: var(--bg-card-subtle);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      margin-top: 12px;
+    }
+
+    .ath-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .ath-header .ath-val {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .ath-dd-pct {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .ath-dd-pct.alert-level {
+      color: var(--color-down);
+    }
+
+    .progress-bar-container {
+      width: 100%;
+      height: 7px;
+      background: var(--border-color);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #6366f1, #10b981);
+      border-radius: 4px;
+      transition: width 0.5s ease;
+    }
+
+    .progress-bar-fill.warning {
+      background: linear-gradient(90deg, #f59e0b, #ef4444);
+    }
+
+    /* SVG Sparkline Container */
+    .sparkline-box {
+      height: 48px;
+      width: 100%;
+      margin-top: 14px;
+    }
+
+    .sparkline-svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    /* Investment Strategy & Timing Section */
+    .strategy-section {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      margin-bottom: 32px;
+      box-shadow: var(--shadow-md);
+    }
+
+    .us-crash-banner {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 18px;
+      border-radius: var(--radius-md);
+      margin-bottom: 22px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .us-crash-banner.normal {
+      background: var(--color-up-bg);
+      border: 1px solid var(--color-up-border);
+      color: var(--color-up);
+    }
+
+    .us-crash-banner.alert {
+      background: var(--color-warning-bg);
+      border: 1px solid var(--color-warning-border);
+      color: var(--color-warning);
+    }
+
+    .strategy-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+    }
+
+    .strategy-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 18px;
+    }
+
+    .strategy-card-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: var(--font-display);
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 12px;
+    }
+
+    .stage-pills-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 12px 0;
+    }
+
+    .stage-pill {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-color);
+      background: var(--bg-card-subtle);
+      color: var(--text-faint);
+    }
+
+    .stage-pill.triggered {
+      background: var(--color-down-bg);
+      border-color: var(--color-down-border);
+      color: var(--color-down);
+      font-weight: 700;
+      box-shadow: 0 0 8px rgba(239, 68, 68, 0.2);
+    }
+
+    .next-trigger-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12.5px;
+      color: var(--text-muted);
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px dashed var(--border-color);
+    }
+
+    .next-trigger-meta strong {
+      color: var(--text-main);
+      font-family: var(--font-mono);
+    }
+
+    /* TQQQ Strategy Box */
+    .tqqq-box {
+      grid-column: 1 / -1;
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.6), rgba(15, 23, 42, 0.8));
+      border: 1px solid var(--border-color-strong);
+      border-radius: var(--radius-md);
+      padding: 20px;
+    }
+
+    .tqqq-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-top: 14px;
+    }
+
+    .tqqq-phase-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      padding: 14px;
+    }
+
+    /* Custom Stocks Watchlist Section */
+    .custom-stocks-section {
+      margin-bottom: 32px;
+    }
+
+    .filter-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    .tab-btn {
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-full);
+      padding: 6px 14px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .tab-btn:hover {
+      color: var(--text-main);
+      border-color: var(--border-color-strong);
+    }
+
+    .tab-btn.active {
+      color: #ffffff;
+      background: var(--accent-primary);
+      border-color: var(--accent-primary);
+      box-shadow: 0 2px 8px var(--accent-glow);
+    }
+
+    .custom-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 16px;
+    }
+
+    .stock-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .stock-card:hover {
+      transform: translateY(-2px);
+      border-color: var(--border-color-strong);
+    }
+
+    .stock-card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .stock-symbol {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent-primary);
+      background: var(--accent-glow);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .stock-name {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .stock-price {
+      font-family: var(--font-mono);
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-main);
+      margin: 4px 0;
+    }
+
+    .step-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 4px;
+      margin-top: 6px;
+    }
+
+    .step-badge.rise {
+      color: var(--color-up);
+      background: var(--color-up-bg);
+      border: 1px solid var(--color-up-border);
+    }
+
+    .step-badge.fall {
+      color: var(--color-down);
+      background: var(--color-down-bg);
+      border: 1px solid var(--color-down-border);
+    }
+
+    /* Market Summary / Briefing Box */
+    .summary-section {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      margin-bottom: 32px;
+      box-shadow: var(--shadow-md);
+    }
+
+    .summary-content {
+      font-size: 15px;
+      line-height: 1.75;
+      color: var(--text-main);
+      background: var(--bg-card-subtle);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 20px;
+      white-space: pre-wrap;
+      font-family: var(--font-sans);
+    }
+
+    /* Footer */
+    footer.app-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 24px;
+      border-top: 1px solid var(--border-color);
+      font-size: 12.5px;
+      color: var(--text-faint);
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    /* Toast Notification */
+    .toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 9999;
+    }
+
+    .toast {
+      background: var(--bg-surface);
+      color: var(--text-main);
+      border: 1px solid var(--border-color-strong);
+      box-shadow: var(--shadow-lg);
+      padding: 12px 20px;
+      border-radius: var(--radius-md);
+      font-size: 14px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      animation: slideUp 0.3s ease;
+    }
+
+    @keyframes slideUp {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    @media (max-width: 768px) {
+      .container { padding: 16px 12px; }
+      header.nav-header { flex-direction: column; align-items: flex-start; }
+      .header-actions { width: 100%; justify-content: space-between; }
+      .price-value { font-size: 22px; }
+      .indices-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    
+    <!-- Top Navigation Header -->
+    <header class="nav-header">
+      <div class="brand-section">
+        <div class="brand-logo">📈</div>
+        <div class="brand-titles">
+          <h1>주가 & 투자 타이밍 대시보드</h1>
+          <p>OpenClaw Real-Time Market Intelligence Engine (Slack 연동)</p>
+        </div>
+      </div>
+      
+      <div class="header-actions">
+        <div class="status-badge">
+          <span class="status-dot"></span>
+          <span id="sync-status">실시간 연결됨</span>
+        </div>
+        
+        <button class="btn" id="refresh-btn" title="지금 수동 새로고침">
+          🔄 <span id="timer-count">20초</span>
+        </button>
+        
+        <button class="btn" id="theme-toggle-btn" title="다크/라이트 모드 전환">
+          🌙 모드
+        </button>
+
+        <a href="/slack" class="btn btn-slack" target="_blank" title="슬랙 데일리 다이제스트 실시간 열람">
+          💬 슬랙 실시간 다이제스트
+        </a>
+      </div>
+    </header>
+
+    <!-- Section 1: Major Market Indices Grid -->
+    <section class="market-section">
+      <div class="section-title">
+        <h2>📊 주요 글로벌 시장 지수 & 시세 스냅샷</h2>
+        <span class="subtitle" id="last-updated-time">최종 갱신: 불러오는 중…</span>
+      </div>
+      
+      <div class="indices-grid" id="indices-grid">
+        <div class="market-card"><p>지수 데이터를 로딩 중입니다…</p></div>
+      </div>
+    </section>
+
+    <!-- Section 2: Investment Strategy & Drawdown Trigger Status -->
+    <section class="strategy-section">
+      <div class="section-title">
+        <h2>🎯 분할 매수 투자 타이밍 전략 (ATH 기준)</h2>
+        <span class="subtitle">역대 최고가 대비 구간별 시드 분할 집행 엔진</span>
+      </div>
+
+      <!-- S&P 500 Global Market Condition Banner -->
+      <div class="us-crash-banner normal" id="us-crash-banner">
+        <span>🌐 S&P 500 시장 상태 검사 중…</span>
+      </div>
+
+      <!-- Strategy Cards Grid -->
+      <div class="strategy-cards-grid" id="strategy-cards-grid">
+        <p>투자 타이밍 현황을 계산 중입니다…</p>
+      </div>
+    </section>
+
+    <!-- Section 3: Custom Stocks Watchlist -->
+    <section class="custom-stocks-section">
+      <div class="section-title">
+        <h2>⭐ 관심 종목 및 ETF 변동성 모니터링</h2>
+        <span class="subtitle">2% 단위 Step 변동성 알림 추적 (슬랙 연동)</span>
+      </div>
+
+      <div class="filter-tabs" id="filter-tabs">
+        <button class="tab-btn active" data-filter="all">전체 종목</button>
+        <button class="tab-btn" data-filter="stock">개별 주식</button>
+        <button class="tab-btn" data-filter="etf">ETF</button>
+        <button class="tab-btn" data-filter="alert">당일 알림 발생</button>
+      </div>
+
+      <div class="custom-grid" id="custom-stocks-grid">
+        <p>관심 종목 데이터를 로딩 중입니다…</p>
+      </div>
+    </section>
+
+    <!-- Section 4: AI Market Executive Summary -->
+    <section class="summary-section">
+      <div class="section-title">
+        <h2>📝 종합 시장 상황 & 투자 가이드 요약</h2>
+        <button class="btn" id="copy-summary-btn">📋 텍스트 복사</button>
+      </div>
+      <div class="summary-content" id="summary-content">
+        시장 요약 브리핑을 생성하는 중입니다…
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <div>OpenClaw Stock Briefing Engine v2.6 · Slack Integration</div>
+      <div>20초마다 자동 갱신 (KST) · 역대 최고가 단조 증가 검증 적용</div>
+    </footer>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script>
+    // Flag & Symbol Mapping
+    const INDEX_METADATA = {
+      'KOSPI':   { name: '코스피', flag: '🇰🇷' },
+      'KOSDAQ':  { name: '코스닥', flag: '🇰🇷' },
+      'S&P 500': { name: 'S&P 500', flag: '🇺🇸' },
+      'NASDAQ':  { name: '나스닥', flag: '🇺🇸' },
+      'QLD':     { name: 'QLD (ProShares 2x)', flag: '🇺🇸' },
+      'TQQQ':    { name: 'TQQQ (ProShares 3x)', flag: '🇺🇸' }
+    };
+
+    function getFlagEmoji(symbol, name) {
+      if (INDEX_METADATA[symbol]) return INDEX_METADATA[symbol].flag;
+      if (/^\d+$/.test(symbol)) return '🇰🇷'; // Korean stocks (6-digit numbers)
+      return '🇺🇸'; // US stocks/ETFs
+    }
+
+    function getIndexDisplayName(symbol) {
+      if (INDEX_METADATA[symbol]) {
+        return `${INDEX_METADATA[symbol].flag} ${INDEX_METADATA[symbol].name}`;
+      }
+      return `${getFlagEmoji(symbol)} ${symbol}`;
+    }
+
+    // ---------------------------------------------------- Application State
+    const AppState = {
+      indices: null,
+      alerts: null,
+      customStocks: null,
+      summary: null,
+      activeFilter: 'all',
+      countdownSeconds: 20,
+      timerId: null
+    };
+
+    // ---------------------------------------------------- Helper Functions
+    function formatNumber(num, decimals = 2) {
+      if (num === null || num === undefined || isNaN(num)) return '-';
+      return new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals
+      }).format(num);
+    }
+
+    function formatChangePill(rate) {
+      if (rate === null || rate === undefined || isNaN(rate)) {
+        return `<span class="change-pill flat">-</span>`;
+      }
+      const isUp = rate > 0;
+      const isDown = rate < 0;
+      const sign = isUp ? '+' : '';
+      const arrow = isUp ? '▲' : (isDown ? '▼' : '-');
+      const cls = isUp ? 'up' : (isDown ? 'down' : 'flat');
+      return `<span class="change-pill ${cls}">${arrow} ${sign}${rate.toFixed(2)}%</span>`;
+    }
+
+    function showToast(message, icon = 'ℹ️') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      toast.className = 'toast';
+      toast.innerHTML = `<span>${icon}</span><span>${message}</span>`;
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateY(10px)';
+        toast.style.transition = 'all 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    // SVG Sparkline Generator
+    function renderSparklineSVG(points) {
+      if (!points || points.length < 2) {
+        return `<svg class="sparkline-svg" viewBox="0 0 100 40"><line x1="0" y1="20" x2="100" y2="20" stroke="var(--border-color)" stroke-dasharray="2,2"/></svg>`;
+      }
+      
+      const width = 280;
+      const height = 44;
+      const padding = 4;
+      
+      const min = Math.min(...points);
+      const max = Math.max(...points);
+      const range = max - min || 1;
+      
+      const coords = points.map((val, index) => {
+        const x = padding + (index / (points.length - 1)) * (width - 2 * padding);
+        const y = height - padding - ((val - min) / range) * (height - 2 * padding);
+        return { x, y };
+      });
+
+      const pathD = coords.reduce((acc, curr, i) => {
+        return i === 0 ? `M ${curr.x},${curr.y}` : `${acc} L ${curr.x},${curr.y}`;
+      }, '');
+
+      const isOverallUp = points[points.length - 1] >= points[0];
+      const strokeColor = isOverallUp ? 'var(--color-up)' : 'var(--color-down)';
+      const fillColor = isOverallUp ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)';
+      const areaD = `${pathD} L ${coords[coords.length - 1].x},${height} L ${coords[0].x},${height} Z`;
+
+      return `
+        <svg class="sparkline-svg" viewBox="0 0 ${width} ${height}">
+          <defs>
+            <linearGradient id="grad-${Math.random().toString(36).substr(2, 9)}" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="${strokeColor}" stop-opacity="0.3"/>
+              <stop offset="100%" stop-color="${strokeColor}" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <path d="${areaD}" fill="${fillColor}" />
+          <path d="${pathD}" fill="none" stroke="${strokeColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="${coords[coords.length - 1].x}" cy="${coords[coords.length - 1].y}" r="3" fill="${strokeColor}" />
+        </svg>
+      `;
+    }
+
+    // ---------------------------------------------------- Fetch & Render Engine
+    async function fetchDashboardData() {
+      try {
+        const [resIndices, resAlerts, resCustom, resSummary] = await Promise.all([
+          fetch('/api/indices').then(r => r.json()),
+          fetch('/api/alerts').then(r => r.json()),
+          fetch('/api/custom-stocks').then(r => r.json()),
+          fetch('/api/summary').then(r => r.json())
+        ]);
+
+        if (resIndices.status === 'success') AppState.indices = resIndices.data;
+        if (resAlerts.status === 'success') AppState.alerts = resAlerts.data;
+        if (resCustom.status === 'success') AppState.customStocks = resCustom.data;
+        if (resSummary.status === 'success') AppState.summary = resSummary.text;
+
+        document.getElementById('last-updated-time').textContent = `최종 갱신: ${new Date().toLocaleTimeString('ko-KR')}`;
+        document.getElementById('sync-status').textContent = '실시간 연결됨';
+
+        renderIndices();
+        renderStrategy();
+        renderCustomStocks();
+        renderSummary();
+
+      } catch (err) {
+        console.error('Data fetch error:', err);
+        document.getElementById('sync-status').textContent = '연결 오류 재시도 중';
+      }
+    }
+
+    // 1. Render Major Indices Grid
+    function renderIndices() {
+      const container = document.getElementById('indices-grid');
+      if (!AppState.indices) return;
+
+      const items = Object.entries(AppState.indices);
+      container.innerHTML = items.map(([symbol, data]) => {
+        const isUs = symbol === 'S&P 500' || symbol === 'NASDAQ' || symbol === 'QLD' || symbol === 'TQQQ';
+        const currencySymbol = isUs ? '$' : '';
+        const currencySuffix = isUs ? '' : ' p';
+        
+        const priceStr = `${currencySymbol}${formatNumber(data.current)}${currencySuffix}`;
+        const athStr = `${currencySymbol}${formatNumber(data.ath)}${currencySuffix}`;
+        const ddPct = data.ath_change_rate;
+        
+        const progressWidth = Math.max(0, Math.min(100, 100 + ddPct * 1.5));
+        const isDdSevere = ddPct <= -20;
+        const displayName = getIndexDisplayName(symbol);
+
+        return `
+          <div class="market-card">
+            <div class="card-head">
+              <span class="index-name">${displayName}</span>
+              <span class="source-tag">${data.source || 'Standard'}</span>
+            </div>
+            
+            <div class="price-value">${priceStr}</div>
+            
+            <div class="price-change-row">
+              ${formatChangePill(data.change_rate)}
+            </div>
+
+            <div class="ath-box">
+              <div class="ath-header">
+                <span>역대 최고가(ATH)</span>
+                <span class="ath-val">${athStr}</span>
+              </div>
+              <div class="ath-header">
+                <span>ATH 대비 낙폭</span>
+                <span class="ath-dd-pct ${isDdSevere ? 'alert-level' : ''}">${ddPct.toFixed(2)}%</span>
+              </div>
+              <div class="progress-bar-container">
+                <div class="progress-bar-fill ${isDdSevere ? 'warning' : ''}" style="width: ${progressWidth}%"></div>
+              </div>
+            </div>
+
+            <div class="sparkline-box">
+              ${renderSparklineSVG(data.sparkline)}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // 2. Render Strategy & Drawdown Timing
+    function renderStrategy() {
+      const data = AppState.alerts;
+      if (!data) return;
+
+      // Banner check
+      const banner = document.getElementById('us-crash-banner');
+      const spData = data['S&P 500'];
+      if (spData && spData.us_crash) {
+        banner.className = 'us-crash-banner alert';
+        banner.innerHTML = `⚠️ <strong>🇺🇸 S&P 500 동반 하락 발생</strong> (ATH 대비 ${spData.drawdown.toFixed(1)}%) — 국내 매수 시점 시드를 <strong>미국 시장에 배분 권고</strong>`;
+      } else {
+        banner.className = 'us-crash-banner normal';
+        banner.innerHTML = `✅ <strong>🇺🇸 S&P 500 정상 범위 유지</strong> (ATH 대비 ${spData ? spData.drawdown.toFixed(1) : 0}%) — 글로벌 동반 대폭락 없음`;
+      }
+
+      // Strategy Cards
+      const container = document.getElementById('strategy-cards-grid');
+      const symbols = ['KOSPI', 'KOSDAQ', 'NASDAQ'];
+
+      let cardsHtml = symbols.map(sym => {
+        const item = data[sym];
+        if (!item) return '';
+
+        const displayName = getIndexDisplayName(sym);
+
+        const stagePills = item.stages.map(st => {
+          const cls = st.triggered ? 'triggered' : '';
+          return `<span class="stage-pill ${cls}">${st.stage}%</span>`;
+        }).join('');
+
+        const nextStageText = item.next_stage !== null 
+          ? `다음 단계 (<strong>${item.next_stage}%</strong>)까지 <strong>${item.gap_pp} %p</strong> 남음`
+          : `최하단 분할 단계 달성 완료`;
+
+        return `
+          <div class="strategy-card">
+            <div class="strategy-card-title">
+              <span>${displayName}</span>
+              <span class="source-tag">${item.done} / ${item.total} 단계 진행</span>
+            </div>
+            
+            <div style="font-size: 13px; color: var(--text-muted);">
+              현재 ATH 대비 낙폭: <strong style="color: var(--text-main); font-family: var(--font-mono);">${item.drawdown.toFixed(2)}%</strong>
+            </div>
+
+            <div class="stage-pills-wrap">
+              ${stagePills}
+            </div>
+
+            <div class="next-trigger-meta">
+              <span>${nextStageText}</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // Add TQQQ Strategy Block
+      const tqqq = data['TQQQ'];
+      if (tqqq) {
+        const p1 = tqqq.phase1;
+        const p2 = tqqq.phase2;
+        const p1Width = (p1.done / p1.total) * 100;
+
+        cardsHtml += `
+          <div class="tqqq-box">
+            <div class="strategy-card-title">
+              <span>🚀 🇺🇸 TQQQ 전용 2단계 분할 매수 매커니즘</span>
+              <span class="source-tag">ATH 대비 ${tqqq.drawdown.toFixed(2)}%</span>
+            </div>
+            
+            <div class="tqqq-grid">
+              <!-- Phase 1 -->
+              <div class="tqqq-phase-card">
+                <div style="font-weight: 700; margin-bottom: 6px;">1차 구간 (-10% ~ -49% 균등 매수)</div>
+                <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">
+                  달성 회차: <strong>${p1.done} / ${p1.total} 회차</strong>
+                </div>
+                <div class="progress-bar-container">
+                  <div class="progress-bar-fill" style="width: ${p1Width}%"></div>
+                </div>
+                <div class="next-trigger-meta" style="margin-top: 8px;">
+                  <span>다음 트리거: <strong>${p1.next_threshold ? p1.next_threshold + '%' : '1차 완료'}</strong></span>
+                </div>
+              </div>
+
+              <!-- Phase 2 -->
+              <div class="tqqq-phase-card">
+                <div style="font-weight: 700; margin-bottom: 6px;">2차 구간 (-50% 이하 10등분 분할)</div>
+                <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">
+                  상태: <strong>${p2.active ? '🔥 활성화 (-50% 진입)' : '대기 중 (정상)'}</strong>
+                </div>
+                <div style="font-size: 12.5px; color: var(--text-faint);">
+                  ${p2.active ? `기준가 P: $${p2.base} · 달성: ${p2.done}/${p2.total} 회차` : '-50% 도달 시 기준가 P 설정 후 10등분 매수 시작'}
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      container.innerHTML = cardsHtml;
+    }
+
+    // 3. Render Custom Stocks Watchlist
+    function renderCustomStocks() {
+      const container = document.getElementById('custom-stocks-grid');
+      const data = AppState.customStocks;
+      if (!data) return;
+
+      const filter = AppState.activeFilter;
+      const entries = Object.entries(data);
+
+      const filtered = entries.filter(([symbol, item]) => {
+        if (filter === 'etf') return item.is_etf;
+        if (filter === 'stock') return !item.is_etf;
+        if (filter === 'alert') return item.triggered_steps && item.triggered_steps.length > 0;
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = `<div style="grid-column: 1/-1; color: var(--text-muted); padding: 20px;">해당 조건에 부합하는 종목이 없습니다.</div>`;
+        return;
+      }
+
+      container.innerHTML = filtered.map(([symbol, item]) => {
+        const isUs = !/^\d+$/.test(symbol);
+        const flag = getFlagEmoji(symbol, item.name);
+        const priceStr = isUs ? `$${formatNumber(item.current)}` : `${formatNumber(item.current, 0)}원`;
+        
+        const badgesHtml = (item.triggered_steps || []).map(st => {
+          const isRise = st.direction === 'RISE';
+          const icon = isRise ? '🚀' : '📉';
+          const cls = isRise ? 'rise' : 'fall';
+          return `<span class="step-badge ${cls}">${icon} ${st.val}% ${isRise ? '급등' : '급락'}</span>`;
+        }).join(' ');
+
+        return `
+          <div class="stock-card">
+            <div class="stock-card-head">
+              <span class="stock-name"><span class="flag-icon">${flag}</span> ${item.name}</span>
+              <span class="stock-symbol">${symbol}</span>
+            </div>
+            
+            <div class="stock-price">${priceStr}</div>
+            
+            <div>${formatChangePill(item.change_rate)}</div>
+            
+            ${badgesHtml ? `<div style="margin-top: 8px;">${badgesHtml}</div>` : ''}
+          </div>
+        `;
+      }).join('');
+    }
+
+    // 4. Render Executive Briefing Summary
+    function renderSummary() {
+      const container = document.getElementById('summary-content');
+      if (AppState.summary) {
+        container.textContent = AppState.summary;
+      }
+    }
+
+    // ---------------------------------------------------- Timer & Event Listeners
+    function startAutoRefreshTimer() {
+      if (AppState.timerId) clearInterval(AppState.timerId);
+      AppState.countdownSeconds = 20;
+
+      const updateTimerBtn = () => {
+        document.getElementById('timer-count').textContent = `${AppState.countdownSeconds}초`;
+      };
+      updateTimerBtn();
+
+      AppState.timerId = setInterval(() => {
+        AppState.countdownSeconds -= 1;
+        if (AppState.countdownSeconds <= 0) {
+          fetchDashboardData();
+          AppState.countdownSeconds = 20;
+        }
+        updateTimerBtn();
+      }, 1000);
+    }
+
+    // Manual Refresh
+    document.getElementById('refresh-btn').addEventListener('click', () => {
+      fetchDashboardData();
+      startAutoRefreshTimer();
+      showToast('주가 데이터를 즉시 새로고침했습니다.', '🔄');
+    });
+
+    // Dark/Light Theme Toggle
+    document.getElementById('theme-toggle-btn').addEventListener('click', () => {
+      const html = document.documentElement;
+      const current = html.getAttribute('data-theme');
+      const next = current === 'light' ? 'dark' : 'light';
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('dashboard_theme', next);
+      document.getElementById('theme-toggle-btn').textContent = next === 'light' ? '☀️ 모드' : '🌙 모드';
+    });
+
+    // Restore Theme Preference
+    const savedTheme = localStorage.getItem('dashboard_theme');
+    if (savedTheme) {
+      document.documentElement.setAttribute('data-theme', savedTheme);
+      document.getElementById('theme-toggle-btn').textContent = savedTheme === 'light' ? '☀️ 모드' : '🌙 모드';
+    }
+
+    // Filter Tab Buttons
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        e.target.classList.add('active');
+        AppState.activeFilter = e.target.dataset.filter;
+        renderCustomStocks();
+      });
+    });
+
+    // Copy Summary Text
+    document.getElementById('copy-summary-btn').addEventListener('click', () => {
+      if (AppState.summary) {
+        navigator.clipboard.writeText(AppState.summary);
+        showToast('요약 브리핑 텍스트가 클립보드에 복사되었습니다.', '📋');
+      }
+    });
+
+    // Initial Execution
+    fetchDashboardData();
+    startAutoRefreshTimer();
+  </script>
+</body>
+</html>

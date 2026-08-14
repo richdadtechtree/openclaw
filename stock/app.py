@@ -290,15 +290,21 @@ def post_briefing_send(background_tasks: BackgroundTasks):
     return {"status": "accepted", "message": "briefing capture & send started"}
 
 
+# Version 2.6 - Stock Dashboard Modern UI with Country Flags & Slack Integration
 @app.get("/", response_class=HTMLResponse)
 def get_dashboard():
     """
     Serves the main HTML dashboard.
     """
-    return FileResponse("templates/index.html")
+    if os.path.exists("templates/index.html"):
+        return FileResponse("templates/index.html")
+    if os.path.exists("index.html"):
+        return FileResponse("index.html")
+    return HTMLResponse("<h1>Dashboard template loading...</h1>")
 
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
     host = os.getenv("HOST", "127.0.0.1")
     uvicorn.run(app, host=host, port=port)
+
