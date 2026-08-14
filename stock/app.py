@@ -56,9 +56,9 @@ def _fetch_slack_history_api(date_str):
         if news_ch:
             channels.append((news_ch, "news"))
         if alert_ch:
-            channels.append((alert_ch, "stock"))
+            channels.append((alert_ch, "alert"))
         if brief_ch:
-            channels.append((brief_ch, "stock"))
+            channels.append((brief_ch, "briefing"))
         
         seen_channels = set()
         unique_channels = []
@@ -151,10 +151,14 @@ def _read_slack_log(date):
                 room_name = "other"
                 if news_ch and ch_id == news_ch:
                     room_name = "news"
-                elif (alert_ch and ch_id == alert_ch) or (brief_ch and ch_id == brief_ch):
-                    room_name = "stock"
-                elif r.get("source") in ["index-alert", "sidecar", "custom-alert", "stock-briefing"]:
-                    room_name = "stock"
+                elif brief_ch and ch_id == brief_ch:
+                    room_name = "briefing"
+                elif alert_ch and ch_id == alert_ch:
+                    room_name = "alert"
+                elif r.get("source") in ["index-alert", "sidecar", "custom-alert"]:
+                    room_name = "alert"
+                elif r.get("source") in ["stock-briefing"]:
+                    room_name = "briefing"
                 elif r.get("source") in ["news"]:
                     room_name = "news"
                     
