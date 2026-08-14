@@ -56,39 +56,71 @@ def init_db():
     return con
 
 
+def clean_name(name):
+    name = re.sub(r'^[^\w가-힣]+', '', name)
+    name = re.sub(r'^(오늘|어제|방금|아까|나|저|했어|했음|하고)\s*', '', name).strip()
+    name = re.sub(r'\s*(했어|했음|함)$', '', name).strip()
+    return name
+
+
 def parse_workouts(text):
     results, seen = [], set()
-    patterns = [
-        r'([가-힣a-zA-Z\s\-]{2,15}?)\s+(?:(\d+(?:\.\d+)?)\s*kg\s+)?(\d+)\s*[xX×]\s*(\d+)',
-        r'([가-힣a-zA-Z\s\-]{2,15}?)\s+(?:(\d+(?:\.\d+)?)\s*kg\s+)?(\d+)\s*세트\s*(\d+)\s*회',
-    ]
-    skip = {'수면', '체중', '단백질', '오늘', '어제', '아침', '점심', '저녁', '간식'}
-    for pat in patterns:
-        for m in re.finditer(pat, text):
-            name = m.group(1).strip()
-            if len(name) < 2 or name in skip:
+    skip = {'수면', '체중', '단백질', '오늘', '어제', '아침', '점심', '저녁', '간식', '피자빵', '물', '시간'}
+
+    chunks = re.split(r'[,.\n]|그리고|하고', text)
+
+    for chunk in chunks:
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+
+        # 1. 세트x횟수 패턴 (e.g. 스쿼트 100kg 5x10, 스쿼트 5x10 100kg)
+        m = re.search(r'([가-힣a-zA-Z\s\-]{2,15}?)\s+(?:(\d+(?:\.\d+)?)\s*kg\s+)?(\d+)\s*[xX×]\s*(\d+)(?:\s+(\d+(?:\.\d+)?)\s*kg)?', chunk)
+        if m:
+            name = clean_name(m.group(1))
+            if len(name) >= 2 and name not in skip:
+                weight = float(m.group(2) or m.group(5)) if (m.group(2) or m.group(5)) else None
+                key = (name, m.group(3), m.group(4))
+                if key not in seen:
+                    seen.add(key)
+                    results.append({'exercise': name, 'sets': int(m.group(3)), 'reps': int(m.group(4)), 'weight_kg': weight})
                 continue
-            key = (name, m.group(3), m.group(4))
-            if key not in seen:
-                seen.add(key)
+
+        # 2. 세트/회 패턴 (e.g. 스쿼트 100kg 5세트 10회)
+        m = re.search(r'([가-힣a-zA-Z\s\-]{2,15}?)\s+(?:(\d+(?:\.\d+)?)\s*kg\s+)?(\d+)\s*세트\s*(\d+)\s*회(?:\s+(\d+(?:\.\d+)?)\s*kg)?', chunk)
+        if m:
+            name = clean_name(m.group(1))
+            if len(name) >= 2 and name not in skip:
+                weight = float(m.group(2) or m.group(5)) if (m.group(2) or m.group(5)) else None
+                key = (name, m.group(3), m.group(4))
+                if key not in seen:
+                    seen.add(key)
+                    results.append({'exercise': name, 'sets': int(m.group(3)), 'reps': int(m.group(4)), 'weight_kg': weight})
+                continue
+
+        # 3. 단일 개수/회 패턴 (e.g. 풀업 12개)
+        m = re.search(r'([가-힣a-zA-Z\s\-]{2,15}?)\s+(?:(\d+(?:\.\d+)?)\s*kg\s+)?(\d+)\s*(?:개|회|번)', chunk)
+        if m:
+            name = clean_name(m.group(1))
+            if len(name) >= 2 and name not in skip:
+                weight = float(m.group(2)) if m.group(2) else None
+                reps = int(m.group(3))
+                key = (name, reps)
+                if key not in seen:
+                    seen.add(key)
+                    results.append({'exercise': name, 'sets': 1, 'reps': reps, 'weight_kg': weight})
+                continue
+
+        # 4. 유산소/자유 형식 (테니스 30분 등)
+        fm = re.search(r'(테니스|달리기|조깅|수영|자전거|등산|러닝|복싱|유산소|스텝밀|트레드밀)(?:\s+(\d+)\s*(?:게임|분|km))?', chunk)
+        if fm:
+            name, desc = fm.group(1), fm.group(2)
+            if (name, desc) not in seen:
+                seen.add((name, desc))
                 results.append({
-                    'exercise': name,
-                    'sets': int(m.group(3)),
-                    'reps': int(m.group(4)),
-                    'weight_kg': float(m.group(2)) if m.group(2) else None
+                    'exercise': f"{name} {desc}{'분' if desc else ''}".strip() if desc else name,
+                    'sets': 1, 'reps': 1, 'weight_kg': None
                 })
-    # 자유 형식 운동 (테니스, 달리기 등)
-    free_pattern = r'(테니스|달리기|조깅|수영|자전거|등산|러닝|복싱|유산소|스텝밀|트레드밀)(?:\s+(\d+)\s*(?:게임|분|km))?'
-    for m in re.finditer(free_pattern, text):
-        name = m.group(1)
-        desc = m.group(2)
-        key = (name, desc)
-        if key not in seen:
-            seen.add(key)
-            results.append({
-                'exercise': f"{name} {desc}{'분' if desc else ''}".strip() if desc else name,
-                'sets': 1, 'reps': 1, 'weight_kg': None
-            })
     return results
 
 

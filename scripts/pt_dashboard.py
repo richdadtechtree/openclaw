@@ -153,6 +153,8 @@ tr:hover td { background: var(--card2); }
 .briefing-type { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 8px; }
 .briefing-content { font-size: 14px; line-height: 1.7; white-space: pre-wrap; color: var(--text); }
 .briefing-date { font-size: 11px; color: var(--muted); margin-top: 8px; }
+.btn-del { background: none; border: none; cursor: pointer; opacity: .4; font-size: 14px; padding: 2px 6px; border-radius: 4px; transition: all .2s; }
+.btn-del:hover { opacity: 1; color: var(--red); background: rgba(248,81,73,.15); }
 @media (max-width: 768px) {
   .grid4 { grid-template-columns: 1fr 1fr; }
   .grid3 { grid-template-columns: 1fr; }
@@ -231,7 +233,7 @@ tr:hover td { background: var(--card2); }
   <div class="card" style="margin-top:24px">
     <div class="section-title">📋 최근 운동 현황</div>
     <table>
-      <thead><tr><th>날짜</th><th>운동</th><th>세트</th><th>횟수</th><th>무게</th></tr></thead>
+      <thead><tr><th>날짜</th><th>운동</th><th>세트</th><th>횟수</th><th>무게</th><th>삭제</th></tr></thead>
       <tbody id="recent-workouts-body"></tbody>
     </table>
   </div>
@@ -244,7 +246,7 @@ tr:hover td { background: var(--card2); }
       <button class="btn-add" onclick="openModal('workout')">+ 추가</button>
     </div>
     <table>
-      <thead><tr><th>날짜</th><th>운동</th><th>세트</th><th>횟수</th><th>무게(kg)</th></tr></thead>
+      <thead><tr><th>날짜</th><th>운동</th><th>세트</th><th>횟수</th><th>무게(kg)</th><th>삭제</th></tr></thead>
       <tbody id="all-workouts-body"></tbody>
     </table>
   </div>
@@ -257,7 +259,7 @@ tr:hover td { background: var(--card2); }
       <button class="btn-add" onclick="openModal('diet')">+ 추가</button>
     </div>
     <table>
-      <thead><tr><th>날짜</th><th>식사</th><th>메뉴</th><th>단백질(g)</th></tr></thead>
+      <thead><tr><th>날짜</th><th>식사</th><th>메뉴</th><th>단백질(g)</th><th>삭제</th></tr></thead>
       <tbody id="diet-body"></tbody>
     </table>
   </div>
@@ -271,7 +273,7 @@ tr:hover td { background: var(--card2); }
         <button class="btn-add" onclick="openModal('vital')">+ 추가</button>
       </div>
       <table>
-        <thead><tr><th>날짜</th><th>체중(kg)</th><th>수면(h)</th><th>컨디션</th></tr></thead>
+        <thead><tr><th>날짜</th><th>체중(kg)</th><th>수면(h)</th><th>컨디션</th><th>삭제</th></tr></thead>
         <tbody id="vitals-body"></tbody>
       </table>
     </div>
@@ -345,7 +347,8 @@ async function loadData() {
     tr.innerHTML=`<td>${w.date}</td><td><strong>${w.exercise}</strong></td>
       <td><span class="badge badge-blue">${w.sets}세트</span></td>
       <td>${w.reps}회</td>
-      <td>${w.weight_kg?w.weight_kg+'kg':'-'}</td>`;
+      <td>${w.weight_kg?w.weight_kg+'kg':'-'}</td>
+      <td><button class="btn-del" onclick="deleteRecord('workout',${w.id})">🗑️</button></td>`;
     rb.appendChild(tr);
   });
 
@@ -356,7 +359,8 @@ async function loadData() {
     const tr=document.createElement('tr');
     tr.innerHTML=`<td>${w.date}</td><td>${w.exercise}</td>
       <td>${w.sets}</td><td>${w.reps}</td>
-      <td>${w.weight_kg??'-'}</td>`;
+      <td>${w.weight_kg??'-'}</td>
+      <td><button class="btn-del" onclick="deleteRecord('workout',${w.id})">🗑️</button></td>`;
     ab.appendChild(tr);
   });
 
@@ -367,7 +371,8 @@ async function loadData() {
     const tr=document.createElement('tr');
     tr.innerHTML=`<td>${d2.date}</td>
       <td>${d2.meal?`<span class="badge badge-green">${d2.meal}</span>`:'-'}</td>
-      <td>${d2.items}</td><td>${d2.protein_g??'-'}</td>`;
+      <td>${d2.items}</td><td>${d2.protein_g??'-'}</td>
+      <td><button class="btn-del" onclick="deleteRecord('diet',${d2.id})">🗑️</button></td>`;
     db2.appendChild(tr);
   });
 
@@ -380,7 +385,8 @@ async function loadData() {
     tr.innerHTML=`<td>${v.date}</td>
       <td>${v.weight_kg?v.weight_kg+'kg':'-'}</td>
       <td>${v.sleep_hours??'-'}</td>
-      <td>${condMap[v.condition]??'-'}${v.alcohol?'🍺':''}</td>`;
+      <td>${condMap[v.condition]??'-'}${v.alcohol?'🍺':''}</td>
+      <td><button class="btn-del" onclick="deleteRecord('vital',${v.id})">🗑️</button></td>`;
     vb.appendChild(tr);
   });
 
@@ -412,6 +418,12 @@ async function submitForm(type, data) {
   const r = await fetch('/api/add/'+type, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   if ((await r.json()).ok) { closeModal(type); location.reload(); }
   else alert('저장 실패');
+}
+async function deleteRecord(type, id) {
+  if (!confirm('정말 이 기록을 삭제하시겠습니까?')) return;
+  const r = await fetch('/api/delete/' + type + '/' + id, {method: 'POST'});
+  if ((await r.json()).ok) location.reload();
+  else alert('삭제 실패');
 }
 
 // 풀업 PR 로드
@@ -528,7 +540,7 @@ def api_summary():
 
     # 최근 운동 10개
     recent = db_query(
-        "SELECT date, exercise, sets, reps, weight_kg FROM workouts ORDER BY date DESC, id DESC LIMIT 10")
+        "SELECT id, date, exercise, sets, reps, weight_kg FROM workouts ORDER BY date DESC, id DESC LIMIT 10")
 
     # AI 리포트
     report_row = db_one("SELECT report FROM ai_reports ORDER BY date DESC LIMIT 1")
@@ -549,19 +561,43 @@ def api_summary():
 @app.route("/api/workouts")
 def api_workouts():
     return jsonify(db_query(
-        "SELECT date, exercise, sets, reps, weight_kg FROM workouts ORDER BY date DESC, id DESC LIMIT 200"))
+        "SELECT id, date, exercise, sets, reps, weight_kg FROM workouts ORDER BY date DESC, id DESC LIMIT 200"))
 
 
 @app.route("/api/diet")
 def api_diet():
     return jsonify(db_query(
-        "SELECT date, meal, items, protein_g FROM diet ORDER BY date DESC, id DESC LIMIT 100"))
+        "SELECT id, date, meal, items, protein_g FROM diet ORDER BY date DESC, id DESC LIMIT 100"))
 
 
 @app.route("/api/vitals")
 def api_vitals():
     return jsonify(db_query(
-        "SELECT date, weight_kg, sleep_hours, condition, alcohol FROM vitals ORDER BY date DESC LIMIT 60"))
+        "SELECT id, date, weight_kg, sleep_hours, condition, alcohol FROM vitals ORDER BY date DESC LIMIT 60"))
+
+
+@app.route("/api/delete/workout/<int:rec_id>", methods=["POST", "DELETE"])
+def delete_workout(rec_id):
+    con = get_db()
+    con.execute("DELETE FROM workouts WHERE id=?", (rec_id,))
+    con.commit(); con.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/delete/diet/<int:rec_id>", methods=["POST", "DELETE"])
+def delete_diet(rec_id):
+    con = get_db()
+    con.execute("DELETE FROM diet WHERE id=?", (rec_id,))
+    con.commit(); con.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/delete/vital/<int:rec_id>", methods=["POST", "DELETE"])
+def delete_vital(rec_id):
+    con = get_db()
+    con.execute("DELETE FROM vitals WHERE id=?", (rec_id,))
+    con.commit(); con.close()
+    return jsonify({"ok": True})
 
 
 @app.route("/api/add/workout", methods=["POST"])
