@@ -1,0 +1,452 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": "/home/ubuntu/.openclaw/workspace",
+      "model": {
+        "primary": "openai/gpt-5.4-mini",
+        "fallbacks": [
+          "openai/gpt-5.4-mini",
+          "google/gemini-flash-latest",
+          "google/gemini-flash-lite-latest"
+        ]
+      },
+      "models": {
+        "google/gemini-3.1-pro-preview": {},
+        "google/gemini-3-flash-preview": {},
+        "google/gemini-3.1-flash-lite": {},
+        "openai/gpt-5.4-mini": {
+          "alias": "gpt-mini"
+        },
+        "openai/gpt-5.6-sol": {},
+        "openai/o4-mini": {},
+        "google/gemini-flash-lite-latest": {},
+        "google/gemini-flash-latest": {}
+      }
+    },
+    "list": [
+      {
+        "id": "main",
+        "default": true,
+        "name": "신문 분석가",
+        "workspace": "/home/ubuntu/.openclaw/workspace",
+        "model": {
+          "primary": "openai/gpt-5.4-mini",
+          "fallbacks": [
+            "openai/gpt-5.4-mini",
+            "google/gemini-flash-latest",
+            "google/gemini-flash-lite-latest"
+          ]
+        }
+      },
+      {
+        "id": "pt-trainer",
+        "name": "PT 트레이너",
+        "workspace": "/home/ubuntu/.openclaw/agents/pt-trainer",
+        "model": {
+          "primary": "openai/gpt-5.4-mini",
+          "fallbacks": [
+            "openai/gpt-5.4-mini",
+            "google/gemini-flash-latest",
+            "google/gemini-flash-lite-latest"
+          ]
+        }
+      },
+      {
+        "id": "ddu",
+        "name": "ddu",
+        "workspace": "/home/ubuntu/.openclaw/workspace/ddu",
+        "agentDir": "/home/ubuntu/.openclaw/agents/ddu/agent"
+      },
+      {
+        "id": "keepgoing",
+        "name": "keepgoing",
+        "workspace": "/home/ubuntu/.openclaw/workspace/keepgoing",
+        "agentDir": "/home/ubuntu/.openclaw/agents/keepgoing/agent"
+      },
+      {
+        "id": "bookman",
+        "name": "bookman",
+        "workspace": "/home/ubuntu/.openclaw/workspace/bookman",
+        "agentDir": "/home/ubuntu/.openclaw/agents/bookman/agent"
+      }
+    ]
+  },
+  "bindings": [
+    {
+      "agentId": "keepgoing",
+      "match": {
+        "channel": "slack",
+        "peer": {
+          "kind": "channel",
+          "id": "C0BMN9FN073"
+        }
+      }
+    },
+    {
+      "agentId": "main",
+      "match": {
+        "channel": "slack"
+      }
+    },
+    {
+      "agentId": "main",
+      "match": {
+        "channel": "telegram",
+        "accountId": "default"
+      }
+    },
+    {
+      "agentId": "pt-trainer",
+      "match": {
+        "channel": "telegram",
+        "accountId": "pt"
+      }
+    }
+  ],
+  "gateway": {
+    "mode": "local",
+    "auth": {
+      "mode": "token",
+      "token": "${GATEWAY_TOKEN}"
+    },
+    "port": 18789,
+    "bind": "loopback",
+    "tailscale": {
+      "mode": "off",
+      "resetOnExit": false
+    },
+    "controlUi": {
+      "allowInsecureAuth": true
+    },
+    "nodes": {
+      "denyCommands": [
+        "camera.snap",
+        "camera.clip",
+        "screen.record",
+        "contacts.add",
+        "calendar.add",
+        "reminders.add",
+        "sms.send",
+        "sms.search"
+      ]
+    }
+  },
+  "session": {
+    "dmScope": "per-channel-peer"
+  },
+  "tools": {
+    "profile": "coding",
+    "web": {
+      "search": {
+        "provider": "brave",
+        "enabled": true
+      }
+    }
+  },
+  "plugins": {
+    "entries": {
+      "google": {
+        "enabled": false
+      },
+      "telegram": {
+        "enabled": true
+      },
+      "brave": {
+        "config": {
+          "webSearch": {
+            "apiKey": "${BRAVE_API_KEY}"
+          }
+        },
+        "enabled": true
+      },
+      "openai": {
+        "enabled": true
+      },
+      "slack": {
+        "enabled": true
+      },
+      "memory-core": {
+        "config": {}
+      },
+      "codex": {
+        "enabled": true
+      }
+    }
+  },
+  "auth": {
+    "profiles": {
+      "google:default": {
+        "provider": "google",
+        "mode": "api_key"
+      },
+      "openai:default": {
+        "provider": "openai",
+        "mode": "api_key"
+      },
+      "openai:bbonoyo@gmail.com": {
+        "provider": "openai",
+        "mode": "oauth",
+        "email": "bbonoyo@gmail.com"
+      }
+    },
+    "order": {
+      "openai": [
+        "openai:bbonoyo@gmail.com",
+        "openai:default"
+      ]
+    }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "allowFrom": [
+        "telegram:7890734506"
+      ],
+      "groups": {
+        "*": {
+          "requireMention": true
+        }
+      },
+      "accounts": {
+        "default": {
+          "botToken": "${TELEGRAM_BOT_TOKEN_DEFAULT}",
+          "enabled": false
+        },
+        "pt": {
+          "botToken": "${TELEGRAM_BOT_TOKEN_PT}",
+          "enabled": false
+        }
+      },
+      "groupAllowFrom": [
+        "telegram:7890734506"
+      ]
+    },
+    "slack": {
+      "enabled": true,
+      "capabilities": {
+        "interactiveReplies": true
+      },
+      "accounts": {
+        "default": {
+          "botToken": "${SLACK_BOT_TOKEN_DEFAULT}",
+          "appToken": "${SLACK_APP_TOKEN_DEFAULT}",
+          "allowFrom": [
+            "slack:U0BMLMRHAQL"
+          ],
+          "groupPolicy": "open"
+        },
+        "cafein": {
+          "enabled": false,
+          "botToken": "${SLACK_BOT_TOKEN_CAFEIN}",
+          "appToken": "${SLACK_APP_TOKEN_CAFEIN}"
+        },
+        "ddupro": {
+          "enabled": true,
+          "botToken": "${SLACK_BOT_TOKEN_DDUPRO}",
+          "appToken": "${SLACK_APP_TOKEN_DDUPRO}"
+        },
+        "keepgoing": {
+          "enabled": true,
+          "botToken": "${SLACK_BOT_TOKEN_KEEPGOING}",
+          "appToken": "${SLACK_APP_TOKEN_KEEPGOING}",
+          "groupPolicy": "open",
+          "allowFrom": [
+            "slack:U0BMLMRHAQL"
+          ]
+        },
+        "bookman": {
+          "enabled": true,
+          "botToken": "${SLACK_BOT_TOKEN_BOOKMAN}",
+          "appToken": "${SLACK_APP_TOKEN_BOOKMAN}"
+        }
+      },
+      "channels": {
+        "C0BMLB1RXMG": {
+          "requireMention": false
+        },
+        "C0BMHERHA77": {
+          "requireMention": false
+        },
+        "C0BNK1VGVNZ": {
+          "requireMention": false
+        },
+        "C0BNB0YRGSY": {
+          "requireMention": false
+        },
+        "C0BMJENDF62": {
+          "requireMention": false
+        },
+        "C0BMN9FN073": {
+          "requireMention": false
+        }
+      }
+    }
+  },
+  "hooks": {
+    "internal": {
+      "enabled": true,
+      "entries": {
+        "boot-md": {
+          "enabled": true
+        },
+        "bootstrap-extra-files": {
+          "enabled": true
+        },
+        "command-logger": {
+          "enabled": true
+        },
+        "compaction-notifier": {
+          "enabled": true
+        },
+        "session-memory": {
+          "enabled": true
+        }
+      }
+    }
+  },
+  "wizard": {
+    "lastRunAt": "2026-08-06T09:29:16.496Z",
+    "lastRunVersion": "2026.7.1-2",
+    "lastRunCommand": "doctor",
+    "lastRunMode": "local",
+    "securityAcknowledgedAt": "2026-08-02T22:31:28.013Z"
+  },
+  "meta": {
+    "lastTouchedVersion": "2026.7.1-2",
+    "lastTouchedAt": "2026-08-10T07:42:58.233Z"
+  },
+  "commands": {
+    "ownerAllowFrom": [
+      "telegram:7890734506",
+      "slack:U0BMLMRHAQL"
+    ]
+  },
+  "skills": {
+    "install": {
+      "nodeManager": "npm"
+    },
+    "entries": {
+      "1password": {
+        "enabled": false
+      },
+      "blogwatcher": {
+        "enabled": false
+      },
+      "blucli": {
+        "enabled": false
+      },
+      "camsnap": {
+        "enabled": false
+      },
+      "coding-agent": {
+        "enabled": false
+      },
+      "eightctl": {
+        "enabled": false
+      },
+      "gemini": {
+        "enabled": false
+      },
+      "gh-issues": {
+        "enabled": false
+      },
+      "gifgrep": {
+        "enabled": false
+      },
+      "github": {
+        "enabled": false
+      },
+      "gog": {
+        "enabled": false
+      },
+      "goplaces": {
+        "enabled": false
+      },
+      "himalaya": {
+        "enabled": false
+      },
+      "mcporter": {
+        "enabled": false
+      },
+      "nano-pdf": {
+        "enabled": false
+      },
+      "obsidian": {
+        "enabled": false
+      },
+      "openai-whisper": {
+        "enabled": false
+      },
+      "openai-whisper-api": {
+        "enabled": false
+      },
+      "openhue": {
+        "enabled": false
+      },
+      "oracle": {
+        "enabled": false
+      },
+      "ordercli": {
+        "enabled": false
+      },
+      "sag": {
+        "enabled": false
+      },
+      "session-logs": {
+        "enabled": false
+      },
+      "sherpa-onnx-tts": {
+        "enabled": false
+      },
+      "songsee": {
+        "enabled": false
+      },
+      "sonoscli": {
+        "enabled": false
+      },
+      "spotify-player": {
+        "enabled": false
+      },
+      "summarize": {
+        "enabled": false
+      },
+      "trello": {
+        "enabled": false
+      },
+      "xurl": {
+        "enabled": false
+      }
+    }
+  },
+  "models": {
+    "providers": {
+      "openai": {
+        "models": [
+          {
+            "id": "gpt-4o-mini",
+            "name": "gpt-4o-mini"
+          },
+          {
+            "id": "o4-mini",
+            "name": "o4-mini"
+          }
+        ]
+      },
+      "google": {
+        "api": "openai-completions",
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "apiKey": "${GEMINI_API_KEY}",
+        "models": [
+          {
+            "id": "gemini-flash-lite-latest",
+            "name": "gemini-flash-lite-latest"
+          },
+          {
+            "id": "gemini-flash-latest",
+            "name": "gemini-flash-latest"
+          }
+        ]
+      }
+    }
+  }
+}

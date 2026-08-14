@@ -16,11 +16,22 @@ git 에 push 하고, **서버가 주기적으로 pull** 해서 반영하도록 �
 
 ## 무엇이 git 으로 관리되나
 
-- **추적(동기화됨)**: 에이전트 설정 마크다운(`SOUL.md`, `IDENTITY.md` 등),
-  `cron/jobs.json`, `workspace/` 콘텐츠, `requirements.txt` 등 **설정/콘텐츠만**.
-- **추적 제외(서버 로컬 유지)**: 세션 기록(`agents/*/sessions`), `cron/runs`,
-  수신 미디어(`media/inbound`), DB(`*.sqlite*`), 백업(`*.bak`, `*.last-good`) 등
-  **런타임 생성물**. → `.gitignore` 참고.
+| 대상 | git 추적 | 설명 |
+|------|----------|------|
+| `openclaw.json` | ✅ 추적 | 토큰은 `${ENV_VAR}` 참조로 분리됨 |
+| `cron/jobs.json` | ✅ 추적 | 스케줄 설정 |
+| `workspace/**/*.md` | ✅ 추적 | SOUL.md, IDENTITY.md 등 캐릭터 설정 |
+| `agents/**/*.md` | ✅ 추적 | 에이전트 설정 마크다운 |
+| `scripts/` | ✅ 추적 | 유틸 스크립트 |
+| `.env.example` | ✅ 추적 | 빈 양식 (실제 값 없음) |
+| `.env` | ❌ 제외 | **실제 비밀값** — 서버 로컬 전용 |
+| `secret/` | ❌ 제외 | **서버 수동 관리** — credentials, identity 등 |
+| `agents/*/sessions/` | ❌ 제외 | 세션 기록 — 런타임 생성물 |
+| `*.sqlite*` | ❌ 제외 | OpenClaw 내부 DB |
+| `*.bak*`, `*.migrated` | ❌ 제외 | 백업/스냅샷 |
+| `logs/`, `slack_logs/` | ❌ 제외 | 로그 |
+
+
 
 런타임 파일을 추적에서 제외했기 때문에 서버 pull 이 항상 깔끔하게 동작하고,
 서버가 만든 세션·로그가 pull 때문에 삭제되지 않습니다.

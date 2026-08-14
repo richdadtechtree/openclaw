@@ -1,91 +1,157 @@
-# 민감 환경 변수 파일
+# =============================================================================
+# OpenClaw .gitignore
+# =============================================================================
+#
+# 규칙 우선순위: 아래쪽 규칙이 위쪽을 덮어쓴다.
+#
+# [동기화 대상 - git에 올라가는 것]
+#   openclaw.json          ← 비밀은 모두 ${ENV_VAR}로 분리됨
+#   cron/jobs.json         ← 스케줄 설정
+#   workspace/ 의 .md 파일  ← SOUL.md, IDENTITY.md, AGENTS.md 등 캐릭터/설정
+#   scripts/               ← 유틸 스크립트
+#   agents/*/SOUL.md 등    ← 에이전트 설정 파일
+#
+# [제외 대상 - 서버에만 존재하는 것]
+#   .env                   ← 실제 비밀값 (절대 올리지 않음)
+#   secret/                ← 서버 전용 수동 관리 파일
+#   runtime 생성물          ← sessions, memory, logs, sqlite 등
+# =============================================================================
+
+
+# ── 비밀 / 환경변수 ─────────────────────────────────────────────────────────
 .env
 .env.*
 *.env
 !.env.example
 
-# Python 및 파이썬 가상환경/캐시
+# secret/ 폴더 전체 (서버 수동 관리, 절대 git 금지)
+secret/
+# 단, README는 폴더 설명용으로 추적 허용
+!secret/README.md
+
+# Google OAuth 클라이언트 시크릿 (파일명이 고정 패턴)
+client_secret_*.json
+
+# systemd 서비스용 환경변수 파일
+gateway.systemd.env
+
+
+# ── OpenClaw 런타임 생성물 ───────────────────────────────────────────────────
+# (서버가 실행 중 계속 쓰기 때문에 추적하면 pull 충돌/데이터 손실 발생)
+
+# 세션 / 메모리 (에이전트가 대화마다 생성)
+agents/*/sessions/
+agents/*/memory/
+workspace/memory/
+workspace/*/memory/
+
+# Cron 실행 이력
+cron/runs/
+
+# SQLite DB (OpenClaw 내부 상태)
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# 캐시 / 임시 폴더
+cache/
+completions/
+state/
+tui/
+skill-workshop/
+
+# codex 홈 하위 임시 폴더
+agents/*/agent/codex-home/.tmp/
+agents/*/agent/codex-home/tmp/
+agents/*/agent/codex-home/sessions/
+agents/*/agent/codex-home/shell_snapshots/
+workspace/*/agent/codex-home/.tmp/
+workspace/*/agent/codex-home/tmp/
+
+# workspace 내 정체를 알 수 없는 중첩 경로 (OpenClaw가 생성)
+workspace/agents/
+workspace/workspace/
+
+# 미디어 수신 임시
+media/inbound/
+media/outbound/
+agents/*/media/inbound/openclaw-staged-*/
+
+
+# ── 인증 / 기기 정보 (서버 생성, 공유 불가) ─────────────────────────────────
+credentials/
+identity/
+devices/
+
+
+# ── 로그 ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+slack_logs/
+
+
+# ── npm / 플러그인 바이너리 (빌드 결과물) ────────────────────────────────────
+npm/
+plugin-skills/
+plugins/
+tools/
+workspace-attestations/
+
+
+# ── Python 캐시 / 가상환경 ────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 venv/
 .venv/
 
-# 로그 및 실행 데이터
-*.log
-*.sqlite3
-data/*.log
-.env
-__pycache__/
-venv/
-credentials/
-identity/
-*.json
-logs/
 
-# openclaw 런타임 생성물 (git 추적 제외 — 디스크에는 유지됨)
-# 서버가 실행 중 계속 쓰기 때문에 추적하면 pull 충돌/데이터 손실이 발생함
-agents/*/sessions/
-agents/*/memory/
-workspace/memory/
-cron/runs/
-media/inbound/
-media/outbound/
-*.sqlite
-*.sqlite-shm
-*.sqlite-wal
-
-# 백업 / 스냅샷 파일 (민감정보 포함 가능)
+# ── 백업 / 스냅샷 파일 ─────────────────────────────────────────────────────
 *.bak
 *.bak.*
+*.bak-*
 *.last-good
+*.clobbered.*
+*.migrated
 
-# 동기화해야 하는 설정 파일은 위의 *.json 규칙에서 예외 처리 (추적 유지)
-!cron/jobs.json
 
-# stock vendor: 코드(.py)만 추적. 런타임/미디어/데이터/비밀은 서버 전용.
-#   (venv/ *.sqlite* *.log __pycache__ *.json *.env 는 위 전역 규칙에서 이미 제외됨.
-#    monitored_stocks.json = 감시종목 데이터 → *.json 규칙으로 추적 안 됨(서버 유지).)
+# ── stock 서브시스템 (코드만 추적, 데이터/런타임은 서버 전용) ────────────────
 stock/venv/
 stock/screenshots/
 stock/*.png
 stock/*.jpg
 stock/*.db
+stock/*.sqlite
+stock/*.log
 
-# openclaw 런타임/툴 생성물 (서버에만 존재, git 추적 금지)
-#   git-auto-push.sh 의 `git add -A` 가 실수로 담는 것을 방지.
-tools/
-workspace-attestations/
-*.migrated
 
-# 슬랙 발신 로그 (슬랙 뷰어용 원천 데이터 — 서버 전용, 내용 포함)
-slack_logs/
-
-# npm 플러그인 폴더 보호 (git clean -fd 로부터 보호)
-npm/
-plugin-skills/
-
-# 시크릿/민감 정보 파일
-openclaw.json.bak*
-openclaw.json.clobbered*
-workspace/MEMORY.md
-workspace/get_notion_book.py
-agents/main/agent/codex-home/shell_snapshots/
-
-# 민감 정보 제외
-openclaw.json.bak*
-openclaw.json.clobbered*
-agents/main/agent/codex-home/shell_snapshots/
+# ── 특정 민감 파일 ──────────────────────────────────────────────────────────
 workspace/MEMORY.md
 workspace/get_notion_book.py
 workspace/bookman/TOOLS.md
 workspace/agents/bookman/TOOLS.md
 
-# openclaw agent 캐시/임시 폴더
-agents/*/agent/codex-home/.tmp/
-agents/*/agent/codex-home/tmp/
-agents/*/agent/codex-home/sessions/
-workspace/*/agent/codex-home/.tmp/
-workspace/*/agent/codex-home/tmp/
 
-# 미디어 수신 임시 폴더
-agents/*/media/inbound/openclaw-staged-*/
+# ── JSON 파일 처리 ─────────────────────────────────────────────────────────
+# 기본: 대부분의 JSON은 런타임 데이터 → 제외
+*.json
+
+# 단, 아래는 예외적으로 추적 (설정 파일)
+!openclaw.json
+!.env.example
+!cron/jobs.json
+
+# workspace-state는 각 에이전트 로컬 상태 → 제외
+workspace/*/openclaw-workspace-state.json
+agents/*/openclaw-workspace-state.json
+
+# 바이너리 / 미디어 파일 (workspace 내 업로드 파일 등)
+*.pdf
+*.tar.gz
+*.tar.bz2
+*.zip
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.mp4
+*.mp3
