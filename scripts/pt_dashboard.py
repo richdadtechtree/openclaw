@@ -451,13 +451,10 @@ loadBriefings();
   <div class="modal">
     <h3>💪 운동 추가</h3>
     <div class="form-row"><label>날짜</label><input type="date" id="w-date"></div>
-    <div class="form-row"><label>운동 이름</label><input type="text" id="w-exercise" placeholder="스쿼트, 벤치프레스..."></div>
-    <div class="form-grid2">
-      <div class="form-row"><label>세트</label><input type="number" id="w-sets" min="1" value="3"></div>
-      <div class="form-row"><label>횟수</label><input type="number" id="w-reps" min="1" value="10"></div>
+    <div class="form-row"><label>운동 기록 (한 번에 통으로 입력)</label>
+      <textarea id="w-text" rows="3" placeholder="예: 스쿼트 100kg 5x10, 레그프레스 80kg 4x12, 풀업 15개"></textarea>
     </div>
-    <div class="form-row"><label>무게 (kg, 선택)</label><input type="number" id="w-weight" step="0.5" placeholder="-"></div>
-    <button class="btn-submit" onclick="submitForm('workout',{date:document.getElementById('w-date').value||undefined,exercise:document.getElementById('w-exercise').value,sets:document.getElementById('w-sets').value,reps:document.getElementById('w-reps').value,weight_kg:document.getElementById('w-weight').value||null})">&#x2713; 저장</button>
+    <button class="btn-submit" onclick="submitForm('workout',{date:document.getElementById('w-date').value||undefined,text:document.getElementById('w-text').value})">&#x2713; 저장</button>
     <button class="btn-cancel" onclick="closeModal('workout')">취소</button>
   </div>
 </div>
@@ -570,14 +567,43 @@ def api_vitals():
 @app.route("/api/add/workout", methods=["POST"])
 def add_workout():
     d = request.json
-    today = d.get("date", date.today().isoformat())
+    today = d.get("date") or date.today().isoformat()
     now = datetime.now().isoformat()
+    raw_text = d.get("text", "").strip() or d.get("exercise", "").strip()
+
+    try:
+        from save_message import parse_workouts
+        parsed = parse_workouts(raw_text)
+    except Exception:
+        import re
+        parsed = []
+        pats = [
+            r'([가-힣a-zA-Z\s\-]{2,15}?)\s+(?:(\d+(?:\.\d+)?)\s*kg\s+)?(\d+)\s*[xX×]\s*(\d+)',
+            r'([가-힣a-zA-Z\s\-]{2,15}?)\s+(?:(\d+(?:\.\d+)?)\s*kg\s+)?(\d+)\s*세트\s*(\d+)\s*회',
+        ]
+        skip = {'수면', '체중', '단백질', '오늘', '어제', '아침', '점심', '저녁', '간식'}
+        for pat in pats:
+            for m in re.finditer(pat, raw_text):
+                name = m.group(1).strip()
+                if len(name) >= 2 and name not in skip:
+                    parsed.append({'exercise': name, 'sets': int(m.group(3)), 'reps': int(m.group(4)), 'weight_kg': float(m.group(2)) if m.group(2) else None})
+
     con = get_db()
-    con.execute(
-        "INSERT INTO workouts (date,exercise,sets,reps,weight_kg,raw,created_at) VALUES(?,?,?,?,?,?,?)",
-        (today, d["exercise"], int(d["sets"]), int(d["reps"]),
-         float(d["weight_kg"]) if d.get("weight_kg") else None, "web", now))
-    con.commit(); con.close()
+    if parsed:
+        for w in parsed:
+            con.execute(
+                "INSERT INTO workouts (date,exercise,sets,reps,weight_kg,raw,created_at) VALUES(?,?,?,?,?,?,?)",
+                (today, w['exercise'], w['sets'], w['reps'], w['weight_kg'], raw_text, now)
+            )
+    else:
+        con.execute(
+            "INSERT INTO workouts (date,exercise,sets,reps,weight_kg,raw,created_at) VALUES(?,?,?,?,?,?,?)",
+            (today, raw_text, int(d.get("sets")) if d.get("sets") else None,
+             int(d.get("reps")) if d.get("reps") else None,
+             float(d.get("weight_kg")) if d.get("weight_kg") else None, raw_text, now)
+        )
+    con.commit()
+    con.close()
     return jsonify({"ok": True})
 
 
