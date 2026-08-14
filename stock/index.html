@@ -44,9 +44,6 @@
       --color-warning-bg: rgba(245, 158, 11, 0.12);
       --color-warning-border: rgba(245, 158, 11, 0.3);
       
-      --color-slack: #4a154b;
-      --color-slack-accent: #e01e5a;
-      
       /* Component Tokens */
       --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.2);
       --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.3);
@@ -290,16 +287,6 @@
       border-color: var(--border-color-strong);
     }
 
-    .market-card.sidecar-active {
-      border: 2px solid var(--color-down);
-      animation: pulse-border 1.5s infinite;
-    }
-
-    @keyframes pulse-border {
-      0%, 100% { border-color: var(--color-down); box-shadow: 0 0 15px rgba(239, 68, 68, 0.4); }
-      50% { border-color: var(--border-color); box-shadow: none; }
-    }
-
     .card-head {
       display: flex;
       justify-content: space-between;
@@ -317,9 +304,15 @@
       gap: 8px;
     }
 
-    .flag-icon {
-      font-size: 18px;
-      line-height: 1;
+    /* Flag Image Icon Styling for Perfect Display Across Windows/Mac/Linux */
+    .flag-icon-img {
+      width: 22px;
+      height: 16px;
+      object-fit: cover;
+      border-radius: 3px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+      display: inline-block;
+      vertical-align: middle;
     }
 
     .source-tag {
@@ -642,7 +635,7 @@
       color: var(--text-main);
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 8px;
     }
 
     .stock-price {
@@ -844,7 +837,7 @@
 
     <!-- Footer -->
     <footer class="app-footer">
-      <div>OpenClaw Stock Briefing Engine v2.6 · Slack Integration</div>
+      <div>OpenClaw Stock Briefing Engine v2.7 · Slack Integration</div>
       <div>20초마다 자동 갱신 (KST) · 역대 최고가 단조 증가 검증 적용</div>
     </footer>
   </div>
@@ -853,27 +846,32 @@
   <div class="toast-container" id="toast-container"></div>
 
   <script>
-    // Flag & Symbol Mapping
-    const INDEX_METADATA = {
-      'KOSPI':   { name: '코스피', flag: '🇰🇷' },
-      'KOSDAQ':  { name: '코스닥', flag: '🇰🇷' },
-      'S&P 500': { name: 'S&P 500', flag: '🇺🇸' },
-      'NASDAQ':  { name: '나스닥', flag: '🇺🇸' },
-      'QLD':     { name: 'QLD (ProShares 2x)', flag: '🇺🇸' },
-      'TQQQ':    { name: 'TQQQ (ProShares 3x)', flag: '🇺🇸' }
+    // High-Resolution SVG/PNG Flag Icons to Ensure Perfect Display Across All Operating Systems (Windows, Mac, iOS, Android)
+    const FLAG_ICONS = {
+      'kr': `<img src="https://flagcdn.com/24x18/kr.png" srcset="https://flagcdn.com/48x36/kr.png 2x" width="22" height="16" alt="🇰🇷" class="flag-icon-img">`,
+      'us': `<img src="https://flagcdn.com/24x18/us.png" srcset="https://flagcdn.com/48x36/us.png 2x" width="22" height="16" alt="🇺🇸" class="flag-icon-img">`
     };
 
-    function getFlagEmoji(symbol, name) {
-      if (INDEX_METADATA[symbol]) return INDEX_METADATA[symbol].flag;
-      if (/^\d+$/.test(symbol)) return '🇰🇷'; // Korean stocks (6-digit numbers)
-      return '🇺🇸'; // US stocks/ETFs
+    const INDEX_METADATA = {
+      'KOSPI':   { name: '코스피', country: 'kr' },
+      'KOSDAQ':  { name: '코스닥', country: 'kr' },
+      'S&P 500': { name: 'S&P 500', country: 'us' },
+      'NASDAQ':  { name: '나스닥', country: 'us' },
+      'QLD':     { name: 'QLD (ProShares 2x)', country: 'us' },
+      'TQQQ':    { name: 'TQQQ (ProShares 3x)', country: 'us' }
+    };
+
+    function getFlagIcon(countryCode) {
+      return FLAG_ICONS[countryCode] || FLAG_ICONS['kr'];
     }
 
     function getIndexDisplayName(symbol) {
       if (INDEX_METADATA[symbol]) {
-        return `${INDEX_METADATA[symbol].flag} ${INDEX_METADATA[symbol].name}`;
+        const meta = INDEX_METADATA[symbol];
+        return `${getFlagIcon(meta.country)} ${meta.name}`;
       }
-      return `${getFlagEmoji(symbol)} ${symbol}`;
+      const country = /^\d+$/.test(symbol) ? 'kr' : 'us';
+      return `${getFlagIcon(country)} ${symbol}`;
     }
 
     // ---------------------------------------------------- Application State
@@ -1057,12 +1055,14 @@
       // Banner check
       const banner = document.getElementById('us-crash-banner');
       const spData = data['S&P 500'];
+      const usFlag = getFlagIcon('us');
+      
       if (spData && spData.us_crash) {
         banner.className = 'us-crash-banner alert';
-        banner.innerHTML = `⚠️ <strong>🇺🇸 S&P 500 동반 하락 발생</strong> (ATH 대비 ${spData.drawdown.toFixed(1)}%) — 국내 매수 시점 시드를 <strong>미국 시장에 배분 권고</strong>`;
+        banner.innerHTML = `⚠️ <strong>${usFlag} S&P 500 동반 하락 발생</strong> (ATH 대비 ${spData.drawdown.toFixed(1)}%) — 국내 매수 시점 시드를 <strong>미국 시장에 배분 권고</strong>`;
       } else {
         banner.className = 'us-crash-banner normal';
-        banner.innerHTML = `✅ <strong>🇺🇸 S&P 500 정상 범위 유지</strong> (ATH 대비 ${spData ? spData.drawdown.toFixed(1) : 0}%) — 글로벌 동반 대폭락 없음`;
+        banner.innerHTML = `✅ <strong>${usFlag} S&P 500 정상 범위 유지</strong> (ATH 대비 ${spData ? spData.drawdown.toFixed(1) : 0}%) — 글로벌 동반 대폭락 없음`;
       }
 
       // Strategy Cards
@@ -1112,11 +1112,12 @@
         const p1 = tqqq.phase1;
         const p2 = tqqq.phase2;
         const p1Width = (p1.done / p1.total) * 100;
+        const tqqqFlag = getFlagIcon('us');
 
         cardsHtml += `
           <div class="tqqq-box">
             <div class="strategy-card-title">
-              <span>🚀 🇺🇸 TQQQ 전용 2단계 분할 매수 매커니즘</span>
+              <span>🚀 ${tqqqFlag} TQQQ 전용 2단계 분할 매수 매커니즘</span>
               <span class="source-tag">ATH 대비 ${tqqq.drawdown.toFixed(2)}%</span>
             </div>
             
@@ -1176,7 +1177,7 @@
 
       container.innerHTML = filtered.map(([symbol, item]) => {
         const isUs = !/^\d+$/.test(symbol);
-        const flag = getFlagEmoji(symbol, item.name);
+        const flagIcon = getFlagIcon(isUs ? 'us' : 'kr');
         const priceStr = isUs ? `$${formatNumber(item.current)}` : `${formatNumber(item.current, 0)}원`;
         
         const badgesHtml = (item.triggered_steps || []).map(st => {
@@ -1189,7 +1190,7 @@
         return `
           <div class="stock-card">
             <div class="stock-card-head">
-              <span class="stock-name"><span class="flag-icon">${flag}</span> ${item.name}</span>
+              <span class="stock-name">${flagIcon} ${item.name}</span>
               <span class="stock-symbol">${symbol}</span>
             </div>
             
