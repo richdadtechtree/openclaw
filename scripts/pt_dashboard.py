@@ -155,6 +155,8 @@ tr:hover td { background: var(--card2); }
 .briefing-date { font-size: 11px; color: var(--muted); margin-top: 8px; }
 .btn-del { background: none; border: none; cursor: pointer; opacity: .4; font-size: 14px; padding: 2px 6px; border-radius: 4px; transition: all .2s; }
 .btn-del:hover { opacity: 1; color: var(--red); background: rgba(248,81,73,.15); }
+.btn-edit { background: none; border: none; cursor: pointer; opacity: .4; font-size: 14px; padding: 2px 6px; border-radius: 4px; transition: all .2s; margin-right: 2px; }
+.btn-edit:hover { opacity: 1; color: var(--blue); background: rgba(88,166,255,.15); }
 @media (max-width: 768px) {
   .grid4 { grid-template-columns: 1fr 1fr; }
   .grid3 { grid-template-columns: 1fr; }
@@ -233,7 +235,7 @@ tr:hover td { background: var(--card2); }
   <div class="card" style="margin-top:24px">
     <div class="section-title">📋 최근 운동 현황</div>
     <table>
-      <thead><tr><th>날짜</th><th>운동</th><th>세트</th><th>횟수</th><th>무게</th><th>삭제</th></tr></thead>
+      <thead><tr><th>날짜</th><th>운동</th><th>세트</th><th>횟수</th><th>무게</th><th>관리</th></tr></thead>
       <tbody id="recent-workouts-body"></tbody>
     </table>
   </div>
@@ -246,7 +248,7 @@ tr:hover td { background: var(--card2); }
       <button class="btn-add" onclick="openModal('workout')">+ 추가</button>
     </div>
     <table>
-      <thead><tr><th>날짜</th><th>운동</th><th>세트</th><th>횟수</th><th>무게(kg)</th><th>삭제</th></tr></thead>
+      <thead><tr><th>날짜</th><th>운동</th><th>세트</th><th>횟수</th><th>무게(kg)</th><th>관리</th></tr></thead>
       <tbody id="all-workouts-body"></tbody>
     </table>
   </div>
@@ -259,7 +261,7 @@ tr:hover td { background: var(--card2); }
       <button class="btn-add" onclick="openModal('diet')">+ 추가</button>
     </div>
     <table>
-      <thead><tr><th>날짜</th><th>식사</th><th>메뉴</th><th>단백질(g)</th><th>삭제</th></tr></thead>
+      <thead><tr><th>날짜</th><th>식사</th><th>메뉴</th><th>단백질(g)</th><th>관리</th></tr></thead>
       <tbody id="diet-body"></tbody>
     </table>
   </div>
@@ -273,7 +275,7 @@ tr:hover td { background: var(--card2); }
         <button class="btn-add" onclick="openModal('vital')">+ 추가</button>
       </div>
       <table>
-        <thead><tr><th>날짜</th><th>체중(kg)</th><th>수면(h)</th><th>컨디션</th><th>삭제</th></tr></thead>
+        <thead><tr><th>날짜</th><th>체중(kg)</th><th>수면(h)</th><th>컨디션</th><th>관리</th></tr></thead>
         <tbody id="vitals-body"></tbody>
       </table>
     </div>
@@ -340,15 +342,19 @@ async function loadData() {
     el.textContent=i; cal.appendChild(el);
   }
 
+  // 캐시 객체
+  window.cacheWorkouts = {}; window.cacheDiet = {}; window.cacheVitals = {};
+
   // 최근 운동
   const rb = document.getElementById('recent-workouts-body');
   (d.recent_workouts||[]).forEach(w => {
+    window.cacheWorkouts[w.id] = w;
     const tr=document.createElement('tr');
     tr.innerHTML=`<td>${w.date}</td><td><strong>${w.exercise}</strong></td>
       <td><span class="badge badge-blue">${w.sets}세트</span></td>
       <td>${w.reps}회</td>
       <td>${w.weight_kg?w.weight_kg+'kg':'-'}</td>
-      <td><button class="btn-del" onclick="deleteRecord('workout',${w.id})">🗑️</button></td>`;
+      <td><button class="btn-edit" onclick="openEditModal('workout',${w.id})">✏️</button><button class="btn-del" onclick="deleteRecord('workout',${w.id})">🗑️</button></td>`;
     rb.appendChild(tr);
   });
 
@@ -356,11 +362,12 @@ async function loadData() {
   const ab = document.getElementById('all-workouts-body');
   const wr = await fetch('/api/workouts'); const wd = await wr.json();
   wd.forEach(w => {
+    window.cacheWorkouts[w.id] = w;
     const tr=document.createElement('tr');
     tr.innerHTML=`<td>${w.date}</td><td>${w.exercise}</td>
       <td>${w.sets}</td><td>${w.reps}</td>
       <td>${w.weight_kg??'-'}</td>
-      <td><button class="btn-del" onclick="deleteRecord('workout',${w.id})">🗑️</button></td>`;
+      <td><button class="btn-edit" onclick="openEditModal('workout',${w.id})">✏️</button><button class="btn-del" onclick="deleteRecord('workout',${w.id})">🗑️</button></td>`;
     ab.appendChild(tr);
   });
 
@@ -368,11 +375,12 @@ async function loadData() {
   const db2 = document.getElementById('diet-body');
   const dr = await fetch('/api/diet'); const dd = await dr.json();
   dd.forEach(d2 => {
+    window.cacheDiet[d2.id] = d2;
     const tr=document.createElement('tr');
     tr.innerHTML=`<td>${d2.date}</td>
       <td>${d2.meal?`<span class="badge badge-green">${d2.meal}</span>`:'-'}</td>
       <td>${d2.items}</td><td>${d2.protein_g??'-'}</td>
-      <td><button class="btn-del" onclick="deleteRecord('diet',${d2.id})">🗑️</button></td>`;
+      <td><button class="btn-edit" onclick="openEditModal('diet',${d2.id})">✏️</button><button class="btn-del" onclick="deleteRecord('diet',${d2.id})">🗑️</button></td>`;
     db2.appendChild(tr);
   });
 
@@ -381,12 +389,13 @@ async function loadData() {
   const vr = await fetch('/api/vitals'); const vd = await vr.json();
   const condMap = {excellent:'최고',good:'좋음',fair:'보통',tired:'피곤',poor:'나쁨',terrible:'최악'};
   vd.forEach(v => {
+    window.cacheVitals[v.id] = v;
     const tr=document.createElement('tr');
     tr.innerHTML=`<td>${v.date}</td>
       <td>${v.weight_kg?v.weight_kg+'kg':'-'}</td>
       <td>${v.sleep_hours??'-'}</td>
       <td>${condMap[v.condition]??'-'}${v.alcohol?'🍺':''}</td>
-      <td><button class="btn-del" onclick="deleteRecord('vital',${v.id})">🗑️</button></td>`;
+      <td><button class="btn-edit" onclick="openEditModal('vital',${v.id})">✏️</button><button class="btn-del" onclick="deleteRecord('vital',${v.id})">🗑️</button></td>`;
     vb.appendChild(tr);
   });
 
@@ -424,6 +433,77 @@ async function deleteRecord(type, id) {
   const r = await fetch('/api/delete/' + type + '/' + id, {method: 'POST'});
   if ((await r.json()).ok) location.reload();
   else alert('삭제 실패');
+}
+
+// 수정 모달 제어
+function openEditModal(type, id) {
+  if (type === 'workout') {
+    const w = window.cacheWorkouts[id]; if (!w) return;
+    document.getElementById('ew-id').value = w.id;
+    document.getElementById('ew-date').value = w.date;
+    document.getElementById('ew-exercise').value = w.exercise || '';
+    document.getElementById('ew-sets').value = w.sets ?? 1;
+    document.getElementById('ew-reps').value = w.reps ?? 1;
+    document.getElementById('ew-weight').value = w.weight_kg ?? '';
+    document.getElementById('modal-edit-workout').classList.add('open');
+  } else if (type === 'diet') {
+    const d = window.cacheDiet[id]; if (!d) return;
+    document.getElementById('ed-id').value = d.id;
+    document.getElementById('ed-date').value = d.date;
+    document.getElementById('ed-meal').value = d.meal || '';
+    document.getElementById('ed-items').value = d.items || '';
+    document.getElementById('ed-protein').value = d.protein_g ?? '';
+    document.getElementById('modal-edit-diet').classList.add('open');
+  } else if (type === 'vital') {
+    const v = window.cacheVitals[id]; if (!v) return;
+    document.getElementById('ev-id').value = v.id;
+    document.getElementById('ev-date').value = v.date;
+    document.getElementById('ev-weight').value = v.weight_kg ?? '';
+    document.getElementById('ev-sleep').value = v.sleep_hours ?? '';
+    document.getElementById('ev-cond').value = v.condition || '';
+    document.getElementById('ev-alcohol').value = v.alcohol ?? 0;
+    document.getElementById('modal-edit-vital').classList.add('open');
+  }
+}
+function closeEditModal(type) {
+  document.getElementById('modal-edit-' + type).classList.remove('open');
+}
+async function submitEditForm(type) {
+  let id, data;
+  if (type === 'workout') {
+    id = document.getElementById('ew-id').value;
+    data = {
+      date: document.getElementById('ew-date').value,
+      exercise: document.getElementById('ew-exercise').value,
+      sets: document.getElementById('ew-sets').value,
+      reps: document.getElementById('ew-reps').value,
+      weight_kg: document.getElementById('ew-weight').value || null
+    };
+  } else if (type === 'diet') {
+    id = document.getElementById('ed-id').value;
+    data = {
+      date: document.getElementById('ed-date').value,
+      meal: document.getElementById('ed-meal').value || null,
+      items: document.getElementById('ed-items').value,
+      protein_g: document.getElementById('ed-protein').value || null
+    };
+  } else if (type === 'vital') {
+    id = document.getElementById('ev-id').value;
+    data = {
+      date: document.getElementById('ev-date').value,
+      weight_kg: document.getElementById('ev-weight').value || null,
+      sleep_hours: document.getElementById('ev-sleep').value || null,
+      condition: document.getElementById('ev-cond').value || null,
+      alcohol: document.getElementById('ev-alcohol').value
+    };
+  }
+  const r = await fetch('/api/edit/' + type + '/' + id, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data)
+  });
+  if ((await r.json()).ok) { closeEditModal(type); location.reload(); }
+  else alert('수정 실패');
 }
 
 // 풀업 PR 로드
@@ -500,6 +580,57 @@ loadBriefings();
       <select id="v-alcohol"><option value="0">없음</option><option value="1">함</option></select></div>
     <button class="btn-submit" onclick="submitForm('vital',{date:document.getElementById('v-date').value||undefined,weight_kg:document.getElementById('v-weight').value||null,sleep_hours:document.getElementById('v-sleep').value||null,condition:document.getElementById('v-cond').value||null,alcohol:document.getElementById('v-alcohol').value})">&#x2713; 저장</button>
     <button class="btn-cancel" onclick="closeModal('vital')">취소</button>
+  </div>
+</div>
+
+<!-- 운동 수정 모달 -->
+<div class="modal-overlay" id="modal-edit-workout">
+  <div class="modal">
+    <h3>✏️ 운동 기록 수정</h3>
+    <input type="hidden" id="ew-id">
+    <div class="form-row"><label>날짜</label><input type="date" id="ew-date"></div>
+    <div class="form-row"><label>운동 이름</label><input type="text" id="ew-exercise"></div>
+    <div class="form-grid2">
+      <div class="form-row"><label>세트</label><input type="number" id="ew-sets" min="1"></div>
+      <div class="form-row"><label>횟수</label><input type="number" id="ew-reps" min="1"></div>
+    </div>
+    <div class="form-row"><label>무게 (kg)</label><input type="number" id="ew-weight" step="0.5" placeholder="-"></div>
+    <button class="btn-submit" onclick="submitEditForm('workout')">&#x2713; 수정 저장</button>
+    <button class="btn-cancel" onclick="closeEditModal('workout')">취소</button>
+  </div>
+</div>
+
+<!-- 식단 수정 모달 -->
+<div class="modal-overlay" id="modal-edit-diet">
+  <div class="modal">
+    <h3>✏️ 식단 기록 수정</h3>
+    <input type="hidden" id="ed-id">
+    <div class="form-row"><label>날짜</label><input type="date" id="ed-date"></div>
+    <div class="form-row"><label>식사 시간</label>
+      <select id="ed-meal"><option value="">선택</option><option>아침</option><option>점심</option><option>저녁</option><option>간식</option></select></div>
+    <div class="form-row"><label>메뉴</label><textarea id="ed-items" rows="3"></textarea></div>
+    <div class="form-row"><label>단백질 (g)</label><input type="number" id="ed-protein" placeholder="-"></div>
+    <button class="btn-submit" onclick="submitEditForm('diet')">&#x2713; 수정 저장</button>
+    <button class="btn-cancel" onclick="closeEditModal('diet')">취소</button>
+  </div>
+</div>
+
+<!-- 바이탈 수정 모달 -->
+<div class="modal-overlay" id="modal-edit-vital">
+  <div class="modal">
+    <h3>✏️ 바이탈 기록 수정</h3>
+    <input type="hidden" id="ev-id">
+    <div class="form-row"><label>날짜</label><input type="date" id="ev-date"></div>
+    <div class="form-grid2">
+      <div class="form-row"><label>체중 (kg)</label><input type="number" id="ev-weight" step="0.1" placeholder="-"></div>
+      <div class="form-row"><label>수면 (시간)</label><input type="number" id="ev-sleep" step="0.5" placeholder="-"></div>
+    </div>
+    <div class="form-row"><label>컨디션</label>
+      <select id="ev-cond"><option value="">선택</option><option value="excellent">최고</option><option value="good">좋음</option><option value="fair">보통</option><option value="tired">피곤</option><option value="poor">나쁨</option></select></div>
+    <div class="form-row"><label>음주</label>
+      <select id="ev-alcohol"><option value="0">없음</option><option value="1">함</option></select></div>
+    <button class="btn-submit" onclick="submitEditForm('vital')">&#x2713; 수정 저장</button>
+    <button class="btn-cancel" onclick="closeEditModal('vital')">취소</button>
   </div>
 </div>
 
@@ -596,6 +727,47 @@ def delete_diet(rec_id):
 def delete_vital(rec_id):
     con = get_db()
     con.execute("DELETE FROM vitals WHERE id=?", (rec_id,))
+    con.commit(); con.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/edit/workout/<int:rec_id>", methods=["POST"])
+def edit_workout(rec_id):
+    d = request.json
+    con = get_db()
+    con.execute(
+        "UPDATE workouts SET date=?, exercise=?, sets=?, reps=?, weight_kg=? WHERE id=?",
+        (d["date"], d["exercise"], int(d["sets"]) if d.get("sets") else None,
+         int(d["reps"]) if d.get("reps") else None,
+         float(d["weight_kg"]) if d.get("weight_kg") else None, rec_id)
+    )
+    con.commit(); con.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/edit/diet/<int:rec_id>", methods=["POST"])
+def edit_diet(rec_id):
+    d = request.json
+    con = get_db()
+    con.execute(
+        "UPDATE diet SET date=?, meal=?, items=?, protein_g=? WHERE id=?",
+        (d["date"], d.get("meal"), d["items"],
+         float(d["protein_g"]) if d.get("protein_g") else None, rec_id)
+    )
+    con.commit(); con.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/edit/vital/<int:rec_id>", methods=["POST"])
+def edit_vital(rec_id):
+    d = request.json
+    con = get_db()
+    con.execute(
+        "UPDATE vitals SET date=?, weight_kg=?, sleep_hours=?, condition=?, alcohol=? WHERE id=?",
+        (d["date"], float(d["weight_kg"]) if d.get("weight_kg") else None,
+         float(d["sleep_hours"]) if d.get("sleep_hours") else None,
+         d.get("condition"), int(d.get("alcohol", 0)), rec_id)
+    )
     con.commit(); con.close()
     return jsonify({"ok": True})
 
