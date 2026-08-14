@@ -28,6 +28,7 @@
 secret/
 # 단, README는 폴더 설명용으로 추적 허용
 !secret/README.md
+!secret/*/README.md
 
 # Google OAuth 클라이언트 시크릿 (파일명이 고정 패턴)
 client_secret_*.json
