@@ -76,6 +76,13 @@
       "agentId": "keepgoing",
       "match": {
         "channel": "slack",
+        "accountId": "keepgoing"
+      }
+    },
+    {
+      "agentId": "keepgoing",
+      "match": {
+        "channel": "slack",
         "peer": {
           "kind": "channel",
           "id": "C0BMN9FN073"
