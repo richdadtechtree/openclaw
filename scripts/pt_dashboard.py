@@ -9,7 +9,7 @@ import sqlite3
 import json
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from flask import Flask, jsonify, render_template_string
+from flask import Flask, jsonify, render_template_string, request
 
 DB_PATH = Path.home() / "pt_data" / "pt.db"
 app = Flask(__name__)
@@ -35,6 +35,19 @@ def db_one(sql, params=()):
     rows = db_query(sql, params)
     return rows[0] if rows else {}
 
+
+def ensure_tables():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    con = sqlite3.connect(DB_PATH)
+    con.executescript("""
+    CREATE TABLE IF NOT EXISTS workouts (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, exercise TEXT NOT NULL, sets INTEGER, reps INTEGER, weight_kg REAL, raw TEXT, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS diet (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, meal TEXT, items TEXT NOT NULL, protein_g REAL, raw TEXT, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS vitals (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL UNIQUE, weight_kg REAL, sleep_hours REAL, condition TEXT, alcohol INTEGER DEFAULT 0, raw TEXT, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS briefings (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'daily', content TEXT NOT NULL, created_at TEXT NOT NULL);
+    """)
+    con.commit(); con.close()
+
+ensure_tables()
 
 HTML = """<!DOCTYPE html>
 <html lang="ko">
@@ -112,8 +125,37 @@ tr:hover td { background: var(--card2); }
   border: 1px solid rgba(63,185,80,.3); border-radius: 12px; padding: 20px; }
 .streak-num { font-size: 48px; font-weight: 900; color: var(--green); line-height: 1; }
 .empty-state { text-align: center; padding: 40px; color: var(--muted); font-size: 14px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+.btn-add { margin-left: auto; background: var(--blue); color: #000; border: none; border-radius: 6px;
+  padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer; transition: opacity .2s; }
+.btn-add:hover { opacity: .8; }
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7);
+  z-index: 1000; align-items: center; justify-content: center; }
+.modal-overlay.open { display: flex; }
+.modal { background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+  padding: 28px; width: 420px; max-width: 95vw; }
+.modal h3 { font-size: 18px; font-weight: 700; margin-bottom: 20px; }
+.form-row { margin-bottom: 14px; }
+.form-row label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
+.form-row input, .form-row select, .form-row textarea {
+  width: 100%; background: var(--card2); border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); padding: 10px 12px; font-size: 14px; outline: none; font-family: inherit; }
+.form-row input:focus, .form-row select:focus, .form-row textarea:focus { border-color: var(--blue); }
+.form-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.btn-submit { width: 100%; background: linear-gradient(90deg, var(--blue), var(--purple));
+  color: #fff; border: none; border-radius: 8px; padding: 12px; font-size: 15px;
+  font-weight: 700; cursor: pointer; margin-top: 8px; }
+.btn-submit:hover { opacity: .9; }
+.btn-cancel { background: none; border: 1px solid var(--border); border-radius: 8px;
+  color: var(--muted); padding: 10px; font-size: 14px; cursor: pointer; width: 100%; margin-top: 8px; }
+.briefing-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+  padding: 18px; margin-bottom: 12px; }
+.briefing-type { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 8px; }
+.briefing-content { font-size: 14px; line-height: 1.7; white-space: pre-wrap; color: var(--text); }
+.briefing-date { font-size: 11px; color: var(--muted); margin-top: 8px; }
 @media (max-width: 768px) {
   .grid4 { grid-template-columns: 1fr 1fr; }
+  .grid3 { grid-template-columns: 1fr; }
   .grid2 { grid-template-columns: 1fr; }
   .panel { padding: 16px; }
 }
@@ -151,7 +193,7 @@ tr:hover td { background: var(--card2); }
       <div class="stat-sub" id="weight-date">-</div></div>
   </div>
 
-  <div class="grid2">
+  <div class="grid3">
     <div class="challenge-card">
       <div class="card-title">🔥 연속 운동 챌린지</div>
       <div class="streak-num" id="streak">0</div>
@@ -160,6 +202,15 @@ tr:hover td { background: var(--card2); }
         <div class="progress-fill" id="streak-bar" style="width:0%"></div>
       </div>
       <div class="stat-sub" style="margin-top:6px">목표: 30일</div>
+    </div>
+    <div class="card">
+      <div class="card-title">🏆 풀업 최고 기록</div>
+      <div class="stat-num" style="color:var(--purple)" id="pullup-pr">-</div>
+      <div class="stat-sub" id="pullup-pr-date">개 (날짜 미확인)</div>
+      <div style="height:12px"></div>
+      <div class="card-title">오늘</div>
+      <div class="stat-num" style="font-size:28px" id="pullup-today">-</div>
+      <div class="stat-sub">개</div>
     </div>
     <div class="card">
       <div class="card-title">📅 이번 달 운동 달력</div>
@@ -172,7 +223,12 @@ tr:hover td { background: var(--card2); }
     <p id="ai-report-text"></p>
   </div>
 
-  <div class="card">
+  <div id="briefings-section">
+    <div class="section-title" style="margin-bottom:12px">📢 김종국 브리핑</div>
+    <div id="briefings-list"></div>
+  </div>
+
+  <div class="card" style="margin-top:24px">
     <div class="section-title">📋 최근 운동 현황</div>
     <table>
       <thead><tr><th>날짜</th><th>운동</th><th>세트</th><th>횟수</th><th>무게</th></tr></thead>
@@ -184,7 +240,9 @@ tr:hover td { background: var(--card2); }
 <!-- 운동기록 -->
 <div id="tab-workouts" class="panel">
   <div class="card">
-    <div class="section-title">💪 전체 운동 기록</div>
+    <div class="section-title">💪 전체 운동 기록
+      <button class="btn-add" onclick="openModal('workout')">+ 추가</button>
+    </div>
     <table>
       <thead><tr><th>날짜</th><th>운동</th><th>세트</th><th>횟수</th><th>무게(kg)</th></tr></thead>
       <tbody id="all-workouts-body"></tbody>
@@ -195,7 +253,9 @@ tr:hover td { background: var(--card2); }
 <!-- 식단기록 -->
 <div id="tab-diet" class="panel">
   <div class="card">
-    <div class="section-title">🥗 식단 기록</div>
+    <div class="section-title">🥗 식단 기록
+      <button class="btn-add" onclick="openModal('diet')">+ 추가</button>
+    </div>
     <table>
       <thead><tr><th>날짜</th><th>식사</th><th>메뉴</th><th>단백질(g)</th></tr></thead>
       <tbody id="diet-body"></tbody>
@@ -207,7 +267,9 @@ tr:hover td { background: var(--card2); }
 <div id="tab-vitals" class="panel">
   <div class="grid2">
     <div class="card">
-      <div class="section-title">⚖️ 체중 기록</div>
+      <div class="section-title">⚖️ 체중 기록
+        <button class="btn-add" onclick="openModal('vital')">+ 추가</button>
+      </div>
       <table>
         <thead><tr><th>날짜</th><th>체중(kg)</th><th>수면(h)</th><th>컨디션</th></tr></thead>
         <tbody id="vitals-body"></tbody>
@@ -338,8 +400,100 @@ function updateClock() {
   document.getElementById('now-badge').textContent = now.toLocaleString('ko-KR', opts);
 }
 updateClock(); setInterval(updateClock, 1000);
+
+// 모달
+function openModal(type) {
+  document.getElementById('modal-'+type).classList.add('open');
+}
+function closeModal(type) {
+  document.getElementById('modal-'+type).classList.remove('open');
+}
+async function submitForm(type, data) {
+  const r = await fetch('/api/add/'+type, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  if ((await r.json()).ok) { closeModal(type); location.reload(); }
+  else alert('저장 실패');
+}
+
+// 풀업 PR 로드
+async function loadPullupPR() {
+  const r = await fetch('/api/pullup-pr');
+  const d = await r.json();
+  document.getElementById('pullup-pr').textContent = d.pr ?? '-';
+  document.getElementById('pullup-pr-date').textContent = d.pr ? `개 (${d.pr_date})` : '기록 없음';
+  const today = new Date().toISOString().slice(0,10);
+  const todayRow = (d.daily||[]).find(r=>r.date===today);
+  document.getElementById('pullup-today').textContent = todayRow ? todayRow.max_reps : '-';
+}
+
+// 브리핑 로드
+async function loadBriefings() {
+  const r = await fetch('/api/briefings');
+  const items = await r.json();
+  const el = document.getElementById('briefings-list');
+  if (!items.length) { el.innerHTML = '<div class="empty-state">브리핑이 없습니다</div>'; return; }
+  el.innerHTML = items.map(b => `
+    <div class="briefing-card">
+      <div class="briefing-type" style="color:${b.type==='weekly'?'var(--purple)':'var(--blue)'}">
+        ${b.type==='weekly'?'📅 주간 브리핑':'📄 일침 브리핑'}
+      </div>
+      <div class="briefing-content">${b.content}</div>
+      <div class="briefing-date">${b.date}</div>
+    </div>`).join('');
+}
+
 loadData();
+loadPullupPR();
+loadBriefings();
 </script>
+
+<!-- 운동 모달 -->
+<div class="modal-overlay" id="modal-workout">
+  <div class="modal">
+    <h3>💪 운동 추가</h3>
+    <div class="form-row"><label>날짜</label><input type="date" id="w-date"></div>
+    <div class="form-row"><label>운동 이름</label><input type="text" id="w-exercise" placeholder="스쿼트, 벤치프레스..."></div>
+    <div class="form-grid2">
+      <div class="form-row"><label>세트</label><input type="number" id="w-sets" min="1" value="3"></div>
+      <div class="form-row"><label>횟수</label><input type="number" id="w-reps" min="1" value="10"></div>
+    </div>
+    <div class="form-row"><label>무게 (kg, 선택)</label><input type="number" id="w-weight" step="0.5" placeholder="-"></div>
+    <button class="btn-submit" onclick="submitForm('workout',{date:document.getElementById('w-date').value||undefined,exercise:document.getElementById('w-exercise').value,sets:document.getElementById('w-sets').value,reps:document.getElementById('w-reps').value,weight_kg:document.getElementById('w-weight').value||null})">&#x2713; 저장</button>
+    <button class="btn-cancel" onclick="closeModal('workout')">취소</button>
+  </div>
+</div>
+
+<!-- 식단 모달 -->
+<div class="modal-overlay" id="modal-diet">
+  <div class="modal">
+    <h3>🥗 식단 추가</h3>
+    <div class="form-row"><label>날짜</label><input type="date" id="d-date"></div>
+    <div class="form-row"><label>식사 시간</label>
+      <select id="d-meal"><option value="">선택</option><option>아침</option><option>점심</option><option>저녁</option><option>간식</option></select></div>
+    <div class="form-row"><label>메뉴</label><textarea id="d-items" rows="3" placeholder="닭가슴살 200g, 밥 1공기..."></textarea></div>
+    <div class="form-row"><label>단백질 (g, 선택)</label><input type="number" id="d-protein" placeholder="-"></div>
+    <button class="btn-submit" onclick="submitForm('diet',{date:document.getElementById('d-date').value||undefined,meal:document.getElementById('d-meal').value||undefined,items:document.getElementById('d-items').value,protein_g:document.getElementById('d-protein').value||null})">&#x2713; 저장</button>
+    <button class="btn-cancel" onclick="closeModal('diet')">취소</button>
+  </div>
+</div>
+
+<!-- 바이탈 모달 -->
+<div class="modal-overlay" id="modal-vital">
+  <div class="modal">
+    <h3>⚖️ 바이탈 추가</h3>
+    <div class="form-row"><label>날짜</label><input type="date" id="v-date"></div>
+    <div class="form-grid2">
+      <div class="form-row"><label>체중 (kg)</label><input type="number" id="v-weight" step="0.1" placeholder="-"></div>
+      <div class="form-row"><label>수면 (시간)</label><input type="number" id="v-sleep" step="0.5" placeholder="-"></div>
+    </div>
+    <div class="form-row"><label>컨디션</label>
+      <select id="v-cond"><option value="">선택</option><option value="excellent">최고</option><option value="good">좋음</option><option value="fair">보통</option><option value="tired">피곤</option><option value="poor">나쁨</option></select></div>
+    <div class="form-row"><label>음주</label>
+      <select id="v-alcohol"><option value="0">없음</option><option value="1">함</option></select></div>
+    <button class="btn-submit" onclick="submitForm('vital',{date:document.getElementById('v-date').value||undefined,weight_kg:document.getElementById('v-weight').value||null,sleep_hours:document.getElementById('v-sleep').value||null,condition:document.getElementById('v-cond').value||null,alcohol:document.getElementById('v-alcohol').value})">&#x2713; 저장</button>
+    <button class="btn-cancel" onclick="closeModal('vital')">취소</button>
+  </div>
+</div>
+
 </body>
 </html>"""
 
@@ -411,6 +565,83 @@ def api_diet():
 def api_vitals():
     return jsonify(db_query(
         "SELECT date, weight_kg, sleep_hours, condition, alcohol FROM vitals ORDER BY date DESC LIMIT 60"))
+
+
+@app.route("/api/add/workout", methods=["POST"])
+def add_workout():
+    d = request.json
+    today = d.get("date", date.today().isoformat())
+    now = datetime.now().isoformat()
+    con = get_db()
+    con.execute(
+        "INSERT INTO workouts (date,exercise,sets,reps,weight_kg,raw,created_at) VALUES(?,?,?,?,?,?,?)",
+        (today, d["exercise"], int(d["sets"]), int(d["reps"]),
+         float(d["weight_kg"]) if d.get("weight_kg") else None, "web", now))
+    con.commit(); con.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/add/diet", methods=["POST"])
+def add_diet():
+    d = request.json
+    today = d.get("date", date.today().isoformat())
+    now = datetime.now().isoformat()
+    con = get_db()
+    con.execute(
+        "INSERT INTO diet (date,meal,items,protein_g,raw,created_at) VALUES(?,?,?,?,?,?)",
+        (today, d.get("meal"), d["items"],
+         float(d["protein_g"]) if d.get("protein_g") else None, "web", now))
+    con.commit(); con.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/add/vital", methods=["POST"])
+def add_vital():
+    d = request.json
+    today = d.get("date", date.today().isoformat())
+    now = datetime.now().isoformat()
+    con = get_db()
+    try:
+        con.execute(
+            "INSERT INTO vitals (date,weight_kg,sleep_hours,condition,alcohol,raw,created_at) VALUES(?,?,?,?,?,?,?)",
+            (today, float(d["weight_kg"]) if d.get("weight_kg") else None,
+             float(d["sleep_hours"]) if d.get("sleep_hours") else None,
+             d.get("condition"), int(d.get("alcohol", 0)), "web", now))
+    except sqlite3.IntegrityError:
+        con.execute(
+            "UPDATE vitals SET weight_kg=?,sleep_hours=?,condition=?,alcohol=? WHERE date=?",
+            (float(d["weight_kg"]) if d.get("weight_kg") else None,
+             float(d["sleep_hours"]) if d.get("sleep_hours") else None,
+             d.get("condition"), int(d.get("alcohol", 0)), today))
+    con.commit(); con.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/briefings")
+def get_briefings():
+    return jsonify(db_query(
+        "SELECT date, type, content FROM briefings ORDER BY date DESC, id DESC LIMIT 10"))
+
+
+@app.route("/api/add/briefing", methods=["POST"])
+def add_briefing():
+    d = request.json
+    con = get_db()
+    con.execute(
+        "INSERT INTO briefings (date,type,content,created_at) VALUES(?,?,?,?)",
+        (d.get("date", date.today().isoformat()), d.get("type", "daily"),
+         d["content"], datetime.now().isoformat()))
+    con.commit(); con.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/pullup-pr")
+def pullup_pr():
+    row = db_one(
+        "SELECT MAX(reps) as pr, date FROM workouts WHERE exercise LIKE '%풀업%' ORDER BY pr DESC")
+    daily = db_query(
+        "SELECT date, MAX(reps) as max_reps FROM workouts WHERE exercise LIKE '%풀업%' GROUP BY date ORDER BY date DESC LIMIT 30")
+    return jsonify({"pr": row.get("pr"), "pr_date": row.get("date"), "daily": daily})
 
 
 if __name__ == "__main__":
