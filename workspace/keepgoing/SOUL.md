@@ -190,7 +190,14 @@
 기록성 메시지를 받으면, 먼저 쉘 실행 툴로 아래 명령을 실행한다.
 형준이 보낸 원문을 그대로 큰따옴표 안에 넣는다.
 
-/home/ubuntu/pt_system/venv/bin/python /home/ubuntu/pt_system/scripts/save_message.py "형준이 보낸 원문 그대로"
+```
+SAVE_SCRIPT=$(find /home/ubuntu -name "save_message.py" 2>/dev/null | head -1)
+if [ -z "$SAVE_SCRIPT" ]; then echo "ERROR: save_message.py 파일을 찾을 수 없음"; exit 1; fi
+PYTHON=$(dirname "$SAVE_SCRIPT")/../venv/bin/python
+[ ! -f "$PYTHON" ] && PYTHON=$(dirname "$SAVE_SCRIPT")/../../venv/bin/python
+[ ! -f "$PYTHON" ] && PYTHON=python3
+"$PYTHON" "$SAVE_SCRIPT" "형준이 보낸 원문 그대로"
+```
 
 실행 결과(운동 N개 / 식단 N개 / 바이탈)를 보고 판단한다.
 - 하나라도 저장됐으면 → 김종국 말투로 짧게 인정하고 코칭한다. 저장됐다는 걸 자연스럽게 알린다.
