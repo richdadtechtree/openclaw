@@ -5,14 +5,228 @@ pt_dashboard.py — PT 대시보드 웹앱
 포트: 5001  |  DB: ~/pt_data/pt.db
 실행: python3 pt_dashboard.py
 """
+import os
 import sqlite3
 import json
+import secrets
+import urllib.parse
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from flask import Flask, jsonify, render_template_string, request
+
+import requests
+from flask import (Flask, jsonify, render_template_string, request,
+                   session, redirect)
 
 DB_PATH = Path.home() / "pt_data" / "pt.db"
+
+
+# ── .env 로딩 ────────────────────────────────────────────────────────────────
+# 다른 스크립트(slack_briefing 등)와 동일하게 여러 위치의 .env 를 훑는다(기존값 우선).
+def _load_env():
+    candidates = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"),
+        os.path.join(os.getcwd(), ".env"),
+        os.path.expanduser("~/stock/stock/.env"),
+        os.path.expanduser("~/.openclaw/.env"),
+    ]
+    seen = set()
+    for path in candidates:
+        rp = os.path.realpath(path)
+        if rp in seen or not os.path.isfile(rp):
+            continue
+        seen.add(rp)
+        try:
+            with open(rp, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    os.environ.setdefault(k.strip(), v.strip())
+        except Exception as e:
+            print(f"[Warn] .env 로드 실패({rp}): {e}")
+
+
+_load_env()
+
+# ── 구글 로그인(OAuth) 설정 ───────────────────────────────────────────────────
+#  .env 에 아래 값을 넣으면 인증이 켜진다. 없으면 '열린 상태' 유지(경고만).
+#    GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET  (구글 클라우드 콘솔)
+#    PT_ALLOWED_EMAILS   = 허용 이메일 목록(콤마 구분). 비면 아무도 못 들어옴.
+#    FLASK_SECRET_KEY    = 세션 서명 키(없으면 재시작 시 로그인 풀림)
+#    GOOGLE_OAUTH_REDIRECT_URI = (선택) 콜백 URL 고정. 없으면 요청 주소로 자동 계산.
+CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "").strip()
+CLIENT_SECRET = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
+ALLOWED_EMAILS = {e.strip().lower()
+                  for e in os.environ.get("PT_ALLOWED_EMAILS", "").split(",")
+                  if e.strip()}
+REDIRECT_OVERRIDE = os.environ.get("GOOGLE_OAUTH_REDIRECT_URI", "").strip()
+AUTH_ENABLED = bool(CLIENT_ID and CLIENT_SECRET)
+
+GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
+
 app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(32)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    # https(리버스 프록시) 뒤에서만 쿠키 전송. 순수 http 테스트 시 PT_COOKIE_SECURE=0
+    SESSION_COOKIE_SECURE=(os.environ.get("PT_COOKIE_SECURE", "1") != "0"),
+    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+)
+# nginx 등 리버스 프록시 뒤에서 원래 scheme/host 를 살려 redirect_uri 를 정확히 계산.
+try:
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+except Exception:
+    pass
+
+# 인증 없이 접근 가능한 엔드포인트(로그인 자체 + 헬스체크 + 정적파일)
+_OPEN_ENDPOINTS = {"auth_start", "auth_callback", "logout", "healthz", "static"}
+
+
+def _redirect_uri():
+    if REDIRECT_OVERRIDE:
+        return REDIRECT_OVERRIDE
+    return request.url_root.rstrip("/") + "/auth/callback"
+
+
+def _safe_next(target):
+    """오픈 리다이렉트 방지: 로컬 경로만 허용."""
+    if not target:
+        return "/"
+    parts = urllib.parse.urlsplit(target)
+    if parts.scheme or parts.netloc or not target.startswith("/") or target.startswith("//"):
+        return "/"
+    return target
+
+
+LOGIN_HTML = """<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>로그인 · 형준 PT 대시보드</title>
+<style>
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,sans-serif;}
+  .box{background:#161b22;border:1px solid #30363d;border-radius:16px;padding:40px 36px;
+    width:340px;max-width:92vw;text-align:center;box-shadow:0 8px 40px rgba(0,0,0,.4);}
+  .logo{font-size:40px;margin-bottom:8px;}
+  h1{font-size:20px;font-weight:800;margin:0 0 4px;
+    background:linear-gradient(90deg,#58a6ff,#bc8cff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+  .sub{font-size:13px;color:#8b949e;margin-bottom:28px;}
+  .gbtn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;
+    background:#fff;color:#1f1f1f;border:none;border-radius:10px;padding:12px;
+    font-size:15px;font-weight:600;text-decoration:none;cursor:pointer;transition:opacity .2s;}
+  .gbtn:hover{opacity:.9;}
+  .gicon{width:20px;height:20px;}
+  .note{font-size:11px;color:#8b949e;margin-top:22px;line-height:1.6;}
+  .err{background:rgba(248,81,73,.12);border:1px solid rgba(248,81,73,.3);color:#f85149;
+    border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:20px;}
+</style></head><body>
+  <div class="box">
+    <div class="logo">🏋️</div>
+    <h1>형준 PT 대시보드</h1>
+    <div class="sub">계속하려면 로그인하세요</div>
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+    <a class="gbtn" href="/auth/start">
+      <svg class="gicon" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      Google 계정으로 로그인
+    </a>
+    <div class="note">허가된 계정만 접근할 수 있습니다.</div>
+  </div>
+</body></html>"""
+
+
+def _auth_error(message, code=401):
+    return render_template_string(LOGIN_HTML, error=message), code
+
+
+@app.before_request
+def _require_login():
+    if not AUTH_ENABLED:
+        return None
+    if request.endpoint in _OPEN_ENDPOINTS:
+        return None
+    if session.get("user"):
+        return None
+    if request.path.startswith("/api/"):
+        return jsonify({"ok": False, "error": "auth_required"}), 401
+    session["next"] = request.path
+    return render_template_string(LOGIN_HTML, error=None), 401
+
+
+@app.route("/auth/start")
+def auth_start():
+    if not AUTH_ENABLED:
+        return redirect("/")
+    state = secrets.token_urlsafe(24)
+    session["oauth_state"] = state
+    params = {
+        "client_id": CLIENT_ID,
+        "redirect_uri": _redirect_uri(),
+        "response_type": "code",
+        "scope": "openid email profile",
+        "state": state,
+        "access_type": "online",
+        "prompt": "select_account",
+        "include_granted_scopes": "true",
+    }
+    return redirect(GOOGLE_AUTH_URL + "?" + urllib.parse.urlencode(params))
+
+
+@app.route("/auth/callback")
+def auth_callback():
+    if not AUTH_ENABLED:
+        return redirect("/")
+    if request.args.get("error"):
+        return _auth_error("구글 로그인이 취소되었습니다.")
+    state = request.args.get("state")
+    if not state or state != session.pop("oauth_state", None):
+        return _auth_error("보안 검증(state)에 실패했습니다. 다시 시도해 주세요.")
+    code = request.args.get("code")
+    if not code:
+        return _auth_error("인증 코드가 없습니다.")
+    try:
+        tok = requests.post(GOOGLE_TOKEN_URL, data={
+            "code": code,
+            "client_id": CLIENT_ID,
+            "client_secret": CLIENT_SECRET,
+            "redirect_uri": _redirect_uri(),
+            "grant_type": "authorization_code",
+        }, timeout=10)
+        tok.raise_for_status()
+        access_token = tok.json().get("access_token")
+        ui = requests.get(GOOGLE_USERINFO_URL,
+                          headers={"Authorization": f"Bearer {access_token}"},
+                          timeout=10)
+        ui.raise_for_status()
+        info = ui.json()
+    except Exception as e:
+        return _auth_error(f"구글 인증 처리 중 오류가 발생했습니다: {e}")
+
+    email = (info.get("email") or "").lower()
+    if not info.get("email_verified"):
+        return _auth_error("이메일이 확인되지 않은 구글 계정입니다.", code=403)
+    if not ALLOWED_EMAILS or email not in ALLOWED_EMAILS:
+        return _auth_error(
+            f"허용되지 않은 계정입니다: {email or '(알 수 없음)'}", code=403)
+
+    session.permanent = True
+    session["user"] = {"email": email, "name": info.get("name"),
+                       "picture": info.get("picture")}
+    return redirect(_safe_next(session.pop("next", "/")))
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/")
+
+
+@app.route("/healthz")
+def healthz():
+    return jsonify({"ok": True})
 
 
 def get_db():
@@ -171,7 +385,13 @@ tr:hover td { background: var(--card2); }
     <h1>🏋️ 형준 PT 대시보드</h1>
     <div class="subtitle">김종국 트레이너 · 실시간 기록</div>
   </div>
-  <div class="date-badge" id="now-badge">--</div>
+  <div style="display:flex;align-items:center;gap:12px">
+    {% if auth_user %}
+    <span style="font-size:12px;color:var(--muted)">👤 {{ auth_user }}</span>
+    <a href="/logout" style="font-size:12px;color:var(--muted);text-decoration:none;border:1px solid var(--border);border-radius:6px;padding:5px 10px">로그아웃</a>
+    {% endif %}
+    <div class="date-badge" id="now-badge">--</div>
+  </div>
 </div>
 <div class="tabs">
   <div class="tab active" onclick="showTab('overview')">📊 오버뷰</div>
@@ -640,7 +860,8 @@ loadBriefings();
 
 @app.route("/")
 def index():
-    return render_template_string(HTML)
+    auth_user = session.get("user", {}).get("email") if AUTH_ENABLED else None
+    return render_template_string(HTML, auth_user=auth_user)
 
 
 @app.route("/api/summary")
@@ -878,5 +1099,19 @@ def pullup_pr():
     return jsonify({"pr": row.get("pr"), "pr_date": row.get("date"), "daily": daily})
 
 
+def _startup_checks():
+    if not AUTH_ENABLED:
+        print("[Warn] 구글 로그인 미설정 → 대시보드가 '인증 없이' 열려 있습니다.")
+        print("       .env 에 GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET 를 넣으면 인증이 켜집니다.")
+    else:
+        if not ALLOWED_EMAILS:
+            print("[Warn] PT_ALLOWED_EMAILS 가 비어 있어 '아무도' 로그인할 수 없습니다. 허용 이메일을 .env 에 추가하세요.")
+        else:
+            print(f"[Info] 구글 로그인 활성화. 허용 계정 {len(ALLOWED_EMAILS)}개.")
+        if not os.environ.get("FLASK_SECRET_KEY"):
+            print("[Warn] FLASK_SECRET_KEY 미설정 → 임시 키 사용(재시작하면 로그인 세션이 풀립니다). .env 에 고정 키를 넣으세요.")
+
+
 if __name__ == "__main__":
+    _startup_checks()
     app.run(host="127.0.0.1", port=5001, debug=False)
