@@ -137,65 +137,110 @@ def build_daily(con, ref):
     protein_total = sum((x.get("protein_g") or 0) for x in diet)
 
     L = []
+    sleep_h = vital.get("sleep_hours") if vital else None
+    has_vital = bool(vital)
+
     L.append(f"💪 *GYM종국 데일리 브리핑* — {ref.strftime('%m월 %d일 (%a)')}")
     L.append("")
 
-    # 운동
+    # ── 오늘 기록 요약 ───────────────────────────────────────────────
+    L.append("📋 *오늘 기록*")
     if workouts:
-        L.append(f"🏋️ *오늘 운동* — {len(workouts)}개 했네 ㅎ 좋았어~")
-        for w in workouts:
-            L.append(f"  • {fmt_workout(w)}")
-        if streak >= 2:
-            L.append(f"  🔥 {streak}일 연속이야! 이 맛이지 ㅎ")
+        names = ", ".join(fmt_workout(w) for w in workouts)
+        L.append(f"  • 운동: {len(workouts)}개 — {names}")
     else:
-        L.append("🏋️ *오늘 운동* — 기록이 없네 ㅎ")
-        L.append("  야, 오늘 진짜 안 한 거야 아니면 기록만 안 한 거야? ㅎ")
-        L.append("  40분이면 충분해. 집에서 스쿼트랑 푸시업이라도 하고 자자.")
-    L.append("")
-
-    # 식단
+        L.append("  • 운동: 기록 없음")
     if diet:
-        head = f"🍚 *오늘 식단* — 단백질 약 {protein_total:.0f}g" if protein_total > 0 \
-            else "🍚 *오늘 식단*"
-        L.append(head)
-        for m in diet:
-            tag = f"[{m['meal']}] " if m.get("meal") else ""
-            L.append(f"  • {tag}{m.get('items','')}")
-        if protein_total <= 0:
-            L.append("  ✍️ 단백질 양이 기록이 안 됐네. 뭐 먹었는지 g수까지 적어줘야 코칭하지 ㅎ")
-        elif protein_total < protein_goal:
-            L.append(f"  ⚠️ 목표({protein_goal:.0f}g) 아직 {protein_goal - protein_total:.0f}g 남았어. "
-                     "단백질부터 챙겨 ㅎ")
-        else:
-            L.append("  👍 단백질 잘 챙겼다. 운동은 먹는 것까지가 운동이야 ㅎ")
+        items = ", ".join((f"[{m['meal']}] " if m.get('meal') else "") + (m.get('items', '') or "")
+                          for m in diet)
+        prot = f" (단백질 {protein_total:.0f}g)" if protein_total > 0 else " (단백질 미기록)"
+        L.append(f"  • 식단: {items}{prot}")
     else:
-        L.append("🍚 *오늘 식단* — 기록이 없네. 굶지 마 제발. 종류만 바꾸면 돼 ㅎ")
-    L.append("")
-
-    # 컨디션 / 수면 / 술
-    if vital:
+        L.append("  • 식단: 기록 없음")
+    if has_vital:
         bits = []
         if vital.get("weight_kg"):
             bits.append(f"체중 {vital['weight_kg']}kg")
-        if vital.get("sleep_hours") is not None:
-            bits.append(f"수면 {vital['sleep_hours']}h")
+        if sleep_h is not None:
+            bits.append(f"수면 {sleep_h}h")
         if vital.get("condition"):
             bits.append(f"컨디션 {vital['condition']}")
-        if bits:
-            L.append("🩺 *컨디션* — " + " · ".join(bits))
-        if vital.get("sleep_hours") is not None and vital["sleep_hours"] < sleep_min:
-            L.append(f"  😴 {sleep_min:.0f}시간은 자야 근육이 큰다. 오늘은 좀 일찍 자 ㅎ")
         if vital.get("alcohol"):
-            L.append("  🍺 술 마셨네 ㅎ... 내일 유산소 30분 추가다. 각오해 ㅎ")
-        L.append("")
+            bits.append("음주 O")
+        if bits:
+            L.append("  • 컨디션: " + " · ".join(bits))
+    L.append("")
 
-    # 한마디
-    if workouts and protein_total >= protein_goal:
-        L.append("🗣️ 오~ 오늘 맛있었지? ㅎ 운동도 밥도 완벽했어. 이대로만 가자 ㅎ")
-    elif workouts:
-        L.append("🗣️ 운동은 했어 ㅎ 이제 먹는 것만 챙기면 된다. 잘하고 있어.")
+    # ── 분석: 잘한 점 / 아쉬운 점 / 개선할 점 ─────────────────────────
+    goods, bads, fixes = [], [], []
+
+    # 운동
+    if workouts:
+        goods.append(f"운동 {len(workouts)}개 해냈어. 이거 자체가 제일 잘한 거야 ㅎ")
+        if streak >= 2:
+            goods.append(f"{streak}일 연속 유지 중 🔥 습관 잡히는 소리 들린다 ㅎ")
     else:
-        L.append("🗣️ 힘든 건 몸이 아니라 마음이야. 내일은 딱 40분만 하자. 약속 ㅎ")
+        bads.append("오늘 운동 기록이 없어. 안 한 거면 그게 제일 아쉬운 거야 ㅎ")
+        fixes.append("내일은 딱 40분. 후면(등/어깨 뒤) 먼저 → 전면 → 마무리. 집이면 스쿼트+푸시업이라도.")
+
+    # 단백질
+    if protein_total >= protein_goal:
+        goods.append(f"단백질 {protein_total:.0f}g 챙겼다 👍 운동은 먹는 것까지가 운동이야.")
+    elif protein_total > 0:
+        need = protein_goal - protein_total
+        bads.append(f"단백질이 목표({protein_goal:.0f}g)보다 {need:.0f}g 모자라.")
+        fixes.append(f"내일은 단백질 {need:.0f}g 더 — 계란/닭가슴살/두부/그릭요거트로 채워 ㅎ")
+    elif diet:
+        fixes.append("먹은 건 적었는데 단백질 g수가 없네. g수까지 적어줘야 내가 계산해주지 ㅎ")
+    else:
+        bads.append("식단 기록이 아예 없어. 굶었으면 그게 제일 나빠. 굶지 마 ㅎ")
+        fixes.append("끼니마다 뭘 먹었는지 한 줄이라도 남겨. 종류만 바꿔도 몸 바뀐다.")
+
+    # 수면
+    if sleep_h is not None:
+        if sleep_h >= sleep_min:
+            goods.append(f"수면 {sleep_h}h. 잘 잤어 — 잠이 곧 회복이고 근육이야 ㅎ")
+        else:
+            bads.append(f"수면 {sleep_h}h밖에 안 됐어. {sleep_min:.0f}시간은 자야 근육이 큰다.")
+            fixes.append("오늘은 폰 내려놓고 30분 일찍 눕자. 회복도 훈련이야.")
+
+    # 술
+    if has_vital and vital.get("alcohol"):
+        bads.append("술 마셨네 ㅎ... 몸이 회복을 못 해.")
+        fixes.append("벌칙: 내일 유산소 30분 추가다. 빠르게 걷기든 자전거든. 각오해 ㅎ")
+
+    # 컨디션
+    if has_vital and vital.get("condition") in ("나쁨", "안좋음", "피곤"):
+        fixes.append("컨디션 별로면 무리하지 마. 쉬는 것도 운동이야. 회복 우선.")
+
+    if not goods:
+        goods.append("음... 오늘은 콕 집어 칭찬할 게 잘 안 보여 ㅎ 내일은 하나라도 만들자.")
+    if not bads:
+        bads.append("딱히 잘못한 거 없어. 아주 깔끔했어 ㅎ 이대로만 가.")
+    if not fixes:
+        fixes.append("지금 페이스 그대로 유지. 꾸준함이 최고의 무기야 ㅎ")
+
+    L.append("✅ *잘한 점*")
+    for g in goods:
+        L.append(f"  • {g}")
+    L.append("")
+    L.append("❌ *아쉬운 점 / 잘못한 점*")
+    for b in bads:
+        L.append(f"  • {b}")
+    L.append("")
+    L.append("🎯 *앞으로 개선할 점 (내일 미션)*")
+    for f in fixes:
+        L.append(f"  • {f}")
+    L.append("")
+
+    # ── 한마디 ───────────────────────────────────────────────────────
+    if workouts and protein_total >= protein_goal and (sleep_h is None or sleep_h >= sleep_min):
+        L.append("🗣️ 오~ 오늘 맛있었지? ㅎ 운동·식단·수면 다 잡았어. 이게 완성이야. 이대로 가자 ㅎ")
+    elif workouts:
+        L.append("🗣️ 운동은 해냈어 ㅎ 나머지 하나씩만 더 챙기면 된다. 잘하고 있어, 믿는다.")
+    else:
+        L.append("🗣️ 힘든 건 몸이 아니라 마음이야. 오늘부터 운동이 아니라 새로운 삶을 산다고 생각해. "
+                 "내일 딱 40분만. 약속 ㅎ")
 
     return "\n".join(L)
 
