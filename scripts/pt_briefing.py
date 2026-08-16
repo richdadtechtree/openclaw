@@ -155,11 +155,15 @@ def build_daily(con, ref):
 
     # 식단
     if diet:
-        L.append(f"🍚 *오늘 식단* — 단백질 약 {protein_total:.0f}g")
+        head = f"🍚 *오늘 식단* — 단백질 약 {protein_total:.0f}g" if protein_total > 0 \
+            else "🍚 *오늘 식단*"
+        L.append(head)
         for m in diet:
             tag = f"[{m['meal']}] " if m.get("meal") else ""
             L.append(f"  • {tag}{m.get('items','')}")
-        if protein_total < protein_goal:
+        if protein_total <= 0:
+            L.append("  ✍️ 단백질 양이 기록이 안 됐네. 뭐 먹었는지 g수까지 적어줘야 코칭하지 ㅎ")
+        elif protein_total < protein_goal:
             L.append(f"  ⚠️ 목표({protein_goal:.0f}g) 아직 {protein_goal - protein_total:.0f}g 남았어. "
                      "단백질부터 챙겨 ㅎ")
         else:
@@ -212,11 +216,14 @@ def build_weekly(con, ref):
                       "WHERE date BETWEEN ? AND ? ORDER BY date", (s, e))
     streak = workout_streak(con, ref)
 
-    # 단백질: 날짜별 합계 평균
+    # 단백질: 날짜별 합계 평균 (단백질 g수가 실제로 기록된 날만 집계)
     prot_by_day = {}
     for r in diet_rows:
-        prot_by_day[r["date"]] = prot_by_day.get(r["date"], 0) + (r.get("protein_g") or 0)
+        g = r.get("protein_g")
+        if g:
+            prot_by_day[r["date"]] = prot_by_day.get(r["date"], 0) + g
     avg_protein = (sum(prot_by_day.values()) / len(prot_by_day)) if prot_by_day else 0
+    diet_logged_days = len({r["date"] for r in diet_rows})
 
     sleeps = [r["sleep_hours"] for r in vit_rows if r.get("sleep_hours") is not None]
     avg_sleep = (sum(sleeps) / len(sleeps)) if sleeps else None
@@ -243,11 +250,14 @@ def build_weekly(con, ref):
     # 식단
     if prot_by_day:
         L.append(f"🍚 *식단* — 하루 평균 단백질 약 {avg_protein:.0f}g "
-                 f"(기록 {len(prot_by_day)}일)")
+                 f"(단백질 기록 {len(prot_by_day)}일)")
         if avg_protein < protein_goal:
             L.append(f"  목표 {protein_goal:.0f}g 대비 부족한 날이 많았어. 단백질에 더 신경 써 ㅎ")
         else:
             L.append("  단백질 잘 챙겼다 👍 근육은 배신 안 해.")
+    elif diet_logged_days:
+        L.append(f"🍚 *식단* — 이번 주 식사 {diet_logged_days}일 기록. 근데 단백질 g수가 안 적혀 있어.")
+        L.append("  뭘 얼마나 먹었는지 g수까지 적어줘야 제대로 코칭하지 ㅎ")
     else:
         L.append("🍚 *식단* — 기록이 거의 없네. 뭘 먹었는지 알아야 코칭을 하지 ㅎ")
     L.append("")
