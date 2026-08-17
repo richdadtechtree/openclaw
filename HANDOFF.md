@@ -36,11 +36,50 @@
 6. **stock 관심종목 급등락 알림**: `scheduler.py alert_job`(약 10분) → 텔레그램 `briefing-bot`. 2% 단위. AI 미사용, 정상.
 7. **관심종목 알림 슬랙 확장(+시간대 게이팅)**: 텔레그램 그대로 두고 **슬랙에도** 전송. 국장(숫자코드)=KRX 장중만, 미장=24h. `scripts/stock_alert_slack.py`(`notify_events`) + `patch_scheduler_slack.py` 로 서버 반영·검증 완료. (상세: 아래 C)
 
+## 💪 종국이(GYM종국) 데일리·주간 브리핑 — ✅ 신규 (2026-08-16)
+"종국이는 답을 잘하는데 데일리/주간 브리핑을 안 한다" → **자동 브리핑 복원 + 웹 표시**.
+- **원인**: keepgoing(종국) 에이전트엔 브리핑 cron 이 아예 없었음(구 `cron/jobs.json` 은 삭제됐고, 있던 잡도 전부 **텔레그램(비활성)** 로 발송). PT 웹 대시보드엔 `briefings` 테이블·`/api/briefings`·"📢 김종국 브리핑" UI 가 **이미 완성**돼 있었으나, 브리핑을 **생성·저장하는 주체가 없어** 늘 비어 있었음.
+- **해결 = 자급식 스크립트** `scripts/pt_briefing.py` (AI 모델 불필요, 규칙 기반):
+  1. PT DB(`~/pt_data/pt.db`)에서 운동/식단/컨디션 읽기 → 2. 김종국 말투(반말+ㅎ, 팩폭+사랑, USER.md 벌칙/단백질/수면 기준)로 데일리/주간 브리핑 작성 → 3. `briefings` 테이블 저장(**웹 대시보드에 즉시 표시**) → 4. 슬랙 종국 채널 전송(**종국이가 말하듯**).
+  - 실행: `python3 scripts/pt_briefing.py daily|weekly` (옵션 `--print` 미리보기, `--no-slack`, `--no-db`, `--date YYYY-MM-DD`). DB에는 별표 없는 평문, 슬랙엔 `*볼드*` mrkdwn.
+  - `.env`: `SLACK_BOT_TOKEN_KEEPGOING`(없으면 `SLACK_BOT_TOKEN` 폴백), `SLACK_KEEPGOING_CHANNEL`(없으면 기본 `C0BMN9FN073`), `PT_PROTEIN_GOAL`(기본 100), `PT_SLEEP_MIN`(기본 6).
+- **스케줄(서버에서 1회)**: `scripts/setup-briefing-cron.sh` — OS crontab 에 데일리 21:00 / 주간 일요일 20:00 등록(멱등). 텔레그램·openclaw 내부 cron 스키마에 의존하지 않음.
+  ```bash
+  cd ~/.openclaw && scripts/setup-briefing-cron.sh   # crontab -l 로 확인
+  # 지금 바로 만들어 보기:
+  python3 ~/.openclaw/scripts/pt_briefing.py daily --print
+  ```
+  ⚠️ cron 은 서버 로컬 타임존 기준. 서버가 KST 아니면 `DAILY_SCHEDULE`/`WEEKLY_SCHEDULE` 로 시각 환산.
+- **웹 표시**: 대시보드(`pt_dashboard.py`, `http://mystatus-btr.duckdns.org`)의 "📢 김종국 브리핑" 섹션에 자동 노출. claude.ai 미리보기 아티팩트도 게시됨(위 대화 참고).
+
 ## 🗞️ 슬랙 데일리 다이제스트 (뷰어)
 슬랙 접속 불가 환경에서 '그날 시스템이 슬랙에 보낸 내용'을 claude.ai 아티팩트로 읽는 기능.
 - **로그 수집**: `scripts/slack_log.py`(+`stock/slack_log.py`) `log_slack()` → `~/.openclaw/slack_logs/YYYY-MM-DD.jsonl`(KST, gitignored). 훅: 신문(`slack_text`), 주식 브리핑(`slack_briefing`), 급등락/사이드카(`stock_alert_slack.send_slack` source 태깅). **시스템 발신분만**(뚜떵또 대화·사용자 메시지는 미포함 — 원하면 Slack API 읽기 권한 추가 필요).
 - **뷰어**: claude.ai 아티팩트(시간축 원장 타임라인, 카테고리 필터, 라이트/다크). 현재 샘플 데이터로 게시됨.
 - **실데이터 갱신 워크플로**: 서버에서 `python3 ~/.openclaw/scripts/slack_digest.py [날짜]` → 출력 JSON 한 줄을 Claude 에게 붙이면 아티팩트를 그날 실데이터로 갱신(같은 URL 유지).
+
+## 🔐 PT 대시보드 구글 로그인(OAuth) — 코드 완료, 서버 설정만 남음
+`scripts/pt_dashboard.py`(포트 5001) 접근을 **구글 로그인**으로 잠갔다. 허용된 이메일만 입장.
+- **동작**: `.env` 에 구글 키가 있으면 인증 ON, 없으면 **열린 채 유지(경고만)** → auto-pull 직후 잠겨서 못 들어가는 사고 방지. 미로그인 시 `/`=로그인 페이지, `/api/*`=401, `/auth/start`→구글, 로그인 성공+허용 이메일이면 세션 발급. `/logout` 로그아웃, `/healthz` 는 무인증.
+- **보안**: CSRF `state` 검증, 이메일 화이트리스트(`PT_ALLOWED_EMAILS`), 세션 쿠키 HttpOnly/SameSite=Lax/Secure, nginx 뒤 https 대응(ProxyFix). 새 의존성 없음(`requests`만 사용).
+
+**서버에서 켜는 법**(한 번만):
+1. **구글 클라우드 콘솔**에서 OAuth 클라이언트 ID 생성 (https://console.cloud.google.com/apis/credentials)
+   - 애플리케이션 유형: **웹 애플리케이션**
+   - **승인된 리디렉션 URI**: `https://<대시보드 공개주소>/auth/callback` (정확히 일치해야 함)
+2. `~/.openclaw/.env` 에 값 추가:
+   ```bash
+   cd ~/.openclaw
+   cat >> .env <<'EOF'
+   GOOGLE_OAUTH_CLIENT_ID=<콘솔에서 발급한 클라이언트 ID>
+   GOOGLE_OAUTH_CLIENT_SECRET=<클라이언트 보안 비밀>
+   PT_ALLOWED_EMAILS=bbonoyo@gmail.com
+   FLASK_SECRET_KEY=<openssl rand -hex 32 결과>
+   EOF
+   ```
+3. **대시보드 재시작**(pt_dashboard 프로세스 종료 후 재기동). 시작 로그에 `[Info] 구글 로그인 활성화` 뜨면 성공.
+   - ⚠️ 리디렉션 URI 가 콘솔과 1글자라도 다르면 `redirect_uri_mismatch`. 콜백은 `.../auth/callback`.
+   - ⚠️ https 프록시가 아니라 순수 http 로 접속하면 쿠키가 안 붙어 로그인 루프 → 임시로 `.env` 에 `PT_COOKIE_SECURE=0`.
 
 ## ⏳ 진행 중 / 다음 할 일 (우선순위 순)
 
