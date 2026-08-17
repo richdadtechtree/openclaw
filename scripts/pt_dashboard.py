@@ -1074,8 +1074,12 @@ def add_vital():
 
 @app.route("/api/briefings")
 def get_briefings():
-    return jsonify(db_query(
-        "SELECT date, type, content FROM briefings ORDER BY date DESC, id DESC LIMIT 10"))
+    # 첫 화면엔 최신 데일리 1개 + 최신 주간 1개만 노출(과거 기록은 DB 에 그대로 보존).
+    daily = db_query(
+        "SELECT date, type, content FROM briefings WHERE type != 'weekly' ORDER BY date DESC, id DESC LIMIT 1")
+    weekly = db_query(
+        "SELECT date, type, content FROM briefings WHERE type = 'weekly' ORDER BY date DESC, id DESC LIMIT 1")
+    return jsonify(daily + weekly)
 
 
 @app.route("/api/add/briefing", methods=["POST"])
