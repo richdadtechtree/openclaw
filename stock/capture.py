@@ -51,24 +51,29 @@ def capture_dashboard(path=SCREENSHOT_PATH):
             page.goto(url)
 
             print("Waiting for dashboard to finish loading data...")
-            page.wait_for_selector(".index-card:not(.loading-skeleton)", timeout=15000)
+            # ⚠️ 셀렉터는 index.html 이 실제 렌더하는 클래스와 일치해야 한다.
+            #    index.html 리디자인 후 카드가 .market-card 로 바뀌었고 초기 플레이스홀더도
+            #    .market-card 라서, "데이터 로딩 완료"는 실제 카드에만 있는 .price-value 로 판정한다.
+            #    (옛 셀렉터 `.index-card:not(.loading-skeleton)` 는 더 이상 존재하지 않아 항상 타임아웃)
+            page.wait_for_selector("#indices-grid .price-value", timeout=15000)
 
             # Wait for the investment timing section (best-effort)
             try:
-                page.wait_for_selector("#alert-container .alert-row", timeout=10000)
+                page.wait_for_selector("#strategy-cards-grid .strategy-card", timeout=10000)
             except Exception:
                 print("[Warn] Alert status section did not load in time. Capturing anyway.")
 
             # Wait for the custom stocks section (best-effort)
             try:
-                page.wait_for_selector("#custom-stocks-container .alert-row", timeout=10000)
+                page.wait_for_selector("#custom-stocks-grid .stock-card", timeout=10000)
             except Exception:
                 print("[Warn] Custom stocks section did not load in time.")
 
             # Sleep slightly to ensure CSS transitions/animations settle
             time.sleep(1.5)
 
-            dashboard_element = page.locator("#dashboard")
+            # 스크린샷 대상: 헤더+전 섹션+푸터를 감싸는 최상위 래퍼 (옛 #dashboard → .container)
+            dashboard_element = page.locator(".container")
             os.makedirs(os.path.dirname(path), exist_ok=True)
             dashboard_element.screenshot(path=path)
             print(f"Screenshot successfully saved to {path}")
