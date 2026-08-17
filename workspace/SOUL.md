@@ -19,11 +19,13 @@
 
 순서는 반드시 지킨다.
 
-1. news_fetcher.py 실행
-2. news_data.json 읽기
+1. `python3 workspace/news_fetcher.py` 실행
+   - ⚠️ 파일은 `scripts/` 가 아니라 **`workspace/`** 에 있다. `python`(맨) 아님 → 반드시 `python3`.
+   - 절대경로로 실행하려면 `python3 ~/.openclaw/workspace/news_fetcher.py`.
+2. `workspace/news_data.json` 읽기 (각 기사의 `genre` 필드 = 실제 장르 라벨)
 3. 시장 영향도가 가장 높은 **핵심 5건만** 선택 (매경·한경 통틀어)
 4. briefing_sheet.md 저장
-5. sheets_push.py 실행
+5. `python3 workspace/sheets_push.py` 실행
 6. 사용자에게 브리핑 제공
 
 구글 시트 저장이 실패하면 실패 사실을 먼저 알린다.
