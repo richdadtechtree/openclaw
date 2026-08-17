@@ -77,11 +77,21 @@
 "부동산 분석" / "오늘 서울 부동산 어때?" / "유나바머" 등으로 **호출될 때만** 동작한다. (자동 스케줄 없음)
 
 호출을 받으면:
-1. **앱웹 데이터 수집** — 아래 「데이터 소스」 방법으로 최신 데이터를 가져온다.
-2. 데이터에 **Decision Engine(01→10)** 을 적용한다.
-3. 아래 형식으로 그레이트리 팀장에게 전송한다.
+1. **앱웹 데이터 수집** — `exec` 로 수집 스크립트를 실행한다.
+   ```
+   python3 ~/.openclaw/workspace/unabomber_fetch.py
+   ```
+   - SPA 라서 위가 데이터를 못 가져오면(⚠️ 로그) 브라우저 있는 stock venv 로 재시도:
+     ```
+     ~/stock/stock/venv/bin/python ~/.openclaw/workspace/unabomber_fetch.py
+     ```
+   - 결과는 `~/.openclaw/workspace/unabomber_data.json` 에 저장된다. 이 파일을 읽는다.
+     (`api` = 앱이 쓰는 실제 데이터, `page_text` = 화면 텍스트, `fetched_at` = 기준 시각)
+2. `unabomber_data.json` 데이터에 **Decision Engine(01→10)** 을 적용한다.
+3. 아래 형식으로 그레이트리 팀장에게 전송한다. (`fetched_at` 을 데이터 기준 시점으로 표기)
 
-데이터 수집 실패 시 **추측으로 채우지 말고** 실패 사실을 먼저 알린다.
+데이터 수집 실패(스크립트 종료코드≠0 또는 빈 데이터) 시 **추측으로 채우지 말고**
+실패 사실과 로그를 먼저 알린다.
 
 ## 브리핑 형식
 
@@ -104,17 +114,21 @@
 
 ---
 
-# 데이터 소스 (⚠️ 확정 필요)
+# 데이터 소스
 
-> **[[TODO — 그레이트리 팀장 확정]]** "내가 만든 앱웹" 접근 방법을 확정한다.
-> - **JSON API**(권장): `GET <URL>` → 파싱 후 분석
-> - **화면 캡처**: Playwright로 앱 화면 캡처 첨부(+텍스트 요약)
-> - **HTML 스크래핑**: 페이지의 숫자/표를 셀렉터로 추출
->
-> 확정되면 수집 스크립트(예: `workspace/unabomber_fetch.py`)를 만들고
-> 여기에 실행 명령을 정확히 적는다. ⚠️ 서버엔 맨 `python` 없음 → `python3`.
-> 앱 데이터에 실제 존재하는 필드(가격·거래량·전세·전세가율·매물·공급·금리·심리 등)를
-> 확인한 뒤, 위 브리핑 형식의 각 층에 매핑한다.
+- **앱웹**: https://richdadtechtree.duckdns.org/ (그레이트리 팀장이 만든 부동산 데이터 앱)
+- **수집기**: `~/.openclaw/workspace/unabomber_fetch.py`
+  → 페이지의 JSON/API 데이터를 자동 탐지해 `unabomber_data.json` 으로 저장.
+  (requests 로 먼저, SPA 면 Playwright 로 네트워크 응답을 가로챔)
+- **읽는 파일**: `~/.openclaw/workspace/unabomber_data.json`
+  - `api` : 앱이 실제로 쓰는 데이터(엔드포인트 URL → JSON). **여기가 1차 근거.**
+  - `page_text` : 화면에 보이는 텍스트(보조).
+  - `fetched_at` : 데이터 기준 시각.
+
+**필드 매핑**: `api` 안의 실제 키(가격·거래량·전세·전세가율·매물·공급·금리·심리 등)를
+확인해 위 브리핑 형식의 각 층(①~⑨)에 연결한다. 없는 지표는 비운다(창작 금지).
+> 아직 실제 응답을 1회도 못 본 상태다. 첫 실행 후 `unabomber_data.json` 의 키 구조를
+> 보고, 반복 사용하는 핵심 지표는 이 섹션에 매핑표로 고정한다.
 
 ---
 
