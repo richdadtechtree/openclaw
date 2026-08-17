@@ -35,6 +35,54 @@ def clean_text(text):
     lines = [line.strip() for line in text.splitlines()]
     return " ".join([line for line in lines if line])
 
+# 매경/한경 기사 URL 경로의 섹션 슬러그 → 한글 장르 매핑
+# (예: https://www.mk.co.kr/news/business/12129186 → business → 기업)
+SECTION_GENRE_MAP = {
+    "economy": "경제",
+    "business": "기업",
+    "company": "기업",
+    "stock": "증권",
+    "securities": "증권",
+    "money": "금융",
+    "finance": "금융",
+    "realestate": "부동산",
+    "estate": "부동산",
+    "land": "부동산",
+    "society": "사회",
+    "world": "국제",
+    "international": "국제",
+    "politics": "정치",
+    "it": "IT·과학",
+    "science": "IT·과학",
+    "digital": "IT·과학",
+    "culture": "문화",
+    "sports": "스포츠",
+    "entertain": "연예",
+    "opinion": "오피니언",
+    "health": "건강",
+}
+
+def derive_genre(url):
+    """기사 URL 경로에서 섹션 슬러그를 뽑아 한글 장르로 변환한다.
+    확실히 매핑되지 않으면 (섹션 슬러그, None)을 돌려주고,
+    라벨은 AI가 본문 내용으로 판단하도록 남긴다."""
+    try:
+        path = urllib.parse.urlparse(url).path.lower()
+    except Exception:
+        return None, None
+    parts = [p for p in path.split("/") if p]
+    # 매경: /news/<section>/<id> , 한경: /<section>/... 또는 /article/...
+    slug = None
+    for i, p in enumerate(parts):
+        if p == "news" and i + 1 < len(parts):
+            slug = parts[i + 1]
+            break
+    if slug is None and parts:
+        # 한경 등: 첫 경로 조각이 섹션인 경우가 많음
+        slug = parts[0]
+    genre = SECTION_GENRE_MAP.get(slug) if slug else None
+    return slug, genre
+
 def fetch_article_body(url):
     """Fetches the main text content of the news article."""
     try:
@@ -124,11 +172,14 @@ def parse_rss_feed(feed_url, outlet_name, max_hours=24):
                 if time_diff > timedelta(hours=max_hours):
                     continue  # Skip older articles
             
+            section_slug, genre = derive_genre(link)
             articles.append({
                 "title": title,
                 "link": link,
                 "published": published,
-                "pub_date_parsed": pub_date.isoformat() if pub_date else None
+                "pub_date_parsed": pub_date.isoformat() if pub_date else None,
+                "section": section_slug,
+                "genre": genre
             })
     except Exception as e:
         print(f"Error parsing feed {feed_url}: {e}", file=sys.stderr)
@@ -150,10 +201,13 @@ def fetch_google_news_fallback(keyword, outlet_name, count=5):
             if outlet_name == "한국경제" and "hankyung.com" not in link:
                 continue
                 
+            section_slug, genre = derive_genre(link)
             articles.append({
                 "title": entry.get('title', ''),
                 "link": link,
-                "published": entry.get('published', '')
+                "published": entry.get('published', ''),
+                "section": section_slug,
+                "genre": genre
             })
             if len(articles) >= count:
                 break
