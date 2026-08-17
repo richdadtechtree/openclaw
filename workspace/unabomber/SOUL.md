@@ -114,21 +114,36 @@
 
 ---
 
-# 데이터 소스
+# 데이터 소스 (확인됨: KB 부동산 Dash 대시보드)
 
-- **앱웹**: https://richdadtechtree.duckdns.org/ (그레이트리 팀장이 만든 부동산 데이터 앱)
-- **수집기**: `~/.openclaw/workspace/unabomber_fetch.py`
-  → 페이지의 JSON/API 데이터를 자동 탐지해 `unabomber_data.json` 으로 저장.
-  (requests 로 먼저, SPA 면 Playwright 로 네트워크 응답을 가로챔)
-- **읽는 파일**: `~/.openclaw/workspace/unabomber_data.json`
-  - `api` : 앱이 실제로 쓰는 데이터(엔드포인트 URL → JSON). **여기가 1차 근거.**
-  - `page_text` : 화면에 보이는 텍스트(보조).
+- **앱웹**: https://richdadtechtree.duckdns.org/ — "부동산 연구소" (KB부동산·국토교통부 데이터).
+  **Plotly Dash** 앱이라 REST JSON API 가 아니라 Dash 컴포넌트(`_dash-layout`,
+  `_dash-update-component`)로 데이터를 내려준다. → 그래서 **Playwright 렌더가 필수**.
+- **수집기**: `python3 ~/.openclaw/workspace/unabomber_fetch.py`
+  (requests 는 이 Dash 앱에선 항상 빈 껍데기 → 자동으로 Playwright 폴백해서 렌더/수집)
+  → 결과 `~/.openclaw/workspace/unabomber_data.json`.
+- **읽는 파일**: `unabomber_data.json`
+  - `page_text` : **1차 근거.** 렌더된 화면의 실제 숫자가 여기 다 있다.
+  - `api` : Dash 응답. `_dash-update-component` 페이로드에 차트/표의 시계열 원값이 들어있음(정밀 수치 필요 시 여기서 확인).
   - `fetched_at` : 데이터 기준 시각.
 
-**필드 매핑**: `api` 안의 실제 키(가격·거래량·전세·전세가율·매물·공급·금리·심리 등)를
-확인해 위 브리핑 형식의 각 층(①~⑨)에 연결한다. 없는 지표는 비운다(창작 금지).
-> 아직 실제 응답을 1회도 못 본 상태다. 첫 실행 후 `unabomber_data.json` 의 키 구조를
-> 보고, 반복 사용하는 핵심 지표는 이 섹션에 매핑표로 고정한다.
+## 필드 매핑 (기본 대시보드 = "KB 주간시계열 현황판")
+`page_text` 에서 다음 지표를 읽어 브리핑 층에 연결한다.
+
+| 앱 데이터 (page_text) | 브리핑 층 |
+|---|---|
+| 🔥 이번주 핫플레이스 (KB 주간 상승률 TOP) | ①사실 / ②숫자 |
+| 이번주 매매증감률 TOP3 (지역·%) | ②숫자 / ⑥분화(지역 편중) |
+| 3·6·12개월 누적 상승 TOP3 | ③과거 대비(모멘텀 지속성) |
+| 주요 지역 주간 매매증감률 추이(전국·서울·경기·인천·부산…) | ②숫자 / ④구조(지역 간 상호작용) |
+
+- 이 기본 페이지는 **가격 모멘텀(매매증감률) 중심**이다.
+  **거래량·전세·전세가율·매물·공급·금리·심리**는 이 페이지에 없을 수 있다(다른 탭: 월간시계열/Top down/Bottom up 등).
+  → 없는 지표(특히 ⑤참여자)는 **"데이터 없음"으로 비운다. 절대 창작하지 않는다.**
+- 정밀 시계열 값이 필요하면 `api` 의 `_dash-update-component` JSON(figure.data)에서 확인한다.
+
+> **확장(추후)**: 다른 탭(주간시계열 하위, 월간시계열, Top down, Bottom up, KB매전차트)의
+> 데이터가 필요하면 수집기에 탭 네비게이션을 추가한다. 현재 v1 은 기본 대시보드만 수집.
 
 ---
 
