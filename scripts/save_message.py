@@ -1,11 +1,27 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-save_message.py — 형준 PT 기록 저장기
-사용법: python3 save_message.py "스쿼트 5x8 레그프레스 4x12 닭가슴살 200g 체중 78kg 수면 7시간"
+save_message.py — 형준/종국 PT 기록 저장기 (웹 대시보드 pt_dashboard.py 와 같은 pt.db 사용)
 DB: ~/pt_data/pt.db
+
+사용법
+  1) 자유 텍스트(정규식 파싱, 폴백용):
+     python3 save_message.py "스쿼트 5x8 레그프레스 4x12 닭가슴살 200g 체중 78kg 수면 7시간"
+
+  2) 구조화 JSON(권장 — 종국 에이전트가 대화에서 직접 뽑아 넣는 방식):
+     python3 save_message.py --json '{
+       "date": "2026-08-17",
+       "workouts": [{"exercise":"스쿼트","sets":5,"reps":8,"weight_kg":100}],
+       "diet":     [{"meal":"점심","items":"닭가슴살 200g","protein_g":46}],
+       "vitals":   {"weight_kg":78,"sleep_hours":7,"condition":"good","alcohol":0}
+     }'
+     # --date 로 날짜 강제(payload 의 date 보다 우선). 세 종류 다 선택(있는 것만 넣으면 됨).
+
+JSON 모드는 LLM 이 대화에서 정확히 추출한 값을 그대로 저장하므로 정규식 파서보다 안정적이다.
+종국(keepgoing) 에이전트는 사용자가 운동/식단/컨디션을 말하면 반드시 이 스크립트로 저장해야
+웹 대시보드(pt_dashboard.py)에 즉시 노출된다.
 """
-import sys, re, sqlite3
+import sys, re, json, sqlite3
 from datetime import date, datetime
 from pathlib import Path
 
@@ -166,10 +182,112 @@ def parse_vitals(text):
     return v or None
 
 
+def _num(x):
+    """숫자 문자열/값을 float 로. 빈값·None 은 None."""
+    if x is None or x == "":
+        return None
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def save_vitals(cur, v, day, raw, now):
+    """vitals 는 date UNIQUE → 없으면 INSERT, 있으면 준 필드만 UPDATE(덮어쓰기)."""
+    fields = {}
+    for k in ('weight_kg', 'sleep_hours'):
+        if v.get(k) not in (None, ""):
+            fields[k] = _num(v[k])
+    if v.get('condition'):
+        fields['condition'] = str(v['condition'])
+    if 'alcohol' in v and v['alcohol'] not in (None, ""):
+        fields['alcohol'] = 1 if v['alcohol'] in (1, '1', True, 'true', 'True') else 0
+    if not fields:
+        return False
+    try:
+        cols = list(fields.keys()) + ['date', 'raw', 'created_at']
+        vals = list(fields.values()) + [day, raw, now]
+        cur.execute(
+            f"INSERT INTO vitals ({','.join(cols)}) VALUES({','.join(['?']*len(cols))})",
+            vals,
+        )
+    except sqlite3.IntegrityError:
+        sets_clause = ','.join(f"{k}=?" for k in fields)
+        cur.execute(
+            f"UPDATE vitals SET {sets_clause},raw=? WHERE date=?",
+            list(fields.values()) + [raw, day],
+        )
+    return True
+
+
+def save_structured(payload):
+    """대화에서 뽑은 구조화 데이터를 pt.db 에 저장. payload 예시는 파일 상단 도움말 참고."""
+    today = date.today().isoformat()
+    now = datetime.now().isoformat()
+    day = payload.get('date') or today
+    raw = payload.get('raw') or json.dumps(payload, ensure_ascii=False)
+
+    con = init_db()
+    cur = con.cursor()
+    wc = dc = 0
+
+    for w in payload.get('workouts', []) or []:
+        name = (w.get('exercise') or '').strip()
+        if not name:
+            continue
+        sets = w.get('sets')
+        reps = w.get('reps')
+        cur.execute(
+            "INSERT INTO workouts (date,exercise,sets,reps,weight_kg,raw,created_at) VALUES(?,?,?,?,?,?,?)",
+            (day, name,
+             int(sets) if sets not in (None, "") else None,
+             int(reps) if reps not in (None, "") else None,
+             _num(w.get('weight_kg')), raw, now),
+        )
+        wc += 1
+
+    for d in payload.get('diet', []) or []:
+        items = (d.get('items') or '').strip()
+        if not items:
+            continue
+        cur.execute(
+            "INSERT INTO diet (date,meal,items,protein_g,raw,created_at) VALUES(?,?,?,?,?,?)",
+            (day, d.get('meal') or None, items, _num(d.get('protein_g')), raw, now),
+        )
+        dc += 1
+
+    vitals = payload.get('vitals') or {}
+    vs = save_vitals(cur, vitals, day, raw, now) if vitals else False
+
+    con.commit()
+    con.close()
+    print(f"[{day}] 운동 {wc}개 / 식단 {dc}개 / 바이탈 {'저장' if vs else '없음'}")
+
+
 def main():
     if len(sys.argv) < 2:
-        print("사용법: python3 save_message.py \"메시지\"")
+        print("사용법: python3 save_message.py \"메시지\"  또는  --json '<payload>'")
         sys.exit(1)
+
+    # 구조화 JSON 모드 (권장)
+    if sys.argv[1] == "--json":
+        args = sys.argv[2:]
+        date_override = None
+        if args and args[0] == "--date" and len(args) >= 2:
+            date_override = args[1]
+            args = args[2:]
+        if not args:
+            print("사용법: python3 save_message.py --json '<payload>'")
+            sys.exit(1)
+        try:
+            payload = json.loads(args[0])
+        except json.JSONDecodeError as e:
+            print(f"JSON 파싱 실패: {e}")
+            sys.exit(1)
+        if date_override:
+            payload['date'] = date_override
+        save_structured(payload)
+        return
 
     msg = ' '.join(sys.argv[1:])
     today = date.today().isoformat()
