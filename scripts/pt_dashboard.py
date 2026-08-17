@@ -367,6 +367,12 @@ tr:hover td { background: var(--card2); }
 .briefing-type { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 8px; }
 .briefing-content { font-size: 14px; line-height: 1.7; white-space: pre-wrap; color: var(--text); }
 .briefing-date { font-size: 11px; color: var(--muted); margin-top: 8px; }
+.briefing-search-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.briefing-search-row input[type=text] { flex: 1; min-width: 180px; padding: 9px 12px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--card); color: var(--text); font-size: 14px; }
+.briefing-search-row select { padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--card); color: var(--text); font-size: 14px; }
+.briefing-search-row .btn-add { width: auto; margin-top: 0; margin-left: 0; }
 .btn-del { background: none; border: none; cursor: pointer; opacity: .4; font-size: 14px; padding: 2px 6px; border-radius: 4px; transition: all .2s; }
 .btn-del:hover { opacity: 1; color: var(--red); background: rgba(248,81,73,.15); }
 .btn-edit { background: none; border: none; cursor: pointer; opacity: .4; font-size: 14px; padding: 2px 6px; border-radius: 4px; transition: all .2s; margin-right: 2px; }
@@ -398,6 +404,7 @@ tr:hover td { background: var(--card2); }
   <div class="tab" onclick="showTab('workouts')">💪 운동기록</div>
   <div class="tab" onclick="showTab('diet')">🥗 식단기록</div>
   <div class="tab" onclick="showTab('vitals')">⚖️ 체중&바이탈</div>
+  <div class="tab" onclick="showTab('briefings')">📢 브리핑 보드</div>
 </div>
 
 <!-- 오버뷰 -->
@@ -508,6 +515,25 @@ tr:hover td { background: var(--card2); }
       <div class="stat-num" id="alcohol-count" style="color:var(--orange)">-</div>
       <div class="stat-sub">회</div>
     </div>
+  </div>
+</div>
+
+<!-- 브리핑 보드 -->
+<div id="tab-briefings" class="panel">
+  <div class="card">
+    <div class="section-title">📢 브리핑 보드</div>
+    <div class="stat-sub" style="margin:-4px 0 14px">과거 데일리·주간 브리핑을 검색해서 찾아볼 수 있어요.</div>
+    <div class="briefing-search-row">
+      <input type="text" id="bf-q" placeholder="내용 검색 (예: 단백질, 풀업, 수면...)"
+             onkeydown="if(event.key==='Enter')searchBriefings()">
+      <select id="bf-type">
+        <option value="">전체</option>
+        <option value="daily">📄 일침</option>
+        <option value="weekly">📅 주간</option>
+      </select>
+      <button class="btn-add" onclick="searchBriefings()">🔍 검색</button>
+    </div>
+    <div id="bf-results" style="margin-top:16px"></div>
   </div>
 </div>
 
@@ -753,9 +779,31 @@ async function loadBriefings() {
     </div>`).join('');
 }
 
+// 브리핑 보드 검색
+async function searchBriefings() {
+  const q = document.getElementById('bf-q').value.trim();
+  const type = document.getElementById('bf-type').value;
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (type) params.set('type', type);
+  const r = await fetch('/api/briefings/search?' + params.toString());
+  const items = await r.json();
+  const el = document.getElementById('bf-results');
+  if (!items.length) { el.innerHTML = '<div class="empty-state">검색 결과가 없습니다</div>'; return; }
+  el.innerHTML = `<div class="stat-sub" style="margin-bottom:10px">총 ${items.length}건</div>` + items.map(b => `
+    <div class="briefing-card">
+      <div class="briefing-type" style="color:${b.type==='weekly'?'var(--purple)':'var(--blue)'}">
+        ${b.type==='weekly'?'📅 주간 브리핑':'📄 일침 브리핑'}
+      </div>
+      <div class="briefing-content">${b.content}</div>
+      <div class="briefing-date">${b.date}</div>
+    </div>`).join('');
+}
+
 loadData();
 loadPullupPR();
 loadBriefings();
+searchBriefings();
 </script>
 
 <!-- 운동 모달 -->
@@ -1080,6 +1128,23 @@ def get_briefings():
     weekly = db_query(
         "SELECT date, type, content FROM briefings WHERE type = 'weekly' ORDER BY date DESC, id DESC LIMIT 1")
     return jsonify(daily + weekly)
+
+
+@app.route("/api/briefings/search")
+def search_briefings():
+    # 브리핑 보드: 내용(q) + 종류(type) 로 과거 브리핑 검색. 필터 없으면 전체 최신순.
+    q = (request.args.get("q") or "").strip()
+    btype = (request.args.get("type") or "").strip()
+    sql = "SELECT id, date, type, content FROM briefings WHERE 1=1"
+    params = []
+    if q:
+        sql += " AND content LIKE ?"
+        params.append(f"%{q}%")
+    if btype in ("daily", "weekly"):
+        sql += " AND type = ?"
+        params.append(btype)
+    sql += " ORDER BY date DESC, id DESC LIMIT 200"
+    return jsonify(db_query(sql, params))
 
 
 @app.route("/api/add/briefing", methods=["POST"])
