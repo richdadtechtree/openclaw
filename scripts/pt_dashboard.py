@@ -6,6 +6,7 @@ pt_dashboard.py — PT 대시보드 웹앱
 실행: python3 pt_dashboard.py
 """
 import os
+import sys
 import sqlite3
 import json
 import secrets
@@ -16,6 +17,9 @@ from pathlib import Path
 import requests
 from flask import (Flask, jsonify, render_template_string, request,
                    session, redirect)
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import pt_challenges as chal
 
 DB_PATH = Path.home() / "pt_data" / "pt.db"
 
@@ -259,7 +263,9 @@ def ensure_tables():
     CREATE TABLE IF NOT EXISTS vitals (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL UNIQUE, weight_kg REAL, sleep_hours REAL, condition TEXT, alcohol INTEGER DEFAULT 0, raw TEXT, created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS briefings (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'daily', content TEXT NOT NULL, created_at TEXT NOT NULL);
     """)
-    con.commit(); con.close()
+    con.commit()
+    chal.ensure_tables(con)
+    con.close()
 
 ensure_tables()
 
@@ -345,6 +351,11 @@ tr:hover td { background: var(--card2); }
   padding: 8px 10px; background: rgba(210,153,34,.10); border-radius: 8px; display: none; }
 .reward-hint.show { display: block; }
 .ch-line { font-size: 12px; color: var(--muted); margin-top: 5px; }
+.achievement-modal { text-align: center; background: linear-gradient(160deg, rgba(210,153,34,.14), var(--card) 55%);
+  border-color: rgba(210,153,34,.4); }
+.achievement-emoji { font-size: 56px; line-height: 1; margin-bottom: 8px; }
+.achievement-msg { font-size: 14.5px; line-height: 1.7; color: var(--text); margin: 14px 0 22px;
+  white-space: pre-wrap; text-align: left; background: var(--card2); border-radius: 10px; padding: 14px; }
 .empty-state { text-align: center; padding: 40px; color: var(--muted); font-size: 14px; }
 .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
 .btn-add { margin-left: auto; background: var(--blue); color: #000; border: none; border-radius: 6px;
@@ -853,11 +864,41 @@ async function loadChallenges() {
   if (s.reward_hint) { sr.textContent = s.reward_hint; sr.classList.add('show'); }
 }
 
+// 챌린지 달성 축하 팝업 — 종국이가 슬랙으로 축하하는 것과 같은 마일스톤을 웹에서도 보여준다.
+let achievementQueue = [];
+async function loadAchievements() {
+  const r = await fetch('/api/achievements/unseen');
+  achievementQueue = await r.json();
+  showNextAchievement();
+}
+function showNextAchievement() {
+  if (!achievementQueue.length) return;
+  const a = achievementQueue[0];
+  document.getElementById('ach-title').textContent =
+    (a.kind === 'sober' ? '🚫🍺 금주 챌린지 달성!' : '🔥 연속 운동 챌린지 달성!') + ` (${a.milestone}${a.kind === 'sober' ? '일' : '주'})`;
+  document.getElementById('ach-message').textContent = a.message;
+  document.getElementById('modal-achievement').classList.add('open');
+}
+async function ackNextAchievement() {
+  const a = achievementQueue.shift();
+  document.getElementById('modal-achievement').classList.remove('open');
+  if (a) {
+    try {
+      await fetch('/api/achievements/ack', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ids: [a.id]})
+      });
+    } catch (e) { /* 확인 실패해도 다음 팝업은 계속 진행 */ }
+  }
+  if (achievementQueue.length) setTimeout(showNextAchievement, 300);
+}
+
 loadData();
 loadPullupPR();
 loadBriefings();
 searchBriefings();
 loadChallenges();
+loadAchievements();
 </script>
 
 <!-- 운동 모달 -->
@@ -956,6 +997,16 @@ loadChallenges();
   </div>
 </div>
 
+<!-- 챌린지 달성 축하 팝업 -->
+<div class="modal-overlay" id="modal-achievement">
+  <div class="modal achievement-modal">
+    <div class="achievement-emoji">🎉</div>
+    <h3 id="ach-title" style="text-align:center">챌린지 달성!</h3>
+    <div class="achievement-msg" id="ach-message"></div>
+    <button class="btn-submit" id="ach-next-btn" onclick="ackNextAchievement()">확인! 계속 간다 ㅎ</button>
+  </div>
+</div>
+
 </body>
 </html>"""
 
@@ -1012,113 +1063,32 @@ def api_summary():
     })
 
 
-SOBER_MILESTONES = [7, 14, 30, 66, 100]
-WEEK_MILESTONES = [2, 4, 8, 12, 16]
-GOAL_PER_WEEK = 3
-
-SOBER_REWARDS = {
-    7:  "🎁 7일 달성! 오늘 치팅밀 하나 허락 ㅎ … 근데 딱 하나만, 내일부터 다시 간다 ㅎ",
-    14: "🎁 2주! 오늘 딱 한 잔은 봐준다 ㅎ … 근데 여기서 무너지면 처음부터야. 그냥 이어가는 게 이득 ㅎ",
-    30: "🎁 한 달! 먹고픈 거 하루 마음껏 먹어 ㅎ … 30일 한 사람이 여기서 멈춰? 계속 간다 ㅎ",
-    66: "🏆 66일, 습관 완성! 이건 이제 네 삶이야. 아이들이랑 오래 뛰어놀 몸 만드는 중 ㅎ",
-    100:"🏆 100일!! 건강한 아빠가 최고의 아빠야 ㅎ 멈출 이유가 없지, 계속 ㅎ",
-}
-WEEK_REWARDS = {
-    2:  "🎁 2주 연속 주3회! 이번 주말은 아이들이랑 신나게 놀아 ㅎ … 다음 주도 간다 ㅎ",
-    4:  "🎁 한 달 개근! 먹고픈 거 하나 허락 ㅎ … 근데 습관은 이제부터야, 이어가자 ㅎ",
-    8:  "🎁 8주! 몸 바뀌는 게 보이지? ㅎ 하루 쉬어가도 좋아 … 대신 바로 복귀 ㅎ",
-    12: "🏆 12주! 이제 운동이 네 일상이야. 계속 ㅎ",
-    16: "🏆 16주 완주! 아이들이랑 30년 더 뛰어놀 체력, 네가 만든 거야 ㅎ 멈추지마 ㅎ",
-}
-
-
-def _next_milestone(value, milestones):
-    for m in milestones:
-        if value < m:
-            return m, m - value
-    return None, 0
-
-
 @app.route("/api/challenges")
 def api_challenges():
-    today = date.today()
+    con = get_db()
+    data = chal.compute_challenges(con, date.today())
+    con.close()
+    return jsonify(data)
 
-    # 운동한 날짜 집합
-    wdates = set()
-    for r in db_query("SELECT DISTINCT date FROM workouts"):
-        try:
-            wdates.add(date.fromisoformat(r["date"]))
-        except (ValueError, TypeError):
-            pass
 
-    # 요즘 연속(일) — 오늘 또는 어제부터 거슬러 연속
-    day_streak = 0
-    check = today if today in wdates else today - timedelta(days=1)
-    while check in wdates:
-        day_streak += 1
-        check -= timedelta(days=1)
+@app.route("/api/achievements/unseen")
+def api_achievements_unseen():
+    # 웹앱 팝업용: 아직 안 본 마일스톤 달성 기록. 종국이가 슬랙으로도 같은 순간 축하한다(pt_briefing.py 참고).
+    return jsonify(db_query(
+        "SELECT id, kind, milestone, date, message FROM achievements WHERE seen=0 ORDER BY id"))
 
-    # 주별 운동일수(월요일 시작 주)
-    def week_start(d):
-        return d - timedelta(days=d.weekday())
-    week_counts = {}
-    for wd in wdates:
-        ws = week_start(wd)
-        week_counts[ws] = week_counts.get(ws, 0) + 1
 
-    this_week = week_start(today)
-    this_week_count = week_counts.get(this_week, 0)
-    this_week_success = this_week_count >= GOAL_PER_WEEK
-
-    # 연속 성공 주: 이번 주는 성공했을 때만 포함, 이전 주들은 연속 성공인 동안 카운트
-    week_streak = 1 if this_week_success else 0
-    wk = this_week - timedelta(days=7)
-    while week_counts.get(wk, 0) >= GOAL_PER_WEEK:
-        week_streak += 1
-        wk -= timedelta(days=7)
-
-    w_next, w_remain = _next_milestone(week_streak, WEEK_MILESTONES)
-
-    # 금주 연속일 — 마지막 음주일(alcohol=1) 다음날부터 오늘까지
-    last_drink_row = db_one(
-        "SELECT date FROM vitals WHERE alcohol=1 AND date <= ? ORDER BY date DESC LIMIT 1", (today.isoformat(),))
-    last_drink = last_drink_row.get("date") if last_drink_row else None
-    if last_drink:
-        try:
-            sober_days = max((today - date.fromisoformat(last_drink)).days, 0)
-        except (ValueError, TypeError):
-            sober_days = 0
-    else:
-        # 음주 기록이 아예 없으면 첫 기록일 기준(운동/바이탈 통틀어 가장 이른 날)
-        base_row = db_one(
-            "SELECT MIN(d) AS d FROM (SELECT date d FROM workouts UNION SELECT date d FROM vitals)")
-        base = base_row.get("d") if base_row else None
-        try:
-            sober_days = max((today - date.fromisoformat(base)).days, 0) if base else 0
-        except (ValueError, TypeError):
-            sober_days = 0
-
-    s_next, s_remain = _next_milestone(sober_days, SOBER_MILESTONES)
-
-    return jsonify({
-        "workout": {
-            "day_streak": day_streak,
-            "week_streak": week_streak,
-            "this_week_count": this_week_count,
-            "this_week_success": this_week_success,
-            "goal_per_week": GOAL_PER_WEEK,
-            "next_goal": w_next,
-            "remaining": w_remain,
-            "reward_hint": WEEK_REWARDS.get(week_streak) if week_streak else None,
-        },
-        "sober": {
-            "days": sober_days,
-            "next_goal": s_next,
-            "remaining": s_remain,
-            "last_drink": last_drink,
-            "reward_hint": SOBER_REWARDS.get(sober_days),
-        },
-    })
+@app.route("/api/achievements/ack", methods=["POST"])
+def api_achievements_ack():
+    ids = (request.json or {}).get("ids") or []
+    ids = [int(i) for i in ids if str(i).isdigit()]
+    if ids:
+        con = get_db()
+        placeholders = ",".join("?" for _ in ids)
+        con.execute(f"UPDATE achievements SET seen=1 WHERE id IN ({placeholders})", ids)
+        con.commit()
+        con.close()
+    return jsonify({"ok": True})
 
 
 @app.route("/api/workouts")

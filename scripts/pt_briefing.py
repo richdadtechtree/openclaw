@@ -31,6 +31,9 @@ import sqlite3
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import pt_challenges as chal
+
 DB_PATH = Path.home() / "pt_data" / "pt.db"
 DEFAULT_KEEPGOING_CHANNEL = "C0BMN9FN073"
 
@@ -415,11 +418,27 @@ def main():
             print(f"✅ DB 저장 완료 (briefings, type={btype}, date={ref})")
         except Exception as ex:
             print(f"[Error] DB 저장 실패: {ex}")
+
+    # 챌린지 마일스톤 새로 달성했는지 확인 → DB 기록(웹 팝업용) + 슬랙 축하(종국이가 직접 말하듯).
+    # 데일리 잡에서만 확인(매일 21시 cron이 이미 있어 별도 스케줄 불필요).
+    new_achievements = []
+    if btype == "daily" and not no_db:
+        try:
+            new_achievements = chal.check_and_record_achievements(con, ref)
+        except Exception as ex:
+            print(f"[Error] 챌린지 달성 확인 실패: {ex}")
     con.close()
 
     if not no_slack:
         if post_slack(content):
             print("✅ 슬랙 전송 완료 (keepgoing)")
+        for ach in new_achievements:
+            congrats = f"🎉 *{ach['kind_label']} 달성! ({ach['milestone']})*\n{ach['message']}"
+            if post_slack(congrats):
+                print(f"✅ 챌린지 축하 슬랙 전송: {ach['kind']} {ach['milestone']}")
+    elif new_achievements:
+        for ach in new_achievements:
+            print(f"[Info] 챌린지 달성(슬랙 생략): {ach['kind']} {ach['milestone']}")
 
     print(f"완료: {btype} 브리핑 ({ref})")
 
