@@ -338,6 +338,13 @@ tr:hover td { background: var(--card2); }
 .challenge-card { background: linear-gradient(135deg, rgba(63,185,80,.1), rgba(88,166,255,.1));
   border: 1px solid rgba(63,185,80,.3); border-radius: 12px; padding: 20px; }
 .streak-num { font-size: 48px; font-weight: 900; color: var(--green); line-height: 1; }
+.challenge-card.sober { background: linear-gradient(135deg, rgba(188,140,255,.12), rgba(210,153,34,.10));
+  border-color: rgba(188,140,255,.3); }
+.streak-num.sober { color: var(--purple); }
+.reward-hint { font-size: 12.5px; color: var(--orange); margin-top: 12px; font-weight: 600; line-height: 1.5;
+  padding: 8px 10px; background: rgba(210,153,34,.10); border-radius: 8px; display: none; }
+.reward-hint.show { display: block; }
+.ch-line { font-size: 12px; color: var(--muted); margin-top: 5px; }
 .empty-state { text-align: center; padding: 40px; color: var(--muted); font-size: 14px; }
 .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
 .btn-add { margin-left: auto; background: var(--blue); color: #000; border: none; border-radius: 6px;
@@ -424,16 +431,34 @@ tr:hover td { background: var(--card2); }
       <div class="stat-sub" id="weight-date">-</div></div>
   </div>
 
-  <div class="grid3">
+  <!-- 챌린지 & 보상 -->
+  <div class="grid2" style="margin-bottom:24px">
     <div class="challenge-card">
       <div class="card-title">🔥 연속 운동 챌린지</div>
-      <div class="streak-num" id="streak">0</div>
-      <div class="stat-sub" style="margin-top:8px">일 연속 달성</div>
-      <div class="progress-bar" style="margin-top:16px">
-        <div class="progress-fill" id="streak-bar" style="width:0%"></div>
+      <div class="streak-num" id="ch-week-streak">0</div>
+      <div class="stat-sub" style="margin-top:6px">주 연속 (주 3회 달성 기준)</div>
+      <div class="progress-bar" style="margin-top:14px">
+        <div class="progress-fill" id="ch-week-bar" style="width:0%"></div>
       </div>
-      <div class="stat-sub" style="margin-top:6px">목표: 30일</div>
+      <div class="ch-line" id="ch-week-goal">다음 목표: -</div>
+      <div class="ch-line" id="ch-week-this">이번 주: -</div>
+      <div class="ch-line" id="ch-day-streak">요즘 연속: -일</div>
+      <div class="reward-hint" id="ch-week-reward"></div>
     </div>
+    <div class="challenge-card sober">
+      <div class="card-title">🚫🍺 금주 챌린지</div>
+      <div class="streak-num sober" id="ch-sober">0</div>
+      <div class="stat-sub" style="margin-top:6px">일 연속 금주</div>
+      <div class="progress-bar" style="margin-top:14px">
+        <div class="progress-fill" id="ch-sober-bar" style="width:0%"></div>
+      </div>
+      <div class="ch-line" id="ch-sober-goal">다음 목표: -</div>
+      <div class="ch-line" id="ch-sober-last">-</div>
+      <div class="reward-hint" id="ch-sober-reward"></div>
+    </div>
+  </div>
+
+  <div class="grid3">
     <div class="card">
       <div class="card-title">🏆 풀업 최고 기록</div>
       <div class="stat-num" style="color:var(--purple)" id="pullup-pr">-</div>
@@ -554,8 +579,6 @@ async function loadData() {
   document.getElementById('total-vitals').textContent = d.total_vitals ?? 0;
   document.getElementById('last-weight').textContent = d.last_weight ? d.last_weight+'kg' : '-';
   document.getElementById('weight-date').textContent = d.weight_date ?? '';
-  document.getElementById('streak').textContent = d.streak ?? 0;
-  document.getElementById('streak-bar').style.width = Math.min((d.streak/30)*100, 100)+'%';
 
   if (d.ai_report) {
     document.getElementById('ai-report-block').style.display = 'block';
@@ -800,10 +823,41 @@ async function searchBriefings() {
     </div>`).join('');
 }
 
+// 챌린지 & 보상 로드
+async function loadChallenges() {
+  const r = await fetch('/api/challenges');
+  const d = await r.json();
+  const w = d.workout || {}, s = d.sober || {};
+
+  // 연속 운동
+  document.getElementById('ch-week-streak').textContent = w.week_streak ?? 0;
+  document.getElementById('ch-week-bar').style.width =
+    w.next_goal ? Math.min((w.week_streak / w.next_goal) * 100, 100) + '%' : '100%';
+  document.getElementById('ch-week-goal').textContent =
+    w.next_goal ? `다음 목표: ${w.next_goal}주 연속 (${w.remaining}주 남음)` : '최고 단계 달성 🏆';
+  document.getElementById('ch-week-this').textContent =
+    `이번 주: ${w.this_week_count ?? 0}/${w.goal_per_week ?? 3}회 ${w.this_week_success ? '✅' : ''}`;
+  document.getElementById('ch-day-streak').textContent = `요즘 연속: ${w.day_streak ?? 0}일`;
+  const wr = document.getElementById('ch-week-reward');
+  if (w.reward_hint) { wr.textContent = w.reward_hint; wr.classList.add('show'); }
+
+  // 금주
+  document.getElementById('ch-sober').textContent = s.days ?? 0;
+  document.getElementById('ch-sober-bar').style.width =
+    s.next_goal ? Math.min((s.days / s.next_goal) * 100, 100) + '%' : '100%';
+  document.getElementById('ch-sober-goal').textContent =
+    s.next_goal ? `다음 목표: ${s.next_goal}일 (D-${s.remaining})` : '최고 단계 달성 🏆';
+  document.getElementById('ch-sober-last').textContent =
+    s.last_drink ? `마지막 음주: ${s.last_drink}` : '음주 기록 없음';
+  const sr = document.getElementById('ch-sober-reward');
+  if (s.reward_hint) { sr.textContent = s.reward_hint; sr.classList.add('show'); }
+}
+
 loadData();
 loadPullupPR();
 loadBriefings();
 searchBriefings();
+loadChallenges();
 </script>
 
 <!-- 운동 모달 -->
@@ -955,6 +1009,115 @@ def api_summary():
         "workout_dates": wdates,
         "recent_workouts": recent,
         "ai_report": report_row.get("report") if report_row else None,
+    })
+
+
+SOBER_MILESTONES = [7, 14, 30, 66, 100]
+WEEK_MILESTONES = [2, 4, 8, 12, 16]
+GOAL_PER_WEEK = 3
+
+SOBER_REWARDS = {
+    7:  "🎁 7일 달성! 오늘 치팅밀 하나 허락 ㅎ … 근데 딱 하나만, 내일부터 다시 간다 ㅎ",
+    14: "🎁 2주! 오늘 딱 한 잔은 봐준다 ㅎ … 근데 여기서 무너지면 처음부터야. 그냥 이어가는 게 이득 ㅎ",
+    30: "🎁 한 달! 먹고픈 거 하루 마음껏 먹어 ㅎ … 30일 한 사람이 여기서 멈춰? 계속 간다 ㅎ",
+    66: "🏆 66일, 습관 완성! 이건 이제 네 삶이야. 아이들이랑 오래 뛰어놀 몸 만드는 중 ㅎ",
+    100:"🏆 100일!! 건강한 아빠가 최고의 아빠야 ㅎ 멈출 이유가 없지, 계속 ㅎ",
+}
+WEEK_REWARDS = {
+    2:  "🎁 2주 연속 주3회! 이번 주말은 아이들이랑 신나게 놀아 ㅎ … 다음 주도 간다 ㅎ",
+    4:  "🎁 한 달 개근! 먹고픈 거 하나 허락 ㅎ … 근데 습관은 이제부터야, 이어가자 ㅎ",
+    8:  "🎁 8주! 몸 바뀌는 게 보이지? ㅎ 하루 쉬어가도 좋아 … 대신 바로 복귀 ㅎ",
+    12: "🏆 12주! 이제 운동이 네 일상이야. 계속 ㅎ",
+    16: "🏆 16주 완주! 아이들이랑 30년 더 뛰어놀 체력, 네가 만든 거야 ㅎ 멈추지마 ㅎ",
+}
+
+
+def _next_milestone(value, milestones):
+    for m in milestones:
+        if value < m:
+            return m, m - value
+    return None, 0
+
+
+@app.route("/api/challenges")
+def api_challenges():
+    today = date.today()
+
+    # 운동한 날짜 집합
+    wdates = set()
+    for r in db_query("SELECT DISTINCT date FROM workouts"):
+        try:
+            wdates.add(date.fromisoformat(r["date"]))
+        except (ValueError, TypeError):
+            pass
+
+    # 요즘 연속(일) — 오늘 또는 어제부터 거슬러 연속
+    day_streak = 0
+    check = today if today in wdates else today - timedelta(days=1)
+    while check in wdates:
+        day_streak += 1
+        check -= timedelta(days=1)
+
+    # 주별 운동일수(월요일 시작 주)
+    def week_start(d):
+        return d - timedelta(days=d.weekday())
+    week_counts = {}
+    for wd in wdates:
+        ws = week_start(wd)
+        week_counts[ws] = week_counts.get(ws, 0) + 1
+
+    this_week = week_start(today)
+    this_week_count = week_counts.get(this_week, 0)
+    this_week_success = this_week_count >= GOAL_PER_WEEK
+
+    # 연속 성공 주: 이번 주는 성공했을 때만 포함, 이전 주들은 연속 성공인 동안 카운트
+    week_streak = 1 if this_week_success else 0
+    wk = this_week - timedelta(days=7)
+    while week_counts.get(wk, 0) >= GOAL_PER_WEEK:
+        week_streak += 1
+        wk -= timedelta(days=7)
+
+    w_next, w_remain = _next_milestone(week_streak, WEEK_MILESTONES)
+
+    # 금주 연속일 — 마지막 음주일(alcohol=1) 다음날부터 오늘까지
+    last_drink_row = db_one(
+        "SELECT date FROM vitals WHERE alcohol=1 AND date <= ? ORDER BY date DESC LIMIT 1", (today.isoformat(),))
+    last_drink = last_drink_row.get("date") if last_drink_row else None
+    if last_drink:
+        try:
+            sober_days = max((today - date.fromisoformat(last_drink)).days, 0)
+        except (ValueError, TypeError):
+            sober_days = 0
+    else:
+        # 음주 기록이 아예 없으면 첫 기록일 기준(운동/바이탈 통틀어 가장 이른 날)
+        base_row = db_one(
+            "SELECT MIN(d) AS d FROM (SELECT date d FROM workouts UNION SELECT date d FROM vitals)")
+        base = base_row.get("d") if base_row else None
+        try:
+            sober_days = max((today - date.fromisoformat(base)).days, 0) if base else 0
+        except (ValueError, TypeError):
+            sober_days = 0
+
+    s_next, s_remain = _next_milestone(sober_days, SOBER_MILESTONES)
+
+    return jsonify({
+        "workout": {
+            "day_streak": day_streak,
+            "week_streak": week_streak,
+            "this_week_count": this_week_count,
+            "this_week_success": this_week_success,
+            "goal_per_week": GOAL_PER_WEEK,
+            "next_goal": w_next,
+            "remaining": w_remain,
+            "reward_hint": WEEK_REWARDS.get(week_streak) if week_streak else None,
+        },
+        "sober": {
+            "days": sober_days,
+            "next_goal": s_next,
+            "remaining": s_remain,
+            "last_drink": last_drink,
+            "reward_hint": SOBER_REWARDS.get(sober_days),
+        },
     })
 
 
