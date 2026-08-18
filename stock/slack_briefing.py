@@ -123,7 +123,7 @@ def main():
     caption = (
         "📈 주요 시장 지수 마감 브리핑\n"
         f"📅 {datetime.now().strftime('%Y년 %m월 %d일 %H:%M 마감')}\n"
-        "코스피·코스닥·S&P 500·TQQQ 현황과 투자 타이밍 진행 상태입니다."
+        "코스피·코스닥·S&P 500·TQQQ 현황입니다."
     )
     print("슬랙 전송 중...")
     print("✅ 슬랙 전송 성공!" if send_slack_photo(SCREENSHOT_PATH, caption) else "❌ 슬랙 전송 실패")

@@ -103,17 +103,11 @@ def capture_dashboard(path=SCREENSHOT_PATH):
                 print("        → 시세 데이터 소스(market_data) 오류 가능성. 대시보드를 직접 열어 확인하세요.")
                 return False
 
-            # Wait for the investment timing section (best-effort)
-            try:
-                page.wait_for_selector("#strategy-cards-grid .strategy-card", timeout=10000)
-            except Exception:
-                print("[Warn] 투자 타이밍 섹션 로딩 지연 — 그대로 캡처합니다.")
-
             # Sleep slightly to ensure CSS transitions/animations settle
             time.sleep(1.5)
 
-            # 스크린샷 범위: 헤더 + 지수 스냅샷 + 분할 매수 투자 타이밍까지만.
-            # 관심종목(.custom-stocks-section)·푸터는 브리핑에서 제외 요청됨.
+            # 스크린샷 범위: 헤더 + 지수 스냅샷까지만.
+            # 투자 타이밍(.strategy-section)·관심종목·푸터는 브리핑에서 제외 요청됨.
             # ⚠️ page.screenshot(clip=...) 좌표 계산 방식은 뷰포트 크기/타이밍에 따라
             #    필요한 영역이 온전히 안 잡히는 문제가 있었다("TQQQ 박스가 계속 잘림").
             #    → index.html 쪽에 캡처 범위를 감싸는 전용 래퍼(#briefing-capture-area)를
@@ -149,7 +143,7 @@ def capture_and_send():
     caption = (
         f"📈 *주요 시장 지수 마감 브리핑*\n"
         f"📅 일시: {date_str}\n\n"
-        f"코스피, 코스닥, S&P 500, 나스닥, QLD, TQQQ 현황과 투자 타이밍 진행 상태를 공유합니다."
+        f"코스피, 코스닥, S&P 500, 나스닥, QLD, TQQQ 현황을 공유합니다."
     )
     print("Sending photo to Telegram...")
     if send_telegram_photo(SCREENSHOT_PATH, caption):
