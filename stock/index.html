@@ -748,7 +748,12 @@
 </head>
 <body>
   <div class="container">
-    
+
+    <!-- 슬랙 브리핑 캡처 범위: 헤더~투자 타이밍 섹션까지만 (관심종목·푸터 제외).
+         capture.py 가 이 id 하나를 통째로 element screenshot 해서, clip 좌표
+         계산이나 뷰포트 크기에 좌우되지 않고 항상 이 영역 전체가 온전히 나온다. -->
+    <div id="briefing-capture-area">
+
     <!-- Top Navigation Header -->
     <header class="nav-header">
       <div class="brand-section">
@@ -808,6 +813,8 @@
         <p>투자 타이밍 현황을 계산 중입니다…</p>
       </div>
     </section>
+
+    </div> <!-- /#briefing-capture-area -->
 
     <!-- Section 3: Custom Stocks Watchlist -->
     <section class="custom-stocks-section">

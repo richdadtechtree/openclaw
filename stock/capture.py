@@ -112,34 +112,21 @@ def capture_dashboard(path=SCREENSHOT_PATH):
             # Sleep slightly to ensure CSS transitions/animations settle
             time.sleep(1.5)
 
-            # 스크린샷 범위: 헤더 + 지수 스냅샷 + 분할 매수 투자 타이밍(.strategy-section)까지만.
+            # 스크린샷 범위: 헤더 + 지수 스냅샷 + 분할 매수 투자 타이밍까지만.
             # 관심종목(.custom-stocks-section)·푸터는 브리핑에서 제외 요청됨.
-            # → .container 전체가 아니라, 상단부터 .strategy-section 하단(+여백)까지만 클립해서 캡처.
+            # ⚠️ page.screenshot(clip=...) 좌표 계산 방식은 뷰포트 크기/타이밍에 따라
+            #    필요한 영역이 온전히 안 잡히는 문제가 있었다("TQQQ 박스가 계속 잘림").
+            #    → index.html 쪽에 캡처 범위를 감싸는 전용 래퍼(#briefing-capture-area)를
+            #      만들어두고, 그 요소 하나를 통째로 element screenshot 한다.
+            #      (element screenshot 은 Playwright 가 알아서 뷰포트 밖 영역까지
+            #       스크롤/캡처해주므로 좌표 계산이 필요 없어 훨씬 안정적이다.)
             os.makedirs(os.path.dirname(path), exist_ok=True)
-            container_box = page.locator(".container").bounding_box()
-            strategy_box = page.locator(".strategy-section").bounding_box()
-            if container_box and strategy_box:
-                clip_height = (strategy_box["y"] + strategy_box["height"]) - container_box["y"] + 16
-                # ⚠️ clip 은 "현재 뷰포트 안에 실제로 렌더된 영역"만 캡처 가능하다.
-                #    처음 뷰포트는 1080px 고정이라, 지수 2줄(3x2)+투자 타이밍 카드가 많아지면
-                #    필요한 캡처 높이가 1080px 를 넘어서고 그만큼 잘려 나갔다("너무 많이 짤림").
-                #    → 필요한 높이만큼 뷰포트를 먼저 넉넉히 키운 뒤 좌표를 다시 재서 캡처한다.
-                needed_h = int(container_box["y"] + clip_height) + 20
-                if needed_h > page.viewport_size["height"]:
-                    page.set_viewport_size({"width": 1320, "height": needed_h})
-                    container_box = page.locator(".container").bounding_box()
-                    strategy_box = page.locator(".strategy-section").bounding_box()
-                    clip_height = (strategy_box["y"] + strategy_box["height"]) - container_box["y"] + 16
-                clip = {
-                    "x": container_box["x"],
-                    "y": container_box["y"],
-                    "width": container_box["width"],
-                    "height": clip_height,
-                }
-                page.screenshot(path=path, clip=clip)
+            capture_area = page.locator("#briefing-capture-area")
+            if capture_area.count() > 0:
+                capture_area.screenshot(path=path)
             else:
-                # 레이아웃을 못 읽었을 때의 안전한 폴백: 전체 컨테이너라도 캡처
-                print("[Warn] 섹션 경계를 못 읽어 전체 컨테이너로 캡처합니다.")
+                # index.html 에 래퍼가 없는 옛 배포본일 때의 안전한 폴백
+                print("[Warn] #briefing-capture-area 없음 — 전체 컨테이너로 캡처합니다.")
                 page.locator(".container").screenshot(path=path)
             print(f"Screenshot successfully saved to {path}")
             return True
