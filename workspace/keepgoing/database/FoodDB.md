@@ -5,7 +5,7 @@ SQLite Database: `~/pt_data/pt.db` (Table: `diet`)
 ## Schema
 - `id` (INTEGER PRIMARY KEY AUTOINCREMENT)
 - `date` (TEXT, YYYY-MM-DD)
-- `meal` (TEXT, 아침/점심/저녁/간식/물)
+- `meal` (TEXT, 아침/점심/저녁/간식/물/단백질)
 - `items` (TEXT)
 - `protein_g` (REAL)
 - `raw` (TEXT)
