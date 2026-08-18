@@ -109,19 +109,27 @@ def capture_dashboard(path=SCREENSHOT_PATH):
             except Exception:
                 print("[Warn] 투자 타이밍 섹션 로딩 지연 — 그대로 캡처합니다.")
 
-            # Wait for the custom stocks section (best-effort)
-            try:
-                page.wait_for_selector("#custom-stocks-grid .stock-card", timeout=10000)
-            except Exception:
-                print("[Warn] 관심종목 섹션 로딩 지연 — 그대로 캡처합니다.")
-
             # Sleep slightly to ensure CSS transitions/animations settle
             time.sleep(1.5)
 
-            # 스크린샷 대상: 헤더+전 섹션+푸터를 감싸는 최상위 래퍼 (옛 #dashboard → .container)
-            dashboard_element = page.locator(".container")
+            # 스크린샷 범위: 헤더 + 지수 스냅샷 + 분할 매수 투자 타이밍(.strategy-section)까지만.
+            # 관심종목(.custom-stocks-section)·푸터는 브리핑에서 제외 요청됨.
+            # → .container 전체가 아니라, 상단부터 .strategy-section 하단까지만 클립해서 캡처.
             os.makedirs(os.path.dirname(path), exist_ok=True)
-            dashboard_element.screenshot(path=path)
+            container_box = page.locator(".container").bounding_box()
+            strategy_box = page.locator(".strategy-section").bounding_box()
+            if container_box and strategy_box:
+                clip = {
+                    "x": container_box["x"],
+                    "y": container_box["y"],
+                    "width": container_box["width"],
+                    "height": (strategy_box["y"] + strategy_box["height"]) - container_box["y"],
+                }
+                page.screenshot(path=path, clip=clip)
+            else:
+                # 레이아웃을 못 읽었을 때의 안전한 폴백: 전체 컨테이너라도 캡처
+                print("[Warn] 섹션 경계를 못 읽어 전체 컨테이너로 캡처합니다.")
+                page.locator(".container").screenshot(path=path)
             print(f"Screenshot successfully saved to {path}")
             return True
         except Exception as e:
