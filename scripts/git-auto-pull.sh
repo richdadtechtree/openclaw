@@ -94,8 +94,13 @@ log "설정 동기화 완료 (런타임 파일 보존됨)"
 # openclaw repo 의 stock/ 소스를 실행 폴더(~/stock/stock)로 반영하고, 코드가
 # 바뀐 경우에만 scheduler 를 재시작한다. 실패해도 openclaw 재시작은 계속 진행.
 STOCK_SYNC="$REPO_DIR/scripts/sync-stock.sh"
-if [ -x "$STOCK_SYNC" ]; then
-  "$STOCK_SYNC" || log "stock 동기화 실패(무시하고 계속)" >&2
+if [ -f "$STOCK_SYNC" ]; then
+  # ⚠️ 예전엔 `[ -x ]`(실행권한 있을 때만) 조건이라, 체크아웃/권한 문제로 exec 비트가
+  #    빠지면 stock 동기화가 '아무 로그 없이' 통째로 스킵됐다(= 실행 폴더 코드가 옛
+  #    버전에 고정되는 사일런트 버그). 이제 exec 비트와 무관하게 bash 로 직접 실행한다.
+  bash "$STOCK_SYNC" || log "stock 동기화 실패(무시하고 계속)" >&2
+else
+  log "sync-stock.sh 없음 — stock 동기화 생략"
 fi
 
 # --- openclaw 게이트웨이 재시작 (필요할 때만) ----------------------------------
