@@ -58,6 +58,7 @@ def init_db():
         sleep_hours REAL,
         condition TEXT,
         alcohol INTEGER DEFAULT 0,
+        body_fat_pct REAL,
         raw TEXT,
         created_at TEXT NOT NULL
     );
@@ -69,6 +70,11 @@ def init_db():
     );
     """)
     con.commit()
+    # 기존 DB(마이그레이션 전)에 body_fat_pct 컬럼이 없으면 추가 — pt_dashboard.py 와 동일 마이그레이션.
+    cols = [r[1] for r in con.execute("PRAGMA table_info(vitals)").fetchall()]
+    if "body_fat_pct" not in cols:
+        con.execute("ALTER TABLE vitals ADD COLUMN body_fat_pct REAL")
+        con.commit()
     return con
 
 
@@ -178,6 +184,12 @@ def parse_vitals(text):
         w = float(wm.group(1))
         if 40 <= w <= 200:
             v['weight_kg'] = w
+    # 체지방률
+    bfm = re.search(r'체지방(?:률|율)?\s*(\d+(?:\.\d+)?)\s*%', text)
+    if bfm:
+        bf = float(bfm.group(1))
+        if 3 <= bf <= 60:
+            v['body_fat_pct'] = bf
     # 수면
     sm = re.search(r'수면\s*(\d+(?:\.\d+)?)\s*시간', text) or \
          re.search(r'(\d+(?:\.\d+)?)\s*시간\s*(?:잠|수면|취침)', text)
@@ -208,7 +220,7 @@ def _num(x):
 def save_vitals(cur, v, day, raw, now):
     """vitals 는 date UNIQUE → 없으면 INSERT, 있으면 준 필드만 UPDATE(덮어쓰기)."""
     fields = {}
-    for k in ('weight_kg', 'sleep_hours'):
+    for k in ('weight_kg', 'sleep_hours', 'body_fat_pct'):
         if v.get(k) not in (None, ""):
             fields[k] = _num(v[k])
     if v.get('condition'):
