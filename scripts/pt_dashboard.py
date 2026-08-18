@@ -260,10 +260,15 @@ def ensure_tables():
     con.executescript("""
     CREATE TABLE IF NOT EXISTS workouts (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, exercise TEXT NOT NULL, sets INTEGER, reps INTEGER, weight_kg REAL, raw TEXT, created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS diet (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, meal TEXT, items TEXT NOT NULL, protein_g REAL, raw TEXT, created_at TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS vitals (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL UNIQUE, weight_kg REAL, sleep_hours REAL, condition TEXT, alcohol INTEGER DEFAULT 0, raw TEXT, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS vitals (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL UNIQUE, weight_kg REAL, sleep_hours REAL, condition TEXT, alcohol INTEGER DEFAULT 0, body_fat_pct REAL, raw TEXT, created_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS briefings (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'daily', content TEXT NOT NULL, created_at TEXT NOT NULL);
     """)
     con.commit()
+    # 기존 DB(마이그레이션 전)에 body_fat_pct 컬럼이 없으면 추가.
+    cols = [r[1] for r in con.execute("PRAGMA table_info(vitals)").fetchall()]
+    if "body_fat_pct" not in cols:
+        con.execute("ALTER TABLE vitals ADD COLUMN body_fat_pct REAL")
+        con.commit()
     chal.ensure_tables(con)
     con.close()
 
@@ -333,6 +338,29 @@ tr:hover td { background: var(--card2); }
 .cal-workout { background: linear-gradient(135deg, rgba(88,166,255,.3), rgba(188,140,255,.3));
   color: var(--blue); border: 1px solid rgba(88,166,255,.4); }
 .cal-today { box-shadow: 0 0 0 2px var(--blue); }
+
+.trend-header { display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px; flex-wrap: wrap; gap: 10px; }
+.trend-range-pills { display: flex; gap: 6px; }
+.range-pill { background: var(--card2); border: 1px solid var(--border); color: var(--muted);
+  border-radius: 20px; padding: 6px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.range-pill:hover { color: var(--text); }
+.range-pill.active { background: rgba(88,166,255,.15); border-color: rgba(88,166,255,.4); color: var(--blue); }
+.trend-stat { font-size: 13px; color: var(--muted); margin: -4px 0 12px; }
+.trend-stat .val { color: var(--text); font-weight: 700; font-size: 20px; margin-right: 6px; }
+.trend-stat .delta-down { color: var(--green); }
+.trend-stat .delta-up { color: var(--red); }
+.trend-chart-wrap { position: relative; }
+.trend-chart-wrap svg { display: block; width: 100%; height: auto; overflow: visible; }
+.trend-gridline { stroke: var(--border); stroke-width: 1; }
+.trend-axis-label { fill: var(--muted); font-size: 9px; }
+.trend-endlabel { fill: var(--text); font-size: 11px; font-weight: 700; }
+.trend-crosshair { stroke: var(--border); stroke-width: 1; pointer-events: none; }
+.trend-tooltip { position: absolute; pointer-events: none; background: var(--card2);
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 12px;
+  white-space: nowrap; transform: translate(-50%, -115%); display: none; z-index: 5; }
+.trend-tooltip .tt-val { font-weight: 700; color: var(--text); }
+.trend-tooltip .tt-date { color: var(--muted); margin-top: 2px; }
 .progress-bar { height: 6px; background: var(--card2); border-radius: 3px; overflow: hidden; margin-top: 8px; }
 .progress-fill { height: 100%; border-radius: 3px;
   background: linear-gradient(90deg, var(--blue), var(--purple)); transition: width .5s; }
@@ -443,19 +471,25 @@ tr:hover td { background: var(--card2); }
 
 <!-- 오버뷰 -->
 <div id="tab-overview" class="panel active">
-  <div class="grid4" id="summary-cards">
-    <div class="card"><div class="card-title">총 운동 기록</div>
-      <div class="stat-num" id="total-workouts">-</div>
-      <div class="stat-sub">운동 종목 누적</div></div>
-    <div class="card"><div class="card-title">총 식단 기록</div>
-      <div class="stat-num" id="total-diet">-</div>
-      <div class="stat-sub">식사 기록 누적</div></div>
-    <div class="card"><div class="card-title">바이탈 기록</div>
-      <div class="stat-num" id="total-vitals">-</div>
-      <div class="stat-sub">체중·수면 체크</div></div>
-    <div class="card"><div class="card-title">최근 체중</div>
-      <div class="stat-num" id="last-weight">-</div>
-      <div class="stat-sub" id="weight-date">-</div></div>
+  <div class="trend-header">
+    <div class="section-title" style="margin-bottom:0">📈 체중·체지방률 변화</div>
+    <div class="trend-range-pills" id="trend-range-pills">
+      <button class="range-pill" data-days="30" onclick="setTrendRange(30)">30일</button>
+      <button class="range-pill" data-days="90" onclick="setTrendRange(90)">90일</button>
+      <button class="range-pill" data-days="0" onclick="setTrendRange(0)">전체</button>
+    </div>
+  </div>
+  <div class="grid2" style="margin-bottom:24px">
+    <div class="card">
+      <div class="card-title">⚖️ 체중</div>
+      <div class="trend-stat" id="trend-weight-stat">기록 없음</div>
+      <div id="trend-weight-chart" class="trend-chart-wrap"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">📉 체지방률</div>
+      <div class="trend-stat" id="trend-bodyfat-stat">기록 없음</div>
+      <div id="trend-bodyfat-chart" class="trend-chart-wrap"></div>
+    </div>
   </div>
 
   <!-- 챌린지 & 보상 -->
@@ -554,7 +588,7 @@ tr:hover td { background: var(--card2); }
         <button class="btn-add" onclick="openModal('vital')">+ 추가</button>
       </div>
       <table>
-        <thead><tr><th>날짜</th><th>체중(kg)</th><th>수면(h)</th><th>컨디션</th><th>관리</th></tr></thead>
+        <thead><tr><th>날짜</th><th>체중(kg)</th><th>체지방률(%)</th><th>수면(h)</th><th>컨디션</th><th>관리</th></tr></thead>
         <tbody id="vitals-body"></tbody>
       </table>
     </div>
@@ -625,12 +659,6 @@ function showTab(name) {
 async function loadData() {
   const r = await fetch('/api/summary');
   const d = await r.json();
-
-  document.getElementById('total-workouts').textContent = d.total_workouts ?? 0;
-  document.getElementById('total-diet').textContent = d.total_diet ?? 0;
-  document.getElementById('total-vitals').textContent = d.total_vitals ?? 0;
-  document.getElementById('last-weight').textContent = d.last_weight ? d.last_weight+'kg' : '-';
-  document.getElementById('weight-date').textContent = d.weight_date ?? '';
 
   if (d.ai_report) {
     document.getElementById('ai-report-block').style.display = 'block';
@@ -714,6 +742,7 @@ async function loadData() {
     const tr=document.createElement('tr');
     tr.innerHTML=`<td>${v.date}</td>
       <td>${v.weight_kg?v.weight_kg+'kg':'-'}</td>
+      <td>${v.body_fat_pct?v.body_fat_pct+'%':'-'}</td>
       <td>${v.sleep_hours??'-'}</td>
       <td>${condMap[v.condition]??'-'}${v.alcohol?'🍺':''}</td>
       <td><button class="btn-edit" onclick="openEditModal('vital',${v.id})">✏️</button><button class="btn-del" onclick="deleteRecord('vital',${v.id})">🗑️</button></td>`;
@@ -780,6 +809,7 @@ function openEditModal(type, id) {
     document.getElementById('ev-id').value = v.id;
     document.getElementById('ev-date').value = v.date;
     document.getElementById('ev-weight').value = v.weight_kg ?? '';
+    document.getElementById('ev-bodyfat').value = v.body_fat_pct ?? '';
     document.getElementById('ev-sleep').value = v.sleep_hours ?? '';
     document.getElementById('ev-cond').value = v.condition || '';
     document.getElementById('ev-alcohol').value = v.alcohol ?? 0;
@@ -813,6 +843,7 @@ async function submitEditForm(type) {
     data = {
       date: document.getElementById('ev-date').value,
       weight_kg: document.getElementById('ev-weight').value || null,
+      body_fat_pct: document.getElementById('ev-bodyfat').value || null,
       sleep_hours: document.getElementById('ev-sleep').value || null,
       condition: document.getElementById('ev-cond').value || null,
       alcohol: document.getElementById('ev-alcohol').value
@@ -825,6 +856,125 @@ async function submitEditForm(type) {
   });
   if ((await r.json()).ok) { closeEditModal(type); location.reload(); }
   else alert('수정 실패');
+}
+
+// ── 체중·체지방률 변화 그래프 ──────────────────────────────────────────────
+let trendRangeDays = 90;
+
+function setTrendRange(days) {
+  trendRangeDays = days;
+  document.querySelectorAll('#trend-range-pills .range-pill').forEach(b => {
+    b.classList.toggle('active', Number(b.dataset.days) === days);
+  });
+  loadTrendCharts();
+}
+
+async function loadTrendCharts() {
+  const r = await fetch('/api/vitals/trend?days=' + trendRangeDays);
+  const rows = await r.json();
+
+  const weightPts = rows.filter(x => x.weight_kg != null).map(x => ({date: x.date, value: x.weight_kg}));
+  const bfPts = rows.filter(x => x.body_fat_pct != null).map(x => ({date: x.date, value: x.body_fat_pct}));
+
+  renderTrendStat('trend-weight-stat', weightPts, 'kg');
+  renderTrendStat('trend-bodyfat-stat', bfPts, '%');
+  renderTrendChart('trend-weight-chart', weightPts, getComputedStyle(document.documentElement).getPropertyValue('--blue').trim(), 'kg');
+  renderTrendChart('trend-bodyfat-chart', bfPts, getComputedStyle(document.documentElement).getPropertyValue('--orange').trim(), '%');
+}
+
+function renderTrendStat(elId, pts, unit) {
+  const el = document.getElementById(elId);
+  if (!pts.length) { el.textContent = '기록 없음'; return; }
+  const last = pts[pts.length - 1];
+  let deltaHtml = '';
+  if (pts.length >= 2) {
+    const diff = last.value - pts[0].value;
+    const cls = diff < 0 ? 'delta-down' : (diff > 0 ? 'delta-up' : '');
+    const arrow = diff < 0 ? '▼' : (diff > 0 ? '▲' : '―');
+    deltaHtml = ` <span class="${cls}">${arrow} ${Math.abs(diff).toFixed(1)}${unit}</span> (선택 기간 대비)`;
+  }
+  el.innerHTML = `<span class="val">${last.value}${unit}</span>${deltaHtml}`;
+}
+
+// 화이트리스트 없는 순수 SVG 라인차트: 2px 라인, 끝점 마커+서피스 링, 끝값 라벨, 호버 크로스헤어+툴팁.
+function renderTrendChart(wrapId, pts, color, unit) {
+  const wrap = document.getElementById(wrapId);
+  wrap.innerHTML = '';
+  if (pts.length < 2) {
+    wrap.innerHTML = `<div class="empty-state" style="padding:24px 0">기록이 2개 이상 있어야 그래프가 보여요</div>`;
+    return;
+  }
+
+  const W = 600, H = 160, PAD_L = 34, PAD_R = 12, PAD_T = 14, PAD_B = 20;
+  const values = pts.map(p => p.value);
+  let vMin = Math.min(...values), vMax = Math.max(...values);
+  if (vMin === vMax) { vMin -= 1; vMax += 1; }
+  const pad = (vMax - vMin) * 0.15;
+  vMin -= pad; vMax += pad;
+
+  const xAt = i => PAD_L + (i / (pts.length - 1)) * (W - PAD_L - PAD_R);
+  const yAt = v => H - PAD_B - ((v - vMin) / (vMax - vMin)) * (H - PAD_T - PAD_B);
+
+  const linePath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xAt(i).toFixed(1)} ${yAt(p.value).toFixed(1)}`).join(' ');
+  const areaPath = linePath + ` L ${xAt(pts.length - 1).toFixed(1)} ${H - PAD_B} L ${xAt(0).toFixed(1)} ${H - PAD_B} Z`;
+
+  // 하이라인 그리드(3단) — 소극적, 값 라벨 포함
+  const gridSteps = 3;
+  let gridSvg = '';
+  for (let i = 0; i <= gridSteps; i++) {
+    const v = vMin + (vMax - vMin) * (i / gridSteps);
+    const y = yAt(v);
+    gridSvg += `<line class="trend-gridline" x1="${PAD_L}" y1="${y.toFixed(1)}" x2="${W-PAD_R}" y2="${y.toFixed(1)}"/>`;
+    gridSvg += `<text class="trend-axis-label" x="2" y="${(y+3).toFixed(1)}">${v.toFixed(1)}</text>`;
+  }
+
+  const last = pts[pts.length - 1];
+  const lastX = xAt(pts.length - 1), lastY = yAt(last.value);
+
+  const dotsSvg = pts.map((p, i) =>
+    `<circle class="trend-dot" data-i="${i}" cx="${xAt(i).toFixed(1)}" cy="${yAt(p.value).toFixed(1)}" r="3" fill="${color}" opacity="0"/>`
+  ).join('');
+
+  wrap.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}">
+      ${gridSvg}
+      <path d="${areaPath}" fill="${color}" opacity="0.10" stroke="none"/>
+      <path d="${linePath}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+      ${dotsSvg}
+      <circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="5" fill="${color}" stroke="var(--card)" stroke-width="2"/>
+      <text class="trend-endlabel" x="${Math.min(lastX+8, W-30).toFixed(1)}" y="${(lastY-8).toFixed(1)}">${last.value}${unit}</text>
+      <line class="trend-crosshair" id="${wrapId}-cross" x1="0" y1="${PAD_T}" x2="0" y2="${H-PAD_B}" style="display:none"/>
+    </svg>
+    <div class="trend-tooltip" id="${wrapId}-tip"></div>
+  `;
+
+  const svg = wrap.querySelector('svg');
+  const cross = document.getElementById(wrapId + '-cross');
+  const tip = document.getElementById(wrapId + '-tip');
+
+  function showAt(i) {
+    const p = pts[i];
+    const x = xAt(i);
+    cross.setAttribute('x1', x); cross.setAttribute('x2', x);
+    cross.style.display = 'block';
+    const rect = svg.getBoundingClientRect();
+    const px = (x / W) * rect.width;
+    const py = (yAt(p.value) / H) * rect.height;
+    tip.style.left = px + 'px';
+    tip.style.top = py + 'px';
+    tip.innerHTML = `<div class="tt-val">${p.value}${unit}</div><div class="tt-date">${p.date}</div>`;
+    tip.style.display = 'block';
+  }
+  function hide() { cross.style.display = 'none'; tip.style.display = 'none'; }
+
+  svg.addEventListener('pointermove', (e) => {
+    const rect = svg.getBoundingClientRect();
+    const relX = (e.clientX - rect.left) / rect.width * W;
+    let nearest = 0, best = Infinity;
+    pts.forEach((p, i) => { const d = Math.abs(xAt(i) - relX); if (d < best) { best = d; nearest = i; } });
+    showAt(nearest);
+  });
+  svg.addEventListener('pointerleave', hide);
 }
 
 // 풀업 PR 로드
@@ -1009,6 +1159,7 @@ searchBriefings();
 loadChallenges();
 loadAchievements();
 renderBfCalendar();
+setTrendRange(90);
 </script>
 
 <!-- 운동 모달 -->
@@ -1045,13 +1196,14 @@ renderBfCalendar();
     <div class="form-row"><label>날짜</label><input type="date" id="v-date"></div>
     <div class="form-grid2">
       <div class="form-row"><label>체중 (kg)</label><input type="number" id="v-weight" step="0.1" placeholder="-"></div>
-      <div class="form-row"><label>수면 (시간)</label><input type="number" id="v-sleep" step="0.5" placeholder="-"></div>
+      <div class="form-row"><label>체지방률 (%)</label><input type="number" id="v-bodyfat" step="0.1" placeholder="-"></div>
     </div>
+    <div class="form-row"><label>수면 (시간)</label><input type="number" id="v-sleep" step="0.5" placeholder="-"></div>
     <div class="form-row"><label>컨디션</label>
       <select id="v-cond"><option value="">선택</option><option value="excellent">최고</option><option value="good">좋음</option><option value="fair">보통</option><option value="tired">피곤</option><option value="poor">나쁨</option></select></div>
     <div class="form-row"><label>음주</label>
       <select id="v-alcohol"><option value="0">없음</option><option value="1">함</option></select></div>
-    <button class="btn-submit" onclick="submitForm('vital',{date:document.getElementById('v-date').value||undefined,weight_kg:document.getElementById('v-weight').value||null,sleep_hours:document.getElementById('v-sleep').value||null,condition:document.getElementById('v-cond').value||null,alcohol:document.getElementById('v-alcohol').value})">&#x2713; 저장</button>
+    <button class="btn-submit" onclick="submitForm('vital',{date:document.getElementById('v-date').value||undefined,weight_kg:document.getElementById('v-weight').value||null,body_fat_pct:document.getElementById('v-bodyfat').value||null,sleep_hours:document.getElementById('v-sleep').value||null,condition:document.getElementById('v-cond').value||null,alcohol:document.getElementById('v-alcohol').value})">&#x2713; 저장</button>
     <button class="btn-cancel" onclick="closeModal('vital')">취소</button>
   </div>
 </div>
@@ -1096,8 +1248,9 @@ renderBfCalendar();
     <div class="form-row"><label>날짜</label><input type="date" id="ev-date"></div>
     <div class="form-grid2">
       <div class="form-row"><label>체중 (kg)</label><input type="number" id="ev-weight" step="0.1" placeholder="-"></div>
-      <div class="form-row"><label>수면 (시간)</label><input type="number" id="ev-sleep" step="0.5" placeholder="-"></div>
+      <div class="form-row"><label>체지방률 (%)</label><input type="number" id="ev-bodyfat" step="0.1" placeholder="-"></div>
     </div>
+    <div class="form-row"><label>수면 (시간)</label><input type="number" id="ev-sleep" step="0.5" placeholder="-"></div>
     <div class="form-row"><label>컨디션</label>
       <select id="ev-cond"><option value="">선택</option><option value="excellent">최고</option><option value="good">좋음</option><option value="fair">보통</option><option value="tired">피곤</option><option value="poor">나쁨</option></select></div>
     <div class="form-row"><label>음주</label>
@@ -1132,23 +1285,6 @@ def api_summary():
     today = date.today().isoformat()
     month = today[:7]
 
-    total_w = db_one("SELECT COUNT(*) as n FROM workouts")
-    total_d = db_one("SELECT COUNT(*) as n FROM diet")
-    total_v = db_one("SELECT COUNT(*) as n FROM vitals")
-    last_vital = db_one("SELECT weight_kg, date FROM vitals WHERE weight_kg IS NOT NULL ORDER BY date DESC LIMIT 1")
-
-    # 연속 운동 스트릭
-    streak = 0
-    rows = db_query("SELECT DISTINCT date FROM workouts ORDER BY date DESC")
-    check = date.today()
-    for r in rows:
-        rd = date.fromisoformat(r['date'])
-        if rd == check:
-            streak += 1
-            check -= timedelta(days=1)
-        elif rd < check:
-            break
-
     # 이번 달 운동 날짜
     wdates = [r['date'] for r in db_query(
         "SELECT DISTINCT date FROM workouts WHERE date LIKE ?", (f"{month}%",))]
@@ -1161,12 +1297,6 @@ def api_summary():
     report_row = db_one("SELECT report FROM ai_reports ORDER BY date DESC LIMIT 1")
 
     return jsonify({
-        "total_workouts": total_w.get("n", 0),
-        "total_diet": total_d.get("n", 0),
-        "total_vitals": total_v.get("n", 0),
-        "last_weight": last_vital.get("weight_kg"),
-        "weight_date": last_vital.get("date", ""),
-        "streak": streak,
         "workout_dates": wdates,
         "recent_workouts": recent,
         "ai_report": report_row.get("report") if report_row else None,
@@ -1216,7 +1346,28 @@ def api_diet():
 @app.route("/api/vitals")
 def api_vitals():
     return jsonify(db_query(
-        "SELECT id, date, weight_kg, sleep_hours, condition, alcohol FROM vitals ORDER BY date DESC LIMIT 60"))
+        "SELECT id, date, weight_kg, sleep_hours, condition, alcohol, body_fat_pct FROM vitals ORDER BY date DESC LIMIT 60"))
+
+
+@app.route("/api/vitals/trend")
+def api_vitals_trend():
+    # 메인 오버뷰 체중·체지방률 그래프용. days=0 이면 전체 기간.
+    try:
+        days = int(request.args.get("days", 90))
+    except (TypeError, ValueError):
+        days = 90
+    if days > 0:
+        since = (date.today() - timedelta(days=days)).isoformat()
+        rows = db_query(
+            "SELECT date, weight_kg, body_fat_pct FROM vitals "
+            "WHERE date >= ? AND (weight_kg IS NOT NULL OR body_fat_pct IS NOT NULL) "
+            "ORDER BY date ASC", (since,))
+    else:
+        rows = db_query(
+            "SELECT date, weight_kg, body_fat_pct FROM vitals "
+            "WHERE weight_kg IS NOT NULL OR body_fat_pct IS NOT NULL "
+            "ORDER BY date ASC")
+    return jsonify(rows)
 
 
 @app.route("/api/delete/workout/<int:rec_id>", methods=["POST", "DELETE"])
@@ -1275,10 +1426,11 @@ def edit_vital(rec_id):
     d = request.json
     con = get_db()
     con.execute(
-        "UPDATE vitals SET date=?, weight_kg=?, sleep_hours=?, condition=?, alcohol=? WHERE id=?",
+        "UPDATE vitals SET date=?, weight_kg=?, sleep_hours=?, condition=?, alcohol=?, body_fat_pct=? WHERE id=?",
         (d["date"], float(d["weight_kg"]) if d.get("weight_kg") else None,
          float(d["sleep_hours"]) if d.get("sleep_hours") else None,
-         d.get("condition"), int(d.get("alcohol", 0)), rec_id)
+         d.get("condition"), int(d.get("alcohol", 0)),
+         float(d["body_fat_pct"]) if d.get("body_fat_pct") else None, rec_id)
     )
     con.commit(); con.close()
     return jsonify({"ok": True})
@@ -1349,16 +1501,18 @@ def add_vital():
     con = get_db()
     try:
         con.execute(
-            "INSERT INTO vitals (date,weight_kg,sleep_hours,condition,alcohol,raw,created_at) VALUES(?,?,?,?,?,?,?)",
+            "INSERT INTO vitals (date,weight_kg,sleep_hours,condition,alcohol,body_fat_pct,raw,created_at) VALUES(?,?,?,?,?,?,?,?)",
             (today, float(d["weight_kg"]) if d.get("weight_kg") else None,
              float(d["sleep_hours"]) if d.get("sleep_hours") else None,
-             d.get("condition"), int(d.get("alcohol", 0)), "web", now))
+             d.get("condition"), int(d.get("alcohol", 0)),
+             float(d["body_fat_pct"]) if d.get("body_fat_pct") else None, "web", now))
     except sqlite3.IntegrityError:
         con.execute(
-            "UPDATE vitals SET weight_kg=?,sleep_hours=?,condition=?,alcohol=? WHERE date=?",
+            "UPDATE vitals SET weight_kg=?,sleep_hours=?,condition=?,alcohol=?,body_fat_pct=? WHERE date=?",
             (float(d["weight_kg"]) if d.get("weight_kg") else None,
              float(d["sleep_hours"]) if d.get("sleep_hours") else None,
-             d.get("condition"), int(d.get("alcohol", 0)), today))
+             d.get("condition"), int(d.get("alcohol", 0)),
+             float(d["body_fat_pct"]) if d.get("body_fat_pct") else None, today))
     con.commit(); con.close()
     return jsonify({"ok": True})
 
