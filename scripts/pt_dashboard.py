@@ -1204,7 +1204,7 @@ setTrendRange(90);
     <h3>🥗 식단 추가</h3>
     <div class="form-row"><label>날짜</label><input type="date" id="d-date"></div>
     <div class="form-row"><label>식사 시간</label>
-      <select id="d-meal"><option value="">선택</option><option>아침</option><option>점심</option><option>저녁</option><option>간식</option><option>물</option></select></div>
+      <select id="d-meal"><option value="">선택</option><option>아침</option><option>점심</option><option>저녁</option><option>간식</option><option>물</option><option>단백질</option></select></div>
     <div class="form-row"><label>메뉴</label><textarea id="d-items" rows="3" placeholder="닭가슴살 200g, 밥 1공기..."></textarea></div>
     <div class="form-row"><label>단백질 (g, 선택)</label><input type="number" id="d-protein" placeholder="-"></div>
     <button class="btn-submit" onclick="submitForm('diet',{date:document.getElementById('d-date').value||undefined,meal:document.getElementById('d-meal').value||undefined,items:document.getElementById('d-items').value,protein_g:document.getElementById('d-protein').value||null})">&#x2713; 저장</button>
@@ -1255,7 +1255,7 @@ setTrendRange(90);
     <input type="hidden" id="ed-id">
     <div class="form-row"><label>날짜</label><input type="date" id="ed-date"></div>
     <div class="form-row"><label>식사 시간</label>
-      <select id="ed-meal"><option value="">선택</option><option>아침</option><option>점심</option><option>저녁</option><option>간식</option><option>물</option></select></div>
+      <select id="ed-meal"><option value="">선택</option><option>아침</option><option>점심</option><option>저녁</option><option>간식</option><option>물</option><option>단백질</option></select></div>
     <div class="form-row"><label>메뉴</label><textarea id="ed-items" rows="3"></textarea></div>
     <div class="form-row"><label>단백질 (g)</label><input type="number" id="ed-protein" placeholder="-"></div>
     <button class="btn-submit" onclick="submitEditForm('diet')">&#x2713; 수정 저장</button>
