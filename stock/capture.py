@@ -114,16 +114,27 @@ def capture_dashboard(path=SCREENSHOT_PATH):
 
             # 스크린샷 범위: 헤더 + 지수 스냅샷 + 분할 매수 투자 타이밍(.strategy-section)까지만.
             # 관심종목(.custom-stocks-section)·푸터는 브리핑에서 제외 요청됨.
-            # → .container 전체가 아니라, 상단부터 .strategy-section 하단까지만 클립해서 캡처.
+            # → .container 전체가 아니라, 상단부터 .strategy-section 하단(+여백)까지만 클립해서 캡처.
             os.makedirs(os.path.dirname(path), exist_ok=True)
             container_box = page.locator(".container").bounding_box()
             strategy_box = page.locator(".strategy-section").bounding_box()
             if container_box and strategy_box:
+                clip_height = (strategy_box["y"] + strategy_box["height"]) - container_box["y"] + 16
+                # ⚠️ clip 은 "현재 뷰포트 안에 실제로 렌더된 영역"만 캡처 가능하다.
+                #    처음 뷰포트는 1080px 고정이라, 지수 2줄(3x2)+투자 타이밍 카드가 많아지면
+                #    필요한 캡처 높이가 1080px 를 넘어서고 그만큼 잘려 나갔다("너무 많이 짤림").
+                #    → 필요한 높이만큼 뷰포트를 먼저 넉넉히 키운 뒤 좌표를 다시 재서 캡처한다.
+                needed_h = int(container_box["y"] + clip_height) + 20
+                if needed_h > page.viewport_size["height"]:
+                    page.set_viewport_size({"width": 1320, "height": needed_h})
+                    container_box = page.locator(".container").bounding_box()
+                    strategy_box = page.locator(".strategy-section").bounding_box()
+                    clip_height = (strategy_box["y"] + strategy_box["height"]) - container_box["y"] + 16
                 clip = {
                     "x": container_box["x"],
                     "y": container_box["y"],
                     "width": container_box["width"],
-                    "height": (strategy_box["y"] + strategy_box["height"]) - container_box["y"],
+                    "height": clip_height,
                 }
                 page.screenshot(path=path, clip=clip)
             else:
