@@ -25,6 +25,8 @@ python3 ~/.openclaw/scripts/save_message.py --json '{
 
 - 세 종류(workouts/diet/vitals)는 **있는 것만** 넣는다. 없으면 키 자체를 생략.
 - `date` 는 오늘이면 생략 가능(기본 오늘). 사용자가 "어제" 등을 말하면 그 날짜로.
+- `diet.meal` 은 **아침/점심/저녁/간식/물** 로 통일한다. 물·수분 섭취는 항상 `meal:"물"`(⚠️ "수분"
+  쓰지 말 것 — 예전에 "물"/"수분"으로 제각각 저장돼서 검색이 안 되던 문제가 있었음).
 - `weight_kg`, `protein_g`, `sets`, `reps` 등 **모르는 값은 넣지 말고 생략**(추측 금지).
 - `condition` 은 excellent/good/fair/tired/poor 중 하나. `vitals` 는 같은 날짜면 덮어쓰기(upsert)된다.
 - 명령 출력에 `운동 N개 / 식단 N개 / 바이탈 저장` 이 뜨면 성공. 그 뒤에 사용자에게
