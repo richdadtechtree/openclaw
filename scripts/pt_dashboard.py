@@ -23,6 +23,17 @@ import pt_challenges as chal
 
 DB_PATH = Path.home() / "pt_data" / "pt.db"
 
+# 식사 카테고리 통일 — 아침/점심/저녁/간식/물. '수분' 등 물의 다른 표현이 저장 요청에
+# 섞여 들어와도 전부 '물' 로 정규화(save_message.py 의 동일 매핑과 맞춰둘 것).
+MEAL_ALIASES = {'수분': '물', '음수': '물', '워터': '물', 'water': '물', 'Water': '물'}
+
+
+def normalize_meal(meal):
+    if not meal:
+        return meal
+    m = str(meal).strip()
+    return MEAL_ALIASES.get(m, m)
+
 
 # ── .env 로딩 ────────────────────────────────────────────────────────────────
 # 다른 스크립트(slack_briefing 등)와 동일하게 여러 위치의 .env 를 훑는다(기존값 우선).
@@ -1181,7 +1192,7 @@ setTrendRange(90);
     <h3>🥗 식단 추가</h3>
     <div class="form-row"><label>날짜</label><input type="date" id="d-date"></div>
     <div class="form-row"><label>식사 시간</label>
-      <select id="d-meal"><option value="">선택</option><option>아침</option><option>점심</option><option>저녁</option><option>간식</option></select></div>
+      <select id="d-meal"><option value="">선택</option><option>아침</option><option>점심</option><option>저녁</option><option>간식</option><option>물</option></select></div>
     <div class="form-row"><label>메뉴</label><textarea id="d-items" rows="3" placeholder="닭가슴살 200g, 밥 1공기..."></textarea></div>
     <div class="form-row"><label>단백질 (g, 선택)</label><input type="number" id="d-protein" placeholder="-"></div>
     <button class="btn-submit" onclick="submitForm('diet',{date:document.getElementById('d-date').value||undefined,meal:document.getElementById('d-meal').value||undefined,items:document.getElementById('d-items').value,protein_g:document.getElementById('d-protein').value||null})">&#x2713; 저장</button>
@@ -1232,7 +1243,7 @@ setTrendRange(90);
     <input type="hidden" id="ed-id">
     <div class="form-row"><label>날짜</label><input type="date" id="ed-date"></div>
     <div class="form-row"><label>식사 시간</label>
-      <select id="ed-meal"><option value="">선택</option><option>아침</option><option>점심</option><option>저녁</option><option>간식</option></select></div>
+      <select id="ed-meal"><option value="">선택</option><option>아침</option><option>점심</option><option>저녁</option><option>간식</option><option>물</option></select></div>
     <div class="form-row"><label>메뉴</label><textarea id="ed-items" rows="3"></textarea></div>
     <div class="form-row"><label>단백질 (g)</label><input type="number" id="ed-protein" placeholder="-"></div>
     <button class="btn-submit" onclick="submitEditForm('diet')">&#x2713; 수정 저장</button>
@@ -1414,7 +1425,7 @@ def edit_diet(rec_id):
     con = get_db()
     con.execute(
         "UPDATE diet SET date=?, meal=?, items=?, protein_g=? WHERE id=?",
-        (d["date"], d.get("meal"), d["items"],
+        (d["date"], normalize_meal(d.get("meal")), d["items"],
          float(d["protein_g"]) if d.get("protein_g") else None, rec_id)
     )
     con.commit(); con.close()
@@ -1487,7 +1498,7 @@ def add_diet():
     con = get_db()
     con.execute(
         "INSERT INTO diet (date,meal,items,protein_g,raw,created_at) VALUES(?,?,?,?,?,?)",
-        (today, d.get("meal"), d["items"],
+        (today, normalize_meal(d.get("meal")), d["items"],
          float(d["protein_g"]) if d.get("protein_g") else None, "web", now))
     con.commit(); con.close()
     return jsonify({"ok": True})
