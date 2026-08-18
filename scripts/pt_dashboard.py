@@ -483,14 +483,14 @@ tr:hover td { background: var(--card2); }
 <!-- 오버뷰 -->
 <div id="tab-overview" class="panel active">
   <div class="trend-header">
-    <div class="section-title" style="margin-bottom:0">📈 체중·체지방률 변화</div>
+    <div class="section-title" style="margin-bottom:0">📈 체중·체지방률·단백질 변화</div>
     <div class="trend-range-pills" id="trend-range-pills">
       <button class="range-pill" data-days="30" onclick="setTrendRange(30)">30일</button>
       <button class="range-pill" data-days="90" onclick="setTrendRange(90)">90일</button>
       <button class="range-pill" data-days="0" onclick="setTrendRange(0)">전체</button>
     </div>
   </div>
-  <div class="grid2" style="margin-bottom:24px">
+  <div class="grid3" style="margin-bottom:24px">
     <div class="card">
       <div class="card-title">⚖️ 체중</div>
       <div class="trend-stat" id="trend-weight-stat">기록 없음</div>
@@ -500,6 +500,11 @@ tr:hover td { background: var(--card2); }
       <div class="card-title">📉 체지방률</div>
       <div class="trend-stat" id="trend-bodyfat-stat">기록 없음</div>
       <div id="trend-bodyfat-chart" class="trend-chart-wrap"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">🥩 단백질 (일일 총량)</div>
+      <div class="trend-stat" id="trend-protein-stat">기록 없음</div>
+      <div id="trend-protein-chart" class="trend-chart-wrap"></div>
     </div>
   </div>
 
@@ -881,16 +886,23 @@ function setTrendRange(days) {
 }
 
 async function loadTrendCharts() {
-  const r = await fetch('/api/vitals/trend?days=' + trendRangeDays);
-  const rows = await r.json();
+  const [vr, pr] = await Promise.all([
+    fetch('/api/vitals/trend?days=' + trendRangeDays),
+    fetch('/api/diet/protein-trend?days=' + trendRangeDays),
+  ]);
+  const rows = await vr.json();
+  const proteinRows = await pr.json();
 
   const weightPts = rows.filter(x => x.weight_kg != null).map(x => ({date: x.date, value: x.weight_kg}));
   const bfPts = rows.filter(x => x.body_fat_pct != null).map(x => ({date: x.date, value: x.body_fat_pct}));
+  const proteinPts = proteinRows.filter(x => x.total != null).map(x => ({date: x.date, value: Math.round(x.total)}));
 
   renderTrendStat('trend-weight-stat', weightPts, 'kg');
   renderTrendStat('trend-bodyfat-stat', bfPts, '%');
+  renderTrendStat('trend-protein-stat', proteinPts, 'g');
   renderTrendChart('trend-weight-chart', weightPts, getComputedStyle(document.documentElement).getPropertyValue('--blue').trim(), 'kg');
   renderTrendChart('trend-bodyfat-chart', bfPts, getComputedStyle(document.documentElement).getPropertyValue('--orange').trim(), '%');
+  renderTrendChart('trend-protein-chart', proteinPts, getComputedStyle(document.documentElement).getPropertyValue('--green').trim(), 'g');
 }
 
 function renderTrendStat(elId, pts, unit) {
@@ -1378,6 +1390,27 @@ def api_vitals_trend():
             "SELECT date, weight_kg, body_fat_pct FROM vitals "
             "WHERE weight_kg IS NOT NULL OR body_fat_pct IS NOT NULL "
             "ORDER BY date ASC")
+    return jsonify(rows)
+
+
+@app.route("/api/diet/protein-trend")
+def api_diet_protein_trend():
+    # 메인 오버뷰 단백질 그래프용: 날짜별 단백질 총합(g수 기록된 항목만 집계). days=0 이면 전체 기간.
+    try:
+        days = int(request.args.get("days", 90))
+    except (TypeError, ValueError):
+        days = 90
+    if days > 0:
+        since = (date.today() - timedelta(days=days)).isoformat()
+        rows = db_query(
+            "SELECT date, SUM(protein_g) as total FROM diet "
+            "WHERE date >= ? AND protein_g IS NOT NULL "
+            "GROUP BY date ORDER BY date ASC", (since,))
+    else:
+        rows = db_query(
+            "SELECT date, SUM(protein_g) as total FROM diet "
+            "WHERE protein_g IS NOT NULL "
+            "GROUP BY date ORDER BY date ASC")
     return jsonify(rows)
 
 
