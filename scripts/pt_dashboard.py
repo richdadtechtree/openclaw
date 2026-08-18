@@ -16,7 +16,7 @@ from pathlib import Path
 
 import requests
 from flask import (Flask, jsonify, render_template_string, request,
-                   session, redirect)
+                   session, redirect, Response)
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pt_challenges as chal
@@ -391,6 +391,22 @@ tr:hover td { background: var(--card2); }
 .briefing-search-row select { padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px;
   background: var(--card); color: var(--text); font-size: 14px; }
 .briefing-search-row .btn-add { width: auto; margin-top: 0; margin-left: 0; }
+.bf-calendar-header { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 10px; }
+.bf-calendar-header button { background: var(--card2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 13px; }
+.bf-calendar-header button:hover { opacity: .8; }
+.bf-calendar-label { font-size: 13px; font-weight: 600; min-width: 90px; text-align: center; }
+.cal-briefing { background: linear-gradient(135deg, rgba(188,140,255,.32), rgba(210,153,34,.22));
+  color: var(--purple); border: 1px solid rgba(188,140,255,.45); cursor: pointer; }
+.cal-briefing.selected { box-shadow: 0 0 0 2px var(--orange); }
+.briefing-export-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.briefing-export-row input[type=date] { padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--card); color: var(--text); font-size: 13px; }
+.briefing-export-row .btn-add { width: auto; margin-top: 0; margin-left: 0; }
+.bf-filter-badge { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--purple);
+  background: rgba(188,140,255,.12); border-radius: 20px; padding: 6px 12px; margin-bottom: 14px; }
+.bf-filter-badge button { background: none; border: none; color: var(--purple); cursor: pointer;
+  font-size: 14px; font-weight: 700; line-height: 1; padding: 0; }
 .btn-del { background: none; border: none; cursor: pointer; opacity: .4; font-size: 14px; padding: 2px 6px; border-radius: 4px; transition: all .2s; }
 .btn-del:hover { opacity: 1; color: var(--red); background: rgba(248,81,73,.15); }
 .btn-edit { background: none; border: none; cursor: pointer; opacity: .4; font-size: 14px; padding: 2px 6px; border-radius: 4px; transition: all .2s; margin-right: 2px; }
@@ -556,20 +572,45 @@ tr:hover td { background: var(--card2); }
 
 <!-- 브리핑 보드 -->
 <div id="tab-briefings" class="panel">
-  <div class="card">
-    <div class="section-title">📢 브리핑 보드</div>
-    <div class="stat-sub" style="margin:-4px 0 14px">과거 데일리·주간 브리핑을 검색해서 찾아볼 수 있어요.</div>
-    <div class="briefing-search-row">
-      <input type="text" id="bf-q" placeholder="내용 검색 (예: 단백질, 풀업, 수면...)"
-             onkeydown="if(event.key==='Enter')searchBriefings()">
-      <select id="bf-type">
-        <option value="">전체</option>
-        <option value="daily">📄 일침</option>
-        <option value="weekly">📅 주간</option>
-      </select>
-      <button class="btn-add" onclick="searchBriefings()">🔍 검색</button>
+  <div class="grid2" style="align-items:start">
+    <div class="card">
+      <div class="section-title">📅 날짜별 보기</div>
+      <div class="stat-sub" style="margin:-4px 0 12px">보라색으로 표시된 날짜를 클릭하면 그날 기록만 보여요.</div>
+      <div class="bf-calendar-header">
+        <button onclick="bfCalShift(-1)">◀</button>
+        <span class="bf-calendar-label" id="bf-cal-label">-</span>
+        <button onclick="bfCalShift(1)">▶</button>
+      </div>
+      <div class="calendar" id="bf-calendar"></div>
     </div>
-    <div id="bf-results" style="margin-top:16px"></div>
+    <div class="card">
+      <div class="section-title">📢 브리핑 보드</div>
+      <div class="stat-sub" style="margin:-4px 0 14px">과거 데일리·주간 브리핑을 검색해서 찾아볼 수 있어요.</div>
+      <div class="briefing-search-row">
+        <input type="text" id="bf-q" placeholder="내용 검색 (예: 단백질, 풀업, 수면...)"
+               onkeydown="if(event.key==='Enter')searchBriefings()">
+        <select id="bf-type">
+          <option value="">전체</option>
+          <option value="daily">📄 일침</option>
+          <option value="weekly">📅 주간</option>
+        </select>
+        <button class="btn-add" onclick="searchBriefings()">🔍 검색</button>
+      </div>
+
+      <div class="section-title" style="font-size:13px;margin-top:20px">⬇️ 기간 지정 마크다운 다운로드</div>
+      <div class="stat-sub" style="margin:-2px 0 10px">브리핑 방식 개선용으로 기간 내 기록을 .md 파일로 받아요.</div>
+      <div class="briefing-export-row">
+        <input type="date" id="bf-export-start">
+        <span class="stat-sub">~</span>
+        <input type="date" id="bf-export-end">
+        <button class="btn-add" onclick="downloadBriefings()">⬇️ 다운로드</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:20px">
+    <div id="bf-date-filter-badge"></div>
+    <div id="bf-results"></div>
   </div>
 </div>
 
@@ -814,14 +855,24 @@ async function loadBriefings() {
 }
 
 // 브리핑 보드 검색
+let bfSelectedDate = null;   // 달력에서 클릭한 날짜(YYYY-MM-DD) — 있으면 그 날짜만 조회
+let bfCalDate = new Date();  // 브리핑 보드 달력에 표시 중인 월
+
 async function searchBriefings() {
   const q = document.getElementById('bf-q').value.trim();
   const type = document.getElementById('bf-type').value;
   const params = new URLSearchParams();
   if (q) params.set('q', q);
   if (type) params.set('type', type);
+  if (bfSelectedDate) params.set('date', bfSelectedDate);
   const r = await fetch('/api/briefings/search?' + params.toString());
   const items = await r.json();
+
+  const badge = document.getElementById('bf-date-filter-badge');
+  badge.innerHTML = bfSelectedDate
+    ? `<div class="bf-filter-badge">📅 ${bfSelectedDate} 만 보는 중<button onclick="bfClearDateFilter()">✕</button></div>`
+    : '';
+
   const el = document.getElementById('bf-results');
   if (!items.length) { el.innerHTML = '<div class="empty-state">검색 결과가 없습니다</div>'; return; }
   el.innerHTML = `<div class="stat-sub" style="margin-bottom:10px">총 ${items.length}건</div>` + items.map(b => `
@@ -832,6 +883,64 @@ async function searchBriefings() {
       <div class="briefing-content">${b.content}</div>
       <div class="briefing-date">${b.date}</div>
     </div>`).join('');
+}
+
+function bfClearDateFilter() {
+  bfSelectedDate = null;
+  renderBfCalendar();
+  searchBriefings();
+}
+
+// 브리핑 보드 달력 — 브리핑이 있는 날짜만 클릭 가능, 클릭하면 그 날짜만 검색
+async function renderBfCalendar() {
+  const y = bfCalDate.getFullYear(), m = bfCalDate.getMonth();
+  const monthStr = `${y}-${String(m+1).padStart(2,'0')}`;
+  document.getElementById('bf-cal-label').textContent = `${y}년 ${m+1}월`;
+
+  const r = await fetch('/api/briefings/dates?month=' + monthStr);
+  const d = await r.json();
+  const bdates = new Set(d.dates || []);
+
+  const cal = document.getElementById('bf-calendar');
+  cal.innerHTML = '';
+  const first = new Date(y, m, 1).getDay();
+  const days = new Date(y, m+1, 0).getDate();
+  const todayStr = new Date().toISOString().slice(0,10);
+  ['일','월','화','수','목','금','토'].forEach(dn => {
+    const h = document.createElement('div');
+    h.style.cssText = 'font-size:10px;color:var(--muted);text-align:center;padding:4px 0;font-weight:600';
+    h.textContent = dn; cal.appendChild(h);
+  });
+  for (let i=0;i<first;i++) {
+    const e=document.createElement('div'); e.className='cal-day cal-empty'; cal.appendChild(e);
+  }
+  for (let i=1;i<=days;i++) {
+    const ds = `${monthStr}-${String(i).padStart(2,'0')}`;
+    const has = bdates.has(ds);
+    const el=document.createElement('div');
+    el.className='cal-day ' + (has ? 'cal-briefing' : 'cal-rest');
+    if (ds === todayStr) el.classList.add('cal-today');
+    if (ds === bfSelectedDate) el.classList.add('selected');
+    el.textContent=i;
+    if (has) el.onclick = () => { bfSelectedDate = ds; renderBfCalendar(); searchBriefings(); };
+    cal.appendChild(el);
+  }
+}
+function bfCalShift(delta) {
+  bfCalDate = new Date(bfCalDate.getFullYear(), bfCalDate.getMonth() + delta, 1);
+  renderBfCalendar();
+}
+
+// 브리핑 마크다운 다운로드(기간 지정)
+function downloadBriefings() {
+  const start = document.getElementById('bf-export-start').value;
+  const end = document.getElementById('bf-export-end').value;
+  const type = document.getElementById('bf-type').value;
+  const params = new URLSearchParams();
+  if (start) params.set('start', start);
+  if (end) params.set('end', end);
+  if (type) params.set('type', type);
+  window.location.href = '/api/briefings/export?' + params.toString();
 }
 
 // 챌린지 & 보상 로드
@@ -899,6 +1008,7 @@ loadBriefings();
 searchBriefings();
 loadChallenges();
 loadAchievements();
+renderBfCalendar();
 </script>
 
 <!-- 운동 모달 -->
@@ -1265,9 +1375,10 @@ def get_briefings():
 
 @app.route("/api/briefings/search")
 def search_briefings():
-    # 브리핑 보드: 내용(q) + 종류(type) 로 과거 브리핑 검색. 필터 없으면 전체 최신순.
+    # 브리핑 보드: 내용(q) + 종류(type) + 날짜(date, 달력 클릭) 로 과거 브리핑 검색. 필터 없으면 전체 최신순.
     q = (request.args.get("q") or "").strip()
     btype = (request.args.get("type") or "").strip()
+    bdate = (request.args.get("date") or "").strip()
     sql = "SELECT id, date, type, content FROM briefings WHERE 1=1"
     params = []
     if q:
@@ -1276,8 +1387,57 @@ def search_briefings():
     if btype in ("daily", "weekly"):
         sql += " AND type = ?"
         params.append(btype)
+    if bdate:
+        sql += " AND date = ?"
+        params.append(bdate)
     sql += " ORDER BY date DESC, id DESC LIMIT 200"
     return jsonify(db_query(sql, params))
+
+
+@app.route("/api/briefings/dates")
+def briefings_dates():
+    # 브리핑 보드 달력: 지정한 월(YYYY-MM)에 브리핑이 있는 날짜 목록.
+    month = (request.args.get("month") or "").strip()
+    try:
+        datetime.strptime(month, "%Y-%m")
+    except ValueError:
+        month = date.today().strftime("%Y-%m")
+    rows = db_query("SELECT DISTINCT date FROM briefings WHERE date LIKE ?", (f"{month}%",))
+    return jsonify({"month": month, "dates": [r["date"] for r in rows]})
+
+
+@app.route("/api/briefings/export")
+def export_briefings():
+    # 브리핑 방식 개선용: 기간(start~end) + 종류를 지정해 마크다운(.md) 파일로 다운로드.
+    start = (request.args.get("start") or "").strip() or "0000-01-01"
+    end = (request.args.get("end") or "").strip() or "9999-12-31"
+    btype = (request.args.get("type") or "").strip()
+
+    sql = "SELECT date, type, content FROM briefings WHERE date BETWEEN ? AND ?"
+    params = [start, end]
+    if btype in ("daily", "weekly"):
+        sql += " AND type = ?"
+        params.append(btype)
+    sql += " ORDER BY date ASC, id ASC"
+    rows = db_query(sql, params)
+
+    lines = [f"# 김종국 브리핑 모음 ({start} ~ {end})", ""]
+    if not rows:
+        lines.append("_해당 기간에 브리핑 기록이 없습니다._")
+    for r in rows:
+        label = "📅 주간 브리핑" if r["type"] == "weekly" else "📄 일침 브리핑"
+        lines.append(f"## {r['date']} — {label}")
+        lines.append("")
+        lines.append(r["content"])
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+    md = "\n".join(lines)
+
+    filename = f"briefings_{start}_{end}.md"
+    return Response(
+        md, mimetype="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @app.route("/api/add/briefing", methods=["POST"])
