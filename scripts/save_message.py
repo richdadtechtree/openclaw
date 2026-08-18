@@ -141,18 +141,31 @@ def parse_workouts(text):
 
 
 def parse_diet(text):
-    food_kw = (r'(?:닭가슴살|달걀|계란|두부|소고기|돼지고기|삼겹살|생선|연어|참치|'
-               r'고등어|프로틴|쉐이크|단백질바|오트밀|고구마|현미|샐러드|브로콜리|'
-               r'아보카도|밥|죽|국|찌개|면|라면|피자|치킨|햄버거|빵|과일|견과류)')
+    # 한글 음절 범위 — 키워드 앞뒤가 한글이면(=더 긴 단어의 일부면) 매칭 안 함.
+    # 예: '막국수' 안의 '국'이 독립된 음식으로 잘못 매칭되는 것을 방지.
+    HANGUL = r'가-힣'
+    food_words = ['닭가슴살', '달걀', '계란', '두부', '소고기', '돼지고기', '삼겹살', '생선', '연어', '참치',
+                  '고등어', '프로틴', '쉐이크', '단백질바', '오트밀', '고구마', '현미', '샐러드', '브로콜리',
+                  '아보카도', '밥', '죽', '국', '찌개', '면', '라면', '피자', '치킨', '햄버거', '빵', '과일', '견과류']
+    food_kw = (r'(?<![' + HANGUL + r'])(?:' + '|'.join(food_words) + r')(?![' + HANGUL + r'])')
     foods = re.findall(food_kw + r'(?:\s*\d+\s*[gG개인분])?', text)
     protein = None
     pm = re.search(r'단백질\s*(\d+(?:\.\d+)?)\s*[gG]', text)
     if pm:
         protein = float(pm.group(1))
     meal = next((k for k in ['아침', '점심', '저녁', '간식'] if k in text), None)
-    if foods or protein:
-        return [{'meal': meal, 'items': ', '.join(foods) if foods else text[:100], 'protein_g': protein}]
-    return []
+
+    if foods:
+        items = ', '.join(foods)
+    elif meal:
+        # 화이트리스트에 없는 음식(막국수·메밀만두·아메리카노 등)이어도 통째로 보존 — 유실 방지.
+        items = re.sub(r'^\s*' + re.escape(meal) + r'\s*', '', text).strip() or text[:100]
+    elif protein is not None:
+        items = text[:100]
+    else:
+        return []
+
+    return [{'meal': meal, 'items': items, 'protein_g': protein}]
 
 
 def parse_vitals(text):
