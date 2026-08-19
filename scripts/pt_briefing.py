@@ -128,8 +128,60 @@ ALCOHOL_REMINDERS = [
 
 def get_alcohol_reminder(ref):
     """날짜 기준으로 매일 다른 잔소리 하나 선택(당일 고정, 술 마셨는지 여부와 무관하게 항상 노출)."""
-    idx = ref.timetuple().tm_yday % len(ALCOHOL_REMINDERS)
-    return ALCOHOL_REMINDERS[idx]
+    return pick(ALCOHOL_REMINDERS, ref)
+
+
+# ── 김종국 시그니처 뱅크 (workspace/keepgoing/engines/CueEngine.md 와 같은 재료) ───────
+# 매일 날짜 기준으로 하나씩 돌려 쓴다 → 같은 문장이 연속으로 나오지 않는다.
+
+def pick(seq, ref, offset=0):
+    """날짜(연중 일수) 기준 결정론적 선택. offset 으로 같은 날 서로 다른 뱅크가 겹치지 않게 한다."""
+    return seq[(ref.timetuple().tm_yday + offset) % len(seq)]
+
+
+# 🔧 오늘의 한 줄 코칭 — 김종국 코칭의 핵심(이완/견갑/가슴 오픈/고립/견디기)을 매일 하나씩
+DAILY_CUES = [
+    "수축에만 집중하지 말고 *늘리는 것(이완)* 에 집중해. 자극은 거기서 나와.",
+    "내릴 때 3초 버텨. 웨이트는 드는 게 아니라 견디는 거야.",
+    "등 할 땐 팔로 당기지 말고 날개뼈부터 움직여. 팔은 갈고리일 뿐이야.",
+    "가슴 할 땐 몸 웅크리지 말고 가슴 먼저 띄워. 가슴 열고!",
+    "팔꿈치 벌어지면 궤적 무너지고 어깨로 다 새 나가. 엘보 각도 챙겨.",
+    "무게 욕심내지 마. 무게는 자극의 수단이지 목표가 아니야.",
+    "세트 끝나고 '어디 느껴졌어?' 스스로 물어봐. 답 못 하면 자세가 틀린 거야.",
+    "마지막 1~2개가 진짜 운동이야. 앞의 8개는 거기 가려고 하는 거고.",
+    "쉬는 시간 줄여봐. 30~60초. 40분이면 충분히 털 수 있어.",
+    "후면(등/어깨 뒤) 먼저 해. 힘 있을 때 해야 만들어지는 부위야.",
+    "복근은 헬스장 말고 집에서. 매일 그냥 하는 거야.",
+    "안 쉬면 안 커. 근육은 쉬는 날 자라는 거야. 억지로라도 하루 쉬어.",
+]
+
+# 🗣️ 한마디 — 상황별로 여러 개 두고 날짜로 로테이션
+CLOSERS_GOOD = [   # 운동·단백질·수면 다 잡은 날
+    "오~ 오늘 맛있었지? ㅎ 운동·식단·수면 다 잡았어. 이게 완성이야 ㅎ",
+    "야~ 오늘 제대로 먹었다 ㅎ 이런 날이 쌓여서 몸이 바뀌는 거야.",
+    "아 좋다 ㅎ 오늘 같은 날만 있으면 내가 할 말이 없어 ㅎ 이대로 가자.",
+    "몸 올라오는 소리 들린다 ㅎ 오늘은 진짜 칭찬해 줄게. 딱 한 번만 ㅎ",
+]
+CLOSERS_MID = [    # 운동은 했지만 뭔가 빠진 날
+    "운동은 해냈어 ㅎ 나머지 하나씩만 더 챙기면 돼. 잘하고 있어, 믿는다.",
+    "일단 몸은 움직였다 ㅎ 근데 먹는 것까지가 운동이야. 거기만 채우자.",
+    "오늘은 좀 싱거웠어 ㅎ 다음엔 간 좀 세게 해보자.",
+    "했으면 됐지 뭐 ㅎ 근데 여기서 만족하면 딱 여기까지야. 내일 하나 더.",
+]
+CLOSERS_NONE = [   # 운동 기록이 없는 날
+    "힘든 건 몸이 아니라 마음이야. 오늘부터 운동한다 말고, 새로운 삶을 산다고 생각해. 내일 딱 40분 ㅎ",
+    "늘 컨디션 좋은 사람은 없어. 좋은 것처럼 나를 속이고 가는 거야. 내일은 발부터 붙이자.",
+    "ㅎ 변명 그만하고 ㅎ 내일 몇 시에 할 거야? 시간부터 정해.",
+    "다시 시작하는 게 제일 어려운 거야. 내일 10분이라도 해 — 스쿼트 20개, 푸시업 20개.",
+]
+
+# 👨‍👩‍👧 마무리 — 항상 가족으로 닫는다 (형준이를 실제로 움직이는 버튼)
+FAMILY_CLOSERS = [
+    "아이들이랑 오래 뛰어놀려면 체력이 있어야지 ㅎ",
+    "건강한 아빠가 최고의 아빠야 ㅎ",
+    "가족이랑 건강하게 오래오래 살자고 하는 거야 ㅎ",
+    "네 몸은 너 혼자 것도 아니야. 가족 생각해 ㅎ",
+]
 
 
 def fmt_workout(w):
@@ -200,24 +252,27 @@ def build_daily(con, ref):
 
     # 운동
     if workouts:
-        goods.append(f"운동 {len(workouts)}개 해냈어. 이거 자체가 제일 잘한 거야 ㅎ")
+        goods.append(f"운동 {len(workouts)}개 해냈어. 야~ 오늘 제대로 먹었네 ㅎ")
         if streak >= 2:
             goods.append(f"{streak}일 연속 유지 중 🔥 습관 잡히는 소리 들린다 ㅎ")
     else:
         bads.append("오늘 운동 기록이 없어. 안 한 거면 그게 제일 아쉬운 거야 ㅎ")
         fixes.append("내일은 딱 40분. 후면(등/어깨 뒤) 먼저 → 전면 → 마무리. 집이면 스쿼트+푸시업이라도.")
+        fixes.append("늘 컨디션 좋은 사람은 없어. 좋은 것처럼 나를 속이고 일단 발부터 붙이는 거야.")
 
     # 단백질
     if protein_total >= protein_goal:
-        goods.append(f"단백질 {protein_total:.0f}g 챙겼다 👍 운동은 먹는 것까지가 운동이야.")
+        goods.append(f"단백질 {protein_total:.0f}g 챙겼다 👍 먹는 것까지가 운동이야. 이걸로 완성이지 ㅎ")
     elif protein_total > 0:
         need = protein_goal - protein_total
-        bads.append(f"단백질이 목표({protein_goal:.0f}g)보다 {need:.0f}g 모자라.")
+        bads.append(f"단백질이 목표({protein_goal:.0f}g)보다 {need:.0f}g 모자라. "
+                    f"운동해놓고 안 먹으면 그건 운동이 아니라 노동이야.")
         fixes.append(f"내일은 단백질 {need:.0f}g 더 — 계란/닭가슴살/두부/그릭요거트로 채워 ㅎ")
     elif diet:
         fixes.append("먹은 건 적었는데 단백질 g수가 없네. g수까지 적어줘야 내가 계산해주지 ㅎ")
     else:
-        bads.append("식단 기록이 아예 없어. 굶었으면 그게 제일 나빠. 굶지 마 ㅎ")
+        bads.append("식단 기록이 아예 없어. 굶었으면 그게 제일 나빠. 굶지 마 제발 ㅎ "
+                    "양을 줄이는 게 아니라 종류를 바꾸는 거야.")
         fixes.append("끼니마다 뭘 먹었는지 한 줄이라도 남겨. 종류만 바꿔도 몸 바뀐다.")
 
     # 수면
@@ -225,17 +280,20 @@ def build_daily(con, ref):
         if sleep_h >= sleep_min:
             goods.append(f"수면 {sleep_h}h. 잘 잤어 — 잠이 곧 회복이고 근육이야 ㅎ")
         else:
-            bads.append(f"수면 {sleep_h}h밖에 안 됐어. {sleep_min:.0f}시간은 자야 근육이 큰다.")
+            bads.append(f"수면 {sleep_h}h밖에 안 됐어. {sleep_min:.0f}시간은 자야 근육이 큰다. "
+                        f"안 쉬면 안 커 — 근육은 쉬는 날 자라는 거야.")
             fixes.append("오늘은 폰 내려놓고 30분 일찍 눕자. 회복도 훈련이야.")
 
     # 술
     if has_vital and vital.get("alcohol"):
-        bads.append("술 마셨네 ㅎ... 몸이 회복을 못 해.")
-        fixes.append("벌칙: 내일 유산소 30분 추가다. 빠르게 걷기든 자전거든. 각오해 ㅎ")
+        bads.append("술 마셨네... 알코올 들어가는 순간 근합성 스톱이야. "
+                    "오늘 찢어놓은 근육이 그냥 날아가는 거다.")
+        fixes.append("벌칙: 내일 공복 유산소 30분 추가 + 물 3L. 루틴은 그대로 간다. 각오해 ㅎ")
 
     # 컨디션
-    if has_vital and vital.get("condition") in ("나쁨", "안좋음", "피곤"):
-        fixes.append("컨디션 별로면 무리하지 마. 쉬는 것도 운동이야. 회복 우선.")
+    if has_vital and vital.get("condition") in ("나쁨", "안좋음", "피곤", "tired", "poor", "fair"):
+        fixes.append("컨디션 별로면 무리하지 마. 힘든 거랑 아픈 건 달라 — "
+                     "아픈 거면 오늘은 접고 회복이 우선이야. 쉬는 것도 운동이다.")
 
     if not goods:
         goods.append("음... 오늘은 콕 집어 칭찬할 게 잘 안 보여 ㅎ 내일은 하나라도 만들자.")
@@ -257,6 +315,11 @@ def build_daily(con, ref):
         L.append(f"  • {f}")
     L.append("")
 
+    # ── 오늘의 한 줄 코칭 — 김종국 코칭의 핵심(이완/궤적/고립)을 매일 하나씩 ────────
+    L.append("🔧 *오늘의 한 줄 코칭*")
+    L.append(f"  • {pick(DAILY_CUES, ref)}")
+    L.append("")
+
     # ── 오늘의 잔소리(금주 리마인더) — 술 마셨는지와 무관하게 하루 한 번 상기 ─────
     L.append("🍺 *오늘의 잔소리*")
     L.append(f"  • {get_alcohol_reminder(ref)}")
@@ -264,12 +327,12 @@ def build_daily(con, ref):
 
     # ── 한마디 ───────────────────────────────────────────────────────
     if workouts and protein_total >= protein_goal and (sleep_h is None or sleep_h >= sleep_min):
-        L.append("🗣️ 오~ 오늘 맛있었지? ㅎ 운동·식단·수면 다 잡았어. 이게 완성이야. 이대로 가자 ㅎ")
+        closer = pick(CLOSERS_GOOD, ref)
     elif workouts:
-        L.append("🗣️ 운동은 해냈어 ㅎ 나머지 하나씩만 더 챙기면 된다. 잘하고 있어, 믿는다.")
+        closer = pick(CLOSERS_MID, ref)
     else:
-        L.append("🗣️ 힘든 건 몸이 아니라 마음이야. 오늘부터 운동이 아니라 새로운 삶을 산다고 생각해. "
-                 "내일 딱 40분만. 약속 ㅎ")
+        closer = pick(CLOSERS_NONE, ref)
+    L.append(f"🗣️ {closer} {pick(FAMILY_CLOSERS, ref, 3)}")
 
     return "\n".join(L)
 
@@ -367,8 +430,10 @@ def build_weekly(con, ref):
     L.append(f"  2. 하루 단백질 {protein_goal:.0f}g 챙기기")
     L.append(f"  3. 매일 {sleep_min:.0f}시간 이상 자기")
     L.append("")
-    L.append("🗣️ 운동은 꾸준히 하면 배신 안 해. 아이들이랑 뛰어놀려면 체력이 있어야지 ㅎ "
-             "다음 주도 가보자 ㅎ")
+    L.append(f"🔧 다음 주 포인트 — {pick(DAILY_CUES, ref, 5)}")
+    L.append("")
+    L.append(f"🗣️ 운동은 꾸준히 하면 배신 안 해. 어제보다 오늘 반 개만 더 하면 이긴 거야 ㅎ "
+             f"{pick(FAMILY_CLOSERS, ref, 1)} 다음 주도 가보자 ㅎ")
 
     return "\n".join(L)
 
