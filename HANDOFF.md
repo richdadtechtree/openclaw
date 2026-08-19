@@ -52,6 +52,28 @@
   ⚠️ cron 은 서버 로컬 타임존 기준. 서버가 KST 아니면 `DAILY_SCHEDULE`/`WEEKLY_SCHEDULE` 로 시각 환산.
 - **웹 표시**: 대시보드(`pt_dashboard.py`, `http://mystatus-btr.duckdns.org`)의 "📢 김종국 브리핑" 섹션에 자동 노출. claude.ai 미리보기 아티팩트도 게시됨(위 대화 참고).
 
+## 🎭 종국이 페르소나(Soul/Identity) 강화 — ✅ 신규 (2026-08-19)
+
+실제 유튜브 'GYM JONG KOOK(짐종국)' 분석을 반영해 종국이 캐릭터를 **3층 구조**로 재정리했다.
+(기존엔 `SOUL.md`가 "이모지·ㅎ 금지, 냉정한 톤", `IDENTITY.md`가 "ㅎ 자주, 감탄사"로 **서로 충돌**했었음.)
+
+| 파일 | 역할 | 우선순위 |
+|---|---|---|
+| `workspace/keepgoing/SOUL.md` | **왜** — 5대 신념·코칭 범위·벌칙 프로토콜·기록 저장 규칙 | 1 |
+| `workspace/keepgoing/IDENTITY.md` | **어떻게** — 말투 정본. 평소/세트 2모드, '맛' 어휘, 자세 3대 체크 | 2 |
+| `workspace/keepgoing/engines/CueEngine.md` | **무슨 말** — 시그니처 대사 뱅크·부위별 큐·상황별 스크립트 (신규) | 3 |
+
+- 핵심 추가: **평소↔세트 모드 스위치**(푸시할 땐 "ㅎ" 빼고 명령형 → 끝나면 즉시 복귀),
+  **이완 중심 코칭**(견갑/가슴 오픈/엘보), **'맛' 어휘**, **먹는 것까지가 운동**, **음주 단호 대응**,
+  안전장치 **"힘든 것 ≠ 아픈 것"**(통증은 푸시 금지).
+- `AGENTS.md`: 페르소나 로드 순서·절대 규칙 3가지·응답 마감 체크리스트 추가.
+- `engines/WorkoutEngine.md`: 세트 질(質) 3기준(이완/타겟감각/마지막 1~2개), 강도 도구(강제반복·드롭세트·템포), 40분 루틴 프레임.
+- `engines/NutritionEngine.md`: 운동 후 골든타임, 식단 프레임 표, 음주 판단 규칙, 직장인 상황별 대응표.
+- **슬랙 실제 문구도 강화**: `scripts/pt_briefing.py` 에 뱅크 추가 —
+  `DAILY_CUES`(🔧 오늘의 한 줄 코칭 섹션 신설), `CLOSERS_GOOD/MID/NONE`, `FAMILY_CLOSERS`.
+  날짜 기준 결정론적 로테이션(`pick()`)이라 같은 문장이 연속으로 안 나온다. 주간 브리핑에도 적용.
+- 미리보기: `python3 scripts/pt_briefing.py daily --print --no-slack --no-db --date YYYY-MM-DD`
+
 ## 🗞️ 슬랙 데일리 다이제스트 (뷰어)
 슬랙 접속 불가 환경에서 '그날 시스템이 슬랙에 보낸 내용'을 claude.ai 아티팩트로 읽는 기능.
 - **로그 수집**: `scripts/slack_log.py`(+`stock/slack_log.py`) `log_slack()` → `~/.openclaw/slack_logs/YYYY-MM-DD.jsonl`(KST, gitignored). 훅: 신문(`slack_text`), 주식 브리핑(`slack_briefing`), 급등락/사이드카(`stock_alert_slack.send_slack` source 태깅). **시스템 발신분만**(뚜떵또 대화·사용자 메시지는 미포함 — 원하면 Slack API 읽기 권한 추가 필요).
