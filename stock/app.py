@@ -51,7 +51,8 @@ def _fetch_slack_history_api(date_str):
         news_ch = os.getenv("SLACK_NEWS_CHANNEL")
         alert_ch = os.getenv("SLACK_ALERT_CHANNEL")
         brief_ch = os.getenv("SLACK_STOCK_CHANNEL") or os.getenv("SLACK_BRIEFING_CHANNEL")
-        
+        gpt_ch = os.getenv("SLACK_GPT_CHANNEL", "C0BTHMT2M7X")
+
         channels = []
         if news_ch:
             channels.append((news_ch, "news"))
@@ -59,6 +60,8 @@ def _fetch_slack_history_api(date_str):
             channels.append((alert_ch, "alert"))
         if brief_ch:
             channels.append((brief_ch, "briefing"))
+        if gpt_ch:
+            channels.append((gpt_ch, "gpt"))
         
         seen_channels = set()
         unique_channels = []
@@ -135,7 +138,8 @@ def _read_slack_log(date):
     news_ch = os.getenv("SLACK_NEWS_CHANNEL")
     alert_ch = os.getenv("SLACK_ALERT_CHANNEL")
     brief_ch = os.getenv("SLACK_STOCK_CHANNEL") or os.getenv("SLACK_BRIEFING_CHANNEL")
-    
+    gpt_ch = os.getenv("SLACK_GPT_CHANNEL", "C0BTHMT2M7X")
+
     if os.path.isfile(path):
         with open(path, encoding="utf-8") as f:
             for line in f:
@@ -155,6 +159,8 @@ def _read_slack_log(date):
                     room_name = "briefing"
                 elif alert_ch and ch_id == alert_ch:
                     room_name = "alert"
+                elif gpt_ch and ch_id == gpt_ch:
+                    room_name = "gpt"
                 elif r.get("source") in ["index-alert", "sidecar", "custom-alert"]:
                     room_name = "alert"
                 elif r.get("source") in ["stock-briefing"]:
