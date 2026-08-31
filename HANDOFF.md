@@ -74,14 +74,12 @@
   날짜 기준 결정론적 로테이션(`pick()`)이라 같은 문장이 연속으로 안 나온다. 주간 브리핑에도 적용.
 - 미리보기: `python3 scripts/pt_briefing.py daily --print --no-slack --no-db --date YYYY-MM-DD`
 
-## 🗞️ 슬랙 데일리 다이제스트 (뷰어)
-슬랙 접속 불가 환경에서 '그날 시스템이 슬랙에 보낸 내용'을 웹(`http://<서버>:8000/slack`)으로 읽는 기능.
-- **로그 수집**: `scripts/slack_log.py`(+`stock/slack_log.py`) `log_slack()` → `~/.openclaw/slack_logs/YYYY-MM-DD.jsonl`(KST, gitignored). 훅: 신문(`slack_text`), 주식 브리핑(`slack_briefing`), 급등락/사이드카(`stock_alert_slack.send_slack` source 태깅).
-- **채널별 조회**: `stock/app.py`의 `_fetch_slack_history_api`가 Slack API(`conversations.history`)로 아래 채널들을 직접 읽어 로컬 로그와 병합. env로 채널 ID 지정(없으면 해당 방 미포함, `SLACK_GPT_CHANNEL`만 기본값 있음):
-  - `SLACK_NEWS_CHANNEL`(신문) / `SLACK_ALERT_CHANNEL`(주식 알림) / `SLACK_STOCK_CHANNEL` or `SLACK_BRIEFING_CHANNEL`(주식 브리핑)
-  - `SLACK_GPT_CHANNEL`(**#gpt** 채널, 뚜떵또 실제 대화방 — ✅ 2026-08-31 추가. 기본값 `C0BTHMT2M7X`, 안 겹치게 다른 값 쓰려면 `.env`에 지정) → 뷰어에 "🤖 GPT 채널" 탭으로 표시. bot_id 있으면 "뚜떵또 답변", 없으면 "사용자 질문"으로 자동 분류(신문/브리핑 문구 매칭 안 되면 일반 bot/user로 폴백).
-- **뷰어**: `stock/slack_digest_live.html` — 시간축 타임라인, 방 탭(전체/브리핑/알림/신문/GPT), 카테고리 필터, 라이트/다크, 20초 자동 갱신.
-- (참고) claude.ai 아티팩트로 볼 때는 `python3 ~/.openclaw/scripts/slack_digest.py [날짜]` 출력 JSON을 Claude 에게 붙이면 그날 실데이터로 갱신 가능.
+## 🗞️ 슬랙 #gpt 채널 다이제스트 (뷰어)
+슬랙 접속 불가 환경에서 **#gpt 채널 대화**를 웹(`http://<서버>:8000/slack`)으로 읽는 기능.
+- ✅ **2026-08-31: #gpt 채널 전용으로 축소.** 원래는 신문/주식브리핑/주식알림 채널까지 방 탭으로 나눠 보여줬으나, 사용자 요청으로 **#gpt 채널만** 표시하도록 단순화(다른 채널 코드는 제거).
+- **조회 방식**: `stock/app.py`의 `_fetch_slack_history_api`가 Slack API(`conversations.history`)로 `SLACK_GPT_CHANNEL`(기본값 `C0BTHMT2M7X`) 채널을 직접 읽고, 로컬 로그(`~/.openclaw/slack_logs/YYYY-MM-DD.jsonl`, 같은 채널 ID인 것만)와 병합. bot_id 있으면 "뚜떵또 답변", 없으면 "사용자 질문"으로 분류.
+- **뷰어**: `stock/slack_digest_live.html` — 시간축 타임라인, 카테고리 필터(뚜떵또 답변/사용자 질문), 라이트/다크, 20초 자동 갱신. 슬랙 `:emoji_code:` 표기는 실제 이모지로 변환(매핑 없는 코드는 표시 안 함).
+- (참고) 신문/주식브리핑/주식알림 채널로 보내는 기능 자체(`slack_briefing.py`, `stock_alert_slack.py` 등)는 그대로 동작 — 이 뷰어에서만 안 보일 뿐.
 
 ## 🔐 PT 대시보드 구글 로그인(OAuth) — 코드 완료, 서버 설정만 남음
 `scripts/pt_dashboard.py`(포트 5001) 접근을 **구글 로그인**으로 잠갔다. 허용된 이메일만 입장.
