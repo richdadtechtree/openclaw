@@ -46,31 +46,10 @@ def _fetch_slack_history_api(date_str):
         token = os.getenv("SLACK_BOT_TOKEN")
         if not token:
             return []
-        
-        # Configure channels to pull from
-        news_ch = os.getenv("SLACK_NEWS_CHANNEL")
-        alert_ch = os.getenv("SLACK_ALERT_CHANNEL")
-        brief_ch = os.getenv("SLACK_STOCK_CHANNEL") or os.getenv("SLACK_BRIEFING_CHANNEL")
-        gpt_ch = os.getenv("SLACK_GPT_CHANNEL", "C0BTHMT2M7X")
 
-        channels = []
-        if news_ch:
-            channels.append((news_ch, "news"))
-        if alert_ch:
-            channels.append((alert_ch, "alert"))
-        if brief_ch:
-            channels.append((brief_ch, "briefing"))
-        if gpt_ch:
-            channels.append((gpt_ch, "gpt"))
-        
-        seen_channels = set()
-        unique_channels = []
-        for ch, room_name in channels:
-            if ch not in seen_channels:
-                seen_channels.add(ch)
-                unique_channels.append((ch, room_name))
-                
-        if not unique_channels:
+        # 뷰어는 #gpt 채널 대화만 표시한다.
+        gpt_ch = os.getenv("SLACK_GPT_CHANNEL", "C0BTHMT2M7X")
+        if not gpt_ch:
             return []
 
         # Start and end of the day in KST (UTC+9)
@@ -79,51 +58,33 @@ def _fetch_slack_history_api(date_str):
         dt_start_kst = datetime(dt_start.year, dt_start.month, dt_start.day, tzinfo=kst_tz)
         ts_start = dt_start_kst.timestamp()
         ts_end = ts_start + 24 * 3600
-        
+
         headers = {"Authorization": f"Bearer {token}"}
-        
+
         all_messages = []
-        for channel, room_name in unique_channels:
-            params = {
-                "channel": channel,
-                "oldest": str(ts_start),
-                "latest": str(ts_end),
-                "limit": 200
-            }
-            res = requests.get("https://slack.com/api/conversations.history", headers=headers, params=params, timeout=15).json()
-            if not res.get("ok"):
-                continue
-                
+        params = {
+            "channel": gpt_ch,
+            "oldest": str(ts_start),
+            "latest": str(ts_end),
+            "limit": 200
+        }
+        res = requests.get("https://slack.com/api/conversations.history", headers=headers, params=params, timeout=15).json()
+        if res.get("ok"):
             for msg in reversed(res.get("messages", [])):
                 ts_val = float(msg.get("ts", 0))
                 dt = datetime.fromtimestamp(ts_val, kst_tz)
                 ts_iso = dt.isoformat(timespec="seconds")
                 text = msg.get("text", "")
-                
+
                 bot_id = msg.get("bot_id")
-                source = "unknown"
-                if bot_id:
-                    if "투자 타이밍 알림" in text:
-                        source = "index-alert"
-                    elif "시장 변동성 경보" in text:
-                        source = "sidecar"
-                    elif "관심 종목" in text:
-                        source = "custom-alert"
-                    elif "신문 브리핑" in text:
-                        source = "news"
-                    elif "시장 브리핑" in text or "주식 브리핑" in text:
-                        source = "stock-briefing"
-                    else:
-                        source = "bot"
-                else:
-                    source = "user"
-                    
+                source = "bot" if bot_id else "user"
+
                 all_messages.append({
                     "ts": ts_iso,
                     "source": source,
                     "kind": "text",
                     "text": text,
-                    "room": room_name
+                    "room": "gpt"
                 })
         return all_messages
     except Exception as e:
@@ -134,10 +95,7 @@ def _fetch_slack_history_api(date_str):
 def _read_slack_log(date):
     path = os.path.join(_SLACK_LOG_DIR, "%s.jsonl" % date)
     local_msgs = []
-    
-    news_ch = os.getenv("SLACK_NEWS_CHANNEL")
-    alert_ch = os.getenv("SLACK_ALERT_CHANNEL")
-    brief_ch = os.getenv("SLACK_STOCK_CHANNEL") or os.getenv("SLACK_BRIEFING_CHANNEL")
+
     gpt_ch = os.getenv("SLACK_GPT_CHANNEL", "C0BTHMT2M7X")
 
     if os.path.isfile(path):
@@ -150,27 +108,14 @@ def _read_slack_log(date):
                     r = _json.loads(line)
                 except Exception:
                     continue
-                
-                ch_id = r.get("channel", "")
-                room_name = "other"
-                if news_ch and ch_id == news_ch:
-                    room_name = "news"
-                elif brief_ch and ch_id == brief_ch:
-                    room_name = "briefing"
-                elif alert_ch and ch_id == alert_ch:
-                    room_name = "alert"
-                elif gpt_ch and ch_id == gpt_ch:
-                    room_name = "gpt"
-                elif r.get("source") in ["index-alert", "sidecar", "custom-alert"]:
-                    room_name = "alert"
-                elif r.get("source") in ["stock-briefing"]:
-                    room_name = "briefing"
-                elif r.get("source") in ["news"]:
-                    room_name = "news"
-                    
+
+                # #gpt 채널 메시지만 표시. 다른 시스템 발신(신문/알림/브리핑)은 제외.
+                if not gpt_ch or r.get("channel", "") != gpt_ch:
+                    continue
+
                 local_msgs.append({"ts": r.get("ts", ""), "source": r.get("source", "unknown"),
-                             "kind": r.get("kind", "text"), "text": r.get("text", ""), "room": room_name})
-    
+                             "kind": r.get("kind", "text"), "text": r.get("text", ""), "room": "gpt"})
+
     api_msgs = _fetch_slack_history_api(date)
     seen = set()
     merged = []
