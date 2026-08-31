@@ -152,8 +152,30 @@ const CATS={
 };
 const cat=s=>CATS[s]||CATS.unknown;
 function esc(s){return s.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))}
+// 슬랙 전용 :emoji_code: 표기를 실제 이모지로 변환. 매핑에 없는 코드는 조용히 제거(영어 텍스트로 안 남게).
+const EMOJI_MAP={
+  red_circle:"🔴",large_orange_circle:"🟠",large_yellow_circle:"🟡",large_green_circle:"🟢",
+  large_blue_circle:"🔵",large_purple_circle:"🟣",large_brown_circle:"🟤",white_circle:"⚪",black_circle:"⚫",
+  mag:"🔍",mag_right:"🔍",pushpin:"📌",round_pushpin:"📍",
+  white_check_mark:"✅",heavy_check_mark:"✔️",x:"❌",warning:"⚠️",exclamation:"❗",question:"❓",
+  newspaper:"📰",bulb:"💡",fire:"🔥",star:"⭐",sparkles:"✨",rocket:"🚀",
+  chart_with_upwards_trend:"📈",chart_with_downwards_trend:"📉",moneybag:"💰",dollar:"💵",bank:"🏦",
+  calendar:"📅",date:"📅",clock1:"🕐",alarm_clock:"⏰",
+  point_right:"👉",point_left:"👈",point_up:"👆",point_down:"👇",
+  thumbsup:"👍","+1":"👍",thumbsdown:"👎","-1":"👎",clap:"👏",
+  loudspeaker:"📢",mega:"📣",bell:"🔔",no_bell:"🔕",
+  email:"📧",envelope:"✉️",memo:"📝",pencil2:"✏️",
+  rotating_light:"🚨",zap:"⚡",boom:"💥",eyes:"👀",tada:"🎉",
+};
+function emojify(s){
+  return s.replace(/:([a-zA-Z][a-zA-Z0-9_+-]{1,30}|[+-]1):/g,(m,name)=>{
+    const e=EMOJI_MAP[name.toLowerCase()];
+    return e!==undefined?e:"";
+  });
+}
 function mrkdwn(raw){
   let o=esc(raw);
+  o=emojify(o);
   o=o.replace(/&lt;(https?:\/\/[^|&]+)\|([^&>]+)&gt;/g,'<a href="$1" target="_blank" rel="noopener noreferrer">$2</a>');
   o=o.replace(/&lt;(https?:\/\/[^&>]+)&gt;/g,'<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
   o=o.replace(/`([^`]+)`/g,"<code>$1</code>");
