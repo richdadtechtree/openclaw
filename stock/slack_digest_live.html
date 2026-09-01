@@ -164,7 +164,7 @@ async function load(){
   render();
 }
 function render(){
-  const msgs=[...(state.data.messages||[])].sort((a,b)=>(b.ts||"").localeCompare(a.ts||""));
+  const msgs=[...(state.data.messages||[])].sort((a,b)=>(a.ts||"").localeCompare(b.ts||""));
   document.getElementById("date").textContent=krDate(state.data.date||state.date);
   document.getElementById("datepick").value=state.data.date||state.date;
   
@@ -174,7 +174,7 @@ function render(){
   ["bot","user","unknown"].forEach(k=>{if(counts[k])tb.appendChild(chip(k,cat(k).label,counts[k],cat(k).color))});
   syncChips();
   const feed=document.getElementById("feed");feed.innerHTML="";
-  if(msgs.length){const bd=document.createElement("div");bd.className="daybreak";bd.textContent="최신순";feed.appendChild(bd)}
+  if(msgs.length){const bd=document.createElement("div");bd.className="daybreak";bd.textContent="오래된순";feed.appendChild(bd)}
   const shown=msgs.filter(m=>state.active.size===0||state.active.has(CATS[m.source]?m.source:"unknown"));
   if(!shown.length){
     feed.insertAdjacentHTML("beforeend",'<div class="empty"><div class="big">아직 표시할 메시지가 없어요</div>이 날짜에 #gpt 채널에 올라온 대화가 없습니다.</div>');
