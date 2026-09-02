@@ -4,11 +4,17 @@
 #
 # 동작:
 #   1. 원격 브랜치를 fetch
-#   2. 새 커밋이 없으면 즉시 종료 (불필요한 재시작 방지)
-#   3. 새 커밋이 있으면 "설정 파일(git 추적 대상)만" 원격 상태로 강제 동기화
+#   2. stock 소스 동기화(sync-stock.sh)는 새 커밋 여부와 무관하게 매 tick 마다 실행
+#      - sync-stock.sh 자체가 rsync 체크섬 비교라 변경 없으면 사실상 no-op.
+#      - ⚠️ 예전엔 "새 커밋 감지" 분기 안에서만 호출돼서, 그 실행이 락 경합 등으로
+#        실패하면 리포가 이미 최신이라 다음 tick부터는 영원히 재시도가 안 되고
+#        실행 폴더(~/stock/stock)가 조용히 옛날 코드에 고정되는 사일런트 버그가
+#        있었다(2026-08/09월에 두 번 재현). 매 tick 무조건 실행으로 근본 해결.
+#   3. 새 커밋이 없으면 나머지(설정 동기화·게이트웨이 재시작)는 생략
+#   4. 새 커밋이 있으면 "설정 파일(git 추적 대상)만" 원격 상태로 강제 동기화
 #      - reset --mixed + checkout 방식이라 런타임 파일(세션/로그/미디어/DB)은
 #        절대 삭제·변경되지 않습니다. (working tree 의 untracked 파일은 그대로 유지)
-#   4. openclaw 서비스 재시작 (systemd)
+#   5. openclaw 서비스 재시작 (systemd)
 #
 # 안전성:
 #   - flock 으로 중복 실행 방지
@@ -58,8 +64,16 @@ fi
 LOCAL="$(git rev-parse HEAD)"
 REMOTE="$(git rev-parse "origin/$BRANCH")"
 
+# --- stock 소스 동기화: 새 커밋 여부와 무관하게 매 tick 무조건 실행 -------------
+# 리포가 이미 최신이어도(=아래서 곧 exit 0) 이 실행 폴더 동기화는 반드시 시도한다.
+# sync-stock.sh 는 rsync 체크섬 비교라 변경 없으면 사실상 no-op.
+STOCK_SYNC="$REPO_DIR/scripts/sync-stock.sh"
+if [ -f "$STOCK_SYNC" ]; then
+  bash "$STOCK_SYNC" || log "stock 동기화 실패(무시하고 계속)" >&2
+fi
+
 if [ "$LOCAL" = "$REMOTE" ]; then
-  # 변경 없음 → 조용히 종료 (재시작하지 않음)
+  # 새 커밋 없음 → 설정 동기화·게이트웨이 재시작은 생략(조용히 종료)
   exit 0
 fi
 
@@ -89,19 +103,6 @@ git reset --mixed --quiet "$REMOTE"
 git checkout --quiet --force -- .
 
 log "설정 동기화 완료 (런타임 파일 보존됨)"
-
-# --- stock 소스 동기화 (vendor 폴더가 있을 때만) -------------------------------
-# openclaw repo 의 stock/ 소스를 실행 폴더(~/stock/stock)로 반영하고, 코드가
-# 바뀐 경우에만 scheduler 를 재시작한다. 실패해도 openclaw 재시작은 계속 진행.
-STOCK_SYNC="$REPO_DIR/scripts/sync-stock.sh"
-if [ -f "$STOCK_SYNC" ]; then
-  # ⚠️ 예전엔 `[ -x ]`(실행권한 있을 때만) 조건이라, 체크아웃/권한 문제로 exec 비트가
-  #    빠지면 stock 동기화가 '아무 로그 없이' 통째로 스킵됐다(= 실행 폴더 코드가 옛
-  #    버전에 고정되는 사일런트 버그). 이제 exec 비트와 무관하게 bash 로 직접 실행한다.
-  bash "$STOCK_SYNC" || log "stock 동기화 실패(무시하고 계속)" >&2
-else
-  log "sync-stock.sh 없음 — stock 동기화 생략"
-fi
 
 # --- openclaw 게이트웨이 재시작 (필요할 때만) ----------------------------------
 if [ "$NEED_OC_RESTART" -eq 0 ]; then
