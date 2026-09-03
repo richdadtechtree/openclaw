@@ -104,6 +104,61 @@
    - ⚠️ 리디렉션 URI 가 콘솔과 1글자라도 다르면 `redirect_uri_mismatch`. 콜백은 `.../auth/callback`.
    - ⚠️ https 프록시가 아니라 순수 http 로 접속하면 쿠키가 안 붙어 로그인 루프 → 임시로 `.env` 에 `PT_COOKIE_SECURE=0`.
 
+## 🗣️ AI 토론 채널(#ai-토론) — ✅ 코드 완료, 서버 수동 설정 남음 (2026-09-03)
+
+`openclaw_multi_model_debate_plan.md` 계획서 기반으로 GPT/Gemini/Qwen(OpenRouter 무료)/Mistral(무료) 4개 모델이
+독립 의견 → (선택) 1회 반론 → GPT 사회자 종합까지 하는 슬랙 토론 채널을 구축했다.
+**기존 main/pt-trainer/keepgoing 에이전트·바인딩은 전혀 건드리지 않았다** (새 에이전트 `debate` + 새 바인딩만 추가).
+
+### 구조
+```
+Slack #ai-토론 (새 채널, 멘션 시에만 응답)
+   ↓
+openclaw agent "debate" (workspace/debate/SOUL.md)
+   → exec 로 scripts/debate.py "<원문>" 실행 → stdout 을 그대로 답장
+        ↓
+   scripts/debate.py (openclaw 모델 라우팅과 무관, 각 공급자 REST 직접 호출)
+        ├─ GPT      (OpenAI Chat Completions, OPENAI_API_KEY)
+        ├─ Gemini   (Google Generative AI 네이티브 API, 기존 GEMINI_API_KEY 재사용)
+        ├─ Qwen     (OpenRouter, OPENROUTER_API_KEY, :free 모델)
+        └─ Mistral  (Mistral API, MISTRAL_API_KEY, 무료 모드)
+```
+- 모드: 무키워드/`개별답변:` = 개별 답변(모델별 의견+사회자 종합, 5회 호출), `토론:` = 1차의견→반론1회→사회자 종합(9회 호출), `상태`/`도움말` = API 호출 없음.
+- 사회자의 "핵심 주장 정리"는 별도 LLM 호출 없이 스크립트가 기계적으로 조합 → 계획서 §12 비용 예산(5회/9회) 그대로 지킴.
+- 장애 처리(계획서 §8 그대로 구현): 429=1회 재시도 후 "한도초과" 표시, 401/403=재시도 안함, 타임아웃="응답 지연" 표시, 모델 하나 실패해도 나머지+사회자 요약 계속, 무료 모델 ID 오류(400/404)시 예비 모델로 1회 전환, 사회자(GPT) 실패시 모델 원문만이라도 게시, 전체 실패시 오류 요약+재시도 안내.
+- 분당 호출 제한(기본 3회/분)과 사용량 로그는 `workspace/debate/state/`(git 추적 제외, 런타임 전용)에 자동 저장.
+- 토론자에게는 함수 호출/툴을 전혀 주지 않는 순수 텍스트 API 호출이라 "명령 실행·파일쓰기·메시지 발송 금지" 원칙이 코드 구조상 자동으로 지켜짐.
+
+### 📌 서버에서 수동으로 해야 하는 것 (코드만으로는 안 됨)
+1. **Slack `#ai-토론` 채널 생성** + 기존 봇(예: `default`/뚜떵또 봇) 초대 → 채널 ID 확인(채널 세부정보 → 채널ID 복사, `C...` 형식).
+2. `openclaw.json` 의 새 바인딩에 있는 **placeholder `C000000AIDEBATE` 를 실제 채널 ID로 교체**:
+   ```bash
+   cd ~/.openclaw
+   sed -i 's/C000000AIDEBATE/<실제채널ID>/' openclaw.json
+   openclaw config validate   # 문법 확인 후
+   openclaw daemon restart
+   ```
+   (claude.ai 에서 고치고 push 해도 auto-pull 이 반영한다. 다만 채널ID는 서버에서만 알 수 있으므로 보통 서버에서 직접 고치는 편이 빠르다.)
+3. **API 키 발급 후 `~/.openclaw/.env` 에 추가**(`.env.example` §11 참고):
+   - `OPENAI_API_KEY` (https://platform.openai.com/api-keys — main 봇의 OAuth 로그인과는 별개의 키)
+   - `OPENROUTER_API_KEY` (https://openrouter.ai/keys)
+   - `MISTRAL_API_KEY` (https://console.mistral.ai/ → Studio 무료 모드 활성화 후 발급)
+   - `GEMINI_API_KEY` 는 이미 있는 값 재사용(추가 발급 불필요).
+4. **무료 모델 ID 확정**(자주 바뀜 — 반드시 구축 당일 확인): OpenRouter에서 `:free` 로 끝나는 Qwen 계열 모델 ID, Mistral 무료 계정에서 쓸 수 있는 모델 ID를 조회해 `.env` 의 `DEBATE_QWEN_MODEL` / `DEBATE_QWEN_MODEL_FALLBACK` / `DEBATE_MISTRAL_MODEL` / `DEBATE_MISTRAL_MODEL_FALLBACK` 에 채운다. 한국어로 짧은 시험 질문을 보내 정상 응답을 먼저 확인.
+5. 위 3~4 완료 후 서버에서 검증:
+   ```bash
+   cd ~/.openclaw
+   python3 scripts/debate.py "상태"          # 키 등록 여부/모델ID 확인 (API 호출 없음)
+   python3 scripts/debate.py "테스트 질문입니다"  # 실제 4개 모델 호출 확인
+   ```
+6. Slack 앱 권한: 앱 멘션/채널 메시지 읽기 + 메시지·스레드 답글 쓰기만 있으면 충분(기존 봇 재사용이면 이미 충족).
+7. (선택) 결제수단 등록된 공급자는 지출 한도를 0원 또는 매우 낮게 설정.
+
+### 아직 안 된 것 / 주의
+- Qwen·Mistral 정확한 모델 ID는 코드에 **placeholder**만 있다(위 4번 전에는 "모델 미설정" 오류로 실패 표시됨 — 의도된 동작).
+- 계획서의 "시작 시 진행 메시지 한 번"은 `debate` 에이전트가 exec 호출 전에 먼저 텍스트로 답하도록 SOUL.md 에 지시했지만, 실제로 슬랙에 두 번째 메시지로 분리돼 나가는지는 openclaw 런타임의 중간 텍스트 스트리밍 동작에 달려있다 — **서버에서 실제로 확인 필요**.
+- 이 기능은 기존 `main`/`keepgoing`/`bookman`/`pt-trainer` 와 완전히 분리돼 있어, 문제가 생기면 `openclaw.json` 에서 `debate` 바인딩 항목만 지우면 즉시 롤백된다(계획서 §15 롤백 계획).
+
 ## ⏳ 진행 중 / 다음 할 일 (우선순위 순)
 
 ### A. Gemini 백업(fallback) 적용
