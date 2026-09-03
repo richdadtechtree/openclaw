@@ -68,6 +68,19 @@
         "name": "bookman",
         "workspace": "/home/ubuntu/.openclaw/workspace/bookman",
         "agentDir": "/home/ubuntu/.openclaw/agents/bookman/agent"
+      },
+      {
+        "id": "debate",
+        "name": "AI토론",
+        "workspace": "/home/ubuntu/.openclaw/workspace/debate",
+        "model": {
+          "primary": "openai/gpt-5.4-mini",
+          "fallbacks": [
+            "openai/gpt-5.4-mini",
+            "google/gemini-flash-latest",
+            "google/gemini-flash-lite-latest"
+          ]
+        }
       }
     ]
   },
@@ -86,6 +99,16 @@
         "peer": {
           "kind": "channel",
           "id": "C0BMN9FN073"
+        }
+      }
+    },
+    {
+      "agentId": "debate",
+      "match": {
+        "channel": "slack",
+        "peer": {
+          "kind": "channel",
+          "id": "C000000AIDEBATE"
         }
       }
     },
