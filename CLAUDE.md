@@ -43,7 +43,7 @@ Git으로 서버와 자동 동기화됩니다. 별도 프로젝트인 **stock**(
 | `slack_briefing.py` | stock 대시보드 캡처 → 슬랙 (openclaw cron `stock-slack-briefing`, 평일 15:40) |
 | `slack_text.py` | 텍스트 → 슬랙 |
 | `test_slack_alert.py` | 관심종목 오늘 변동 슬랙 테스트(국장/미장 구분, KRX 장시간 표시) |
-| `debate.py` | `#ai-토론` 슬랙 채널: GPT/Gemini/Qwen/Mistral 다중 모델 토론(개별답변·토론·상태·도움말). `debate` 에이전트가 exec 로 호출, stdout 그대로 답장. 상세: HANDOFF.md "AI 토론 채널" |
+| `debate.py` | `#ai-토론` 슬랙 채널: GPT/Gemini/Qwen/Mistral 다중 모델 토론(개별답변·토론·상태·도움말). `debate` 에이전트가 exec 로 호출, stdout 그대로 답장. GPT는 API키 대신 게이트웨이 경유 ChatGPT Plus OAuth(무툴 에이전트 `debate-gpt`). 상세: HANDOFF.md "AI 토론 채널" |
 | `notion_push.py` / `notion-briefing-*.txt` | (구) 노션 저장 — **시트로 대체됨, 미사용** |
 
 > 상세 현황·다음 할 일은 **`HANDOFF.md`** 참고.
