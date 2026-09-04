@@ -14,20 +14,31 @@ debate.py — 다중 AI 토론 오케스트레이터 (OpenClaw #ai-토론 채널
   "상태"               → 오늘 호출 현황 리포트
   "도움말"             → 사용법 안내
 
-모델 4개(GPT/Gemini/Qwen/Mistral)는 openclaw 의 모델 라우팅을 거치지 않고
-각 공급자 REST API 를 직접 호출한다 — 함수 호출/툴을 전혀 주지 않으므로
+Gemini/Qwen/Mistral 3개는 openclaw 의 모델 라우팅을 거치지 않고 각 공급자
+REST API 를 직접 호출한다 — 함수 호출/툴을 전혀 주지 않으므로
 "명령 실행·파일쓰기·메시지 발송 도구 금지" 원칙이 자동으로 지켜진다.
+
+GPT 만 예외로, ChatGPT Plus 구독(OAuth) 사용량을 그대로 쓰기 위해 별도 API 키 대신
+**openclaw 게이트웨이의 OpenAI 호환 Chat Completions HTTP 엔드포인트**
+(`gateway.http.endpoints.chatCompletions.enabled: true`)를 통해
+전용 무툴(no-tool) 에이전트 `debate-gpt`(openclaw.json 에 등록, tools.profile="minimal"
++ deny exec)를 호출한다. 이 경로는 openclaw 가 "정상 에이전트 한 턴 실행"으로 처리하므로
+완전히 격리되진 않지만, 전용 에이전트에 툴을 최대한 막아뒀다 — 운영 중 이상 동작(파일 접근
+시도 등)이 보이면 즉시 확인 필요.
+
 Slack 전송은 하지 않는다 — 이 스크립트의 stdout 을 그대로 openclaw 에이전트가
 슬랙 스레드에 답장으로 올린다(에이전트 SOUL.md 지시).
 
 필요 (.env, openclaw 루트):
-  OPENAI_API_KEY        GPT 호출용 (main 에이전트의 OAuth 로그인과는 별도의 키)
+  GATEWAY_TOKEN          게이트웨이 인증 토큰 (이미 있음 — openclaw.json gateway.auth.token 과 동일)
   GEMINI_API_KEY         이미 있음 (google-generative-ai 네이티브 API)
   OPENROUTER_API_KEY    Qwen(무료) 호출용
   MISTRAL_API_KEY       Mistral(무료) 호출용
-  DEBATE_OPENAI_MODEL / DEBATE_GEMINI_MODEL /
+  DEBATE_GEMINI_MODEL /
   DEBATE_QWEN_MODEL / DEBATE_QWEN_MODEL_FALLBACK /
   DEBATE_MISTRAL_MODEL / DEBATE_MISTRAL_MODEL_FALLBACK   (없으면 기본값 사용 — 반드시 구축 당일 확인)
+  DEBATE_GATEWAY_URL     게이트웨이 chat completions 주소 (기본 http://127.0.0.1:18789/v1/chat/completions)
+  DEBATE_GPT_AGENT       게이트웨이로 부를 openclaw 에이전트 (기본 openclaw/debate-gpt)
   DEBATE_RATE_LIMIT_PER_MIN   분당 최대 요청 수 (기본 3)
   DEBATE_TIMEOUT_SEC          모델별 호출 제한시간 초 (기본 25)
 """
@@ -68,7 +79,8 @@ load_env()
 #    구축 당일 OpenRouter/Mistral 콘솔에서 실제 사용 가능한 ID로 .env 의
 #    DEBATE_QWEN_MODEL / DEBATE_MISTRAL_MODEL 등을 채워 넣어야 한다.
 CONFIG = {
-    "openai_model": os.getenv("DEBATE_OPENAI_MODEL", "gpt-5.4-mini"),
+    "gateway_url": os.getenv("DEBATE_GATEWAY_URL", "http://127.0.0.1:18789/v1/chat/completions"),
+    "gpt_agent": os.getenv("DEBATE_GPT_AGENT", "openclaw/debate-gpt"),
     "gemini_model": os.getenv("DEBATE_GEMINI_MODEL", "gemini-flash-latest"),
     "qwen_model": os.getenv("DEBATE_QWEN_MODEL", "qwen/qwen3-235b-a22b:free"),
     "qwen_model_fallback": os.getenv("DEBATE_QWEN_MODEL_FALLBACK", "qwen/qwen-2.5-72b-instruct:free"),
@@ -78,7 +90,9 @@ CONFIG = {
     "rate_limit_per_min": int(os.getenv("DEBATE_RATE_LIMIT_PER_MIN", "3")),
 }
 
-OPENAI_KEY = os.getenv("OPENAI_API_KEY", "")
+# GPT는 API 키가 아니라 openclaw 게이트웨이(Chat Completions HTTP API)를 거쳐
+# ChatGPT Plus 구독 OAuth 세션(전용 무툴 에이전트 debate-gpt)으로 호출한다.
+GATEWAY_TOKEN = os.getenv("GATEWAY_TOKEN", "")
 GEMINI_KEY = os.getenv("GEMINI_API_KEY", "")
 OPENROUTER_KEY = os.getenv("OPENROUTER_API_KEY", "")
 MISTRAL_KEY = os.getenv("MISTRAL_API_KEY", "")
@@ -217,13 +231,17 @@ def _call_openai_compatible(provider, url, headers, model, fallback_model, syste
 
 
 def call_openai(system_prompt, user_prompt, max_tokens=900):
-    if not OPENAI_KEY:
-        return {"ok": False, "error": "OPENAI_API_KEY 미설정", "model": CONFIG["openai_model"]}
+    """GPT는 openclaw 게이트웨이(Chat Completions HTTP API)를 거쳐 ChatGPT Plus 구독
+    OAuth 세션으로 호출한다 — 별도 OPENAI_API_KEY/과금이 필요 없다.
+    호출 대상은 전용 무툴 에이전트 openclaw.json 의 "debate-gpt"(tools.profile=minimal
+    + exec deny)이며, 반드시 gateway.http.endpoints.chatCompletions.enabled=true 여야 한다."""
+    if not GATEWAY_TOKEN:
+        return {"ok": False, "error": "GATEWAY_TOKEN 미설정(게이트웨이 인증 토큰)", "model": CONFIG["gpt_agent"]}
     return _call_openai_compatible(
-        "openai",
-        "https://api.openai.com/v1/chat/completions",
-        {"Authorization": f"Bearer {OPENAI_KEY}", "Content-Type": "application/json"},
-        CONFIG["openai_model"], None,
+        "openai-gateway",
+        CONFIG["gateway_url"],
+        {"Authorization": f"Bearer {GATEWAY_TOKEN}", "Content-Type": "application/json"},
+        CONFIG["gpt_agent"], None,
         system_prompt, user_prompt, max_tokens,
     )
 
@@ -407,7 +425,7 @@ def status_report():
         f"- 마지막 호출 시각(UTC): {last_ts or '기록 없음'}",
         "",
         "**등록된 모델 ID**",
-        f"- GPT: `{CONFIG['openai_model']}` (키: {'설정됨' if OPENAI_KEY else '❌ 없음'})",
+        f"- GPT: 게이트웨이 경유 `{CONFIG['gpt_agent']}` (Plus OAuth, GATEWAY_TOKEN: {'설정됨' if GATEWAY_TOKEN else '❌ 없음'})",
         f"- Gemini: `{CONFIG['gemini_model']}` (키: {'설정됨' if GEMINI_KEY else '❌ 없음'})",
         f"- Qwen: `{CONFIG['qwen_model']}` / 예비 `{CONFIG['qwen_model_fallback']}` (키: {'설정됨' if OPENROUTER_KEY else '❌ 없음'})",
         f"- Mistral: `{CONFIG['mistral_model']}` / 예비 `{CONFIG['mistral_model_fallback']}` (키: {'설정됨' if MISTRAL_KEY else '❌ 없음'})",

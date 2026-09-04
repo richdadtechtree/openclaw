@@ -81,6 +81,18 @@
             "google/gemini-flash-lite-latest"
           ]
         }
+      },
+      {
+        "id": "debate-gpt",
+        "name": "AI토론-GPT(무툴)",
+        "workspace": "/home/ubuntu/.openclaw/workspace/debate-gpt",
+        "model": {
+          "primary": "openai/gpt-5.4-mini"
+        },
+        "tools": {
+          "profile": "minimal",
+          "deny": ["exec"]
+        }
       }
     ]
   },
@@ -141,6 +153,13 @@
     },
     "port": 18789,
     "bind": "loopback",
+    "http": {
+      "endpoints": {
+        "chatCompletions": {
+          "enabled": true
+        }
+      }
+    },
     "tailscale": {
       "mode": "off",
       "resetOnExit": false
