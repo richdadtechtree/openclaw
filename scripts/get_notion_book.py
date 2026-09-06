@@ -25,6 +25,7 @@ get_notion_book.py — 노션 '독서 리스트'에서 **실제로 적혀 있는
   3순위(본문) : 그 외 일반 본문 문장
   4순위(후순위): 모양이 어설픈 본문(단어 나열, 너무 짧거나 긴 줄 등)
   ※ `한 문장` / `깨달은 점` 프로퍼티가 채워져 있으면 그게 0순위(직접 고른 문장)
+  ※ 노션 **`책읽남` 열이 `제외`** 인 책은 아예 후보에서 뺀다(어록 모음·추천 목록 등)
 
   **웬만하면 버리지 않는다.** 애매한 줄은 버리는 대신 4순위로 미뤄, 다른 후보가
   없을 때 쓰인다. 빈손으로 "못 찾았습니다" 하는 것보다 노션에 실제로 적힌
@@ -94,6 +95,10 @@ PROP_TITLE = "책 제목"
 PROP_AUTHOR = "저자"
 PROP_SENTENCE = "한 문장"
 PROP_INSIGHT = "깨달은 점"
+# 노션 '책읽남' 열에서 이 값이 선택된 책은 아예 쓰지 않는다.
+# (어록 모음, 추천 목록처럼 글귀를 뽑기 부적절한 행을 사용자가 직접 빼둘 수 있게)
+PROP_EXCLUDE = "책읽남"
+EXCLUDE_VALUES = ("제외",)
 
 _BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # ~/.openclaw
 STATE_PATH = os.path.join(_BASE, "workspace", "bookman", "book_sequence_state.json")
@@ -509,7 +514,20 @@ def row_title(page):
     return prop_text(page.get("properties", {}), PROP_TITLE) or "(제목 없음)"
 
 
+def is_excluded(page):
+    """노션 '책읽남' 열이 '제외'면 True. (열 이름·값의 공백 차이는 무시)"""
+    v = prop_text(page.get("properties", {}), PROP_EXCLUDE)
+    return _norm(v) in {_norm(x) for x in EXCLUDE_VALUES}
+
+
+def usable_rows(rows):
+    """'제외' 표시된 책을 걸러낸 목록."""
+    return [p for p in rows if not is_excluded(p)]
+
+
 def filter_rows(rows, keyword):
+    """'제외' 표시된 책을 먼저 빼고, 키워드가 있으면 제목으로 한 번 더 거른다."""
+    rows = usable_rows(rows)
     if not keyword:
         return rows
     return [p for p in rows if keyword.lower() in row_title(p).lower()]
@@ -518,7 +536,9 @@ def filter_rows(rows, keyword):
 # ── 8. 실행 모드 ──────────────────────────────────────────────
 def cmd_check(token, db_id):
     """왜 문장이 안 나오는지 진단용. 노션 데이터 + 캐시 상태를 보여준다."""
-    rows = fetch_rows(token, db_id)
+    all_rows = fetch_rows(token, db_id)
+    excluded = [p for p in all_rows if is_excluded(p)]
+    rows = usable_rows(all_rows)
     cache = load_cache()
     n_prop = sum(1 for p in rows if prop_text(p.get("properties", {}), PROP_SENTENCE).strip()
                  or prop_text(p.get("properties", {}), PROP_INSIGHT).strip())
@@ -529,7 +549,10 @@ def cmd_check(token, db_id):
             tier_counts[s.get("tier", 3)] = tier_counts.get(s.get("tier", 3), 0) + 1
     total_sent = sum(tier_counts.values())
 
-    print(f"📚 독서 리스트 총 {len(rows)}권")
+    print(f"📚 독서 리스트 총 {len(all_rows)}권 "
+          f"(사용 {len(rows)}권 · '책읽남=제외' {len(excluded)}권)")
+    for p in excluded:
+        print(f"      ⛔ 제외: {row_title(p)}")
     print(f"  · '한 문장'/'깨달은 점' 칸이 채워진 책 : {n_prop}권")
     print(f"  · 본문까지 읽어둔 책(캐시)            : {len(cached)}권 / {len(rows)}권")
     print(f"  · 캐시에 모인 문장                    : {total_sent}개")
@@ -597,8 +620,12 @@ def cmd_pick(token, db_id, keyword):
     결과적으로 **책은 골고루, 그 안에서는 색칠한 글귀가 가장 자주** 나온다.
     못 뽑으면 지어내지 않고 실패(코드 2).
     """
-    rows = filter_rows(fetch_rows(token, db_id), keyword)
+    all_rows = fetch_rows(token, db_id)
+    rows = filter_rows(all_rows, keyword)
     if not rows:
+        if keyword and any(keyword.lower() in row_title(p).lower()
+                           for p in all_rows if is_excluded(p)):
+            die(f"'{keyword}' 은 노션 '책읽남' 열이 '제외'로 되어 있어 쓰지 않습니다.", 2)
         die(f"'{keyword}' 이라는 책을 독서 리스트에서 찾지 못했습니다.", 2)
 
     cache = load_cache()
