@@ -108,6 +108,14 @@ TIER_PLAIN = 3     # 일반 본문
 TIER_WEAK = 4      # 모양이 좀 어설픈 본문 (버리지 않고 '맨 뒤'로 미뤄둔다)
 TIER_NAME = {0: "직접입력", 1: "강조", 2: "굵게", 3: "본문", 4: "본문(후순위)"}
 
+# 등급별 '뽑힐 가중치'. 3시간마다 보내므로 골고루 나오는 게 가장 중요하다.
+# 색칠한 글귀를 제일 자주 보내되, 나머지도 섞여 나오게 확률로 뽑는다.
+# 숫자를 키우면 그 등급이 더 자주 나온다. (한 책 안에서 대략 8:8:3:2:0.3 비율)
+TIER_WEIGHT = {0: 8.0, 1: 8.0, 2: 3.0, 3: 2.0, 4: 0.15}
+
+# 한 번 뽑을 때 후보를 모을 책 수. 클수록 여러 책이 골고루 섞인다.
+BOOKS_PER_PICK = 5
+
 
 # ── 1. .env 읽기 ──────────────────────────────────────────────
 def load_env():
@@ -575,7 +583,20 @@ def cmd_list(token, db_id, limit, keyword):
 
 
 def cmd_pick(token, db_id, keyword):
-    """브리핑용 한 문장 1건. 못 뽑으면 지어내지 않고 실패(코드 2)."""
+    """브리핑용 한 문장 1건을 **확률 추첨**으로 고른다.
+
+    예전에는 색칠한 문장이 있으면 무조건 그것만 나갔다. 3시간마다 보내는 상황에서는
+    금방 단조로워지므로, 아래처럼 바꿨다.
+
+      1) 후보가 있는 책을 최대 BOOKS_PER_PICK 권 모은다 (책 순서는 매번 랜덤)
+      2) **책마다 총 몫을 1로 맞춘다** → 어떤 책이든 뽑힐 확률이 같다(골고루).
+      3) 그 1을 등급 비율(TIER_WEIGHT)대로 나누고, 등급 몫은 그 등급의 문장들이 나눠 갖는다.
+         → 본문이 200줄인 책이 판을 독차지하지 못하고, 색칠이 없는 책도 밀리지 않는다.
+      4) 가중치대로 딱 하나를 추첨한다.
+
+    결과적으로 **책은 골고루, 그 안에서는 색칠한 글귀가 가장 자주** 나온다.
+    못 뽑으면 지어내지 않고 실패(코드 2).
+    """
     rows = filter_rows(fetch_rows(token, db_id), keyword)
     if not rows:
         die(f"'{keyword}' 이라는 책을 독서 리스트에서 찾지 못했습니다.", 2)
@@ -586,15 +607,15 @@ def cmd_pick(token, db_id, keyword):
 
     random.shuffle(rows)                        # 매번 다른 책부터 살펴본다
 
-    best = None        # 지금까지 본 것 중 가장 등급이 좋은 후보
-    seen_used = None   # 이미 보낸 적 있는 문장(전부 소진됐을 때 쓸 예비책)
-    fetched = 0
+    pool = []          # [(문장, 페이지, 가중치), ...] ← 추첨함
+    seen_used = None   # 이미 보낸 문장(전부 소진됐을 때 쓸 예비책)
+    fetched = 0        # 이번 실행에서 노션에서 새로 읽은 책 수
+    books = 0          # 후보를 건진 책 수
 
     for page in rows:
         # 평소엔 최대 MAX_FETCH_PER_RUN 권만 새로 읽는다(응답 속도).
-        # 다만 아직 후보를 하나도 못 찾은 '빈손' 상태면 더 읽어본다
-        #  — 빈손으로 끝내는 것보다 몇 초 더 걸리는 편이 낫다.
-        empty_handed = best is None and seen_used is None
+        # 아직 후보를 하나도 못 찾은 '빈손' 상태면 더 읽어본다.
+        empty_handed = not pool and seen_used is None
         budget = MAX_FETCH_PER_RUN * (DESPERATE_MULTIPLIER if empty_handed else 1)
         allow = bool(keyword) or fetched < budget
         sents, did = sentences_for(token, page, cache, allow_fetch=allow)
@@ -602,24 +623,34 @@ def cmd_pick(token, db_id, keyword):
         if not sents:
             continue
 
-        fresh = [s for s in sents if fingerprint(s["t"]) not in used]
+        fresh = [x for x in sents if fingerprint(x["t"]) not in used]
         if not fresh:
             seen_used = seen_used or (sents[0], page)
             continue
 
-        top = fresh[0]                          # sentences_for 결과는 등급순 정렬돼 있다
-        if top["tier"] <= TIER_EMPH:            # 직접 입력 or 색칠한 문장 → 즉시 채택
-            _save_json(CACHE_PATH, cache)
-            return emit(top, page, state)
-        if best is None or top["tier"] < best[0]["tier"]:
-            best = (top, page)
-        if best and best[0]["tier"] <= TIER_PLAIN and fetched >= MAX_FETCH_PER_RUN:
-            break                               # 쓸 만한 걸 이미 잡았으면 그만 (응답 속도)
+        # 같은 책 안에서 등급별로 묶는다
+        by_tier = {}
+        for x in fresh:
+            by_tier.setdefault(x["tier"], []).append(x)
+        # 책 하나가 갖는 총 몫을 1로 맞춘다(= 책은 균등). 그 1을 등급 비율대로 나누고,
+        # 각 등급 몫은 그 등급의 문장들이 다시 똑같이 나눠 갖는다.
+        #   → 색칠이 하나도 없는 책도 색칠 많은 책과 똑같은 확률로 뽑힌다.
+        book_total = sum(TIER_WEIGHT.get(t, 1.0) for t in by_tier) or 1.0
+        for tier, group in by_tier.items():
+            share = TIER_WEIGHT.get(tier, 1.0) / book_total / len(group)
+            for x in group:
+                pool.append((x, page, share))
+
+        books += 1
+        if books >= BOOKS_PER_PICK:
+            break
 
     _save_json(CACHE_PATH, cache)
 
-    if best:
-        return emit(best[0], best[1], state)
+    if pool:
+        weights = [w for _, _, w in pool]
+        sent, page, _ = random.choices(pool, weights=weights, k=1)[0]
+        return emit(sent, page, state)
 
     if seen_used:                               # 한 바퀴 다 돌았으면 기록 비우고 재순환
         state["used"] = []
