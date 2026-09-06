@@ -542,7 +542,11 @@ def cmd_check(token, db_id):
     cache = load_cache()
     n_prop = sum(1 for p in rows if prop_text(p.get("properties", {}), PROP_SENTENCE).strip()
                  or prop_text(p.get("properties", {}), PROP_INSIGHT).strip())
-    cached = [c for pid, c in cache["pages"].items()]
+    # 캐시에는 예전에 읽었지만 지금은 제외됐거나 노션에서 사라진 책도 남아 있다.
+    # 헷갈리지 않게 **지금 실제로 쓰는 책**만 세어 보여준다.
+    live_ids = {p["id"] for p in rows}
+    cached = [c for pid, c in cache["pages"].items() if pid in live_ids]
+    stale = len(cache["pages"]) - len(cached)
     tier_counts = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0}
     for c in cached:
         for s in c.get("sentences", []):
@@ -559,7 +563,10 @@ def cmd_check(token, db_id):
     print(f"      직접입력 {tier_counts[0]} · 강조(색칠) {tier_counts[1]} · "
           f"굵게 {tier_counts[2]} · 본문 {tier_counts[3]} · 후순위 {tier_counts[4]}")
     if len(cached) < len(rows):
-        print("  💡 전부 미리 읽어두려면: get_notion_book.py --build-cache")
+        print(f"  💡 아직 안 읽은 책 {len(rows) - len(cached)}권 → get_notion_book.py --build-cache")
+    if stale:
+        print(f"  🧹 안 쓰는 캐시 {stale}권분 (제외됐거나 노션에서 사라진 책) — "
+              f"정리하려면 --clear-cache 후 --build-cache")
     print(f"  · 이미 보낸 문장 기록: {len(load_state()['used'])}개")
     return 0
 
