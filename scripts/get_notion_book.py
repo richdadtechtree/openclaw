@@ -563,11 +563,11 @@ def cmd_pick(token, db_id, keyword):
 
 
 def emit(sent, page, state):
-    """SOUL.md 브리핑 양식 그대로 출력. 출처는 stderr(로그)로 따로 남긴다."""
+    """SOUL.md 브리핑 양식(2줄) 그대로 출력. 출처는 stderr(로그)로 따로 남긴다."""
     title = row_title(page)
     author = prop_text(page.get("properties", {}), PROP_AUTHOR)
 
-    print('"좋은 글 한문장"')
+    # 브리핑은 2줄: 글귀 / <제목> 저자  (머리말 줄은 쓰지 않는다)
     print(sent["t"])
     lo, hi = TITLE_WRAP
     print(f"{lo}{title}{hi}" + (f" {author}" if author else ""))
