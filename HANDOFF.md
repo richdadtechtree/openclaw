@@ -320,3 +320,39 @@ tail -30 ~/stock/stock/scheduler.log
    ```
    ⚠️ catch-all(`{"agentId":"main","match":{"channel":"slack"}}`) 보다 **앞에** 와야 한다.
 4. `.env` 에 `NOTION_READING_DB` 추가(선택). `NOTION_TOKEN` 이 해당 페이지에 **공유(연결)** 돼 있어야 한다.
+
+### 2차 보완 — 노션 실제 구조 반영 (스크린샷 확인 후)
+
+형준님 노션 책 페이지는 **쪽수 줄 + 색칠한 글귀 + 일반 메모** 구조였다.
+
+```
+22p                                 ← 쪽수만 있는 줄
+왜를 아는 것이 가장 심오하고 …       ← 주황색 = 진짜 글귀
+인간의 책임감을 자극하는 표현으로 …   ← 색 없는 일반 메모
+```
+
+또 `좋은 글귀`, `부아 c 어록`, `김종원 작가 . 책 어록` 처럼 **어록 전용 페이지**도 DB 행으로 들어있다.
+→ 프로퍼티만 보면 "비었다"고 오판하게 되므로, **본문 블록이 실제 본체**다.
+
+보완 내용:
+- **강조 인식 추가** — 노션 `rich_text[].annotations` 의 `color`(글자색+`_background` 형광펜)와
+  `bold`/`underline` 비율을 계산해 등급을 매긴다.
+  0=프로퍼티 직접입력 / 1=색칠·인용블록 / 2=굵게 / 3=일반본문.
+  **1순위가 나오면 즉시 채택** → 색칠해둔 문장이 우선 나간다.
+- **강조 문장은 까다로운 필터를 건너뛴다** — 사람이 이미 고른 문장이므로
+  단어나열/체크리스트 검사로 잘못 버리지 않는다. (일반 본문에만 엄격 적용)
+- **쪽수 줄 처리** — `22p` / `35p` / `12쪽` 같은 줄은 글귀 후보에서 빼고 **출처 표시**로만 쓴다.
+  문장 앞에 붙은 `153p ` 접두어는 제거한다.
+- **본문 캐시 추가** (`workspace/bookman/book_cache.json`, gitignored) —
+  `last_edited_time` 이 바뀌면 자동 재수집. 1회 실행당 새로 읽는 책은 **최대 8권**으로 제한해
+  슬랙 응답 지연을 막는다. 전체를 미리 담으려면 `--build-cache`.
+- `--check` 가 캐시에 모인 문장 수를 등급별로 보여준다. `--clear-cache` 추가.
+- (제거) `--no-body` — 본문이 사실상 본체라 의미 없는 옵션이었음.
+
+서버 권장 순서:
+```bash
+python3 ~/.openclaw/scripts/get_notion_book.py --build-cache   # 1회 (몇 분 걸림)
+python3 ~/.openclaw/scripts/get_notion_book.py --check         # 등급별 문장 수 확인
+python3 ~/.openclaw/scripts/get_notion_book.py --list 30       # 눈으로 검수
+python3 ~/.openclaw/scripts/get_notion_book.py                 # 실제 브리핑
+```
