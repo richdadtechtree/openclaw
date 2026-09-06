@@ -15,15 +15,27 @@ book_slack.py — 노션 독서 글귀를 **슬랙에 직접** 보낸다. (AI를
 
 사용법
 ------
-  python3 ~/.openclaw/scripts/book_slack.py            # 슬랙 발송
+  python3 ~/.openclaw/scripts/book_slack.py            # 뚜떵또 이름으로 발송(기본)
+  python3 ~/.openclaw/scripts/book_slack.py --as bookman   # 책읽남 이름으로 발송
   python3 ~/.openclaw/scripts/book_slack.py --dry-run  # 보낼 내용만 확인(발송 안 함)
   python3 ~/.openclaw/scripts/book_slack.py --channel C0BMHERHA77
   python3 ~/.openclaw/scripts/book_slack.py --book 퓨처셀프
 
+누가 보내나 (역할 분담)
+----------------------
+  📚 책읽남 = **자료 담당** — 노션에서 글귀를 찾아오는 일(`get_notion_book.py`)
+  🤖 뚜떵또 = **최종 보고 담당** — 그 결과를 슬랙에 올리는 일(기본 발신자)
+
+  즉 "책읽남이 찾아서 뚜떵또가 보고한다"는 구조를 그대로 따른다.
+  다만 **중간에 AI가 문장을 다시 쓰지 않는다.** 찾은 글자를 그대로 올린다.
+  발신자를 바꾸려면 `--as bookman` 또는 `.env` 의 `SLACK_BOOK_SENDER=bookman`.
+
 필요한 환경변수 (~/.openclaw/.env)
 ---------------------------------
   NOTION_TOKEN             노션 통합 토큰 (get_notion_book.py 와 공용)
-  SLACK_BOT_TOKEN_BOOKMAN  책읽남 봇 토큰 (없으면 SLACK_BOT_TOKEN 사용)
+  SLACK_BOT_TOKEN_DEFAULT  뚜떵또 봇 토큰 (기본 발신자)
+  SLACK_BOT_TOKEN_BOOKMAN  책읽남 봇 토큰 (`--as bookman` 일 때)
+  SLACK_BOOK_SENDER        기본 발신자: `ddu`(기본) 또는 `bookman`
   SLACK_BOOK_CHANNEL       보낼 채널 ID (없으면 SLACK_BRIEFING_CHANNEL 폴백)
 
 종료코드
@@ -101,6 +113,8 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="발송하지 않고 내용만 출력")
     ap.add_argument("--channel", help="보낼 채널 ID (기본: .env 설정)")
     ap.add_argument("--book", help="특정 책에서만 뽑기")
+    ap.add_argument("--as", dest="sender", choices=["ddu", "bookman"],
+                    help="누구 이름으로 보낼지 (기본: 뚜떵또)")
     args = ap.parse_args()
 
     load_env()
@@ -120,10 +134,18 @@ def main():
         print(text)
         return 0
 
-    token = os.getenv("SLACK_BOT_TOKEN_BOOKMAN") or os.getenv("SLACK_BOT_TOKEN")
+    # 발신자 선택: 인자 > .env 설정 > 기본값(뚜떵또)
+    sender = args.sender or os.getenv("SLACK_BOOK_SENDER") or "ddu"
+    if sender == "bookman":
+        token = os.getenv("SLACK_BOT_TOKEN_BOOKMAN") or os.getenv("SLACK_BOT_TOKEN")
+        who = "책읽남"
+    else:
+        token = os.getenv("SLACK_BOT_TOKEN_DEFAULT") or os.getenv("SLACK_BOT_TOKEN")
+        who = "뚜떵또"
     channel = args.channel or os.getenv("SLACK_BOOK_CHANNEL") or os.getenv("SLACK_BRIEFING_CHANNEL")
     if not token:
-        print("❌ SLACK_BOT_TOKEN_BOOKMAN(또는 SLACK_BOT_TOKEN)이 .env 에 없습니다.", file=sys.stderr)
+        var = "SLACK_BOT_TOKEN_BOOKMAN" if sender == "bookman" else "SLACK_BOT_TOKEN_DEFAULT"
+        print(f"❌ {var}(또는 SLACK_BOT_TOKEN)이 .env 에 없습니다.", file=sys.stderr)
         return 3
     if not channel:
         print("❌ SLACK_BOOK_CHANNEL(또는 SLACK_BRIEFING_CHANNEL)이 .env 에 없습니다.", file=sys.stderr)
@@ -131,7 +153,7 @@ def main():
 
     if not post_to_slack(text, channel, token):
         return 3
-    print(f"✅ 발송 완료 → {channel}")
+    print(f"✅ {who} 이름으로 발송 완료 → {channel}")
     return 0
 
 
