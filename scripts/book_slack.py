@@ -162,6 +162,9 @@ def main():
         return 3
     if not channel:
         print("❌ SLACK_BOOK_CHANNEL(또는 SLACK_BRIEFING_CHANNEL)이 .env 에 없습니다.", file=sys.stderr)
+        print("   💡 `echo ... >> .env` 로 추가했다면 **앞 줄에 달라붙었을 수** 있습니다.", file=sys.stderr)
+        print("      확인: tail -3 ~/.openclaw/.env", file=sys.stderr)
+        print("      (한 줄에 변수 두 개가 붙어 있으면 그 줄을 둘로 나누세요)", file=sys.stderr)
         return 3
 
     if not post_to_slack(text, channel, token):
