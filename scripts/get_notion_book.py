@@ -23,7 +23,12 @@ get_notion_book.py — 노션 '독서 리스트'에서 **실제로 적혀 있는
   1순위(강조) : 글자에 **색/형광펜**이 칠해졌거나 인용(>)·콜아웃 블록
   2순위(굵게) : **굵게/밑줄** 표시된 문장
   3순위(본문) : 그 외 일반 본문 문장
+  4순위(후순위): 모양이 어설픈 본문(단어 나열, 너무 짧거나 긴 줄 등)
   ※ `한 문장` / `깨달은 점` 프로퍼티가 채워져 있으면 그게 0순위(직접 고른 문장)
+
+  **웬만하면 버리지 않는다.** 애매한 줄은 버리는 대신 4순위로 미뤄, 다른 후보가
+  없을 때 쓰인다. 빈손으로 "못 찾았습니다" 하는 것보다 노션에 실제로 적힌
+  본문 한 줄을 가져오는 게 낫기 때문이다.
 
 사용법
 ------
@@ -60,13 +65,17 @@ DEFAULT_DB_ID = "678f2c0b-d124-4889-8571-b019ec30f971"
 API = "https://api.notion.com/v1"
 NOTION_VERSION = "2022-06-28"
 
-# 문장으로 인정할 최소/최대 길이 (짧은 조각·긴 문단 덩어리를 걸러낸다)
-MIN_LEN = 10
-MAX_LEN = 260
+# 길이 기준을 두 겹으로 둔다.
+#   HARD_* 를 벗어나면 진짜로 못 쓰는 줄 → 버린다.
+#   GOOD_* 안에 들면 보기 좋은 길이 → 그대로. 벗어나면 버리지 않고 '뒤로 미룬다'.
+HARD_MIN, HARD_MAX = 6, 600      # 이 범위 밖만 버림
+GOOD_MIN, GOOD_MAX = 10, 260     # 이 범위 밖은 후순위로만
 
 # 한 번 실행할 때 노션에서 새로 읽어볼 책 권수 상한.
 # (캐시에 없는 책만 해당. 너무 많이 읽으면 슬랙 응답이 느려져서 제한한다)
-MAX_FETCH_PER_RUN = 8
+# 단, 아무것도 못 찾은 '빈손' 상황에서는 아래 배수만큼 더 읽어본다.
+DESPERATE_MULTIPLIER = 3
+MAX_FETCH_PER_RUN = 10
 
 # 노션 프로퍼티 이름
 # ⚠️ 실제 이름이 "깨달은 점 "처럼 **뒤에 공백**이 붙어 있어서,
@@ -79,14 +88,15 @@ PROP_INSIGHT = "깨달은 점"
 _BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # ~/.openclaw
 STATE_PATH = os.path.join(_BASE, "workspace", "bookman", "book_sequence_state.json")
 CACHE_PATH = os.path.join(_BASE, "workspace", "bookman", "book_cache.json")
-CACHE_VERSION = 2
+CACHE_VERSION = 3
 
 # 문장 등급(낮을수록 좋은 글귀)
 TIER_PROP = 0      # '한 문장' / '깨달은 점' 프로퍼티 = 직접 고른 문장
 TIER_EMPH = 1      # 색/형광펜/인용블록 = 읽으면서 칠해둔 진짜 글귀
 TIER_BOLD = 2      # 굵게/밑줄
 TIER_PLAIN = 3     # 일반 본문
-TIER_NAME = {0: "직접입력", 1: "강조", 2: "굵게", 3: "본문"}
+TIER_WEAK = 4      # 모양이 좀 어설픈 본문 (버리지 않고 '맨 뒤'로 미뤄둔다)
+TIER_NAME = {0: "직접입력", 1: "강조", 2: "굵게", 3: "본문", 4: "본문(후순위)"}
 
 
 # ── 1. .env 읽기 ──────────────────────────────────────────────
@@ -223,7 +233,7 @@ def page_blocks(token, block_id, depth=0, out=None):
     return out
 
 
-# ── 5. '글귀다운 문장'만 남기는 필터 ────────────────────────────
+# ── 5. 문장 등급 매기기 (버리기보다 '뒤로 미루기') ──────────────
 # 문장 앞에 붙은 쪽수 제거: "153p 정확한…" → "정확한…"
 PAGE_MARK = re.compile(r"^\s*(?:p\.?\s*\d{1,4}|\d{1,4}\s*(?:p|쪽|페이지))[.\s:]+", re.IGNORECASE)
 HANGUL = re.compile(r"[가-힣]")
@@ -246,35 +256,46 @@ def clean_sentence(s):
     return s.strip(" ·-–—")                    # ※ 마침표는 원문이므로 남긴다
 
 
-def is_good_sentence(s, tier=TIER_PLAIN):
-    """브리핑에 쓸 만한 '한 문장'인지 판단. 애매하면 버린다(품질 우선).
+def score_sentence(s, tier=TIER_PLAIN):
+    """문장의 최종 등급을 매긴다. 못 쓰는 줄이면 None.
 
-    단, 형준님이 직접 칠하거나 입력한 문장(0·1순위)은 이미 '고른 문장'이므로
-    단어 나열 검사 같은 까다로운 규칙은 건너뛴다.
+    설계 원칙: **웬만하면 버리지 않는다.**
+    빈손으로 "못 찾았습니다" 하는 것보다, 조금 어설퍼도 노션에 실제로 적힌
+    본문 한 줄을 가져오는 게 낫다. 그래서 애매한 줄은 **버리는 대신
+    후순위(TIER_WEAK)로 미뤄** 다른 후보가 없을 때만 쓰이게 한다.
+
+    진짜로 버리는 것은 넷뿐:
+      길이가 말도 안 됨 / 한글 없음 / 링크 줄 / 쪽수만 있는 줄
     """
-    picked = tier <= TIER_EMPH                 # 사람이 직접 고른 문장인가
-
-    if not (MIN_LEN <= len(s) <= MAX_LEN):
-        return False                           # 너무 짧은 조각/너무 긴 덩어리 제외
+    if not s:
+        return None
+    if not (HARD_MIN <= len(s) <= HARD_MAX):
+        return None                            # 6자 미만·600자 초과는 문장이 아님
     if not HANGUL.search(s):
-        return False                           # 한글 없는 줄(URL·영문코드 등) 제외
+        return None                            # 한글 없는 줄(영문코드·숫자 등)
     if URLISH.search(s):
-        return False                           # 링크가 섞인 줄 제외
-    if picked:
-        return True                            # 여기까지 왔으면 채택
+        return None                            # 링크 줄
+    if PAGE_ONLY.match(s):
+        return None                            # "22p" 처럼 쪽수만 있는 줄
 
-    # ↓ 아래는 '색칠 안 된 일반 본문'에만 적용하는 까다로운 규칙
+    if tier <= TIER_EMPH:
+        return tier                            # 직접 입력·색칠한 문장은 그대로 최우선
+
+    # ↓ 아래 조건에 걸리면 '버리지 않고' 후순위로만 미룬다
+    weak = False
+    if not (GOOD_MIN <= len(s) <= GOOD_MAX):
+        weak = True                            # 너무 짧거나 너무 긴 줄
     if s.count(",") + s.count("/") >= 4:
-        return False                           # 단어 나열(예: 보전과 보존, 부분과 부문 …)
+        weak = True                            # 단어 나열(예: 보전과 보존, 부분과 부문 …)
     if re.fullmatch(r"(첫째|둘째|셋째|넷째|다섯째|여섯째)[,.\s].{0,10}", s):
-        return False                           # 목록 뼈대만 있는 줄
+        weak = True                            # 목록 뼈대만 있는 줄
     if re.search(r"(없는가|있는가)[.?]?$", s):
-        return False                           # 퇴고 체크리스트 항목
+        weak = True                            # 퇴고 체크리스트 항목
     if LABEL_LIST.search(s):
-        return False                           # "심리동사 : 좋다. 나쁘다."
+        weak = True                            # "심리동사 : 좋다. 나쁘다."
     if not (SENT_END.search(s) or PARTICLE.search(s)):
-        return False                           # 끝맺음도 조사도 없으면 단어 나열
-    return True
+        weak = True                            # 끝맺음도 조사도 없으면 단어 나열 같음
+    return TIER_WEAK if weak else tier
 
 
 def extract_sentences(token, page):
@@ -285,14 +306,16 @@ def extract_sentences(token, page):
     # 0순위: 직접 입력한 프로퍼티
     for key in (PROP_SENTENCE, PROP_INSIGHT):
         v = clean_sentence(prop_text(props, key))
-        if is_good_sentence(v, TIER_PROP):
-            cands.append({"t": v, "tier": TIER_PROP, "p": key})
+        t = score_sentence(v, TIER_PROP)
+        if t is not None:
+            cands.append({"t": v, "tier": t, "p": key})
 
-    # 1~3순위: 본문 블록 (색칠 > 굵게 > 일반)
+    # 1~4순위: 본문 블록 (색칠 > 굵게 > 일반 > 후순위)
     for raw, tier, page_mark in page_blocks(token, page["id"]):
         v = clean_sentence(raw)
-        if is_good_sentence(v, tier):
-            cands.append({"t": v, "tier": tier, "p": page_mark})
+        t = score_sentence(v, tier)
+        if t is not None:
+            cands.append({"t": v, "tier": t, "p": page_mark})
 
     # 같은 페이지 안 중복 제거(등급 좋은 것 우선 유지)
     best = {}
@@ -398,7 +421,7 @@ def cmd_check(token, db_id):
     n_prop = sum(1 for p in rows if prop_text(p.get("properties", {}), PROP_SENTENCE).strip()
                  or prop_text(p.get("properties", {}), PROP_INSIGHT).strip())
     cached = [c for pid, c in cache["pages"].items()]
-    tier_counts = {0: 0, 1: 0, 2: 0, 3: 0}
+    tier_counts = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0}
     for c in cached:
         for s in c.get("sentences", []):
             tier_counts[s.get("tier", 3)] = tier_counts.get(s.get("tier", 3), 0) + 1
@@ -409,7 +432,7 @@ def cmd_check(token, db_id):
     print(f"  · 본문까지 읽어둔 책(캐시)            : {len(cached)}권 / {len(rows)}권")
     print(f"  · 캐시에 모인 문장                    : {total_sent}개")
     print(f"      직접입력 {tier_counts[0]} · 강조(색칠) {tier_counts[1]} · "
-          f"굵게 {tier_counts[2]} · 본문 {tier_counts[3]}")
+          f"굵게 {tier_counts[2]} · 본문 {tier_counts[3]} · 후순위 {tier_counts[4]}")
     if len(cached) < len(rows):
         print("  💡 전부 미리 읽어두려면: get_notion_book.py --build-cache")
     print(f"  · 이미 보낸 문장 기록: {len(load_state()['used'])}개")
@@ -472,7 +495,12 @@ def cmd_pick(token, db_id, keyword):
     fetched = 0
 
     for page in rows:
-        allow = fetched < MAX_FETCH_PER_RUN or bool(keyword)
+        # 평소엔 최대 MAX_FETCH_PER_RUN 권만 새로 읽는다(응답 속도).
+        # 다만 아직 후보를 하나도 못 찾은 '빈손' 상태면 더 읽어본다
+        #  — 빈손으로 끝내는 것보다 몇 초 더 걸리는 편이 낫다.
+        empty_handed = best is None and seen_used is None
+        budget = MAX_FETCH_PER_RUN * (DESPERATE_MULTIPLIER if empty_handed else 1)
+        allow = bool(keyword) or fetched < budget
         sents, did = sentences_for(token, page, cache, allow_fetch=allow)
         fetched += int(did)
         if not sents:
@@ -489,8 +517,8 @@ def cmd_pick(token, db_id, keyword):
             return emit(top, page, state)
         if best is None or top["tier"] < best[0]["tier"]:
             best = (top, page)
-        if fetched >= MAX_FETCH_PER_RUN and best:
-            break                               # 충분히 봤으면 그만 (응답 속도 확보)
+        if best and best[0]["tier"] <= TIER_PLAIN and fetched >= MAX_FETCH_PER_RUN:
+            break                               # 쓸 만한 걸 이미 잡았으면 그만 (응답 속도)
 
     _save_json(CACHE_PATH, cache)
 
