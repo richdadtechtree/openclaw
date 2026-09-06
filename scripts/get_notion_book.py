@@ -69,7 +69,10 @@ NOTION_VERSION = "2022-06-28"
 #   HARD_* 를 벗어나면 진짜로 못 쓰는 줄 → 버린다.
 #   GOOD_* 안에 들면 보기 좋은 길이 → 그대로. 벗어나면 버리지 않고 '뒤로 미룬다'.
 HARD_MIN, HARD_MAX = 6, 600      # 이 범위 밖만 버림
-GOOD_MIN, GOOD_MAX = 10, 260     # 이 범위 밖은 후순위로만
+GOOD_MIN, GOOD_MAX = 10, 300     # 이 범위 밖은 후순위로만
+# 엔터 2번으로 묶을 때 한 덩어리가 커질 수 있는 최대 길이
+# (불릿 수십 개가 통째로 한 덩어리가 되는 것을 막는다)
+GROUP_MAX = 300
 
 # 한 번 실행할 때 노션에서 새로 읽어볼 책 권수 상한.
 # (캐시에 없는 책만 해당. 너무 많이 읽으면 슬랙 응답이 느려져서 제한한다)
@@ -95,7 +98,7 @@ PROP_INSIGHT = "깨달은 점"
 _BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # ~/.openclaw
 STATE_PATH = os.path.join(_BASE, "workspace", "bookman", "book_sequence_state.json")
 CACHE_PATH = os.path.join(_BASE, "workspace", "bookman", "book_cache.json")
-CACHE_VERSION = 4
+CACHE_VERSION = 5
 
 # 문장 등급(낮을수록 좋은 글귀)
 TIER_PROP = 0      # '한 문장' / '깨달은 점' 프로퍼티 = 직접 고른 문장
@@ -210,11 +213,14 @@ def rich_info(rich):
     return text, colored / total, bold / total
 
 
-def page_blocks(token, block_id, depth=0, out=None):
-    """페이지 본문을 훑어 (원문, 등급, 직전 쪽수) 목록을 만든다. 하위 1단계까지."""
+def collect_blocks(token, block_id, depth=0, out=None):
+    """페이지 본문 블록을 **원래 순서 그대로** 평평하게 모은다(묶는 건 다음 단계).
+
+    빈 블록(= 엔터를 두 번 쳐서 생긴 빈 줄)도 그대로 담는다.
+    아래 group_blocks() 가 그 빈 줄을 '덩어리 경계'로 쓰기 때문이다.
+    """
     out = [] if out is None else out
     cursor = None
-    last_page_mark = ""     # 바로 위에 나온 "22p" 를 기억해 출처 표시에 쓴다
     while True:
         params = {"page_size": 100}
         if cursor:
@@ -224,26 +230,91 @@ def page_blocks(token, block_id, depth=0, out=None):
             btype = b.get("type")
             if btype in TEXT_BLOCKS:
                 raw, c_ratio, b_ratio = rich_info(b[btype].get("rich_text", []))
-                stripped = raw.strip()
-                if PAGE_ONLY.match(stripped):
-                    last_page_mark = stripped        # 쪽수 줄은 글귀가 아니라 표시로만 쓴다
-                elif stripped:
-                    if btype in QUOTE_BLOCKS or c_ratio >= 0.5:
-                        tier = TIER_EMPH        # 색칠·인용 = 사람이 고른 글귀
-                    elif btype in HEADING_BLOCKS:
-                        tier = TIER_WEAK        # 소제목 = 목차. 후순위로만
-                    elif b_ratio >= 0.5:
-                        tier = TIER_BOLD
-                    else:
-                        tier = TIER_PLAIN
-                    out.append((stripped, tier, last_page_mark))
+                out.append({"text": raw.strip(), "type": btype,
+                            "c": c_ratio, "b": b_ratio})
             # 토글/불릿 안쪽 문장도 '노션에 있는' 문장이므로 1단계까지 따라간다
             if b.get("has_children") and depth < 1:
-                page_blocks(token, b["id"], depth + 1, out)
+                collect_blocks(token, b["id"], depth + 1, out)
         if not data.get("has_more"):
             break
         cursor = data.get("next_cursor")
     return out
+
+
+def group_blocks(items):
+    """**엔터 2번(빈 줄)** 을 경계로 블록들을 하나의 글귀 덩어리로 묶는다.
+
+    노션에서 엔터 한 번은 '줄 바꿈'이라 같은 글귀가 여러 블록으로 쪼개져 있을 수 있다.
+    그대로 두면 문장이 반 토막 나서 나가므로, 빈 줄이 나올 때까지 이어 붙인다.
+
+    덩어리를 끊는 경우:
+      1) 빈 블록(엔터 2번)          ← 기본 경계
+      2) 앞 줄이 . ! ? 로 끝났을 때  ← 이미 끝난 문장에 다음 줄을 붙이지 않는다
+      3) "22p" 같은 쪽수만 있는 줄   ← 다음 덩어리의 출처 표시로 넘긴다
+      4) 소제목 블록                ← 목차는 항상 혼자
+      5) 블록 종류가 바뀔 때         ← 문단 ↔ 불릿 ↔ 번호목록
+      6) 색칠 여부가 바뀔 때         ← 칠한 글귀에 옆 메모가 섞이지 않게
+      7) 너무 길어질 때(GROUP_MAX)   ← 덩어리가 무한정 커지는 것 방지
+
+    즉 **"문장이 안 끝난 채 줄만 바뀐 경우"에만 이어 붙인다.**
+    불릿마다 온전한 문장이 적혀 있으면 각각 따로 남는다.
+
+    반환: [(합쳐진 원문, 등급, 쪽수표시), ...]
+    """
+    groups = []
+    cur = []              # 지금 모으는 중인 덩어리
+    page_mark = ""        # 바로 위에 나온 "22p"
+
+    def flush():
+        """모아둔 블록들을 한 덩어리로 확정한다."""
+        nonlocal cur
+        if not cur:
+            return
+        text = " ".join(x["text"] for x in cur)
+        # 등급은 덩어리 '전체' 기준으로 다시 계산한다(글자 수로 가중평균)
+        total = sum(len(x["text"]) for x in cur) or 1
+        c = sum(x["c"] * len(x["text"]) for x in cur) / total
+        bd = sum(x["b"] * len(x["text"]) for x in cur) / total
+        btype = cur[0]["type"]
+        if btype in QUOTE_BLOCKS or c >= 0.5:
+            tier = TIER_EMPH        # 색칠·인용 = 사람이 고른 글귀
+        elif btype in HEADING_BLOCKS:
+            tier = TIER_WEAK        # 소제목 = 목차. 후순위로만
+        elif bd >= 0.5:
+            tier = TIER_BOLD
+        else:
+            tier = TIER_PLAIN
+        groups.append((text, tier, page_mark))
+        cur = []
+
+    for it in items:
+        t = it["text"]
+        if not t:                              # (1) 빈 줄 = 엔터 2번
+            flush()
+            continue
+        if PAGE_ONLY.match(t):                 # (2) 쪽수 줄
+            flush()
+            page_mark = t
+            continue
+        if cur:
+            prev = cur[-1]
+            finished = bool(TERMINAL.search(prev["text"]))      # (2) 앞 줄이 끝난 문장인가
+            changed_type = it["type"] != prev["type"]           # (5)
+            changed_emph = (it["c"] >= 0.5) != (prev["c"] >= 0.5)   # (6)
+            cur_len = sum(len(x["text"]) for x in cur)
+            too_long = cur_len + len(t) + 1 > GROUP_MAX         # (7)
+            if finished or changed_type or changed_emph or too_long:
+                flush()
+        cur.append(it)
+        if it["type"] in HEADING_BLOCKS:       # (3) 소제목은 항상 혼자
+            flush()
+    flush()
+    return groups
+
+
+def page_blocks(token, block_id):
+    """페이지 본문 → (덩어리 원문, 등급, 쪽수표시) 목록."""
+    return group_blocks(collect_blocks(token, block_id))
 
 
 # ── 5. 문장 등급 매기기 (버리기보다 '뒤로 미루기') ──────────────
