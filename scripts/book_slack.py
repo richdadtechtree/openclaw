@@ -48,8 +48,17 @@ import argparse
 import os
 import subprocess
 import sys
+import time
 
-import requests
+try:
+    import requests
+except ModuleNotFoundError:                      # 시스템 python3 엔 requests 가 없을 수 있다
+    sys.stderr.write(
+        "❌ requests 모듈이 없습니다.\n"
+        "   venv 파이썬으로 실행하세요. 예:\n"
+        "     /home/ubuntu/newspaper/.venv/bin/python ~/.openclaw/scripts/book_slack.py\n"
+        "   또는 설치: pip3 install -r ~/.openclaw/requirements.txt\n")
+    sys.exit(3)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BASE = os.path.dirname(HERE)                     # ~/.openclaw
@@ -76,10 +85,14 @@ def pick_quote(book=None):
     반환: (본문, 출처)  — 글귀가 없으면 (None, 사유)
     ⚠️ 여기서 절대 대체 문구를 만들지 않는다. 없으면 없는 대로 None 을 돌려준다.
     """
-    cmd = [sys.executable, PICKER]
+    cmd = [sys.executable, PICKER]              # 같은 파이썬(venv 포함)으로 실행
     if book:
         cmd += ["--book", book]
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    print("… 노션에서 글귀를 찾는 중 "
+          "(캐시가 비어 있으면 책 본문을 읽느라 1~2분 걸릴 수 있습니다)", file=sys.stderr)
+    t0 = time.time()
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    print(f"… {time.time() - t0:.1f}초 걸림", file=sys.stderr)
     text = (r.stdout or "").strip()
     note = (r.stderr or "").strip()
 
@@ -154,6 +167,8 @@ def main():
     if not post_to_slack(text, channel, token):
         return 3
     print(f"✅ {who} 이름으로 발송 완료 → {channel}")
+    print("─" * 40)
+    print(text)                                  # 실제로 보낸 내용을 로그에 남긴다
     return 0
 
 
