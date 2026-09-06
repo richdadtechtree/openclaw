@@ -630,3 +630,41 @@ Last      37m ago / Status ok
 | `매일 아침 강릉 서울 날씨 브리핑` (`f6594126-…`, 06:30) | error |
 
 PT 일일 리포트가 27회 연속 실패 = 약 한 달간 미발송. 별도 확인 필요.
+
+### ✅ 12차 — 완료 (실전 발송 성공)
+
+```
+… 1.2초 걸림
+[출처] 본문 354p / https://app.notion.com/p/28cd470c68bd80a28b24d20918173fcb
+✅ 뚜떵또 이름으로 발송 완료 → C0BMHERHA77
+────────────────────────────────────────
+당신이 보던 세상의 경계를 넘어, 더 넓은 시야로 바라보라. 언제나 자신만의 질문을 던지는 걸 두려워하지 마라.
+<위버맨쉬> 프리드히니체
+```
+
+**최종 구성**
+| 단계 | 담당 | 비고 |
+|---|---|---|
+| 스케줄 | crontab `0 9,12,15,18,21 * * *` | `CRON_TZ=Asia/Seoul` 아래라 KST 적용 |
+| 실행 | `/home/ubuntu/newspaper/.venv/bin/python` | 시스템 python3 엔 requests 없음 |
+| 발송 | `scripts/book_slack.py` (뚜떵또 이름) | 글귀 없으면 **침묵**(exit 1) |
+| 선택 | `scripts/get_notion_book.py` | 노션 원문만, 확률 추첨 |
+| 캐시 | `workspace/bookman/book_cache.json` | **131권** 수집 완료, 조회 1.2초 |
+| 로그 | `~/.openclaw/book_slack.log` | 보낸 내용 + 출처 기록 |
+
+**환각 발송하던 openclaw cron 잡 `8f92181d…` 은 제거 확인됨** (`cron list` 에서 사라짐).
+
+**마지막 함정 — `.env` 줄바꿈**
+`echo 'SLACK_BOOK_CHANNEL=…' >> .env` 가 파일 끝 개행 부재로 앞 줄(`#######3` 주석)에
+달라붙어 변수가 인식되지 않았다. 정규식으로 줄을 분리해 해결.
+→ **앞으로 `.env` 에 값 추가 시 `printf '\nKEY=VAL\n' >>` 를 쓸 것.**
+
+**남은 선택 과제**
+1. 아침 6시 추가 (현재 9시부터). crontab 마지막 줄 `9,` → `6,9,` 로 수정.
+2. 노션 저자 오타: `위버맨쉬` 의 저자가 `프리드히니체`(→ 프리드리히 니체).
+   스크립트는 노션 원문을 그대로 내보내므로 **노션에서 고쳐야** 한다.
+3. 🔴 **PT 리포트 27회 연속 실패** (별건, 미해결).
+   - openclaw cron `pt-daily-report-slack` (`bf1c0dd2…`, 21:00, agent `pt-trainer`) error 27x
+   - crontab `openclaw-pt-daily-briefing` 도 같은 21:00 에 중복 등록, `/usr/bin/python3` 사용
+   - `pt_briefing.py:457` 이 `import requests` 실패 시 `[Warn] requests 미설치 → 슬랙 전송 생략`
+     후 조용히 `return False` → **에러 없이 발송만 누락**되는 구조. venv 파이썬으로 바꾸면 해결 가능.
