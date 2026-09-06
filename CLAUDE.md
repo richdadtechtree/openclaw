@@ -47,7 +47,7 @@ Git으로 서버와 자동 동기화됩니다. 별도 프로젝트인 **stock**(
 | `slack_text.py` | 텍스트 → 슬랙 |
 | `test_slack_alert.py` | 관심종목 오늘 변동 슬랙 테스트(국장/미장 구분, KRX 장시간 표시) |
 | `debate.py` | `#ai-토론` 슬랙 채널: GPT/Gemini/Qwen/Mistral 다중 모델 토론(개별답변·토론·상태·도움말). `debate` 에이전트가 exec 로 호출, stdout 그대로 답장. GPT는 API키 대신 게이트웨이 경유 ChatGPT Plus OAuth(무툴 에이전트 `debate-gpt`). 상세: HANDOFF.md "AI 토론 채널" |
-| `get_notion_book.py` | 책읽남(bookman) 독서 브리핑. 노션 '독서 리스트' DB에서 **실제로 적혀 있는 문장만** 1건 추출. 못 찾으면 지어내지 않고 exit 2. **색칠·형광펜·인용 문장을 최우선**으로 고르고, 애매한 줄은 버리는 대신 후순위로 미룬다(빈손 방지). 본문은 캐시. `--check`/`--list`/`--book`/`--build-cache`/`--reset` 지원 |
+| `get_notion_book.py` | 책읽남(bookman) 독서 브리핑. 노션 '독서 리스트' DB에서 **실제로 적혀 있는 문장만** 1건 추출. 못 찾으면 지어내지 않고 exit 2. **색칠·형광펜·인용 문장을 최우선**으로 고르고, 애매한 줄은 버리는 대신 후순위로 미룬다(빈손 방지). 본문은 캐시. 노션 **`책읽남` 열이 `제외`** 인 책은 후보에서 뺀다. `--check`/`--list`/`--book`/`--build-cache`/`--reset` 지원 |
 | `book_slack.py` | **책 글귀 → 슬랙 직접 발송(AI 미경유)**. `get_notion_book.py` 를 실행해 결과가 있을 때만 보낸다. **글귀가 없으면 아무것도 안 보내고 조용히 종료(exit 1)** → AI 창작 원천 차단. cron 은 이 스크립트를 호출할 것. 역할 분담 — **책읽남=자료 수집, 뚜떵또=최종 발송(기본)**, `--as bookman` 으로 전환. `--dry-run` 지원 |
 | `notion_push.py` / `notion-briefing-*.txt` | (구) 노션 저장 — **시트로 대체됨, 미사용** |
 
