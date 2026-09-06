@@ -489,3 +489,46 @@ python3 ~/.openclaw/scripts/get_notion_book.py                 # 실제 브리�
 여러 책을 더 넓게 섞고 싶으면 `BOOKS_PER_PICK` 을 키운다. 상수 한 줄씩이다.
 
 중복 방지(`used` 지문)·소진 시 재순환·`NO_QUOTE` exit 2 는 그대로다.
+
+### 9차 — 발송 경로에서 AI 제거 (실제 사고 발생)
+
+**사고**: 2026-09-06 21:00 슬랙에 이런 메시지가 나갔다.
+
+```
+"'전자책 쓰기' 책에서 주목할 만한 문장입니다."
+<전자책 쓰기>
+Current time: Sunday, September 6th, 2026 - 9:00 PM (Asia/Seoul)
+Reference UTC: 2026-09-06 12:00 UTC
+```
+
+**분석**
+1. 발신자가 **`dduddongddo`(뚜떵또 = `main` 에이전트)** 다. **책읽남이 아니다.**
+   → `openclaw.json` `bindings` 에 bookman 항목이 여전히 없어(1차 보완에서 지적) 슬랙 catch-all
+   `{"agentId":"main","match":{"channel":"slack"}}` 가 받았다.
+   `main` 의 SOUL.md 에는 독서 규칙이 없으므로 `bookman/SOUL.md` 의 환각 차단 규칙이 **적용될 수 없었다.**
+2. `get_notion_book.py` 는 **실행조차 되지 않았다.** AI가 자기 말로 지어냈다.
+   `"…책에서 주목할 만한 문장입니다"` 는 글귀가 아니라 자리 채우기 문장이다.
+3. 하필 `전자책 쓰기` 는 `한 문장` 칸에 GitHub URL 이 들어 있어 실제로 쓸 글귀가 없는 책이다.
+   스크립트였다면 `NO_QUOTE` + exit 2 로 조용히 끝났을 상황.
+4. `Current time: / Reference UTC:` 는 에이전트 시스템 프롬프트가 새어 나온 것.
+
+**조치 — `scripts/book_slack.py` 신설 (AI 미경유)**
+- `get_notion_book.py` 를 subprocess 로 실행해 stdout 을 그대로 슬랙 `chat.postMessage` 로 보낸다.
+- **글귀가 없으면(exit≠0, 빈 출력, 2줄 미만) 아무것도 보내지 않고 exit 1** 로 조용히 종료.
+  지어낼 주체(모델)가 경로에 없으므로 **구조적으로 창작이 불가능하다.**
+- 봇 토큰 `SLACK_BOT_TOKEN_BOOKMAN`(폴백 `SLACK_BOT_TOKEN`), 채널 `SLACK_BOOK_CHANNEL`
+  (폴백 `SLACK_BRIEFING_CHANNEL`). `--dry-run` / `--channel` / `--book` 지원.
+- `bookman/SOUL.md` 에도 0번 절대 규칙 추가: 자동 발송에서 글귀가 없으면 **침묵**,
+  자리 채우기 문장 생성은 최악의 실패로 명시.
+
+**서버에서 반드시 할 일**
+1. 지금 3시간마다 도는 스케줄(에이전트에게 "책 글귀 보내"라고 시키는 것)을 **삭제**하고,
+   대신 crontab 에서 스크립트를 직접 호출한다.
+   ```bash
+   crontab -e
+   # 09~21시 3시간마다
+   0 9,12,15,18,21 * * * /usr/bin/python3 /home/ubuntu/.openclaw/scripts/book_slack.py >> /home/ubuntu/.openclaw/book_slack.log 2>&1
+   ```
+2. `.env` 에 `SLACK_BOOK_CHANNEL=C0BMHERHA77` 추가.
+3. (선택) bookman 라우팅 바인딩 추가 — 1차 보완의 jq 명령 참고. 사람이 책읽남 봇에게
+   직접 말을 걸 때 `main` 이 아니라 `bookman` 이 받게 하려면 필요하다.
