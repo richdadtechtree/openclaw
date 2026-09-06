@@ -20,7 +20,10 @@ Git으로 서버와 자동 동기화됩니다. 별도 프로젝트인 **stock**(
 
 ## 핵심 규칙 / 함정 (필독)
 - **서버 경로**: openclaw = `/home/ubuntu/.openclaw`, stock = `/home/ubuntu/stock/stock`.
-- **파이썬**: 서버에 맨 `python` 없음 → `python3` 또는 venv `~/stock/stock/venv/bin/python` 사용.
+- **파이썬**: 서버에 맨 `python` 없음 → `python3` 또는 venv 사용.
+  ⚠️ **시스템 `python3` 에는 `requests` 가 없다** → 외부 API를 쓰는 스크립트(`book_slack.py`,
+  `get_notion_book.py` 등)는 venv 파이썬 절대경로로 실행할 것: `/home/ubuntu/newspaper/.venv/bin/python`
+  (stock 쪽은 `~/stock/stock/venv/bin/python`). **cron 등록 시 특히 주의.**
 - **openclaw 재시작**: `openclaw daemon restart` (systemd user 서비스 `openclaw-gateway`).
 - **git 권한**: `richdadtechtree/openclaw`만 push 가능. **`richdadtechtree/stock`은 push 불가(403)** → stock 변경은 openclaw `scripts/`에 파일 두고 서버가 복사/적용하거나, 서버에서 직접 편집.
 - **자동 동기화**: openclaw main에 push → 서버 cron이 1분마다 `git-auto-pull.sh`로 pull + 재시작. 런타임 파일(세션/로그/미디어/*.sqlite/*.bak)은 `.gitignore`로 추적 제외 → pull 안전.

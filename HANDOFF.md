@@ -552,3 +552,36 @@ Reference UTC: 2026-09-06 12:00 UTC
 사이에 모델을 두지 않고 **찾은 글자를 그대로** 올린다.
 
 참고: 사용자가 bookman 봇을 채널에 초대해 뒀으므로 `--as bookman` 도 바로 동작한다.
+
+### 10차 — 서버 실행 시 걸린 것 두 가지 (실측)
+
+**① 시스템 python3 에 `requests` 가 없다**
+서버에서 `python3 book_slack.py` 는 실패하고, `source /home/ubuntu/newspaper/.venv/bin/activate`
+후에야 동작했다. → **cron 은 반드시 venv 파이썬 절대경로로 호출해야 한다.**
+
+```bash
+# ❌ 틀림 (ModuleNotFoundError: requests)
+0 9,12,15,18,21 * * * /usr/bin/python3 /home/ubuntu/.openclaw/scripts/book_slack.py
+
+# ✅ 맞음
+0 9,12,15,18,21 * * * /home/ubuntu/newspaper/.venv/bin/python /home/ubuntu/.openclaw/scripts/book_slack.py >> /home/ubuntu/.openclaw/book_slack.log 2>&1
+```
+
+`book_slack.py` 는 `sys.executable` 로 `get_notion_book.py` 를 부르므로,
+venv 파이썬으로 실행하면 하위 프로세스도 자동으로 같은 venv 를 쓴다.
+`requests` 가 없으면 traceback 대신 안내문 + exit 3 을 내도록 보완했다.
+
+**② 첫 실행이 느려 사용자가 Ctrl+C 로 중단**
+`CACHE_VERSION` 5 로 올라가며 캐시가 비었고, 책 본문을 새로 읽느라 오래 걸렸다.
+→ 시작 시 "노션에서 글귀를 찾는 중(1~2분 걸릴 수 있음)" 안내와 소요 시간을 stderr 에 출력.
+subprocess timeout 300 → 600초.
+→ **캐시 예열을 먼저 하는 것이 정석**:
+```bash
+/home/ubuntu/newspaper/.venv/bin/python ~/.openclaw/scripts/get_notion_book.py --build-cache
+```
+한 번 돌려두면 이후 실행은 캐시 적중이라 수 초 내로 끝난다.
+
+**③ 발송 성공 시 보낸 내용을 stdout 에 함께 출력** → cron 로그(`book_slack.log`)만 봐도
+그날 무엇이 나갔는지 확인 가능.
+
+실제 첫 성공 로그: `[출처] 본문 98p / https://app.notion.com/p/1cad470c68bd801eb751f91154822fac`
