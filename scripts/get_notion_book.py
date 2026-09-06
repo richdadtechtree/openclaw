@@ -75,6 +75,9 @@ GOOD_MIN, GOOD_MAX = 10, 260     # 이 범위 밖은 후순위로만
 # (캐시에 없는 책만 해당. 너무 많이 읽으면 슬랙 응답이 느려져서 제한한다)
 # 단, 아무것도 못 찾은 '빈손' 상황에서는 아래 배수만큼 더 읽어본다.
 DESPERATE_MULTIPLIER = 3
+
+# --list 미리보기에서 한 책이 목록을 독차지하지 않도록 책당 출력 상한
+LIST_PER_BOOK = 5
 MAX_FETCH_PER_RUN = 10
 
 # 노션 프로퍼티 이름
@@ -88,7 +91,7 @@ PROP_INSIGHT = "깨달은 점"
 _BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # ~/.openclaw
 STATE_PATH = os.path.join(_BASE, "workspace", "bookman", "book_sequence_state.json")
 CACHE_PATH = os.path.join(_BASE, "workspace", "bookman", "book_cache.json")
-CACHE_VERSION = 3
+CACHE_VERSION = 4
 
 # 문장 등급(낮을수록 좋은 글귀)
 TIER_PROP = 0      # '한 문장' / '깨달은 점' 프로퍼티 = 직접 고른 문장
@@ -174,6 +177,10 @@ TEXT_BLOCKS = (
 )
 # 그 자체로 '인용'인 블록 → 무조건 강조 취급
 QUOTE_BLOCKS = ("quote", "callout")
+# 소제목 블록 → 글귀가 아니라 '목차'인 경우가 많다.
+# (예: "지켜야 할 주의 사항", "압구정에서 시작되는 흐름")
+# 버리지는 않고 후순위로 내린다. 단, 색칠돼 있으면 사람이 고른 것이므로 예외.
+HEADING_BLOCKS = ("heading_1", "heading_2", "heading_3")
 
 # "22p" 처럼 쪽수만 있는 줄 (글귀가 아니라 '다음 문장의 쪽수 표시')
 PAGE_ONLY = re.compile(r"^\s*(?:p\.?\s*\d{1,4}|\d{1,4}\s*(?:p|쪽|페이지))\s*[.:]?\s*$",
@@ -218,7 +225,9 @@ def page_blocks(token, block_id, depth=0, out=None):
                     last_page_mark = stripped        # 쪽수 줄은 글귀가 아니라 표시로만 쓴다
                 elif stripped:
                     if btype in QUOTE_BLOCKS or c_ratio >= 0.5:
-                        tier = TIER_EMPH
+                        tier = TIER_EMPH        # 색칠·인용 = 사람이 고른 글귀
+                    elif btype in HEADING_BLOCKS:
+                        tier = TIER_WEAK        # 소제목 = 목차. 후순위로만
                     elif b_ratio >= 0.5:
                         tier = TIER_BOLD
                     else:
@@ -244,6 +253,10 @@ SENT_END = re.compile(r"(?:[.!?…\"'”’]|다|요|어|아|자|라|까|네|음
 PARTICLE = re.compile(r"(?:은|는|이|가|을|를|에|의|도|와|과|로|만|부터|까지|에서|처럼|보다)\s")
 # "심리동사 : 좋다. 나쁘다." 처럼 '짧은 라벨 : 나열' (글귀가 아니라 정리 메모)
 LABEL_LIST = re.compile(r"^[^:]{1,12}\s*:\s")
+# 문장이 제대로 끝났는지 (마침표/느낌표/물음표. 뒤에 닫는 따옴표가 붙어도 인정)
+TERMINAL = re.compile(r"[.!?…][\"\'”’」』)\]]*$")
+# 소제목처럼 보이는 길이 기준: 이보다 짧고 끝맺음 부호가 없으면 목차일 확률이 높다
+HEADINGISH_LEN = 40
 
 
 def clean_sentence(s):
@@ -295,6 +308,12 @@ def score_sentence(s, tier=TIER_PLAIN):
         weak = True                            # "심리동사 : 좋다. 나쁘다."
     if not (SENT_END.search(s) or PARTICLE.search(s)):
         weak = True                            # 끝맺음도 조사도 없으면 단어 나열 같음
+    if tier == TIER_PLAIN and len(s) < HEADINGISH_LEN and not TERMINAL.search(s):
+        # 마침표 없이 짧게 끝나는 줄은 대개 소제목이다.
+        #   예) "지켜야 할 주의 사항", "압구정에서 시작되는 흐름",
+        #       "100날 투자 공부해도 부자가 될 수 없는 이유"
+        # 색칠·굵게 표시된 줄은 사람이 고른 것이므로 이 규칙을 적용하지 않는다.
+        weak = True
     return TIER_WEAK if weak else tier
 
 
@@ -465,7 +484,9 @@ def cmd_list(token, db_id, limit, keyword):
         allow = fetched < MAX_FETCH_PER_RUN or bool(keyword)
         sents, did = sentences_for(token, page, cache, allow_fetch=allow)
         fetched += int(did)
-        for s in sents:
+        # 한 책이 목록을 독차지하지 않게 책당 상한을 둔다(여러 책을 골고루 검수)
+        per_book = sents if keyword else sents[:LIST_PER_BOOK]
+        for s in per_book:
             where = f" {s['p']}" if s.get("p") and s["p"] not in (PROP_SENTENCE, PROP_INSIGHT) else ""
             print(f"[{TIER_NAME.get(s['tier'], '?')}{where}] {row_title(page)} — {s['t']}")
             shown += 1
