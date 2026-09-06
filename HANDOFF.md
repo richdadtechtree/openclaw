@@ -585,3 +585,48 @@ subprocess timeout 300 → 600초.
 그날 무엇이 나갔는지 확인 가능.
 
 실제 첫 성공 로그: `[출처] 본문 98p / https://app.notion.com/p/1cad470c68bd801eb751f91154822fac`
+
+### 11차 — 환각 발송의 진범 확인 (openclaw cron)
+
+`openclaw cron list` 로 원인을 특정했다.
+
+```
+ID        8f92181d-e57c-4f69-a606-76d39b560a57
+Name      노션 독서기록 정기 브리핑
+Schedule  cron 0 6,9,12,15,18,21 * * *          ← 3시간마다
+Target    announce -> slack:channel:C0BMHERHA77  ← 책읽남 채널
+Agent ID  main                                   ← ⚠️ 뚜떵또. 책읽남이 아님
+Last      37m ago / Status ok
+```
+
+9차에서 본 21:00 환각 메시지가 정확히 이 잡의 결과다.
+**`main` 에이전트에게 "노션 독서기록 브리핑해"라고 시키는 잡**이라,
+`bookman/SOUL.md` 의 환각 차단 규칙이 닿지 않고 `get_notion_book.py` 도 실행되지 않았다.
+
+**해결 절차 (서버)**
+1. 이 잡을 끈다 (되돌리기 쉬운 disable 우선):
+   ```bash
+   openclaw cron disable 8f92181d-e57c-4f69-a606-76d39b560a57
+   openclaw cron list      # Status 확인
+   ```
+   `disable` 이 없으면 `openclaw cron delete <ID>`.
+2. crontab 에 스크립트 직접 호출 등록 (**venv 파이썬 절대경로**):
+   ```cron
+   0 6,9,12,15,18,21 * * * /home/ubuntu/newspaper/.venv/bin/python /home/ubuntu/.openclaw/scripts/book_slack.py >> /home/ubuntu/.openclaw/book_slack.log 2>&1
+   ```
+   ⚠️ 1번을 하지 않고 2번만 하면 **하루 2회씩**(진짜 글귀 + 환각) 발송된다.
+3. 캐시 예열: `... get_notion_book.py --build-cache` (안 하면 매 실행 1~2분 소요)
+4. 확인: `tail -20 ~/.openclaw/book_slack.log`
+
+**교훈**: 에이전트 SOUL.md 에 규칙을 적는 것만으로는 부족하다.
+**어떤 잡이 어떤 에이전트를 부르는지**(`openclaw cron list` 의 `Agent ID`)를 먼저 확인해야 한다.
+정기 발송처럼 창작이 있어선 안 되는 경로는 **에이전트가 아니라 스크립트**가 담당해야 한다.
+
+### 참고 — 같은 목록에서 발견된 실패 잡 (미해결, 이번 건과 무관)
+| 잡 | 상태 |
+|---|---|
+| `pt-daily-report-slack` (`bf1c0dd2-…`, 매일 21:00, agent `pt-trainer`) | **error 27회 연속** |
+| `pt-weekly-report-slack` (`b3577cf2-…`, 일요일 20:00) | error 4회 |
+| `매일 아침 강릉 서울 날씨 브리핑` (`f6594126-…`, 06:30) | error |
+
+PT 일일 리포트가 27회 연속 실패 = 약 한 달간 미발송. 별도 확인 필요.
