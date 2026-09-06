@@ -262,3 +262,116 @@ tail -30 ~/stock/stock/scheduler.log
 ## ⚠️ 잊지 말 것
 - 노출된 키 **재발급**(텔레그램봇, Slack, Brave, Gateway, Gemini).
 - stock `scheduler.py`가 상시 실행돼야 15:40 캡처/알림 동작 (systemd user `stock-dashboard` 권장; 아니면 재부팅 시 꺼짐).
+
+
+---
+
+## 📚 책읽남(bookman) — "노션에 없는 글귀" 환각 문제 (2026-09 조치)
+
+### 증상
+책읽남이 노션 독서 리스트에 **없는 문장**을 그럴듯하게 만들어 브리핑함.
+
+### 원인 (노션 실데이터 확인 결과)
+1. **원천 데이터가 거의 비어 있음** — DB "독서 리스트"(`678f2c0b-d124-4889-8571-b019ec30f971`) 총 **132권 중
+   `한 문장` 칸이 채워진 건 2권**(그중 1건은 URL), `깨달은 점` 3권. 나머지 127권은 프로퍼티가 빈칸.
+   → 랜덤으로 고르면 거의 항상 빈칸 → 모델이 책 제목만 보고 명언을 **창작**.
+2. **정작 진짜 문장은 페이지 '본문'에 있다** — 밑줄 친 문장들이 bulleted_list 블록으로 들어가 있음.
+   (예: '강원국의 글쓰기' 페이지에 수백 줄)
+3. **프로퍼티 이름 함정** — 노션 실제 이름이 `"깨달은 점 "` (**뒤에 공백**). 공백 없이 조회하면 항상 빈값.
+4. **폴백이 창작을 허용** — 구 스크립트는 "없으면 기본 문구" 경로가 있었고, SOUL.md 엔
+   "지어내지 말 것 / 스크립트를 반드시 실행할 것" 규칙이 없었음.
+5. **에이전트 라우팅 의심** — `openclaw.json` `bindings` 에 **bookman 항목이 없다.**
+   현재 슬랙 catch-all 은 `{"agentId":"main","match":{"channel":"slack"}}` 이라
+   bookman 봇 계정으로 온 메시지가 `main`(신문 분석가)에게 갈 가능성이 크다.
+   main 의 SOUL.md 엔 독서 규칙이 전혀 없으므로 **100% 창작**이 된다. → 아래 서버 작업 필요.
+
+### 조치 (이 커밋)
+- `scripts/get_notion_book.py` **신규 작성** — 창작 경로 0개.
+  - `한 문장` → `깨달은 점`(공백 무시 매칭) → **본문 블록** 순으로 노션 원문만 수집
+  - 단어 나열/체크리스트/URL/페이지번호 조각 필터링
+  - 쓸 문장이 없으면 `NO_QUOTE` + **exit 2** (기본 문구 만들지 않음)
+  - 출처 페이지 URL 을 stderr 로 출력 → 사람이 즉시 대조 가능
+  - 토큰은 `.env` 의 `NOTION_TOKEN`, DB 는 `NOTION_READING_DB`(기본값 내장)
+  - 중복방지 상태: `workspace/bookman/book_sequence_state.json` (gitignored)
+- `workspace/bookman/SOUL.md` **전면 재작성** — 최상단에 "지어내지 않는다 / 스크립트 실행 없이 브리핑 금지 /
+  종료코드 2·3 처리법" 명시.
+- `workspace/bookman/AGENTS.md`, `openclaw_system_map.md`, `.env.example`, `.gitignore`, `CLAUDE.md` 동기화.
+
+### 서버에서 해야 할 일 (git pull 로는 안 되는 것)
+1. **구 스크립트 정리** (하드코딩 토큰 제거):
+   ```bash
+   mv ~/.openclaw/workspace/get_notion_book.py ~/.openclaw/workspace/get_notion_book.py.old-$(date +%s)
+   ```
+2. **동작 확인**:
+   ```bash
+   python3 ~/.openclaw/scripts/get_notion_book.py --check     # 132권 중 몇 권이 채워졌나
+   python3 ~/.openclaw/scripts/get_notion_book.py --list 20   # 뽑히는 문장 눈으로 확인
+   python3 ~/.openclaw/scripts/get_notion_book.py             # 실제 브리핑 1건
+   ```
+3. **bookman 라우팅 확인/추가** (`openclaw.json` 은 gitignore 대상이라 서버에서 jq 로 직접):
+   ```bash
+   cd ~/.openclaw
+   cp openclaw.json openclaw.json.bak-$(date +%s)
+   jq '.bindings = ([{"agentId":"bookman","match":{"channel":"slack","accountId":"bookman"}},
+                     {"agentId":"bookman","match":{"channel":"slack","peer":{"kind":"channel","id":"C0BMHERHA77"}}}]
+                    + .bindings)' openclaw.json > /tmp/oc.json \
+     && jq empty /tmp/oc.json && mv /tmp/oc.json openclaw.json
+   openclaw daemon restart
+   ```
+   ⚠️ catch-all(`{"agentId":"main","match":{"channel":"slack"}}`) 보다 **앞에** 와야 한다.
+4. `.env` 에 `NOTION_READING_DB` 추가(선택). `NOTION_TOKEN` 이 해당 페이지에 **공유(연결)** 돼 있어야 한다.
+
+### 2차 보완 — 노션 실제 구조 반영 (스크린샷 확인 후)
+
+형준님 노션 책 페이지는 **쪽수 줄 + 색칠한 글귀 + 일반 메모** 구조였다.
+
+```
+22p                                 ← 쪽수만 있는 줄
+왜를 아는 것이 가장 심오하고 …       ← 주황색 = 진짜 글귀
+인간의 책임감을 자극하는 표현으로 …   ← 색 없는 일반 메모
+```
+
+또 `좋은 글귀`, `부아 c 어록`, `김종원 작가 . 책 어록` 처럼 **어록 전용 페이지**도 DB 행으로 들어있다.
+→ 프로퍼티만 보면 "비었다"고 오판하게 되므로, **본문 블록이 실제 본체**다.
+
+보완 내용:
+- **강조 인식 추가** — 노션 `rich_text[].annotations` 의 `color`(글자색+`_background` 형광펜)와
+  `bold`/`underline` 비율을 계산해 등급을 매긴다.
+  0=프로퍼티 직접입력 / 1=색칠·인용블록 / 2=굵게 / 3=일반본문.
+  **1순위가 나오면 즉시 채택** → 색칠해둔 문장이 우선 나간다.
+- **강조 문장은 까다로운 필터를 건너뛴다** — 사람이 이미 고른 문장이므로
+  단어나열/체크리스트 검사로 잘못 버리지 않는다. (일반 본문에만 엄격 적용)
+- **쪽수 줄 처리** — `22p` / `35p` / `12쪽` 같은 줄은 글귀 후보에서 빼고 **출처 표시**로만 쓴다.
+  문장 앞에 붙은 `153p ` 접두어는 제거한다.
+- **본문 캐시 추가** (`workspace/bookman/book_cache.json`, gitignored) —
+  `last_edited_time` 이 바뀌면 자동 재수집. 1회 실행당 새로 읽는 책은 **최대 8권**으로 제한해
+  슬랙 응답 지연을 막는다. 전체를 미리 담으려면 `--build-cache`.
+- `--check` 가 캐시에 모인 문장 수를 등급별로 보여준다. `--clear-cache` 추가.
+- (제거) `--no-body` — 본문이 사실상 본체라 의미 없는 옵션이었음.
+
+서버 권장 순서:
+```bash
+python3 ~/.openclaw/scripts/get_notion_book.py --build-cache   # 1회 (몇 분 걸림)
+python3 ~/.openclaw/scripts/get_notion_book.py --check         # 등급별 문장 수 확인
+python3 ~/.openclaw/scripts/get_notion_book.py --list 30       # 눈으로 검수
+python3 ~/.openclaw/scripts/get_notion_book.py                 # 실제 브리핑
+```
+
+### 3차 보완 — "빈손보다 일반 본문이 낫다" (사용자 피드백)
+
+2차 필터가 너무 엄격해서, 애매한 줄을 전부 버리면 최악의 경우 `NO_QUOTE`(빈손)가 나올 수 있었다.
+사용자 판단: **일반 본문도 좋다. 엉뚱한 공백보다 낫다.**
+
+- 필터를 **버리기 → 뒤로 미루기**로 전환. `is_good_sentence()`(bool) 를
+  `score_sentence()`(등급 or None) 로 교체하고 **4순위 `TIER_WEAK`** 를 신설했다.
+  단어 나열·체크리스트 항목·라벨 나열·끝맺음 없는 줄·길이가 애매한 줄은
+  이제 버려지지 않고 4순위로 내려가 다른 후보가 없을 때 쓰인다.
+- **진짜로 버리는 줄은 넷뿐**: 길이 6자 미만/600자 초과 · 한글 없음 · 링크 · 쪽수만 있는 줄(`22p`).
+  (길이 기준을 두 겹으로 분리: HARD_MIN/MAX = 6/600 은 버림, GOOD_MIN/MAX = 10/260 밖은 후순위)
+- **빈손일 때 더 찾아본다**: 후보를 하나도 못 찾은 상태면 1회 실행당 새로 읽는 책 상한을
+  10권 → 30권(`DESPERATE_MULTIPLIER=3`)까지 늘린다. 이미 쓸 만한 후보(3순위 이내)를
+  잡았으면 상한에서 즉시 멈춰 응답 속도를 지킨다.
+- `--check` 가 후순위 문장 수도 보여준다. 등급 의미가 바뀌어 `CACHE_VERSION` 2 → 3
+  (기존 캐시는 자동 무효화되어 다시 읽는다).
+
+환각 차단 원칙은 그대로. 노션에 정말 아무것도 없을 때만 exit 2.

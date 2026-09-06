@@ -110,10 +110,10 @@
 **인물**: 책읽남 — 부드럽고 정확하게
 
 **동작 방식**:
-1. `get_notion_book.py` 실행
-2. 노션 DB(`678f2c0b-d124-4889-8571-b019ec30f971`)에서 책 조회
-3. 순서대로 (중복 배제) 한 문장 선택
-4. 브리핑 전송
+1. `scripts/get_notion_book.py` 실행 (`python3 ~/.openclaw/scripts/get_notion_book.py`)
+2. 노션 DB "독서 리스트"(`678f2c0b-d124-4889-8571-b019ec30f971`)를 노션 API로 직접 조회
+3. **노션에 실제로 적혀 있는 문장만** 후보로 모아 중복 배제 후 1건 선택
+4. 브리핑 전송 (스크립트 stdout 그대로)
 
 **브리핑 형식**:
 ```
@@ -122,15 +122,35 @@
 <책 제목> 저자
 ```
 
-**문장 선택 우선순위**:
-1. 노션 `한 문장` 프로퍼티
-2. `깨달은 점` 프로퍼티
-3. 본문 블록에서 10자 이상 텍스트 추출
-4. 없으면 기본 문구
+**문장 선택 우선순위** (등급이 낮을수록 우선):
+0. `한 문장` / `깨달은 점` 프로퍼티 (⚠️ 실제 이름 뒤에 공백 있음 → 공백 무시 비교)
+1. 본문에서 **색 글자 · 형광펜 · 인용/콜아웃 블록** ← 사용자가 칠해둔 진짜 글귀. 나오면 즉시 채택
+2. 본문에서 **굵게 / 밑줄**
+3. 그 외 일반 본문 문장
+4. 모양이 어설픈 본문(단어 나열·너무 짧거나 긴 줄) — **버리지 않고 후순위로 미룸**
+5. **그래도 없으면 종료코드 2로 실패** — 기본 문구/창작 문구를 만들지 않는다 (환각 차단)
+
+**버리기보다 미루기**: 진짜로 버리는 줄은 넷뿐(길이 6자 미만/600자 초과 · 한글 없음 · 링크 · 쪽수만 있는 줄).
+나머지 애매한 줄은 4순위로 살려둔다 — 빈손보다 노션 원문 한 줄이 낫다는 판단.
+빈손 상태에서는 새로 읽는 책 수 상한(10권)을 3배까지 늘려 더 찾아본다.
+
+**본문 구조 대응**: `22p` 처럼 쪽수만 있는 줄은 글귀가 아니라 **출처 표시**로만 쓰고,
+문장 앞에 붙은 `153p ` 접두어는 제거한다.
+
+**캐시**: 읽은 책 본문은 `workspace/bookman/book_cache.json` 에 저장(`last_edited_time` 변경 시 자동 갱신).
+1회 실행당 새로 읽는 책은 최대 8권으로 제한해 슬랙 응답이 느려지지 않게 한다.
+전체를 미리 담으려면 `--build-cache`.
+
+**환각 차단 장치**:
+- 스크립트에 문장을 지어내는 경로가 없다. 못 찾으면 `NO_QUOTE` + exit 2.
+- 단어 나열·체크리스트·URL·페이지번호 조각은 문장 후보에서 제외.
+- 출처 페이지 URL을 stderr로 남겨 사람이 즉시 대조 가능.
+- `SOUL.md` 최상단에 "지어내지 않는다 / 스크립트 실행 없이 브리핑 금지" 규칙 명시.
 
 **상태 추적**: `book_sequence_state.json` (마지막 인덱스 저장)
 
-**⚠️ 문제**: `get_notion_book.py`에 Notion API 토큰 하드코딩 → git 제외됨
+**토큰**: `.env` 의 `NOTION_TOKEN` 사용 (하드코딩 제거, 스크립트는 `scripts/` 로 이동해 git 추적됨).
+**DB ID**: `.env` 의 `NOTION_READING_DB` (없으면 스크립트 기본값).
 
 ---
 
@@ -185,8 +205,8 @@ openclaw와 별개 프로세스 (`nohup venv/bin/python scheduler.py`)
 
 [책읽남 브리핑]
   트리거(수동/cron) →
-  get_notion_book.py →
-  노션 DB 조회 → 랜덤 한 문장 →
+  scripts/get_notion_book.py →
+  노션 DB 조회 → 노션 원문 한 문장(없으면 실패) →
   슬랙 전송
 
 [김종국 PT 기록]
@@ -217,7 +237,8 @@ openclaw와 별개 프로세스 (`nohup venv/bin/python scheduler.py`)
 | 문제 | 원인 | 해결 |
 |------|------|------|
 | 책읽남 자동 발송 없음 | Heartbeat 비어있음, cron 미등록 | cron 또는 heartbeat에 스케줄 추가 |
-| `get_notion_book.py` 토큰 하드코딩 | git 보안 정책 위반 | `.env`로 분리 |
+| ~~`get_notion_book.py` 토큰 하드코딩~~ | ~~git 보안 정책 위반~~ | ✅ 해결: `scripts/get_notion_book.py` 로 재작성 + `.env` 사용 |
+| 노션 `한 문장` 칸이 132권 중 2권만 채워짐 | 기록 미입력 | 본문 블록에서 문장 추출 + 못 찾으면 실패(창작 금지) |
 | Gemini API 설정 오류 | `api: openai-completions` → 잘못된 값 | `google-generative-ai`로 변경 필요 |
 | stock scheduler 재부팅 시 종료 | systemd 미등록 | systemd user 유닛 등록 |
 | yfinance 미국 지수 차단 | 서버 IP 차단 | KIS 대체 |
@@ -243,7 +264,7 @@ openclaw와 별개 프로세스 (`nohup venv/bin/python scheduler.py`)
 ├── workspace/             ← 그레이트리 워크스페이스
 │   ├── SOUL.md            ← 뉴스분석가 규칙
 │   ├── news_fetcher.py    ← RSS 수집
-│   ├── get_notion_book.py ← 책읽남 노션 조회
+│   ├── (구) get_notion_book.py ← scripts/ 로 이전됨
 │   ├── sheets_push.py     ← 구글시트 저장
 │   ├── bookman/           ← 책읽남 워크스페이스
 │   └── keepgoing/         ← 김종국 워크스페이스
@@ -252,6 +273,7 @@ openclaw와 별개 프로세스 (`nohup venv/bin/python scheduler.py`)
 ├── agents/
 │   └── pt-trainer/        ← PT 트레이너 (텔레그램 전용)
 └── scripts/
+    ├── get_notion_book.py  ← 책읽남 노션 조회 (환각 차단판)
     ├── notion_save_url.py ← 노션 링크 저장
     ├── slack_briefing.py  ← 주식 슬랙 발송
     └── stock_alert_slack.py ← 관심종목 슬랙 알림

@@ -144,6 +144,8 @@ workspace/agents/bookman/TOOLS.md
 
 # workspace-state는 각 에이전트 로컬 상태 → 제외
 workspace/*/openclaw-workspace-state.json
+workspace/bookman/book_sequence_state.json
+workspace/bookman/book_cache.json
 agents/*/openclaw-workspace-state.json
 
 # 바이너리 / 미디어 파일 (workspace 내 업로드 파일 등)
