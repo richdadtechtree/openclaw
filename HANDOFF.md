@@ -262,3 +262,61 @@ tail -30 ~/stock/stock/scheduler.log
 ## ⚠️ 잊지 말 것
 - 노출된 키 **재발급**(텔레그램봇, Slack, Brave, Gateway, Gemini).
 - stock `scheduler.py`가 상시 실행돼야 15:40 캡처/알림 동작 (systemd user `stock-dashboard` 권장; 아니면 재부팅 시 꺼짐).
+
+
+---
+
+## 📚 책읽남(bookman) — "노션에 없는 글귀" 환각 문제 (2026-09 조치)
+
+### 증상
+책읽남이 노션 독서 리스트에 **없는 문장**을 그럴듯하게 만들어 브리핑함.
+
+### 원인 (노션 실데이터 확인 결과)
+1. **원천 데이터가 거의 비어 있음** — DB "독서 리스트"(`678f2c0b-d124-4889-8571-b019ec30f971`) 총 **132권 중
+   `한 문장` 칸이 채워진 건 2권**(그중 1건은 URL), `깨달은 점` 3권. 나머지 127권은 프로퍼티가 빈칸.
+   → 랜덤으로 고르면 거의 항상 빈칸 → 모델이 책 제목만 보고 명언을 **창작**.
+2. **정작 진짜 문장은 페이지 '본문'에 있다** — 밑줄 친 문장들이 bulleted_list 블록으로 들어가 있음.
+   (예: '강원국의 글쓰기' 페이지에 수백 줄)
+3. **프로퍼티 이름 함정** — 노션 실제 이름이 `"깨달은 점 "` (**뒤에 공백**). 공백 없이 조회하면 항상 빈값.
+4. **폴백이 창작을 허용** — 구 스크립트는 "없으면 기본 문구" 경로가 있었고, SOUL.md 엔
+   "지어내지 말 것 / 스크립트를 반드시 실행할 것" 규칙이 없었음.
+5. **에이전트 라우팅 의심** — `openclaw.json` `bindings` 에 **bookman 항목이 없다.**
+   현재 슬랙 catch-all 은 `{"agentId":"main","match":{"channel":"slack"}}` 이라
+   bookman 봇 계정으로 온 메시지가 `main`(신문 분석가)에게 갈 가능성이 크다.
+   main 의 SOUL.md 엔 독서 규칙이 전혀 없으므로 **100% 창작**이 된다. → 아래 서버 작업 필요.
+
+### 조치 (이 커밋)
+- `scripts/get_notion_book.py` **신규 작성** — 창작 경로 0개.
+  - `한 문장` → `깨달은 점`(공백 무시 매칭) → **본문 블록** 순으로 노션 원문만 수집
+  - 단어 나열/체크리스트/URL/페이지번호 조각 필터링
+  - 쓸 문장이 없으면 `NO_QUOTE` + **exit 2** (기본 문구 만들지 않음)
+  - 출처 페이지 URL 을 stderr 로 출력 → 사람이 즉시 대조 가능
+  - 토큰은 `.env` 의 `NOTION_TOKEN`, DB 는 `NOTION_READING_DB`(기본값 내장)
+  - 중복방지 상태: `workspace/bookman/book_sequence_state.json` (gitignored)
+- `workspace/bookman/SOUL.md` **전면 재작성** — 최상단에 "지어내지 않는다 / 스크립트 실행 없이 브리핑 금지 /
+  종료코드 2·3 처리법" 명시.
+- `workspace/bookman/AGENTS.md`, `openclaw_system_map.md`, `.env.example`, `.gitignore`, `CLAUDE.md` 동기화.
+
+### 서버에서 해야 할 일 (git pull 로는 안 되는 것)
+1. **구 스크립트 정리** (하드코딩 토큰 제거):
+   ```bash
+   mv ~/.openclaw/workspace/get_notion_book.py ~/.openclaw/workspace/get_notion_book.py.old-$(date +%s)
+   ```
+2. **동작 확인**:
+   ```bash
+   python3 ~/.openclaw/scripts/get_notion_book.py --check     # 132권 중 몇 권이 채워졌나
+   python3 ~/.openclaw/scripts/get_notion_book.py --list 20   # 뽑히는 문장 눈으로 확인
+   python3 ~/.openclaw/scripts/get_notion_book.py             # 실제 브리핑 1건
+   ```
+3. **bookman 라우팅 확인/추가** (`openclaw.json` 은 gitignore 대상이라 서버에서 jq 로 직접):
+   ```bash
+   cd ~/.openclaw
+   cp openclaw.json openclaw.json.bak-$(date +%s)
+   jq '.bindings = ([{"agentId":"bookman","match":{"channel":"slack","accountId":"bookman"}},
+                     {"agentId":"bookman","match":{"channel":"slack","peer":{"kind":"channel","id":"C0BMHERHA77"}}}]
+                    + .bindings)' openclaw.json > /tmp/oc.json \
+     && jq empty /tmp/oc.json && mv /tmp/oc.json openclaw.json
+   openclaw daemon restart
+   ```
+   ⚠️ catch-all(`{"agentId":"main","match":{"channel":"slack"}}`) 보다 **앞에** 와야 한다.
+4. `.env` 에 `NOTION_READING_DB` 추가(선택). `NOTION_TOKEN` 이 해당 페이지에 **공유(연결)** 돼 있어야 한다.
