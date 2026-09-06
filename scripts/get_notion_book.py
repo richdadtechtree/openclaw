@@ -78,6 +78,10 @@ DESPERATE_MULTIPLIER = 3
 
 # --list 미리보기에서 한 책이 목록을 독차지하지 않도록 책당 출력 상한
 LIST_PER_BOOK = 5
+
+# 책 제목을 감쌀 기호. 브리핑 3번째 줄이 "<책 제목> 저자" 로 나간다.
+# 슬랙이 꺾쇠를 링크 문법으로 오해해 삼키면 ("『", "』") 같은 걸로 바꾸면 된다.
+TITLE_WRAP = ("<", ">")
 MAX_FETCH_PER_RUN = 10
 
 # 노션 프로퍼티 이름
@@ -565,7 +569,8 @@ def emit(sent, page, state):
 
     print('"좋은 글 한문장"')
     print(sent["t"])
-    print(title + (f" {author}" if author else ""))
+    lo, hi = TITLE_WRAP
+    print(f"{lo}{title}{hi}" + (f" {author}" if author else ""))
 
     where = f" {sent['p']}" if sent.get("p") else ""
     print(f"[출처] {TIER_NAME.get(sent['tier'], '?')}{where} / {page.get('url', '')}",
