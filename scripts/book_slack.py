@@ -79,7 +79,7 @@ def load_env():
             break
 
 
-def pick_quote(book=None):
+def pick_quote(book=None, contains=None):
     """get_notion_book.py 를 실행해 글귀 2줄을 받아온다.
 
     반환: (본문, 출처)  — 글귀가 없으면 (None, 사유)
@@ -88,6 +88,8 @@ def pick_quote(book=None):
     cmd = [sys.executable, PICKER]              # 같은 파이썬(venv 포함)으로 실행
     if book:
         cmd += ["--book", book]
+    if contains is not None:
+        cmd += ["--contains", contains]
     print("… 노션에서 글귀를 찾는 중 "
           "(캐시가 비어 있으면 책 본문을 읽느라 1~2분 걸릴 수 있습니다)", file=sys.stderr)
     t0 = time.time()
@@ -126,13 +128,14 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="발송하지 않고 내용만 출력")
     ap.add_argument("--channel", help="보낼 채널 ID (기본: .env 설정)")
     ap.add_argument("--book", help="특정 책에서만 뽑기")
+    ap.add_argument("--contains", help="지정 문구가 포함된 본문 구간만 발송")
     ap.add_argument("--as", dest="sender", choices=["ddu", "bookman"],
                     help="누구 이름으로 보낼지 (기본: 뚜떵또)")
     args = ap.parse_args()
 
     load_env()
 
-    text, note = pick_quote(args.book)
+    text, note = pick_quote(args.book, args.contains)
 
     # ── 핵심: 글귀가 없으면 아무것도 보내지 않는다 ──────────────────
     if text is None:

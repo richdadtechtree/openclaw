@@ -69,11 +69,9 @@ NOTION_VERSION = "2022-06-28"
 # 길이 기준을 두 겹으로 둔다.
 #   HARD_* 를 벗어나면 진짜로 못 쓰는 줄 → 버린다.
 #   GOOD_* 안에 들면 보기 좋은 길이 → 그대로. 벗어나면 버리지 않고 '뒤로 미룬다'.
-HARD_MIN, HARD_MAX = 6, 600      # 이 범위 밖만 버림
+HARD_MIN, HARD_MAX = 6, 12000      # 이 범위 밖만 버림
 GOOD_MIN, GOOD_MAX = 10, 300     # 이 범위 밖은 후순위로만
-# 엔터 2번으로 묶을 때 한 덩어리가 커질 수 있는 최대 길이
-# (불릿 수십 개가 통째로 한 덩어리가 되는 것을 막는다)
-GROUP_MAX = 300
+# 긴 구간도 중간에서 자르지 않는다. HARD_MAX 초과 구간은 통째로 제외한다.
 
 # 한 번 실행할 때 노션에서 새로 읽어볼 책 권수 상한.
 # (캐시에 없는 책만 해당. 너무 많이 읽으면 슬랙 응답이 느려져서 제한한다)
@@ -103,7 +101,7 @@ EXCLUDE_VALUES = ("제외",)
 _BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # ~/.openclaw
 STATE_PATH = os.path.join(_BASE, "workspace", "bookman", "book_sequence_state.json")
 CACHE_PATH = os.path.join(_BASE, "workspace", "bookman", "book_cache.json")
-CACHE_VERSION = 5
+CACHE_VERSION = 6
 
 # 문장 등급(낮을수록 좋은 글귀)
 TIER_PROP = 0      # '한 문장' / '깨달은 점' 프로퍼티 = 직접 고른 문장
@@ -243,7 +241,7 @@ def collect_blocks(token, block_id, depth=0, out=None):
             btype = b.get("type")
             if btype in TEXT_BLOCKS:
                 raw, c_ratio, b_ratio = rich_info(b[btype].get("rich_text", []))
-                out.append({"text": raw.strip(), "type": btype,
+                out.append({"text": raw, "type": btype,
                             "c": c_ratio, "b": b_ratio})
             # 토글/불릿 안쪽 문장도 '노션에 있는' 문장이므로 1단계까지 따라간다
             if b.get("has_children") and depth < 1:
@@ -255,23 +253,11 @@ def collect_blocks(token, block_id, depth=0, out=None):
 
 
 def group_blocks(items):
-    """**엔터 2번(빈 줄)** 을 경계로 블록들을 하나의 글귀 덩어리로 묶는다.
+    """빈 줄 또는 페이지 표시까지의 원문을 하나의 발췌 후보로 묶는다.
 
-    노션에서 엔터 한 번은 '줄 바꿈'이라 같은 글귀가 여러 블록으로 쪼개져 있을 수 있다.
-    그대로 두면 문장이 반 토막 나서 나가므로, 빈 줄이 나올 때까지 이어 붙인다.
-
-    덩어리를 끊는 경우:
-      1) 빈 블록(엔터 2번)          ← 기본 경계
-      2) 앞 줄이 . ! ? 로 끝났을 때  ← 이미 끝난 문장에 다음 줄을 붙이지 않는다
-      3) "22p" 같은 쪽수만 있는 줄   ← 다음 덩어리의 출처 표시로 넘긴다
-      4) 소제목 블록                ← 목차는 항상 혼자
-      5) 블록 종류가 바뀔 때         ← 문단 ↔ 불릿 ↔ 번호목록
-      6) 색칠 여부가 바뀔 때         ← 칠한 글귀에 옆 메모가 섞이지 않게
-      7) 너무 길어질 때(GROUP_MAX)   ← 덩어리가 무한정 커지는 것 방지
-
-    즉 **"문장이 안 끝난 채 줄만 바뀐 경우"에만 이어 붙인다.**
-    불릿마다 온전한 문장이 적혀 있으면 각각 따로 남는다.
-
+    마침표, 글자색, 블록 종류, 길이는 구간을 나누지 않는다.
+    빈 Notion 블록과 블록 내부의 빈 줄(엔터 두 번)을 모두 경계로 쓴다.
+    페이지 표시는 단독 줄과 '126p.본문' 형태를 모두 지원한다.
     반환: [(합쳐진 원문, 등급, 쪽수표시), ...]
     """
     groups = []
@@ -301,26 +287,25 @@ def group_blocks(items):
         cur = []
 
     for it in items:
-        t = it["text"]
-        if not t:                              # (1) 빈 줄 = 엔터 2번
-            flush()
-            continue
-        if PAGE_ONLY.match(t):                 # (2) 쪽수 줄
-            flush()
-            page_mark = t
-            continue
-        if cur:
-            prev = cur[-1]
-            finished = bool(TERMINAL.search(prev["text"]))      # (2) 앞 줄이 끝난 문장인가
-            changed_type = it["type"] != prev["type"]           # (5)
-            changed_emph = (it["c"] >= 0.5) != (prev["c"] >= 0.5)   # (6)
-            cur_len = sum(len(x["text"]) for x in cur)
-            too_long = cur_len + len(t) + 1 > GROUP_MAX         # (7)
-            if finished or changed_type or changed_emph or too_long:
+        # splitlines() 전에 빈 줄을 경계로 남긴다. 단일 줄바꿈은 이어 붙인다.
+        raw = it["text"].replace("\r\n", "\n").replace("\r", "\n")
+        for part in re.split(r"(\n[ \t]*\n(?:[ \t]*\n)*)", raw):
+            if not part.strip():
                 flush()
-        cur.append(it)
-        if it["type"] in HEADING_BLOCKS:       # (3) 소제목은 항상 혼자
-            flush()
+                continue
+            for line in part.splitlines():
+                t = line.strip()
+                if PAGE_ONLY.match(t):
+                    flush()
+                    page_mark = t
+                    continue
+                mark = PAGE_MARK.match(t)
+                if mark:
+                    flush()
+                    page_mark = mark.group().strip()
+                    t = t[mark.end():].strip()
+                if t:
+                    cur.append({**it, "text": t})
     flush()
     return groups
 
@@ -371,7 +356,7 @@ def score_sentence(s, tier=TIER_PLAIN):
     if not s:
         return None
     if not (HARD_MIN <= len(s) <= HARD_MAX):
-        return None                            # 6자 미만·600자 초과는 문장이 아님
+        return None                            # 너무 짧거나 발송 한도를 넘는 구간은 통째로 제외
     if not HANGUL.search(s):
         return None                            # 한글 없는 줄(영문코드·숫자 등)
     if URLISH.search(s):
@@ -698,6 +683,23 @@ def cmd_pick(token, db_id, keyword):
     return 2
 
 
+def cmd_contains(token, db_id, keyword, phrase):
+    """수동 요청: 최신 본문에서 지정 문구가 들어간 구간 하나만 출력한다."""
+    needle = clean_sentence(phrase)
+    if not needle:
+        die("검색할 문구가 비어 있습니다.", 2)
+    matches = []
+    for page in filter_rows(fetch_rows(token, db_id), keyword):
+        # 프로퍼티의 한 줄 대신 최신 본문 구간을 직접 확인한다.
+        for raw, tier, mark in page_blocks(token, page["id"]):
+            text = clean_sentence(raw)
+            if needle in text and score_sentence(text, tier) is not None:
+                matches.append(({"t": text, "tier": tier, "p": mark}, page))
+    if len(matches) != 1:
+        die(f"지정 문구가 포함된 본문 구간이 {len(matches)}개입니다. 책 제목이나 문구를 더 구체적으로 지정하세요.", 2)
+    return emit(*matches[0], load_state())
+
+
 def emit(sent, page, state):
     """SOUL.md 브리핑 양식(2줄) 그대로 출력. 출처는 stderr(로그)로 따로 남긴다."""
     title = row_title(page)
@@ -725,6 +727,7 @@ def main():
     ap.add_argument("--build-cache", action="store_true",
                     help="전체 책 본문을 한 번 읽어 캐시에 담는다(1회, 느림)")
     ap.add_argument("--book", metavar="제목일부", help="특정 책에서만 뽑기")
+    ap.add_argument("--contains", help="지정 문구가 포함된 최신 본문 구간 1개만 선택")
     ap.add_argument("--reset", action="store_true", help="중복방지 기록 초기화")
     ap.add_argument("--clear-cache", action="store_true", help="본문 캐시 삭제(다시 읽게)")
     args = ap.parse_args()
@@ -744,6 +747,8 @@ def main():
         die("NOTION_TOKEN 이 없습니다. ~/.openclaw/.env 에 넣어주세요.")
     db_id = (os.getenv("NOTION_READING_DB") or DEFAULT_DB_ID).replace("-", "")
 
+    if args.contains is not None:
+        return cmd_contains(token, db_id, args.book, args.contains)
     if args.check:
         return cmd_check(token, db_id)
     if args.build_cache:
