@@ -32,8 +32,30 @@ log() { echo "[sync-stock] $(date '+%F %T') $*"; }
 # 중복 실행 방지
 exec 8>"$LOCK"
 if ! flock -n 8; then
-  log "이미 실행 중(cron 과 겹침) — 이번 실행은 건너뜀"
-  exit 0
+  # 락을 못 잡았다. 두 경우를 정확히 구분한다.
+  #  (a) 진짜로 다른 sync-stock 인스턴스가 도는 중 → 정상적으로 건너뛴다.
+  #  (b) sync-stock 이 아닌 프로세스(=옛 scheduler)가 락을 쥐고 있다 → 과거 실행이
+  #      scheduler 를 백그라운드로 띄우며 락 fd(8)를 물려줬고, scheduler 가 사는
+  #      내내 락이 안 풀리는 상태. 그냥 건너뛰면 실행 폴더가 옛 코드에 영원히
+  #      고정된다(사일런트 버그의 진짜 원인) → 락을 무시하고 진행한다.
+  #      (아래 nohup 의 8>&- 9>&- 로 재발은 근본 차단. 여기선 기존 잔재를 자가복구.)
+  # 락 파일을 열고 있는 프로세스를 /proc 에서 직접 찾는다(자기 자신·자기 서브셸 제외).
+  HOLDERS=""
+  for d in /proc/[0-9]*; do
+    pid="${d#/proc/}"
+    [ "$pid" = "$$" ] && continue
+    ppid="$(awk '{print $4}' "$d/stat" 2>/dev/null || true)"
+    [ "$ppid" = "$$" ] && continue
+    if [ -n "$(find "$d/fd" -maxdepth 1 -lname "$LOCK" -print -quit 2>/dev/null)" ]; then
+      HOLDERS="${HOLDERS}${pid} $(tr '\0' ' ' < "$d/cmdline" 2>/dev/null)
+"
+    fi
+  done
+  if printf '%s' "$HOLDERS" | grep -q 'sync-stock\.sh'; then
+    log "이미 실행 중(cron 과 겹침) — 이번 실행은 건너뜀"
+    exit 0
+  fi
+  log "⚠️ 락 보유자가 sync-stock 이 아님 — 락 무시하고 진행. 보유자: $(printf '%s' "$HOLDERS" | tr '\n' '|')"
 fi
 
 [ -d "$SRC" ] || { exit 0; }                       # vendor 아직 없음 → no-op
@@ -79,7 +101,11 @@ done
 pkill -9 -f "scheduler.py" 2>/dev/null || true
 sleep 1
 
-nohup "$PY" -u scheduler.py > "$DST/scheduler.log" 2>&1 &   # -u: 로그 실시간 flush(버퍼링 방지)
+# 8>&- 9>&- : 락 fd 를 자식에게 물려주지 않는다.
+#   scheduler 는 몇 주씩 사는 프로세스라, fd 를 물려받으면 그동안 sync-stock
+#   (fd 8) / git-auto-pull(fd 9) 락이 계속 잡혀 이후 모든 동기화가 조용히
+#   스킵된다 → 실행 폴더가 옛 코드에 고정되는 사일런트 버그의 진짜 원인.
+nohup "$PY" -u scheduler.py > "$DST/scheduler.log" 2>&1 8>&- 9>&- &   # -u: 로그 실시간 flush(버퍼링 방지)
 sleep 3
 # 정상 구조 = 2 프로세스(스케줄러 본체 + uvicorn 웹 워커). 3개 이상이면 중복 의심.
 count="$(pgrep -f 'scheduler.py' 2>/dev/null | wc -l | tr -d ' ')"

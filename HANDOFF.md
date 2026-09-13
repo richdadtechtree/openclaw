@@ -10,6 +10,19 @@
   - **텔레그램 폐기**: stock 알림은 이제 **슬랙 전용**. `TELEGRAM_BOT_TOKEN`/`BRIEFING_BOT_TOKEN` 미설정이어도 `send_telegram_message`는 조용히 False 반환(무해). 로그 노이즈 제거하려면 `stock/notifier.py`/`scheduler.py` 정리 가능.
   - **KIS 키**: `market_data` 가 KIS 우선·yfinance 폴백. KIS 키 없으면 yfinance 로 자동 폴백(동작하나 가끔 `^GSPC` 등 불안정). 신뢰도 위해 `~/.openclaw/.env` 에 `KIS_APP_KEY/KIS_APP_SECRET/KIS_ACCOUNT_NO` 있으면 좋음.
   - seed-stock 임시 브랜치(origin) 잔존 — VS Code 에서 `git push origin --delete seed-stock` 로 정리.
+  - 🐛 **[2026-09-14 근본 원인 규명] "서버가 옛 코드에 고정되는 사일런트 버그"의 진짜 범인 = flock fd 상속.**
+    `sync-stock.sh` 는 `exec 8>LOCK; flock -n 8` 로 락을 잡은 뒤 `nohup python scheduler.py &` 로
+    스케줄러를 띄웠다. 자식 프로세스는 **fd 8 을 그대로 물려받으므로**, 몇 주씩 사는 스케줄러가
+    도는 내내 락이 풀리지 않는다 → 이후 모든 `sync-stock` 실행이 "이미 실행 중"으로 **조용히 스킵**,
+    실행 폴더(`~/stock/stock`)가 옛 코드에 영원히 고정. (앞서 두 번의 "수정"은 호출 위치만 바꿔
+    증상을 늦췄을 뿐 원인은 그대로였다.)
+    - **근본 수정**: `nohup ... 8>&- 9>&- &` 로 락 fd(sync-stock 8 / git-auto-pull 9)를 자식에게
+      물려주지 않는다.
+    - **자가복구**: 락을 못 잡으면 `/proc/*/fd` 로 **실제 보유자**를 찾아, 보유자가 `sync-stock.sh`
+      가 아니면(=옛 스케줄러가 물고 있는 잔재) 락을 무시하고 진행한다. 그래서 이미 망가진 서버도
+      다음 cron tick 에 스스로 복구된다.
+    - **증상 자가진단**: `bash scripts/sync-stock.sh` 가 "이미 실행 중" 만 찍고 아무것도 안 하면 이 버그.
+      확인: `ls -l /proc/$(pgrep -f 'scheduler\.py' | head -1)/fd | grep openclaw-sync-stock`
   - **프로세스 구조**: `scheduler.py` 는 정상적으로 **2 프로세스**(스케줄러 본체 + uvicorn 웹워커, 포트 8000). 3개 이상이면 중복 의심. `sync-stock.sh` 가 재시작 시 0개 확인 후 1개만 기동.
   - **사이드카 슬랙**: ✅ 완료. `alert_job` 1.2 블록에서 `sas.send_slack(sidecar_message)` 로 KOSPI/KOSDAQ 사이드카 발동 시 슬랙 전송(장중만 발동 → 게이팅 불필요).
   - **yfinance 차단(서버 IP)**: `^GSPC/^IXIC/QLD/TQQQ` 등 실패. 국내는 KIS(토큰 정상)로 OK. 부작용: ①시작 시 ATH 로딩이 느림(1~2분, default_ath 폴백 후 진행) ②US 지수/ETF live 데이터 부실. **개선안**(선택): ATH 로딩을 KIS/비차단·비동기로 바꾸거나 yfinance 의존 축소. stock/ vendoring 됐으니 claude.ai 에서 편집 가능.
