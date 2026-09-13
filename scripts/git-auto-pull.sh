@@ -39,6 +39,7 @@ log() { echo "[auto-pull] $(date '+%F %T') $*"; }
 # 중복 실행 방지: 이미 실행 중이면 조용히 종료
 exec 9>"$LOCK"
 if ! flock -n 9; then
+  log "이미 실행 중(cron 과 겹침) — 이번 실행은 건너뜀"
   exit 0
 fi
 
@@ -103,6 +104,14 @@ git reset --mixed --quiet "$REMOTE"
 git checkout --quiet --force -- .
 
 log "설정 동기화 완료 (런타임 파일 보존됨)"
+
+# --- stock 소스 2차 동기화 (체크아웃 직후) ------------------------------------
+# 위(2번)의 1차 호출은 아직 옛 working tree 를 복사한다. 새 커밋이 있었던 tick
+# 에서는 체크아웃으로 파일이 막 갱신됐으므로 여기서 한 번 더 돌려야 stock 실행
+# 폴더(~/stock/stock)에 같은 tick 안에 반영된다. (예전엔 다음 tick 까지 1분 지연)
+if [ -f "$STOCK_SYNC" ]; then
+  bash "$STOCK_SYNC" || log "stock 동기화 실패(2차, 무시하고 계속)" >&2
+fi
 
 # --- openclaw 게이트웨이 재시작 (필요할 때만) ----------------------------------
 if [ "$NEED_OC_RESTART" -eq 0 ]; then

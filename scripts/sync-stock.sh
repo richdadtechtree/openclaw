@@ -32,6 +32,7 @@ log() { echo "[sync-stock] $(date '+%F %T') $*"; }
 # 중복 실행 방지
 exec 8>"$LOCK"
 if ! flock -n 8; then
+  log "이미 실행 중(cron 과 겹침) — 이번 실행은 건너뜀"
   exit 0
 fi
 
