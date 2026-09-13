@@ -224,9 +224,18 @@ function briefing(raw){
     const m=lines[i].match(/^(.*?신문\s*브리핑)(.*)$/);
     if(m){
       head=m[1].replace(/[*_]/g,"").trim();
-      const pm=(m[2]||"").match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/);
-      if(pm) part=pm[1]+"/"+pm[2];
-      lines[i]="";                       // 그 줄의 나머지(검증 문구)는 버림
+      // ⚠️ 헤더 뒤를 통째로 버리면 안 된다. 같은 줄에 기사 제목(때로는 "🔴 반드시 체크 |"
+      //    이나 "• WHAT:" 까지)이 이어 붙어 오는 경우가 있어, 그러면 제목이 통째로 사라진다.
+      //    → 버리는 건 딱 두 가지: 분할 표시 "(n/m)" 와 "검증: …확인함." 문구.
+      let rest=(m[2]||"").replace(/^[\s*]+/,"");        // 앞쪽 공백·볼드기호 제거
+      const pm=rest.match(/^\(\s*(\d+)\s*\/\s*(\d+)\s*\)/);
+      if(pm){ part=pm[1]+"/"+pm[2]; rest=rest.slice(pm[0].length); }
+      rest=rest.replace(/^[\s*]+/,"").trim();
+      if(/^검증/.test(rest)){
+        const k=rest.lastIndexOf("확인함.");           // 검증 문구 뒤에 본문이 이어지면 살린다
+        rest = k>=0 ? rest.slice(k+"확인함.".length).trim() : "";
+      }
+      lines[i]=rest;                     // 남은 건 본문(제목 등)이므로 그대로 흘려보낸다
     }
     break;                               // 첫 번째 내용 줄만 헤더 후보
   }
