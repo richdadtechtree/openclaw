@@ -73,6 +73,30 @@
   .body code{font-family:var(--mono);font-size:.9em;background:color-mix(in srgb,var(--muted) 14%,transparent);padding:1px 5px;border-radius:4px}
   .body a{color:var(--accent-bright);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent-bright) 40%,transparent)}
   .body .imgnote{display:inline-flex;align-items:center;gap:6px;margin-top:8px;font-family:var(--mono);font-size:12px;color:var(--faint);border:1px dashed var(--line-strong);border-radius:6px;padding:4px 9px}
+  /* ── 신문 브리핑 전용 서식 ─────────────────────────────────
+     슬랙 원문은 한 덩어리 텍스트라 읽기 힘들어서, 뷰어에서
+     헤더 / 카테고리 / 기사 제목 / WHAT·WHY·HOW / 원문확인 으로
+     쪼개 각각 다른 크기·굵기로 보여준다. */
+  .brf-head{font-size:18px;font-weight:800;letter-spacing:-.01em;line-height:1.35;margin:2px 0 16px;padding-bottom:11px;border-bottom:2px solid var(--line-strong)}
+  .brf-cat{display:block;font-size:22px;font-weight:800;letter-spacing:-.02em;line-height:1.3;color:var(--accent);margin:30px 0 16px;padding-left:13px;border-left:5px solid var(--accent-bright)}
+  .brf-cat:first-child{margin-top:2px}
+  .brf-art{margin:0 0 34px}            /* ← 원문 확인 뒤 "두 줄" 여백 (기사 단위 줄바꿈) */
+  .brf-art:last-child{margin-bottom:2px}
+  .brf-title{font-size:17.5px;font-weight:750;line-height:1.45;letter-spacing:-.012em;margin:0 0 5px;text-wrap:pretty}
+  .brf-flag{display:inline-block;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.04em;vertical-align:2px;margin-right:8px;padding:2px 7px;border-radius:5px;color:var(--c-side);background:color-mix(in srgb,var(--c-side) 12%,transparent);white-space:nowrap}
+  .brf-sub{font-size:14px;color:var(--muted);line-height:1.6;margin:0 0 11px}
+  .brf-kv{display:flex;gap:10px;margin:6px 0;font-size:15px;line-height:1.7}
+  .brf-kv .k{flex:none;width:50px;font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.07em;color:var(--faint);padding-top:5px}
+  .brf-kv .v{flex:1;min-width:0}
+  .brf-line{margin:6px 0;font-size:15px;line-height:1.7}
+  .brf-src{display:inline-flex;align-items:center;gap:6px;margin-top:11px;font-family:var(--mono);font-size:11.5px;color:var(--faint);border:1px dashed var(--line-strong);border-radius:6px;padding:3px 9px}
+  .brf-src.fail{color:var(--c-side);border-color:color-mix(in srgb,var(--c-side) 35%,transparent)}
+  @media (max-width:520px){
+    .brf-cat{font-size:19px;margin:24px 0 13px}
+    .brf-title{font-size:16.5px}
+    .brf-kv{display:block}
+    .brf-kv .k{display:inline-block;width:auto;margin-right:7px;padding-top:0}
+  }
   .daybreak{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin:4px 0 20px 78px}
   .empty{text-align:center;color:var(--muted);padding:56px 20px}
   .empty .big{font-size:17px;color:var(--ink);font-weight:700;margin-bottom:6px}
@@ -135,7 +159,8 @@ function emojify(s){
     return e!==undefined?e:"";
   });
 }
-function mrkdwn(raw){
+// 슬랙 mrkdwn(볼드/이탤릭/링크/코드) → HTML. 줄바꿈은 건드리지 않는 '한 줄용' 변환기.
+function inline(raw){
   let o=esc(raw);
   o=emojify(o);
   o=o.replace(/&lt;(https?:\/\/[^|&]+)\|([^&>]+)&gt;/g,'<a href="$1" target="_blank" rel="noopener noreferrer">$2</a>');
@@ -144,7 +169,116 @@ function mrkdwn(raw){
   o=o.replace(/(^|[\s(])\*(?!\s)([^*\n]+?)\*(?=[\s).,!?]|$)/g,"$1<strong>$2</strong>");
   o=o.replace(/(^|[\s(])_(?!\s)([^_\n]+?)_(?=[\s).,!?]|$)/g,"$1<em>$2</em>");
   o=o.replace(/\[대시보드 이미지\]/g,'<span class="imgnote">🖼 대시보드 이미지 (원본은 슬랙)</span>');
-  return o.replace(/\n/g,"<br>");
+  return o;
+}
+// 일반 메시지용(줄바꿈 → <br>)
+function mrkdwn(raw){ return inline(raw).replace(/\n/g,"<br>"); }
+
+/* ══ 신문 브리핑 전용 서식기 ══════════════════════════════════
+   슬랙으로 온 브리핑은 "카테고리 + 제목 + • WHAT/WHY/HOW + • 원문 확인"
+   이 한 덩어리로 붙어 있어 눈에 안 들어온다. 아래에서 구조를 뜯어
+   (1) 헤더 군더더기 제거 (2) 카테고리 크게 (3) 제목 강조 (4) 기사 사이 여백
+   을 적용한다. 형식이 안 맞는 메시지는 건드리지 않고 기존 렌더로 넘어간다. */
+
+// 카테고리로 인정할 낱말(긴 것 먼저 — 정규식 선택지는 앞에서부터 매칭됨)
+const CAT_TOKEN="(?:IT·과학|부동산|주거|주택|건설|금융|증권|경제|기업|산업|정책|시장|사회|국제|정치|외교|안보|과학|문화|스포츠|연예|오피니언|건강|생활|테크|글로벌|유통|물류|에너지|자동차|반도체|바이오|노동|교육|환경|IT)";
+// 줄 맨 앞의 "부동산·주거" / "[금융]" / "경제 > 정책" 같은 카테고리 머리말
+const CAT_RE=new RegExp("^\\[?\\s*("+CAT_TOKEN+"(?:\\s*[·>,/]\\s*"+CAT_TOKEN+")*)\\s*\\]?(?:\\s|$)");
+// 카테고리 뒤에 이런 게 와야 진짜 카테고리로 인정(=평범한 기사 제목 오인 방지)
+const CAT_GUARD=/^(?:[🔴🟠🟡🟢🔵🟣🟤⚪⚫]|반드시|체크|주목|참고|[|｜])/u;
+// "🔴 반드시 체크 | 제목" 형태의 머리표
+const FLAG_RE=/^\s*([🔴🟠🟡🟢🔵🟣🟤⚪⚫]?)\s*([^|｜\n]{0,14}?)\s*[|｜]\s*(.+)$/u;
+
+// 브리핑 형식인지 판별(짧은 사용자 질문 "신문 브리핑 해줘" 등은 제외)
+function isBriefing(t){
+  if(/•\s*(?:WHAT|What|WHY|Why|HOW|How)\s*[:：]/.test(t)) return true;
+  return /신문\s*브리핑/.test(t) && /•/.test(t) && t.length>200;
+}
+
+// 기사 제목 한 줄 → 머리표(🔴 반드시 체크) + 큰 제목 + 작은 부제(중요한 이유)
+function briefTitle(t){
+  let flag="";
+  const m=t.match(FLAG_RE);
+  if(m && (m[1] || /체크|주목|참고|중요|속보/.test(m[2]))){
+    flag='<span class="brf-flag">'+inline((m[1]+" "+m[2]).trim())+"</span>";
+    t=m[3];
+  }
+  const s=t.split(/\s*중요한\s*이유\s*[:：]\s*/);
+  const title=(s[0]||"").trim();
+  const sub=s.slice(1).join(" ").trim();
+  return '<div class="brf-title">'+flag+inline(title)+"</div>"+
+         (sub?'<div class="brf-sub">'+inline(sub)+"</div>":"");
+}
+
+// 본문 전체 → {html, part}. part 는 "1/5" 같은 분할 표시(제목에서 떼어내 작은 배지로 보냄)
+function briefing(raw){
+  let part="";
+  // 슬랙 :emoji_code: 를 먼저 실제 이모지로 바꾼다 — 아래 카테고리/머리표 판별이
+  // 🔴 같은 실제 이모지를 기준으로 하기 때문(코드 상태면 못 알아본다).
+  const lines=emojify(raw.replace(/\r/g,"")).split("\n");
+
+  // (1) 첫 줄에서 "…신문 브리핑" 까지만 남기고 (1/5)·검증 문구 등 뒷부분은 잘라낸다
+  let head="";
+  for(let i=0;i<lines.length;i++){
+    if(!lines[i].trim()) continue;
+    const m=lines[i].match(/^(.*?신문\s*브리핑)(.*)$/);
+    if(m){
+      head=m[1].replace(/[*_]/g,"").trim();
+      const pm=(m[2]||"").match(/\(\s*(\d+)\s*\/\s*(\d+)\s*\)/);
+      if(pm) part=pm[1]+"/"+pm[2];
+      lines[i]="";                       // 그 줄의 나머지(검증 문구)는 버림
+    }
+    break;                               // 첫 번째 내용 줄만 헤더 후보
+  }
+
+  // 불릿(•)은 무조건 새 줄에서 시작하도록 정리 — 제목과 붙어 오는 경우가 많다
+  const body=lines.join("\n").replace(/\s*•\s*/g,"\n• ");
+
+  const out=[];
+  let art=null;                                   // 현재 기사 블록(HTML 조각)
+  const open=()=>{ if(art===null) art=""; };
+  const flush=()=>{ if(art!==null){ out.push('<div class="brf-art">'+art+"</div>"); art=null; } };
+
+  for(const rawLine of body.split("\n")){
+    const line=rawLine.trim();
+    if(!line) continue;
+    if(/^검증\s*[:：]/.test(line)) continue;       // 남아 있는 검증 문구 줄도 제거
+
+    let m;
+    if(m=line.match(/^•\s*(WHAT|WHY|HOW|What|Why|How)\s*[:：]\s*([\s\S]*)$/)){
+      open(); art+='<div class="brf-kv"><span class="k">'+m[1].toUpperCase()+'</span><span class="v">'+inline(m[2])+"</span></div>";
+      continue;
+    }
+    if(m=line.match(/^•?\s*(원문\s*확인.*)$/)){
+      const fail=/실패|없음|불가/.test(m[1]);
+      open(); art+='<div class="brf-src'+(fail?" fail":"")+'">'+inline(m[1])+"</div>";
+      flush();                                     // ← 기사 끝. 다음 기사는 여백 두고 새 블록
+      continue;
+    }
+    if(m=line.match(/^•\s*([\s\S]*)$/)){           // 그 밖의 불릿
+      open(); art+='<div class="brf-line">• '+inline(m[1])+"</div>";
+      continue;
+    }
+
+    // 불릿이 아니면 카테고리 머리말 또는 기사 제목
+    let rest=line.replace(/\*/g,"").trim();        // 제목은 어차피 크게 쓰므로 볼드 기호는 제거
+    const cm=rest.match(CAT_RE);
+    if(cm){
+      const after=rest.slice(cm[0].length).trim();
+      if(!after || CAT_GUARD.test(after)){
+        flush();
+        out.push('<div class="brf-cat">'+inline(cm[1])+"</div>");   // (2) 카테고리 = 큰 글씨 + 줄바꿈
+        rest=after;
+        if(!rest) continue;
+      }
+    }
+    flush();
+    art=briefTitle(rest);                          // (3) 기사 제목 = 다른 크기로 한눈에
+  }
+  flush();
+
+  const html=(head?'<div class="brf-head">'+inline(head)+"</div>":"")+out.join("");
+  return {html:html||mrkdwn(raw), part:part};
 }
 const hhmm=iso=>{const m=(iso||"").match(/T(\d{2}):(\d{2})/);return m?`${m[1]}:${m[2]}`:""};
 function krDate(d){const[y,mo,da]=d.split("-").map(Number);const w=["일","월","화","수","목","금","토"][new Date(Date.UTC(y,mo-1,da)).getUTCDay()];return `${y}년 ${mo}월 ${da}일 (${w})`}
@@ -181,10 +315,16 @@ function render(){
   }
   shown.forEach(m=>{
     const c=cat(m.source);const el=document.createElement("article");el.className="entry";el.style.setProperty("--dot",c.color);
+    const txt=m.text||"";
+    // 신문 브리핑이면 전용 서식, 아니면 기존 그대로
+    const brf=isBriefing(txt)?briefing(txt):null;
+    const bodyHTML=brf?brf.html:mrkdwn(txt);
+    const partTag=(brf&&brf.part)?`<span class="kind">${brf.part}</span>`:``;
     el.innerHTML=`<span class="time">${hhmm(m.ts)}</span><span class="node"></span>`+
       `<div class="card"><div class="meta"><span class="tag">${c.label}</span>`+
+      partTag+
       (m.kind==="image"?`<span class="kind">이미지</span>`:``)+`</div>`+
-      `<div class="body">${mrkdwn(m.text||"")}</div></div>`;
+      `<div class="body">${bodyHTML}</div></div>`;
     feed.appendChild(el);
   });
   document.getElementById("foot-count").textContent=`메시지 ${msgs.length} · 표시 ${shown.length}`;

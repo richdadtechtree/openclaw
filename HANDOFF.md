@@ -79,6 +79,13 @@
 - ✅ **2026-08-31: #gpt 채널 전용으로 축소.** 원래는 신문/주식브리핑/주식알림 채널까지 방 탭으로 나눠 보여줬으나, 사용자 요청으로 **#gpt 채널만** 표시하도록 단순화(다른 채널 코드는 제거).
 - **조회 방식**: `stock/app.py`의 `_fetch_slack_history_api`가 Slack API(`conversations.history`)로 `SLACK_GPT_CHANNEL`(기본값 `C0BTHMT2M7X`) 채널을 직접 읽고, 로컬 로그(`~/.openclaw/slack_logs/YYYY-MM-DD.jsonl`, 같은 채널 ID인 것만)와 병합. bot_id 있으면 "뚜떵또 답변", 없으면 "사용자 질문"으로 분류.
 - **뷰어**: `stock/slack_digest_live.html` — 시간축 타임라인, 카테고리 필터(뚜떵또 답변/사용자 질문), 라이트/다크, 20초 자동 갱신. 슬랙 `:emoji_code:` 표기는 실제 이모지로 변환(매핑 없는 코드는 표시 안 함).
+- ✅ **2026-09-13: 신문 브리핑 전용 서식기 추가**(`slack_digest_live.html` 의 `briefing()`). 슬랙 원문이 한 덩어리로 붙어 와서 안 읽히던 문제를 뷰어에서 해결 — 발송 쪽(AI/슬랙)은 손대지 않았다.
+  - 제목 줄에서 `(1/5) 검증: metadata.json…` 같은 군더더기 제거(분할 표시 `1/5` 는 카드 상단 작은 배지로 이동), `검증:` 으로 시작하는 줄도 숨김.
+  - `부동산·주거` 등 **카테고리**는 줄을 바꿔 22px 굵은 글씨 + 좌측 컬러바(`.brf-cat`).
+  - **기사 제목**은 17.5px(본문 15px)로 키우고 `🔴 반드시 체크` 는 작은 배지로, `중요한 이유:` 뒷부분은 회색 부제로 분리(`.brf-title/.brf-flag/.brf-sub`).
+  - `• WHAT/WHY/HOW` 는 라벨+본문 2단 정렬(`.brf-kv`), **`원문 확인` 줄 뒤에는 기사 단위로 약 2줄 여백**(`.brf-art{margin-bottom:34px}`).
+  - 형식이 안 맞는 메시지(일반 대화·짧은 질문)는 `isBriefing()` 에서 걸러 기존 렌더 그대로. 카테고리 낱말로 시작하는 평범한 제목(예: "부동산 대책 발표")은 뒤에 `🔴`/`반드시` 가 올 때만 카테고리로 인정해 오인 방지.
+  - 반영 경로: openclaw `main` push → 서버 `git-auto-pull.sh` → `sync-stock.sh` 가 `.html` 도 rsync → scheduler(포트 8000) 재시작. 브라우저 **강력 새로고침**(Ctrl/Cmd+Shift+R) 필요할 수 있음.
 - (참고) 신문/주식브리핑/주식알림 채널로 보내는 기능 자체(`slack_briefing.py`, `stock_alert_slack.py` 등)는 그대로 동작 — 이 뷰어에서만 안 보일 뿐.
 
 ## 🔐 PT 대시보드 구글 로그인(OAuth) — 코드 완료, 서버 설정만 남음
