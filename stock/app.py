@@ -1,5 +1,6 @@
 import os
 import threading
+import time
 from datetime import datetime
 
 import uvicorn
@@ -157,6 +158,116 @@ def slack_data(date: str = ""):
 
 def _dt_now():
     return datetime.now(_KST) if _KST else datetime.now()
+
+
+# ── 오늘 신문 원본(사진·PDF) 내려받기 ────────────────────────────────────────
+# 파일 자체는 구글 드라이브에 있지만, 웹이 요청마다 드라이브를 부르면 느리고
+# 인증이 끊기면 페이지가 멈춘다. 그래서 scripts/news_sync.py 가 하루 한 번
+# 드라이브 → 로컬 캐시(~/.openclaw/news_cache/<날짜>/)로 받아두고,
+# 여기서는 그 캐시만 읽어서 내려준다.
+import subprocess as _subprocess
+import sys as _sys
+import threading as _threading
+
+try:
+    import news_files as _news
+except Exception as _e:  # 이 모듈이 없어도 나머지 대시보드는 그대로 동작해야 한다
+    _news = None
+    print("[news] news_files 로드 실패: %s" % _e)
+
+_news_refresh_lock = _threading.Lock()
+_news_refresh_at = [0.0]        # 마지막 새로고침 시각(초). 연타 방지용.
+
+
+def _news_sync_script():
+    return os.path.expanduser(os.getenv("NEWS_SYNC_SCRIPT", "~/.openclaw/scripts/news_sync.py"))
+
+
+def _run_news_sync(date):
+    """드라이브에서 다시 받아오기(백그라운드 실행). 실패해도 웹은 멀쩡해야 한다."""
+    script = _news_sync_script()
+    if not os.path.isfile(script):
+        print("[news] 동기화 스크립트 없음: %s" % script)
+        return
+    try:
+        p = _subprocess.run([_sys.executable, script, date, "--quiet"],
+                            capture_output=True, text=True, timeout=600)
+        if p.returncode not in (0, 2):
+            print("[news] 동기화 실패(rc=%s): %s" % (p.returncode, (p.stderr or "").strip()[:300]))
+    except Exception as e:
+        print("[news] 동기화 예외: %r" % e)
+
+
+@app.get("/api/news/today")
+def news_today(date: str = ""):
+    """그날 신문 원본 목록(PDF 1개 + 사진 N장). date 미지정 시 오늘(KST)."""
+    if _news is None:
+        return JSONResponse(status_code=503, content={"ok": False, "reason": "news_files 모듈 없음"})
+    date = date or _news.today_kst()
+    if not _news.valid_date(date):
+        return JSONResponse(status_code=400, content={"ok": False, "reason": "날짜 형식은 YYYY-MM-DD"})
+    return JSONResponse(_news.summary(date))
+
+
+@app.get("/api/news/file")
+def news_file(name: str, date: str = "", dl: int = 0):
+    """신문 파일 1개. dl=1 이면 다운로드, 아니면 브라우저에서 바로 보기."""
+    if _news is None:
+        return JSONResponse(status_code=503, content={"ok": False, "reason": "news_files 모듈 없음"})
+    date = date or _news.today_kst()
+    path = _news.resolve(date, name)
+    if not path:
+        return JSONResponse(status_code=404, content={"ok": False, "reason": "그런 파일이 없습니다"})
+    mt = _news.media_type(name)
+    if dl:
+        # filename 을 주면 브라우저가 '저장'으로 처리한다(ASCII 이름이라 안전).
+        base = os.path.basename(name)
+        save_as = base if base.startswith(date) else "%s_%s" % (date, base)   # 2026-09-15.pdf 는 그대로
+        return FileResponse(path, media_type=mt, filename=save_as)
+    return FileResponse(path, media_type=mt)
+
+
+@app.get("/api/news/thumb")
+def news_thumb(name: str, date: str = ""):
+    """사진 썸네일(작게 줄인 이미지). Pillow 가 없으면 원본을 그대로 준다."""
+    if _news is None:
+        return JSONResponse(status_code=503, content={"ok": False, "reason": "news_files 모듈 없음"})
+    date = date or _news.today_kst()
+    path = _news.ensure_thumb(date, name)
+    if not path:
+        return JSONResponse(status_code=404, content={"ok": False, "reason": "그런 파일이 없습니다"})
+    mt = "image/jpeg" if path.endswith(".jpg") else _news.media_type(name)
+    return FileResponse(path, media_type=mt)
+
+
+@app.get("/api/news/zip")
+def news_zip(date: str = ""):
+    """그날 사진+PDF 를 한 번에 받는 ZIP."""
+    if _news is None:
+        return JSONResponse(status_code=503, content={"ok": False, "reason": "news_files 모듈 없음"})
+    date = date or _news.today_kst()
+    path = _news.ensure_zip(date)
+    if not path:
+        return JSONResponse(status_code=404, content={"ok": False, "reason": "받을 파일이 없습니다"})
+    return FileResponse(path, media_type="application/zip", filename="news-%s.zip" % date)
+
+
+@app.post("/api/news/refresh")
+def news_refresh(background_tasks: BackgroundTasks, date: str = ""):
+    """지금 드라이브에서 다시 받아오기. 60초 안에 또 누르면 그냥 무시한다."""
+    if _news is None:
+        return JSONResponse(status_code=503, content={"ok": False, "reason": "news_files 모듈 없음"})
+    date = date or _news.today_kst()
+    if not _news.valid_date(date):
+        return JSONResponse(status_code=400, content={"ok": False, "reason": "날짜 형식은 YYYY-MM-DD"})
+    now = time.time()
+    with _news_refresh_lock:
+        if now - _news_refresh_at[0] < 60:
+            return {"ok": True, "status": "skipped", "message": "방금 받아왔습니다. 잠시 후 다시 시도하세요."}
+        _news_refresh_at[0] = now
+    background_tasks.add_task(_run_news_sync, date)
+    return {"ok": True, "status": "accepted", "date": date}
+
 
 
 @app.on_event("startup")

@@ -108,6 +108,50 @@
     .pulse{animation:blink 2s ease-in-out infinite}
     @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
   }
+  /* ── 오늘 신문 원본 패널 ─────────────────────────────────────────────
+     드라이브에 올라온 그날 신문 PDF·사진을 바로 받을 수 있는 카드.
+     썸네일은 loading="lazy" + 기본 접힘이라, 열기 전엔 데이터를 쓰지 않는다. */
+  .news{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);
+        padding:15px 17px 16px;margin-top:18px}
+  .news-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-bottom:11px}
+  .news-kicker{font-size:15.5px;font-weight:800;letter-spacing:-.015em;color:var(--ink)}
+  .news-kicker .ico{margin-right:6px}
+  /* 요약줄(order:3)은 항상 아랫줄로 내려보내, 좁은 화면에서도 '받아오기' 버튼이
+     제목과 같은 줄에 남도록 한다. */
+  .news-sub{order:3;flex-basis:100%;font-family:var(--mono);font-size:11.5px;color:var(--faint);
+            font-variant-numeric:tabular-nums;margin-top:-3px}
+  .news-sub:empty{display:none}
+  .news-refresh{order:2;margin-left:auto;padding:4px 10px;font-size:12px;line-height:1.5}
+  .news-refresh[disabled]{opacity:.5;cursor:default}
+  .news-actions{display:flex;gap:8px;flex-wrap:wrap}
+  .news-actions:empty{display:none}
+  .news-btn{display:inline-flex;align-items:center;gap:8px;font-family:var(--sans);font-size:13.5px;font-weight:650;
+            text-decoration:none;border-radius:10px;padding:9px 14px;border:1px solid var(--line-strong);
+            color:var(--ink);background:var(--surface);transition:border-color .15s,background .15s}
+  .news-btn:hover{border-color:var(--accent-bright)}
+  .news-btn .sz{font-family:var(--mono);font-size:11px;color:var(--faint);font-weight:500}
+  .news-btn.primary{background:color-mix(in srgb,var(--accent-bright) 12%,var(--surface));border-color:var(--accent-bright);color:var(--accent)}
+  .news-btn.primary .sz{color:var(--accent)}
+  .news-toggle{margin-top:11px;font-family:var(--sans);font-size:13px;font-weight:600;color:var(--muted);
+               background:none;border:0;padding:4px 0;cursor:pointer}
+  .news-toggle:hover{color:var(--ink)}
+  .news-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px;margin-top:11px}
+  .news-cell{position:relative;border-radius:8px;overflow:hidden;border:1px solid var(--line);background:var(--bg);
+             aspect-ratio:3/4;display:block}
+  .news-cell img{width:100%;height:100%;object-fit:cover;display:block;background:var(--bg)}
+  .news-cell .no{position:absolute;left:0;top:0;font-family:var(--mono);font-size:10px;font-weight:700;color:#fff;
+                 background:rgba(15,20,32,.62);padding:2px 6px;border-bottom-right-radius:6px}
+  .news-cell .dl{position:absolute;right:4px;bottom:4px;font-size:11px;line-height:1;color:#fff;text-decoration:none;
+                 background:rgba(15,20,32,.62);border-radius:6px;padding:4px 6px}
+  .news-cell .dl:hover{background:var(--accent-bright)}
+  .news-note{font-size:12.5px;color:var(--muted);margin-top:10px;line-height:1.6}
+  .news-note a{color:var(--accent-bright);text-decoration:none}
+  .news.waiting{border-style:dashed;box-shadow:none}
+  @media (max-width:520px){
+    .news{padding:13px 14px 14px;border-radius:12px}
+    .news-grid{grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px}
+    .news-btn{font-size:13px;padding:8px 12px}
+  }
 </style>
 </head>
 <body>
@@ -122,6 +166,20 @@
       <span class="updated" id="updated"></span>
     </div>
   </header>
+
+  <!-- 오늘 신문 원본: 구글 드라이브에 올라온 그날 PDF·사진을 바로 내려받는 칸 -->
+  <section class="news" id="news" hidden>
+    <div class="news-head">
+      <span class="news-kicker"><span class="ico">📰</span><span id="news-title">오늘 신문 원본</span></span>
+      <span class="news-sub" id="news-sub"></span>
+      <button class="btn news-refresh" id="news-refresh" title="구글 드라이브에서 다시 받아오기">↻ 받아오기</button>
+    </div>
+    <div class="news-actions" id="news-actions"></div>
+    <button class="news-toggle" id="news-toggle" aria-expanded="false" hidden></button>
+    <div class="news-grid" id="news-grid" hidden></div>
+    <div class="news-note" id="news-note"></div>
+  </section>
+
   <div class="toolbar" id="toolbar"></div>
   <main class="feed" id="feed"></main>
   <footer>
@@ -347,11 +405,124 @@ function chip(key,label,n,color){
 }
 function syncChips(){document.querySelectorAll(".chip").forEach(ch=>{const k=ch.dataset.key;const on=k==="all"?state.active.size===0:state.active.has(k);ch.setAttribute("aria-pressed",on?"true":"false")})}
 
-document.getElementById("datepick").addEventListener("change",e=>{state.date=e.target.value;load()});
-document.getElementById("today").addEventListener("click",()=>{state.date=todayKST();load()});
+/* ── 오늘 신문 원본 패널 ────────────────────────────────────────────────
+   /api/news/today 가 그날 PDF·사진 목록을 준다. 파일은 서버가 구글 드라이브에서
+   미리 받아둔 것(scripts/news_sync.py)이라, 여기서는 목록만 받아 버튼으로 그린다.
+   사진 썸네일은 '펼치기'를 눌러야 불러온다 → 페이지 첫 로딩을 가볍게 유지. */
+const newsState={open:false,date:"",busy:false};
 
-load();
-setInterval(()=>{ if(state.date===todayKST()) load(); },20000); // 오늘 볼 때만 자동 갱신
+function mb(n){ n=Number(n||0); if(!n) return ""; return n<1024*1024 ? (n/1024).toFixed(0)+"KB" : (n/1024/1024).toFixed(1)+"MB"; }
+
+async function loadNews(){
+  const box=document.getElementById("news");
+  if(!box) return;
+  let d=null;
+  try{
+    const r=await fetch(`/api/news/today?date=${state.date}`,{cache:"no-store"});
+    d=await r.json();
+  }catch(e){ box.hidden=true; return; }
+  renderNews(d);
+}
+
+function renderNews(d){
+  const box=document.getElementById("news");
+  const acts=document.getElementById("news-actions");
+  const grid=document.getElementById("news-grid");
+  const toggle=document.getElementById("news-toggle");
+  const note=document.getElementById("news-note");
+  const sub=document.getElementById("news-sub");
+  const ttl=document.getElementById("news-title");
+  if(!d||d.ok===false){ box.hidden=true; return; }
+  box.hidden=false;
+
+  // 날짜가 바뀌면 펼침 상태와 그려둔 썸네일을 초기화한다.
+  if(newsState.date!==d.date){ newsState.date=d.date; newsState.open=false; grid.innerHTML=""; }
+
+  if(!d.ready){
+    // 아직 안 올라왔거나(오늘 새벽) 캐시에 없는 지난 날짜.
+    box.classList.add("waiting");
+    ttl.textContent=(d.date===todayKST()?"오늘":d.date.slice(5).replace("-","/"))+" 신문 원본";
+    sub.textContent="";
+    acts.innerHTML="";
+    toggle.hidden=true; grid.hidden=true;
+    const past=d.date<todayKST();
+    let msg=past?"이 날짜의 원본은 서버에 없습니다(최근 며칠치만 보관합니다).":
+                 "아직 올라오지 않았습니다. 보통 <b>오전 6시</b>쯤 준비됩니다.";
+    if(d.latest&&d.latest!==d.date) msg+=` <a href="#" id="news-latest">가장 최근(${d.latest.slice(5).replace("-","/")}) 보기</a>`;
+    note.innerHTML=msg;
+    const link=document.getElementById("news-latest");
+    if(link) link.onclick=(e)=>{e.preventDefault();state.date=d.latest;document.getElementById("datepick").value=d.latest;load();};
+    return;
+  }
+
+  box.classList.remove("waiting");
+  ttl.textContent=(d.date===todayKST()?"오늘":d.date.slice(5).replace("-","/"))+" 신문 원본";
+  const parts=[];
+  if(d.pdf&&d.pdf.pages) parts.push(d.pdf.pages+"면");
+  if(d.count) parts.push("사진 "+d.count+"장");
+  if(d.total_size) parts.push("합계 "+mb(d.total_size));
+  if(d.updated) parts.push(d.updated.slice(11,16)+" 받음");
+  sub.textContent=parts.join(" · ");
+
+  // 버튼: PDF 받기 / PDF 보기 / 사진+PDF ZIP
+  acts.innerHTML="";
+  if(d.pdf){
+    acts.insertAdjacentHTML("beforeend",
+      `<a class="news-btn primary" href="${d.pdf.url}"><span>📄 PDF 받기</span><span class="sz">${mb(d.pdf.size)}</span></a>`+
+      `<a class="news-btn" href="${d.pdf.view_url}" target="_blank" rel="noopener"><span>👁 PDF 보기</span></a>`);
+  }
+  if(d.count){
+    acts.insertAdjacentHTML("beforeend",
+      `<a class="news-btn" href="${d.zip_url}"><span>🗂 전체 ZIP</span><span class="sz">${mb(d.total_size)}</span></a>`);
+  }
+
+  // 사진 썸네일(접힘/펼침)
+  toggle.hidden=!d.count;
+  toggle.textContent=(newsState.open?"▾ 사진 접기":`▸ 사진 ${d.count}장 펼치기`);
+  toggle.setAttribute("aria-expanded",newsState.open?"true":"false");
+  grid.hidden=!newsState.open;
+  // 펼친 상태에서 사진 장수가 달라졌으면(받아오기 직후 등) 그리드를 다시 그린다.
+  if(newsState.open&&grid.children.length!==d.count) fillGrid(d);
+  toggle.onclick=()=>{
+    newsState.open=!newsState.open;
+    if(newsState.open&&grid.children.length!==d.count) fillGrid(d);
+    grid.hidden=!newsState.open;
+    toggle.textContent=(newsState.open?"▾ 사진 접기":`▸ 사진 ${d.count}장 펼치기`);
+    toggle.setAttribute("aria-expanded",newsState.open?"true":"false");
+  };
+
+  const src=d.source_url?` · <a href="${d.source_url}" target="_blank" rel="noopener">원문 글</a>`:"";
+  note.innerHTML=`사진을 누르면 새 탭에서 크게 볼 수 있고, 오른쪽 아래 ⤓ 를 누르면 그 장만 저장됩니다.${src}`;
+}
+
+function fillGrid(d){
+  const grid=document.getElementById("news-grid");
+  grid.innerHTML=d.images.map((im,i)=>
+    `<a class="news-cell" href="${im.url}" target="_blank" rel="noopener" title="${im.name}">`+
+    `<img loading="lazy" decoding="async" src="${im.thumb}" alt="${im.name}">`+
+    `<span class="no">${String(i+1).padStart(2,"0")}</span>`+
+    `<span class="dl" data-href="${im.download_url}" title="이 장만 저장">⤓</span></a>`).join("");
+  // ⤓ 는 링크 안의 링크라 <a> 로 못 넣는다 → 클릭을 가로채서 직접 내려받는다.
+  grid.querySelectorAll(".dl").forEach(el=>{
+    el.addEventListener("click",ev=>{ev.preventDefault();ev.stopPropagation();location.href=el.dataset.href;});
+  });
+}
+
+// ↻ 받아오기: 서버에게 드라이브에서 다시 가져오라고 시키고, 잠시 뒤 목록을 새로고침.
+document.getElementById("news-refresh").addEventListener("click",async(e)=>{
+  const b=e.currentTarget;
+  if(newsState.busy) return;
+  newsState.busy=true; b.disabled=true; b.textContent="↻ 받는 중…";
+  try{ await fetch(`/api/news/refresh?date=${state.date}`,{method:"POST"}); }catch(_){}
+  for(const wait of [4000,6000,10000]){ await new Promise(r=>setTimeout(r,wait)); await loadNews(); }
+  newsState.busy=false; b.disabled=false; b.textContent="↻ 받아오기";
+});
+
+document.getElementById("datepick").addEventListener("change",e=>{state.date=e.target.value;load();loadNews()});
+document.getElementById("today").addEventListener("click",()=>{state.date=todayKST();load();loadNews()});
+
+load(); loadNews();
+setInterval(()=>{ if(state.date===todayKST()){ load(); loadNews(); } },20000); // 오늘 볼 때만 자동 갱신
 document.addEventListener("visibilitychange",()=>{ if(!document.hidden) load(); });
 </script>
 </body>

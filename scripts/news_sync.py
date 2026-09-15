@@ -1,0 +1,586 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+news_sync.py — 구글 드라이브의 "그날 신문"(사진 + PDF)을 서버 로컬 캐시로 내려받는다.
+
+[왜 필요한가]
+매일 06:01(KST)에 구글 드라이브가 이렇게 채워진다.
+
+    내 드라이브 / 신문스크랩 / 2026-09 / 2026-09-15 /
+        2026-09-15.pdf      ← 그날 신문 전체 PDF
+        01.jpg … 30.gif     ← 신문 페이지 사진
+        metadata.json       ← 원문(네이버 카페) 주소·장수 등 기록
+
+다이제스트 웹(포트 8000, /slack)에서 이 파일을 바로 받게 하려면,
+웹 요청이 올 때마다 드라이브를 찌르는 것보다 **하루 한 번 미리 내려받아
+로컬에 캐시**해 두는 편이 훨씬 빠르고 안전하다(인증·쿼터·지연 문제 없음).
+이 스크립트가 그 "미리 받아두는" 역할이고, 웹 서버는 캐시만 읽는다.
+
+[어떻게 가져오나]
+서버에 이미 구글 인증이 끝난 `gog`(gogcli) CLI 를 그대로 재사용한다.
+새 API 키를 발급할 필요가 없다. 다만 gog 의 drive 하위 명령 이름/플래그가
+버전마다 다를 수 있어서, **여러 후보 명령을 순서대로 시도해 보고 처음
+성공한 형태를 기억**한다(.gog_shape.json). 전부 실패하면 --probe 로
+`gog drive --help` 를 찍어볼 수 있게 안내한다.
+
+[사용법]
+    python3 ~/.openclaw/scripts/news_sync.py              # 오늘(KST)
+    python3 ~/.openclaw/scripts/news_sync.py 2026-09-14   # 특정 날짜
+    python3 ~/.openclaw/scripts/news_sync.py --force      # 캐시 무시하고 다시 받기
+    python3 ~/.openclaw/scripts/news_sync.py --probe      # gog 사용법 확인(진단)
+
+시스템 python3 로 충분하다(외부 라이브러리 없음 → requests 함정 없음).
+
+[종료 코드]  0 성공 / 2 아직 안 올라옴(정상적인 "없음") / 1 오류
+"""
+
+import argparse
+import json
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+from datetime import datetime, timedelta, timezone
+
+KST = timezone(timedelta(hours=9))
+
+# 드라이브 '신문스크랩' 최상위 폴더 ID. 폴더를 옮겼다면 NEWS_DRIVE_ROOT_ID 로 덮어쓴다.
+DEFAULT_ROOT_ID = "1Alujf1JqgEl2C5OaEt1F7MOS9wkjUJsx"
+
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic"}
+
+# gog 가 쓰는 keyring(구글 토큰 금고) 암호는 게이트웨이 systemd 유닛에만 있다.
+# cron 에서 돌 때를 대비해 아래 접두어로 시작하는 변수만 골라 가져온다(값은 절대 출력 안 함).
+GOG_ENV_PREFIXES = ("GOG", "KEYRING", "PYTHON_KEYRING", "GOOGLE", "XDG_")
+
+
+class GogError(RuntimeError):
+    """gog 명령을 어떤 형태로도 성공시키지 못했을 때."""
+
+
+# ───────────────────────────────────────────────────────────── 경로/환경 준비
+
+def cache_root():
+    """캐시 최상위 폴더. 기본 ~/.openclaw/news_cache (git 추적 제외)."""
+    return os.path.expanduser(os.getenv("NEWS_CACHE_DIR", "~/.openclaw/news_cache"))
+
+
+def day_dir(date):
+    return os.path.join(cache_root(), date)
+
+
+def today_kst():
+    return datetime.now(KST).strftime("%Y-%m-%d")
+
+
+def load_env_file():
+    """~/.openclaw/.env 의 KEY=VALUE 를 (아직 없는 것만) 환경변수로 올린다."""
+    path = os.path.expanduser(os.getenv("OPENCLAW_ENV_FILE", "~/.openclaw/.env"))
+    if not os.path.isfile(path):
+        return
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k, v = k.strip(), v.strip().strip('"').strip("'")
+                if k and k not in os.environ:
+                    os.environ[k] = v
+    except Exception:
+        pass
+
+
+def load_gateway_env(unit=None):
+    """
+    systemd 유저 유닛(openclaw-gateway)의 Environment= 에서 gog 관련 변수를 빌려온다.
+    cron 에는 그 변수가 없어서 gog 가 "keyring locked" 로 실패하는 것을 막는 장치.
+    """
+    unit = unit or os.getenv("OPENCLAW_GATEWAY_UNIT", "openclaw-gateway")
+    try:
+        out = subprocess.run(
+            ["systemctl", "--user", "show", unit, "-p", "Environment", "--value"],
+            capture_output=True, text=True, timeout=10,
+        ).stdout.strip()
+    except Exception:
+        return
+    if not out:
+        return
+    try:
+        tokens = shlex.split(out)
+    except ValueError:
+        tokens = out.split()
+    for tok in tokens:
+        if "=" not in tok:
+            continue
+        k, v = tok.split("=", 1)
+        if k and k not in os.environ and k.startswith(GOG_ENV_PREFIXES):
+            os.environ[k] = v
+
+
+def gog_bin():
+    """gog 실행파일 위치. 게이트웨이 PATH 에 linuxbrew 가 없어 절대경로가 안전하다."""
+    for c in (os.getenv("GOG_BIN", ""),
+              "/home/linuxbrew/.linuxbrew/bin/gog",
+              shutil.which("gog") or ""):
+        if c and os.path.isfile(c) and os.access(c, os.X_OK):
+            return c
+    return ""
+
+
+def run_gog(args, cwd=None, timeout=300, binary=False):
+    """gog 를 한 번 실행하고 (종료코드, stdout, stderr) 를 돌려준다."""
+    exe = gog_bin()
+    if not exe:
+        raise GogError("gog 실행파일을 찾지 못했습니다. GOG_BIN 환경변수로 경로를 지정하세요.")
+    try:
+        p = subprocess.run([exe] + list(args), cwd=cwd, timeout=timeout,
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except subprocess.TimeoutExpired:
+        return 124, (b"" if binary else ""), "시간 초과(%ss)" % timeout
+    out = p.stdout if binary else p.stdout.decode("utf-8", "replace")
+    err = p.stderr.decode("utf-8", "replace")
+    return p.returncode, out, err
+
+
+# ─────────────────────────────────────────── gog 명령 "형태" 자동 탐색 + 기억
+
+# 폴더 안 목록 뽑기 후보들. {q}=검색식, {parent}=폴더ID 자리.
+LIST_SHAPES = [
+    ["drive", "list", "-q", "{q}", "-j"],
+    ["drive", "list", "--query", "{q}", "-j"],
+    ["drive", "list", "-q", "{q}", "--json"],
+    ["drive", "files", "list", "-q", "{q}", "-j"],
+    ["drive", "ls", "-q", "{q}", "-j"],
+    ["drive", "list", "--parent", "{parent}", "-j"],
+    ["drive", "list", "{parent}", "-j"],
+    ["drive", "ls", "{parent}", "-j"],
+]
+
+# 파일 하나 내려받기 후보들. {id}=파일ID, {out}=저장 경로.
+# stdout 으로 내용을 뱉는 형태는 따로 표시(마지막 원소가 ">" 이면 stdout 저장).
+DOWNLOAD_SHAPES = [
+    ["drive", "download", "{id}", "-o", "{out}"],
+    ["drive", "download", "{id}", "--output", "{out}"],
+    ["drive", "download", "--id", "{id}", "--out", "{out}"],
+    ["drive", "download", "{id}", "{out}"],
+    ["drive", "download", "{id}"],
+    ["drive", "get", "{id}", "-o", "{out}"],
+    ["drive", "get", "{id}"],
+    ["drive", "cat", "{id}", ">"],
+]
+
+
+def shape_store_path():
+    return os.path.join(cache_root(), ".gog_shape.json")
+
+
+def load_shapes():
+    try:
+        with open(shape_store_path(), encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_shape(kind, shape):
+    """성공한 명령 형태를 기억해 다음 실행부터 곧바로 쓰게 한다."""
+    data = load_shapes()
+    data[kind] = shape
+    os.makedirs(cache_root(), exist_ok=True)
+    tmp = shape_store_path() + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, shape_store_path())
+
+
+def ordered_shapes(kind, all_shapes):
+    """기억해 둔 형태를 맨 앞에 두고, 나머지를 뒤에 붙인 시도 순서."""
+    saved = load_shapes().get(kind)
+    if saved and saved in all_shapes:
+        return [saved] + [s for s in all_shapes if s != saved]
+    if saved:
+        return [saved] + all_shapes
+    return list(all_shapes)
+
+
+def fill(shape, **kw):
+    """템플릿의 {q}/{parent}/{id}/{out} 자리를 실제 값으로 바꾼다."""
+    return [part.format(**kw) for part in shape if part != ">"]
+
+
+# ─────────────────────────────────────────────────── gog 출력(JSON) 해석하기
+
+def normalize_entry(e):
+    """gog 버전마다 키 이름이 달라서(id/fileId, name/title …) 하나로 맞춘다."""
+    if not isinstance(e, dict):
+        return None
+    fid = e.get("id") or e.get("fileId") or e.get("Id") or e.get("ID")
+    name = e.get("name") or e.get("title") or e.get("Name") or e.get("Title")
+    if not fid or not name:
+        return None
+    mime = e.get("mimeType") or e.get("mime_type") or e.get("MimeType") or e.get("mime") or ""
+    size = e.get("size") or e.get("fileSize") or e.get("Size") or 0
+    try:
+        size = int(size)
+    except (TypeError, ValueError):
+        size = 0
+    return {"id": str(fid), "name": str(name), "mime": str(mime), "size": size}
+
+
+def parse_listing(text):
+    """
+    gog 출력이 JSON 배열이든, {"files":[…]} 든, 한 줄에 하나씩(NDJSON)이든 받아낸다.
+    반환: (해석 성공 여부, 파일 목록)  ← 빈 폴더와 '해석 실패'를 구분하기 위해 둘로 나눔
+    """
+    text = (text or "").strip()
+    if not text:
+        return False, []
+    try:
+        data = json.loads(text)
+    except Exception:
+        rows = []
+        ok = False
+        for line in text.splitlines():
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                row = normalize_entry(json.loads(line))
+            except Exception:
+                continue
+            ok = True
+            if row:
+                rows.append(row)
+        return ok, rows
+
+    if isinstance(data, dict):
+        for key in ("files", "items", "data", "results", "entries"):
+            if isinstance(data.get(key), list):
+                data = data[key]
+                break
+        else:
+            one = normalize_entry(data)
+            return True, ([one] if one else [])
+    if not isinstance(data, list):
+        return False, []
+    return True, [r for r in (normalize_entry(e) for e in data) if r]
+
+
+def list_children(parent_id):
+    """폴더 하나의 바로 아래 항목 목록."""
+    q = "'%s' in parents and trashed = false" % parent_id
+    last_err = ""
+    for shape in ordered_shapes("list", LIST_SHAPES):
+        try:
+            rc, out, err = run_gog(fill(shape, q=q, parent=parent_id))
+        except GogError:
+            raise
+        if rc != 0:
+            last_err = (err or out or "").strip()[:400]
+            continue
+        ok, files = parse_listing(out)
+        if ok:
+            save_shape("list", shape)
+            return files
+        last_err = "출력을 JSON 으로 해석하지 못함: " + (out or "")[:200]
+    raise GogError(
+        "드라이브 목록 조회에 실패했습니다.\n"
+        "  마지막 오류: %s\n"
+        "  → `python3 %s --probe` 로 gog 의 실제 사용법을 확인하세요."
+        % (last_err, os.path.abspath(__file__))
+    )
+
+
+def download_file(file_id, name, dest_path):
+    """
+    파일 하나를 dest_path 로 내려받는다.
+    안전장치: 임시 폴더에서 실행한 뒤 '거기에 생긴 파일'을 옮긴다.
+    (gog 가 -o 플래그를 무시하고 현재 폴더에 원래 이름으로 저장해도 대응된다.)
+    """
+    tmpdir = tempfile.mkdtemp(prefix="news-dl-")
+    try:
+        for shape in ordered_shapes("download", DOWNLOAD_SHAPES):
+            to_stdout = shape and shape[-1] == ">"
+            args = fill(shape, id=file_id, out=os.path.join(tmpdir, name))
+            rc, out, err = run_gog(args, cwd=tmpdir, binary=to_stdout)
+            if rc != 0:
+                continue
+
+            if to_stdout:
+                if not out:
+                    continue
+                with open(dest_path + ".part", "wb") as f:
+                    f.write(out)
+                os.replace(dest_path + ".part", dest_path)
+                save_shape("download", shape)
+                return True
+
+            # 임시 폴더에 생긴 파일 중 가장 큰 것을 결과물로 본다.
+            got = []
+            for root, _dirs, files in os.walk(tmpdir):
+                for fn in files:
+                    p = os.path.join(root, fn)
+                    try:
+                        sz = os.path.getsize(p)
+                    except OSError:
+                        continue
+                    if sz > 0:
+                        got.append((sz, p))
+            if not got:
+                continue
+            got.sort(reverse=True)
+            shutil.move(got[0][1], dest_path)
+            save_shape("download", shape)
+            return True
+        return False
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+# ─────────────────────────────────────────────────────── 드라이브에서 날짜 찾기
+
+def is_folder(entry):
+    return entry.get("mime", "").endswith("apps.folder")
+
+
+def pick_folder(entries, wanted_names):
+    """이름이 후보 중 하나와 같은 폴더 찾기(공백 차이는 무시)."""
+    norm = lambda s: re.sub(r"\s+", "", s or "").lower()
+    wanted = {norm(w) for w in wanted_names}
+    for e in entries:
+        if is_folder(e) and norm(e["name"]) in wanted:
+            return e
+    return None
+
+
+def find_day_folder(date):
+    """
+    신문스크랩 / YYYY-MM / YYYY-MM-DD 를 찾는다.
+    월 폴더가 없는 구조여도(날짜 폴더가 바로 최상위) 동작하도록 한 단계 폴백을 둔다.
+    못 찾으면 None (= 아직 안 올라옴).
+    """
+    root_id = os.getenv("NEWS_DRIVE_ROOT_ID", DEFAULT_ROOT_ID)
+    top = list_children(root_id)
+
+    month = date[:7]                       # 2026-09
+    month_alt = [month, month.replace("-", ""), month[5:7], "%s년 %s월" % (date[:4], date[5:7])]
+    mf = pick_folder(top, month_alt)
+
+    candidates = list_children(mf["id"]) if mf else top
+    day_alt = [date, date.replace("-", ""), date[5:].replace("-", ""), date[2:].replace("-", "")]
+    df = pick_folder(candidates, day_alt)
+    if df:
+        return df
+    # 월 폴더를 거쳤는데 없었다면 최상위에서 한 번 더(구조가 바뀐 경우 대비)
+    if mf:
+        return pick_folder(top, day_alt)
+    return None
+
+
+# ───────────────────────────────────────────────────────────── 실제 동기화
+
+def classify(entry):
+    """PDF / 이미지 / metadata.json / 그 외 로 분류."""
+    name = entry["name"]
+    ext = os.path.splitext(name)[1].lower()
+    mime = entry.get("mime", "")
+    if name.lower() == "metadata.json":
+        return "meta"
+    if ext == ".pdf" or mime == "application/pdf":
+        return "pdf"
+    if ext in IMAGE_EXTS or mime.startswith("image/"):
+        return "image"
+    return "other"
+
+
+def safe_name(name):
+    """경로 탈출(../) 방지 — 파일명만 남긴다."""
+    return os.path.basename(name).replace("\\", "_").strip() or "unnamed"
+
+
+def sync(date, force=False, verbose=True):
+    def say(msg):
+        if verbose:
+            print(msg, flush=True)
+
+    folder = find_day_folder(date)
+    if not folder:
+        say("[%s] 드라이브에 아직 폴더가 없습니다 (보통 06:01 KST 업로드)." % date)
+        return 2
+
+    entries = list_children(folder["id"])
+    if not entries:
+        say("[%s] 폴더는 있는데 안이 비어 있습니다." % date)
+        return 2
+
+    dest = day_dir(date)
+    os.makedirs(dest, exist_ok=True)
+
+    pdf_entry, image_entries, meta_entry = None, [], None
+    for e in entries:
+        kind = classify(e)
+        if kind == "pdf" and pdf_entry is None:
+            pdf_entry = e
+        elif kind == "image":
+            image_entries.append(e)
+        elif kind == "meta":
+            meta_entry = e
+    image_entries.sort(key=lambda e: e["name"])
+
+    wanted = ([pdf_entry] if pdf_entry else []) + image_entries + ([meta_entry] if meta_entry else [])
+    fetched, skipped, failed = 0, 0, []
+
+    for e in wanted:
+        name = safe_name(e["name"])
+        path = os.path.join(dest, name)
+        # 이미 같은 크기로 받아둔 파일은 건너뛴다(드라이브가 크기를 안 주면 존재만 확인).
+        if not force and os.path.isfile(path):
+            local = os.path.getsize(path)
+            if local > 0 and (e["size"] == 0 or local == e["size"]):
+                skipped += 1
+                continue
+        say("  ↓ %s (%s)" % (name, human(e["size"])))
+        if download_file(e["id"], name, path):
+            fetched += 1
+        else:
+            failed.append(name)
+
+    # metadata.json 에서 원문 주소·제목을 읽어 둔다(있으면 웹에 같이 보여준다).
+    meta = {}
+    meta_path = os.path.join(dest, "metadata.json")
+    if os.path.isfile(meta_path):
+        try:
+            with open(meta_path, encoding="utf-8") as f:
+                meta = json.load(f) or {}
+        except Exception:
+            meta = {}
+
+    index = {
+        "date": date,
+        "updated": datetime.now(KST).isoformat(timespec="seconds"),
+        "folder_id": folder["id"],
+        "title": meta.get("title") or "",
+        "source_url": meta.get("post_url") or meta.get("url") or "",
+        "expected_count": meta.get("image_count") or len(image_entries),
+        "pdf": None,
+        "images": [],
+        "failed": failed,
+    }
+    if pdf_entry:
+        p = os.path.join(dest, safe_name(pdf_entry["name"]))
+        if os.path.isfile(p):
+            index["pdf"] = {
+                "name": safe_name(pdf_entry["name"]),
+                "size": os.path.getsize(p),
+                "pages": meta.get("pdf_page_count") or 0,
+            }
+    for e in image_entries:
+        p = os.path.join(dest, safe_name(e["name"]))
+        if os.path.isfile(p):
+            index["images"].append({"name": safe_name(e["name"]), "size": os.path.getsize(p)})
+
+    write_json(os.path.join(dest, "index.json"), index)
+
+    # 사진이 바뀌었으면 예전에 만들어 둔 ZIP 은 버린다(다음 요청 때 새로 만든다).
+    if fetched:
+        for stale in ("photos.zip",):
+            try:
+                os.remove(os.path.join(dest, stale))
+            except OSError:
+                pass
+
+    say("[%s] 새로 받음 %d · 그대로 %d · 실패 %d · PDF %s · 사진 %d장"
+        % (date, fetched, skipped, len(failed),
+           "O" if index["pdf"] else "X", len(index["images"])))
+    prune(int(os.getenv("NEWS_CACHE_KEEP_DAYS", "7")), verbose=verbose)
+    return 1 if failed and not index["images"] and not index["pdf"] else 0
+
+
+def write_json(path, data):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, path)
+
+
+def human(n):
+    n = float(n or 0)
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return "%.0f%s" % (n, unit) if unit == "B" else "%.1f%s" % (n, unit)
+        n /= 1024
+
+
+def prune(keep_days, verbose=False):
+    """오래된 날짜 폴더 정리(하루치가 15~25MB라 방치하면 디스크를 먹는다)."""
+    if keep_days <= 0:
+        return
+    root = cache_root()
+    if not os.path.isdir(root):
+        return
+    dates = sorted(d for d in os.listdir(root) if re.fullmatch(r"\d{4}-\d{2}-\d{2}", d))
+    for old in dates[:-keep_days]:
+        shutil.rmtree(os.path.join(root, old), ignore_errors=True)
+        if verbose:
+            print("  · 오래된 캐시 삭제: %s" % old, flush=True)
+
+
+# ─────────────────────────────────────────────────────────────────── 진단용
+
+def probe():
+    """gog 가 실제로 어떤 drive 명령을 지원하는지 찍어 본다."""
+    exe = gog_bin()
+    print("gog 실행파일 : %s" % (exe or "(못 찾음)"))
+    print("캐시 폴더    : %s" % cache_root())
+    print("드라이브 루트: %s" % os.getenv("NEWS_DRIVE_ROOT_ID", DEFAULT_ROOT_ID))
+    have = [k for k in os.environ if k.startswith(GOG_ENV_PREFIXES)]
+    print("gog 관련 환경변수: %s" % (", ".join(sorted(have)) or "(없음)"))
+    print("기억된 명령 형태 : %s" % json.dumps(load_shapes(), ensure_ascii=False))
+    if not exe:
+        return 1
+    for args in (["--help"], ["drive", "--help"], ["drive", "list", "--help"],
+                 ["drive", "download", "--help"], ["auth", "list"]):
+        print("\n$ gog %s" % " ".join(args))
+        print("-" * 60)
+        rc, out, err = run_gog(args, timeout=30)
+        print((out or "").strip()[:2000] or "(출력 없음)")
+        if err.strip():
+            print("[stderr] " + err.strip()[:600])
+    return 0
+
+
+def main():
+    ap = argparse.ArgumentParser(description="구글 드라이브의 그날 신문(사진·PDF)을 로컬 캐시로 내려받는다.")
+    ap.add_argument("date", nargs="?", default="", help="YYYY-MM-DD (기본: 오늘, KST)")
+    ap.add_argument("--force", action="store_true", help="이미 받은 파일도 다시 받기")
+    ap.add_argument("--probe", action="store_true", help="gog 사용법 진단 출력")
+    ap.add_argument("--quiet", action="store_true", help="조용히 (cron 용)")
+    args = ap.parse_args()
+
+    load_env_file()
+    load_gateway_env()
+
+    if args.probe:
+        return probe()
+
+    date = args.date or today_kst()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+        print("날짜 형식은 YYYY-MM-DD 입니다: %s" % date, file=sys.stderr)
+        return 1
+    try:
+        return sync(date, force=args.force, verbose=not args.quiet)
+    except GogError as e:
+        print("[news_sync] %s" % e, file=sys.stderr)
+        return 1
+    except Exception as e:  # 예상 못 한 오류도 cron 로그에 남게
+        print("[news_sync] 예상치 못한 오류: %r" % e, file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -101,6 +101,59 @@
   - 반영 경로: openclaw `main` push → 서버 `git-auto-pull.sh` → `sync-stock.sh` 가 `.html` 도 rsync → scheduler(포트 8000) 재시작. 브라우저 **강력 새로고침**(Ctrl/Cmd+Shift+R) 필요할 수 있음.
 - (참고) 신문/주식브리핑/주식알림 채널로 보내는 기능 자체(`slack_briefing.py`, `stock_alert_slack.py` 등)는 그대로 동작 — 이 뷰어에서만 안 보일 뿐.
 
+### 📰 오늘 신문 원본 내려받기 (드라이브 → 다이제스트 웹) — 2026-09-16 추가
+다이제스트 웹 상단에 **'오늘 신문 원본' 패널**을 붙였다. 그날 신문 **PDF 1개 + 사진 30장**을
+구글 드라이브에서 가져와 브라우저에서 바로 받을 수 있다.
+
+**드라이브 구조**(자동 생성, 매일 06:01 KST)
+```
+내 드라이브 / 신문스크랩 / 2026-09 / 2026-09-15 /
+    2026-09-15.pdf   ← 그날 신문 전체 PDF (7~8MB, 30면)
+    01.jpg … 30.gif  ← 신문 페이지 사진
+    metadata.json    ← 네이버 카페 원문 주소·장수·받은 시각  (브리핑의 `검증: metadata.json…` 이 이것)
+```
+최상위 폴더 ID `1Alujf1JqgEl2C5OaEt1F7MOS9wkjUJsx` (바뀌면 `NEWS_DRIVE_ROOT_ID` 로 덮어쓰기).
+
+**흐름** — 웹은 드라이브를 직접 부르지 않는다(느리고 인증 끊기면 페이지가 멈춤).
+```
+구글 드라이브 ──(gog CLI)──▶ scripts/news_sync.py ──▶ ~/.openclaw/news_cache/<날짜>/ ──▶ stock/app.py ──▶ 뷰어 패널
+                             (cron 30분마다)            index.json + 파일들          (/api/news/*)
+```
+| 파일 | 역할 |
+|---|---|
+| `scripts/news_sync.py` | 드라이브 → 로컬 캐시. `gog` 재사용(새 키 불필요). `--probe`/`--force` 지원 |
+| `scripts/setup-news-cron.sh` | 30분마다 동기화 cron 등록(멱등) |
+| `stock/news_files.py` | 캐시 읽기 · 썸네일 · ZIP 만들기 |
+| `stock/app.py` | `/api/news/today`·`/file`·`/thumb`·`/zip`·`POST /refresh` |
+| `stock/slack_digest_live.html` | 상단 패널(`#news`) — PDF 받기/보기, 전체 ZIP, 사진 30장 접힘 그리드 |
+
+**서버에서 켜는 법**
+```bash
+# 1) 지금 한 번 받아보기 (성공하면 '새로 받음 31 · PDF O · 사진 30장' 식으로 뜬다)
+python3 ~/.openclaw/scripts/news_sync.py
+
+# 2) 자동화 등록 (30분마다)
+~/.openclaw/scripts/setup-news-cron.sh
+
+# 3) 웹 확인:  http://<서버>:8000/slack  → 맨 위 '오늘 신문 원본' 패널
+```
+
+**⚠️ 함정 / 확인 포인트**
+- **gog 하위명령 형태를 모른다** → 목록/다운로드 명령 후보를 여러 개 시도하고 **성공한 형태를 기억**한다
+  (`~/.openclaw/news_cache/.gog_shape.json`). 전부 실패하면 `news_sync.py --probe` 가
+  `gog drive --help` 를 찍어주니, 그 출력에 맞춰 `LIST_SHAPES`/`DOWNLOAD_SHAPES` 에 한 줄 추가하면 된다.
+- **cron 에서 gog keyring 이 안 열리는 문제**: keyring 암호가 게이트웨이 systemd 유닛의
+  `Environment=` 에만 있다. `news_sync.py` 가 `systemctl --user show openclaw-gateway -p Environment`
+  로 필요한 변수만 빌려온다(그래서 cron 라인에 `XDG_RUNTIME_DIR` 이 필요). 값은 로그에 절대 찍지 않는다.
+- **디스크**: 하루 15~35MB(움직이는 GIF 가 크다). 기본 **7일치만 보관**하고 자동 삭제
+  (`NEWS_CACHE_KEEP_DAYS`). 캐시 경로는 `.gitignore` 로 추적 제외 — git 에 올라가지 않는다.
+- **썸네일**: Pillow 가 있으면 420px 로 줄여서 준다(사진 1장당 ~30KB→~2KB). 없으면 원본을 그대로
+  주기 때문에 기능은 죽지 않고 데이터만 더 쓴다. 사진 그리드는 **기본 접힘** → 첫 로딩은 가볍다.
+- **보안**: `/api/news/file` 은 `index.json` 에 적힌 파일명만 통과시킨다(`../../etc/passwd` 류 차단, 404).
+  `metadata.json`·`index.json` 자체도 웹으로는 안 열린다.
+- **아직 안 올라온 시간대**(새벽)에는 패널이 점선 테두리로 "보통 오전 6시쯤 준비됩니다 + 가장 최근 날짜 보기"를 보여준다.
+- 반영 경로는 뷰어와 동일: openclaw `main` push → `git-auto-pull.sh` → `sync-stock.sh`(.py/.html rsync) → 8000 재시작.
+
 ## 🔐 PT 대시보드 구글 로그인(OAuth) — 코드 완료, 서버 설정만 남음
 `scripts/pt_dashboard.py`(포트 5001) 접근을 **구글 로그인**으로 잠갔다. 허용된 이메일만 입장.
 - **동작**: `.env` 에 구글 키가 있으면 인증 ON, 없으면 **열린 채 유지(경고만)** → auto-pull 직후 잠겨서 못 들어가는 사고 방지. 미로그인 시 `/`=로그인 페이지, `/api/*`=401, `/auth/start`→구글, 로그인 성공+허용 이메일이면 세션 발급. `/logout` 로그아웃, `/healthz` 는 무인증.
