@@ -151,14 +151,35 @@ def run_gog(args, cwd=None, timeout=300, binary=False):
 
 # 폴더 안 목록 뽑기 후보들. {q}=검색식, {parent}=폴더ID 자리.
 LIST_SHAPES = [
+    # gog v0.34 계열: `drive ls [flags]` — 폴더를 '인자'가 아니라 '플래그'로 받는다.
+    # 플래그 이름이 버전마다 달라(--folder / --parent / --id …) 가능한 후보를 앞에 깔아둔다.
+    ["drive", "ls", "--folder", "{parent}", "-j"],
+    ["drive", "ls", "--folder-id", "{parent}", "-j"],
+    ["drive", "ls", "--parent", "{parent}", "-j"],
+    ["drive", "ls", "--parent-id", "{parent}", "-j"],
+    ["drive", "ls", "--id", "{parent}", "-j"],
+    ["drive", "ls", "--in", "{parent}", "-j"],
+    ["drive", "ls", "-f", "{parent}", "-j"],
+    ["drive", "ls", "--query", "{q}", "-j"],
+    ["drive", "ls", "-q", "{q}", "-j"],
+    # 예전/다른 계열
     ["drive", "list", "-q", "{q}", "-j"],
     ["drive", "list", "--query", "{q}", "-j"],
-    ["drive", "list", "-q", "{q}", "--json"],
     ["drive", "files", "list", "-q", "{q}", "-j"],
-    ["drive", "ls", "-q", "{q}", "-j"],
     ["drive", "list", "--parent", "{parent}", "-j"],
-    ["drive", "list", "{parent}", "-j"],
     ["drive", "ls", "{parent}", "-j"],
+]
+
+# 한 번에 몇 개까지 돌려주는지가 버전마다 다르다(기본 20~100 인 경우가 흔하다).
+# 하루치 폴더에 파일이 32개쯤 되므로, 결과 개수가 '딱 떨어지는 수'면 잘렸을 가능성을
+# 의심하고 아래 플래그를 붙여 다시 시도한다.
+SUSPICIOUS_COUNTS = {10, 20, 25, 30, 50, 100}
+LIMIT_FLAGS = [
+    ["--limit", "1000"],
+    ["--page-size", "1000"],
+    ["--max", "1000"],
+    ["--max-results", "1000"],
+    ["--all"],
 ]
 
 # 파일 하나 내려받기 후보들. {id}=파일ID, {out}=저장 경로.
@@ -166,6 +187,8 @@ LIST_SHAPES = [
 DOWNLOAD_SHAPES = [
     ["drive", "download", "{id}", "-o", "{out}"],
     ["drive", "download", "{id}", "--output", "{out}"],
+    ["drive", "download", "{id}", "--dest", "{out}"],
+    ["drive", "download", "{id}", "--path", "{out}"],
     ["drive", "download", "--id", "{id}", "--out", "{out}"],
     ["drive", "download", "{id}", "{out}"],
     ["drive", "download", "{id}"],
@@ -259,16 +282,37 @@ def parse_listing(text):
         return ok, rows
 
     if isinstance(data, dict):
-        for key in ("files", "items", "data", "results", "entries"):
+        # gog 는 {"files":[…], "nextPageToken":…} 처럼 '봉투'에 담아 주는데
+        # 봉투 키 이름이 버전마다 다르다. 아는 이름을 먼저 보고, 없으면
+        # 값들 중 '파일처럼 생긴 딕셔너리들의 리스트'를 찾아낸다.
+        picked = None
+        for key in ("files", "items", "data", "results", "entries", "value", "records"):
             if isinstance(data.get(key), list):
-                data = data[key]
+                picked = data[key]
                 break
-        else:
+        if picked is None:
+            for v in data.values():
+                if isinstance(v, list) and v and isinstance(v[0], dict) and normalize_entry(v[0]):
+                    picked = v
+                    break
+        if picked is None:
             one = normalize_entry(data)
             return True, ([one] if one else [])
+        data = picked
     if not isinstance(data, list):
         return False, []
     return True, [r for r in (normalize_entry(e) for e in data) if r]
+
+
+def _try_list(shape, q, parent_id):
+    """명령 형태 하나로 목록을 시도. (성공여부, 파일목록, 오류메시지)"""
+    rc, out, err = run_gog(fill(shape, q=q, parent=parent_id))
+    if rc != 0:
+        return False, [], (err or out or "").strip()[:400]
+    ok, files = parse_listing(out)
+    if not ok:
+        return False, [], "출력을 JSON 으로 해석하지 못함: " + (out or "")[:200]
+    return True, files, ""
 
 
 def list_children(parent_id):
@@ -276,18 +320,23 @@ def list_children(parent_id):
     q = "'%s' in parents and trashed = false" % parent_id
     last_err = ""
     for shape in ordered_shapes("list", LIST_SHAPES):
-        try:
-            rc, out, err = run_gog(fill(shape, q=q, parent=parent_id))
-        except GogError:
-            raise
-        if rc != 0:
-            last_err = (err or out or "").strip()[:400]
+        ok, files, err = _try_list(shape, q, parent_id)
+        if not ok:
+            last_err = err
             continue
-        ok, files = parse_listing(out)
-        if ok:
-            save_shape("list", shape)
-            return files
-        last_err = "출력을 JSON 으로 해석하지 못함: " + (out or "")[:200]
+
+        # 결과 개수가 '딱 떨어지는 수'(20·50·100…)면 페이지 제한에 걸려 잘렸을 수 있다.
+        # 개수 제한 플래그를 붙여 다시 물어보고, 더 많이 나오면 그 형태를 쓴다.
+        if len(files) in SUSPICIOUS_COUNTS:
+            for extra in LIMIT_FLAGS:
+                wider = shape + extra
+                ok2, files2, _ = _try_list(wider, q, parent_id)
+                if ok2 and len(files2) > len(files):
+                    save_shape("list", wider)
+                    return files2
+
+        save_shape("list", shape)
+        return files
     raise GogError(
         "드라이브 목록 조회에 실패했습니다.\n"
         "  마지막 오류: %s\n"
@@ -543,14 +592,38 @@ def probe():
     print("기억된 명령 형태 : %s" % json.dumps(load_shapes(), ensure_ascii=False))
     if not exe:
         return 1
-    for args in (["--help"], ["drive", "--help"], ["drive", "list", "--help"],
-                 ["drive", "download", "--help"], ["auth", "list"]):
+    # 하위 명령의 '자기 플래그'는 도움말 아래쪽에 나오는데, 예전엔 앞부분만 찍어서
+    # 정작 필요한 부분이 잘렸다 → 공용 플래그 설명은 접고 전체를 보여준다.
+    def show(args, keep_common=False):
         print("\n$ gog %s" % " ".join(args))
         print("-" * 60)
         rc, out, err = run_gog(args, timeout=30)
-        print((out or "").strip()[:2000] or "(출력 없음)")
-        if err.strip():
-            print("[stderr] " + err.strip()[:600])
+        text = (out or "").strip() or (err or "").strip()
+        if not keep_common:
+            # 모든 명령에 공통으로 붙는 전역 플래그 줄은 빼서 읽기 쉽게 만든다.
+            common = ("--color", "--home=", "--client=", "--access-token", "--enable-commands",
+                      "--disable-commands", "--gmail-no-send", "--readonly", "--wrap-untrusted",
+                      "--results-only", "--select=", "--no-input", "-v, --verbose", "--version",
+                      "-h, --help", "-a, --account", "-n, --dry-run", "-y, --force",
+                      "-j, --json", "-p, --plain")
+            lines, skip = [], False
+            for line in text.splitlines():
+                st = line.strip()
+                if any(st.startswith(c) for c in common):
+                    skip = True
+                    continue
+                if skip and st and line.startswith((" " * 20, "\t")):
+                    continue          # 앞 줄 설명의 이어지는 줄
+                skip = False
+                lines.append(line)
+            text = "\n".join(lines)
+        print(text[:4000] or "(출력 없음)")
+        if err.strip() and out.strip():
+            print("[stderr] " + err.strip()[:400])
+
+    for args in (["drive", "ls", "--help"], ["drive", "download", "--help"],
+                 ["drive", "search", "--help"], ["auth", "list"]):
+        show(args, keep_common=(args[0] == "auth"))
     return 0
 
 
