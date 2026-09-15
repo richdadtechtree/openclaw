@@ -151,22 +151,23 @@ def run_gog(args, cwd=None, timeout=300, binary=False):
 
 # 폴더 안 목록 뽑기 후보들. {q}=검색식, {parent}=폴더ID 자리.
 LIST_SHAPES = [
-    # gog v0.34 계열: `drive ls [flags]` — 폴더를 '인자'가 아니라 '플래그'로 받는다.
-    # 플래그 이름이 버전마다 달라(--folder / --parent / --id …) 가능한 후보를 앞에 깔아둔다.
-    ["drive", "ls", "--folder", "{parent}", "-j"],
-    ["drive", "ls", "--folder-id", "{parent}", "-j"],
+    # ✅ gog v0.34.1 `drive ls` 도움말로 확인된 정답:
+    #      --parent=<폴더ID>   폴더 안 목록
+    #      --max=20            ⚠️ 기본이 20 이라 하루치(32개)가 잘린다 → 크게 지정
+    #      -j                  JSON 출력
+    ["drive", "ls", "--parent", "{parent}", "--max", "1000", "-j"],
+    ["drive", "ls", "--parent={parent}", "--max=1000", "-j"],          # = 로 붙이는 표기
+    ["-j", "drive", "ls", "--parent", "{parent}", "--max", "1000"],    # 전역 플래그를 앞에
+    ["drive", "ls", "--parent", "{parent}", "--max", "1000", "--results-only", "-j"],
+    ["drive", "ls", "--query", "{q}", "--max", "1000", "-j"],
+    # 플래그 이름이 다른 버전 대비(구버전/신버전 폴백)
     ["drive", "ls", "--parent", "{parent}", "-j"],
-    ["drive", "ls", "--parent-id", "{parent}", "-j"],
+    ["drive", "ls", "--folder", "{parent}", "-j"],
     ["drive", "ls", "--id", "{parent}", "-j"],
-    ["drive", "ls", "--in", "{parent}", "-j"],
-    ["drive", "ls", "-f", "{parent}", "-j"],
-    ["drive", "ls", "--query", "{q}", "-j"],
     ["drive", "ls", "-q", "{q}", "-j"],
-    # 예전/다른 계열
     ["drive", "list", "-q", "{q}", "-j"],
     ["drive", "list", "--query", "{q}", "-j"],
     ["drive", "files", "list", "-q", "{q}", "-j"],
-    ["drive", "list", "--parent", "{parent}", "-j"],
     ["drive", "ls", "{parent}", "-j"],
 ]
 
@@ -255,6 +256,23 @@ def normalize_entry(e):
     return {"id": str(fid), "name": str(name), "mime": str(mime), "size": size}
 
 
+def _find_file_list(obj, depth=0):
+    """
+    응답이 {"result":{"files":[…]}} 처럼 몇 겹으로 싸여 있어도 '파일처럼 생긴 목록'을 찾아낸다.
+    (gog 버전마다 봉투 모양이 달라서, 키 이름에 기대지 않는 마지막 안전장치.)
+    """
+    if depth > 4 or not isinstance(obj, dict):
+        return None
+    for v in obj.values():
+        if isinstance(v, list) and v and isinstance(v[0], dict) and normalize_entry(v[0]):
+            return v
+    for v in obj.values():
+        found = _find_file_list(v, depth + 1)
+        if found:
+            return found
+    return None
+
+
 def parse_listing(text):
     """
     gog 출력이 JSON 배열이든, {"files":[…]} 든, 한 줄에 하나씩(NDJSON)이든 받아낸다.
@@ -291,10 +309,7 @@ def parse_listing(text):
                 picked = data[key]
                 break
         if picked is None:
-            for v in data.values():
-                if isinstance(v, list) and v and isinstance(v[0], dict) and normalize_entry(v[0]):
-                    picked = v
-                    break
+            picked = _find_file_list(data)
         if picked is None:
             one = normalize_entry(data)
             return True, ([one] if one else [])
@@ -318,11 +333,11 @@ def _try_list(shape, q, parent_id):
 def list_children(parent_id):
     """폴더 하나의 바로 아래 항목 목록."""
     q = "'%s' in parents and trashed = false" % parent_id
-    last_err = ""
+    errors = []          # (시도한 명령, 오류) — 전부 모아 두었다가 실패 시 함께 보여준다
     for shape in ordered_shapes("list", LIST_SHAPES):
         ok, files, err = _try_list(shape, q, parent_id)
         if not ok:
-            last_err = err
+            errors.append((" ".join(fill(shape, q=q, parent=parent_id)), err))
             continue
 
         # 결과 개수가 '딱 떨어지는 수'(20·50·100…)면 페이지 제한에 걸려 잘렸을 수 있다.
@@ -337,12 +352,19 @@ def list_children(parent_id):
 
         save_shape("list", shape)
         return files
-    raise GogError(
-        "드라이브 목록 조회에 실패했습니다.\n"
-        "  마지막 오류: %s\n"
-        "  → `python3 %s --probe` 로 gog 의 실제 사용법을 확인하세요."
-        % (last_err, os.path.abspath(__file__))
-    )
+    # 후보마다 실패 이유가 다를 수 있다(플래그 이름이 틀렸는지, 인증이 막혔는지 …).
+    # 예전엔 '마지막 후보의 오류'만 보여줘서 진짜 원인이 가려졌다 → 전부 보여준다.
+    lines = ["드라이브 목록 조회에 실패했습니다. 시도한 명령과 각각의 오류:"]
+    seen = set()
+    for cmd, err in errors:
+        one = (err or "").splitlines()[0][:200] if err else "(메시지 없음)"
+        if one in seen and len(seen) > 2:
+            continue                       # 똑같은 오류가 반복되면 생략
+        seen.add(one)
+        lines.append("  $ gog %s\n      → %s" % (cmd, one))
+    lines.append("  → `python3 %s --probe` 로 gog 의 실제 사용법을 확인하세요."
+                 % os.path.abspath(__file__))
+    raise GogError("\n".join(lines))
 
 
 def download_file(file_id, name, dest_path):
