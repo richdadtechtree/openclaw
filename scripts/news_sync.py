@@ -366,6 +366,21 @@ def list_children(parent_id):
 
         save_shape("list", shape)
         return files
+    # 구글 인증이 끊긴 경우는 후보를 아무리 바꿔도 소용없다 → 바로 알려준다.
+    joined = " ".join(e for _c, e in errors)
+    if "invalid_grant" in joined or "cannot fetch token" in joined or "oauth2" in joined:
+        raise GogError(
+            "구글 인증이 만료됐습니다 (oauth2: invalid_grant).\n"
+            "  명령 문법은 정상입니다 — 저장된 '자동 재로그인 열쇠(리프레시 토큰)'가 무효화된 상태라\n"
+            "  드라이브·캘린더·Gmail 등 gog 를 쓰는 기능이 모두 같이 막힙니다.\n"
+            "  해결: 서버에서 gog 재인증\n"
+            "    %s auth --help        # 정확한 하위 명령 확인\n"
+            "    %s auth add           # (보통 이 명령) 브라우저로 다시 로그인\n"
+            "  ⚠️ 구글 클라우드 콘솔의 OAuth 동의 화면이 '테스트' 상태면 리프레시 토큰이\n"
+            "     7일마다 만료됩니다. 매주 재인증이 싫으면 앱을 '프로덕션'으로 게시하세요."
+            % (gog_bin() or "gog", gog_bin() or "gog")
+        )
+
     # 후보마다 실패 이유가 다를 수 있다(플래그 이름이 틀렸는지, 인증이 막혔는지 …).
     # 예전엔 '마지막 후보의 오류'만 보여줘서 진짜 원인이 가려졌다 → 전부 보여준다.
     lines = ["드라이브 목록 조회에 실패했습니다. 시도한 명령과 각각의 오류:"]

@@ -145,6 +145,12 @@ python3 ~/.openclaw/scripts/news_sync.py
 - **cron 에서 gog keyring 이 안 열리는 문제**: keyring 암호가 게이트웨이 systemd 유닛의
   `Environment=` 에만 있다. `news_sync.py` 가 `systemctl --user show openclaw-gateway -p Environment`
   로 필요한 변수만 빌려온다(그래서 cron 라인에 `XDG_RUNTIME_DIR` 이 필요). 값은 로그에 절대 찍지 않는다.
+- **🔑 구글 인증 만료(`invalid_grant`)** — 2026-09-16 실제로 겪음. `gog auth list` 에 계정이 보여도
+  실제 요청에서 `oauth2: "invalid_grant" "Bad Request"` 로 거부되면 **리프레시 토큰이 무효화된 것**.
+  gog 를 쓰는 모든 기능(드라이브·캘린더·Gmail·시트)이 함께 막히므로 신문 기능만의 문제가 아니다.
+  → 해결: 서버에서 `gog auth add` 재인증. ⚠️ 구글 클라우드 OAuth 동의 화면이 **'테스트'** 상태면
+  리프레시 토큰이 **7일마다** 만료된다 → 매주 재인증이 싫으면 앱을 **'프로덕션'으로 게시**할 것.
+  `news_sync.py` 는 이 오류를 알아보고 재인증 안내를 바로 띄운다.
 - **디스크**: 하루 15~35MB(움직이는 GIF 가 크다). 기본 **7일치만 보관**하고 자동 삭제
   (`NEWS_CACHE_KEEP_DAYS`). 캐시 경로는 `.gitignore` 로 추적 제외 — git 에 올라가지 않는다.
 - **썸네일**: Pillow 가 있으면 420px 로 줄여서 준다(사진 1장당 ~30KB→~2KB). 없으면 원본을 그대로
