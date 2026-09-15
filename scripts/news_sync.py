@@ -319,14 +319,28 @@ def parse_listing(text):
     return True, [r for r in (normalize_entry(e) for e in data) if r]
 
 
+def short_err(err, limit=320):
+    """긴 오류 메시지를 줄이되, 진짜 이유가 있는 '뒤쪽'을 반드시 남긴다."""
+    e = " ".join((err or "").split())
+    if not e:
+        return "(메시지 없음)"
+    if len(e) <= limit:
+        return e
+    # URL 쿼리스트링은 통째로 접어서 자리를 아낀다
+    e = re.sub(r'(https?://[^\s"?]+)\?[^\s"]*', r'\1?…', e)
+    if len(e) <= limit:
+        return e
+    return e[:140] + " …(중략)… " + e[-160:]
+
+
 def _try_list(shape, q, parent_id):
     """명령 형태 하나로 목록을 시도. (성공여부, 파일목록, 오류메시지)"""
     rc, out, err = run_gog(fill(shape, q=q, parent=parent_id))
     if rc != 0:
-        return False, [], (err or out or "").strip()[:400]
+        return False, [], short_err(err or out)
     ok, files = parse_listing(out)
     if not ok:
-        return False, [], "출력을 JSON 으로 해석하지 못함: " + (out or "")[:200]
+        return False, [], "출력을 JSON 으로 해석하지 못함: " + short_err(out, 200)
     return True, files, ""
 
 
@@ -357,7 +371,7 @@ def list_children(parent_id):
     lines = ["드라이브 목록 조회에 실패했습니다. 시도한 명령과 각각의 오류:"]
     seen = set()
     for cmd, err in errors:
-        one = (err or "").splitlines()[0][:200] if err else "(메시지 없음)"
+        one = short_err(err)
         if one in seen and len(seen) > 2:
             continue                       # 똑같은 오류가 반복되면 생략
         seen.add(one)
