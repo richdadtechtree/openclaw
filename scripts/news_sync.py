@@ -374,8 +374,8 @@ def list_children(parent_id):
             "  명령 문법은 정상입니다 — 저장된 '자동 재로그인 열쇠(리프레시 토큰)'가 무효화된 상태라\n"
             "  드라이브·캘린더·Gmail 등 gog 를 쓰는 기능이 모두 같이 막힙니다.\n"
             "  해결: 서버에서 gog 재인증\n"
-            "    %s auth --help        # 정확한 하위 명령 확인\n"
-            "    %s auth add           # (보통 이 명령) 브라우저로 다시 로그인\n"
+            "    %s auth doctor              # 원인 자가진단(토큰/키링/클라이언트)\n"
+            "    %s auth add bbonoyo@gmail.com   # 다시 로그인해 리프레시 토큰 재발급\n"
             "  ⚠️ 구글 클라우드 콘솔의 OAuth 동의 화면이 '테스트' 상태면 리프레시 토큰이\n"
             "     7일마다 만료됩니다. 매주 재인증이 싫으면 앱을 '프로덕션'으로 게시하세요."
             % (gog_bin() or "gog", gog_bin() or "gog")
