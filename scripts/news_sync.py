@@ -600,9 +600,34 @@ def sync_from_local(date, verbose=True):
             if verbose:
                 print("  ⚠️ %s 연결 실패: %s" % (name, e))
 
+    # 내용이 바뀌었는지 보려고 '이전 인덱스'를 먼저 읽어 둔다.
+    before = None
+    try:
+        with open(os.path.join(dest, "index.json"), encoding="utf-8") as f:
+            before = json.load(f)
+    except Exception:
+        pass
+
     meta = read_meta(dest)
     index = build_index(date, dest, safe_name(pdf_name) if pdf_name else None,
                         [safe_name(n) for n in image_names], meta, source="local:" + src)
+
+    # ⚠️ 파일 내용이 바뀌었는데 예전에 만들어 둔 ZIP 을 그대로 주면 옛날 사진이 나간다.
+    #    (2026-09-16: 수집기가 같은 이름 파일을 '이미 있음'으로 건너뛰어 앞 6장이 옛 사진으로
+    #     남았던 일이 있었다. 이름이 같아도 내용은 다를 수 있다 → 크기/목록으로 비교한다.)
+    def fingerprint(ix):
+        if not ix:
+            return None
+        pdf = ix.get("pdf") or {}
+        return (pdf.get("name"), pdf.get("size"),
+                tuple((i["name"], i.get("size")) for i in ix.get("images") or []))
+
+    if fingerprint(before) != fingerprint(index):
+        try:
+            os.remove(os.path.join(dest, "photos.zip"))
+        except OSError:
+            pass
+        shutil.rmtree(os.path.join(dest, ".thumb"), ignore_errors=True)
 
     if verbose:
         print("[%s] 서버 로컬에서 가져옴(%s) · PDF %s · 사진 %d장\n  ← %s"

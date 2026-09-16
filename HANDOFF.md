@@ -161,6 +161,12 @@ python3 ~/.openclaw/scripts/news_sync.py
   - 원인: `naver_cafe.py` 가 `is_match = bool(date_pattern.search(title))` — **날짜만** 봤다.
     아침엔 신문 글이 맨 위였지만 저녁엔 같은 날짜의 다른 글이 위에 올라와 그걸 집었다.
   - 조치: `patch-newspaper-title-filter.sh` 로 제목 키워드 조건 추가(기본 `신문스크랩`).
+  - ⚠️ **재수집해도 앞 장이 안 고쳐지는 함정**: `image_downloader.py` 는 `01.jpg` 가 이미
+    있고 멀쩡하면 **"이미 있음"으로 건너뛴다**. 이름만 같고 내용이 다른(엉뚱한 글의) 사진이
+    남아 있으면 그대로 살아남아 PDF 앞 6장이 계속 틀렸다. → 재수집 전에 그날 폴더의
+    `*.jpg/*.gif/*.pdf/metadata.json` 을 **지우고** 돌려야 한다.
+  - 같은 이유로 `news_sync.py` 는 인덱스(파일명+크기)가 바뀌면 캐시의 `photos.zip` 과
+    `.thumb/` 를 버린다. 이름이 같아도 내용은 바뀔 수 있기 때문.
   - 교훈: **강제 재수집은 드라이브를 덮어쓴다.** 같은 이름으로 올라가므로 복구하려면
     올바른 글로 다시 받아 덮어써야 한다. 아침 정상본 정보는 `metadata.json.bak-*` 에 남는다.
 - **🔑 구글 인증 만료(`invalid_grant`)** — 2026-09-16 실제로 겪음. `gog auth list` 에 계정이 보여도
