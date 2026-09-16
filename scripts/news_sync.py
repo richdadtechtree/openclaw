@@ -503,6 +503,115 @@ def safe_name(name):
     return os.path.basename(name).replace("\\", "_").strip() or "unnamed"
 
 
+def read_meta(dest):
+    """캐시에 받아둔 metadata.json 에서 제목·원문 주소 등을 읽는다(없으면 빈 값)."""
+    try:
+        with open(os.path.join(dest, "metadata.json"), encoding="utf-8") as f:
+            return json.load(f) or {}
+    except Exception:
+        return {}
+
+
+def build_index(date, dest, pdf_name, image_names, meta, source, failed=None):
+    """
+    웹(app.py)이 읽을 index.json 을 만든다. 드라이브에서 받았든 로컬에서 연결했든
+    결과물의 모양은 똑같아야 해서 이 함수 하나로 통일한다.
+    """
+    index = {
+        "date": date,
+        "updated": datetime.now(KST).isoformat(timespec="seconds"),
+        "source": source,                       # drive:<폴더ID> 또는 local:<경로>
+        "title": meta.get("title") or "",
+        "source_url": meta.get("post_url") or meta.get("url") or "",
+        "expected_count": meta.get("image_count") or len(image_names),
+        "pdf": None,
+        "images": [],
+        "failed": failed or [],
+    }
+    if pdf_name:
+        p = os.path.join(dest, pdf_name)
+        if os.path.isfile(p):
+            index["pdf"] = {"name": pdf_name, "size": os.path.getsize(p),
+                            "pages": meta.get("pdf_page_count") or 0}
+    for name in image_names:
+        p = os.path.join(dest, name)
+        if os.path.isfile(p):
+            index["images"].append({"name": name, "size": os.path.getsize(p)})
+
+    write_json(os.path.join(dest, "index.json"), index)
+    return index
+
+
+def local_day_dir(date):
+    """수집기가 그날 신문을 만들어 두는 서버 폴더."""
+    root = os.path.expanduser(os.getenv("NEWSPAPER_LOCAL_ROOT", "~/newspaper/data/newspapers"))
+    return os.path.join(root, date[:7], date)
+
+
+def sync_from_local(date, verbose=True):
+    """
+    서버에 이미 있는 파일을 쓴다 (구글 인증·네트워크 전혀 필요 없음).
+
+    수집기(~/newspaper)가 05:30 에 사진·PDF 를 만들어 두므로, 그 파일을 캐시 폴더에
+    **심볼릭 링크**로 연결만 한다 → 복사 안 하니 디스크를 두 배로 먹지 않고 즉시 반영된다.
+    (NEWS_LOCAL_MODE=copy 로 하면 실제 복사 — 수집기가 지운 뒤에도 웹에 남기고 싶을 때)
+
+    반환: 0 성공 / None 로컬에 쓸 파일이 없음(→ 호출한 쪽이 드라이브로 넘어간다)
+    """
+    src = local_day_dir(date)
+    if not os.path.isdir(src):
+        return None
+
+    pdf_name, image_names = None, []
+    for name in sorted(os.listdir(src)):
+        if name.startswith("."):
+            continue
+        ext = os.path.splitext(name)[1].lower()
+        if ext == ".pdf" and pdf_name is None:
+            pdf_name = name
+        elif ext in IMAGE_EXTS:
+            image_names.append(name)
+    if not pdf_name and not image_names:
+        return None                      # metadata.json 만 남은 지난 날짜 → 로컬엔 없는 셈
+
+    dest = day_dir(date)
+    os.makedirs(dest, exist_ok=True)
+    mode = os.getenv("NEWS_LOCAL_MODE", "link").lower()
+
+    wanted = ([pdf_name] if pdf_name else []) + image_names
+    if os.path.isfile(os.path.join(src, "metadata.json")):
+        wanted.append("metadata.json")
+
+    linked = 0
+    for name in wanted:
+        s_path = os.path.join(src, name)
+        d_path = os.path.join(dest, safe_name(name))
+        try:
+            if os.path.islink(d_path) or os.path.isfile(d_path):
+                if mode == "link" and os.path.realpath(d_path) == os.path.realpath(s_path):
+                    continue                 # 이미 같은 파일을 가리키고 있다
+                os.remove(d_path)
+            if mode == "copy":
+                shutil.copy2(s_path, d_path)
+            else:
+                os.symlink(s_path, d_path)
+            linked += 1
+        except OSError as e:
+            if verbose:
+                print("  ⚠️ %s 연결 실패: %s" % (name, e))
+
+    meta = read_meta(dest)
+    index = build_index(date, dest, safe_name(pdf_name) if pdf_name else None,
+                        [safe_name(n) for n in image_names], meta, source="local:" + src)
+
+    if verbose:
+        print("[%s] 서버 로컬에서 가져옴(%s) · PDF %s · 사진 %d장\n  ← %s"
+              % (date, "복사" if mode == "copy" else "링크",
+                 "O" if index["pdf"] else "X", len(index["images"]), src))
+    prune(int(os.getenv("NEWS_CACHE_KEEP_DAYS", "7")), verbose=verbose)
+    return 0
+
+
 def sync(date, force=False, verbose=True):
     def say(msg):
         if verbose:
@@ -560,31 +669,9 @@ def sync(date, force=False, verbose=True):
         except Exception:
             meta = {}
 
-    index = {
-        "date": date,
-        "updated": datetime.now(KST).isoformat(timespec="seconds"),
-        "folder_id": folder["id"],
-        "title": meta.get("title") or "",
-        "source_url": meta.get("post_url") or meta.get("url") or "",
-        "expected_count": meta.get("image_count") or len(image_entries),
-        "pdf": None,
-        "images": [],
-        "failed": failed,
-    }
-    if pdf_entry:
-        p = os.path.join(dest, safe_name(pdf_entry["name"]))
-        if os.path.isfile(p):
-            index["pdf"] = {
-                "name": safe_name(pdf_entry["name"]),
-                "size": os.path.getsize(p),
-                "pages": meta.get("pdf_page_count") or 0,
-            }
-    for e in image_entries:
-        p = os.path.join(dest, safe_name(e["name"]))
-        if os.path.isfile(p):
-            index["images"].append({"name": safe_name(e["name"]), "size": os.path.getsize(p)})
-
-    write_json(os.path.join(dest, "index.json"), index)
+    index = build_index(date, dest, safe_name(pdf_entry["name"]) if pdf_entry else None,
+                        [safe_name(e["name"]) for e in image_entries], meta,
+                        source="drive:" + folder["id"], failed=failed)
 
     # 사진이 바뀌었으면 예전에 만들어 둔 ZIP 은 버린다(다음 요청 때 새로 만든다).
     if fetched:
@@ -684,6 +771,8 @@ def main():
     ap.add_argument("--force", action="store_true", help="이미 받은 파일도 다시 받기")
     ap.add_argument("--probe", action="store_true", help="gog 사용법 진단 출력")
     ap.add_argument("--quiet", action="store_true", help="조용히 (cron 용)")
+    ap.add_argument("--source", choices=("auto", "local", "drive"), default="auto",
+                    help="auto(기본)=서버 로컬 먼저, 없으면 드라이브 / local=로컬만 / drive=드라이브만")
     args = ap.parse_args()
 
     load_env_file()
@@ -697,6 +786,16 @@ def main():
         print("날짜 형식은 YYYY-MM-DD 입니다: %s" % date, file=sys.stderr)
         return 1
     try:
+        # 1순위: 서버에 이미 있는 파일(수집기가 만들어 둔 것) — 인증도 네트워크도 필요 없다.
+        if args.source in ("auto", "local"):
+            rc = sync_from_local(date, verbose=not args.quiet)
+            if rc is not None:
+                return rc
+            if args.source == "local":
+                if not args.quiet:
+                    print("[%s] 서버 로컬(%s)에 신문 파일이 없습니다." % (date, local_day_dir(date)))
+                return 2
+        # 2순위: 구글 드라이브 (gog CLI)
         return sync(date, force=args.force, verbose=not args.quiet)
     except GogError as e:
         print("[news_sync] %s" % e, file=sys.stderr)

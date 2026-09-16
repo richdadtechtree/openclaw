@@ -49,7 +49,8 @@ Git으로 서버와 자동 동기화됩니다. 별도 프로젝트인 **stock**(
 | `debate.py` | `#ai-토론` 슬랙 채널: GPT/Gemini/Qwen/Mistral 다중 모델 토론(개별답변·토론·상태·도움말). `debate` 에이전트가 exec 로 호출, stdout 그대로 답장. GPT는 API키 대신 게이트웨이 경유 ChatGPT Plus OAuth(무툴 에이전트 `debate-gpt`). 상세: HANDOFF.md "AI 토론 채널" |
 | `get_notion_book.py` | 책읽남(bookman) 독서 브리핑. 노션 '독서 리스트' DB에서 **실제로 적혀 있는 문장만** 1건 추출. 못 찾으면 지어내지 않고 exit 2. **색칠·형광펜·인용 문장을 최우선**으로 고르고, 애매한 줄은 버리는 대신 후순위로 미룬다(빈손 방지). 본문은 캐시. 노션 **`책읽남` 열이 `제외`** 인 책은 후보에서 뺀다. `--check`/`--list`/`--book`/`--build-cache`/`--reset` 지원 |
 | `book_slack.py` | **책 글귀 → 슬랙 직접 발송(AI 미경유)**. `get_notion_book.py` 를 실행해 결과가 있을 때만 보낸다. **글귀가 없으면 아무것도 안 보내고 조용히 종료(exit 1)** → AI 창작 원천 차단. cron 은 이 스크립트를 호출할 것. 역할 분담 — **책읽남=자료 수집, 뚜떵또=최종 발송(기본)**, `--as bookman` 으로 전환. `--dry-run` 지원 |
-| `news_sync.py` | **그날 신문 원본(사진·PDF) 구글 드라이브 → 서버 캐시**. `gog` CLI 재사용(새 키 불필요). 드라이브 `신문스크랩/YYYY-MM/YYYY-MM-DD/` 를 찾아 `~/.openclaw/news_cache/<날짜>/` 로 내려받고 `index.json` 을 쓴다. gog 하위명령이 버전마다 달라 **여러 후보를 시도해 성공한 형태를 기억**한다(`.gog_shape.json`). 안 되면 `--probe` 로 진단. 종료코드 0=성공/2=아직 없음/1=오류 |
+| `news_sync.py` | **그날 신문 원본(사진·PDF)을 웹이 읽을 캐시로 준비**. ①**서버 로컬 우선** — 수집기(`~/newspaper/data/newspapers/YYYY-MM/YYYY-MM-DD/`)가 만들어 둔 파일을 **심볼릭 링크**로 연결(인증·네트워크·디스크 추가 0). ②없으면 구글 드라이브(`gog` CLI, 형태 자동탐색+기억 `.gog_shape.json`, `--probe` 진단). `--source auto|local|drive`. 종료코드 0=성공/2=아직 없음/1=오류 |
+| `patch-newspaper-keep-local.sh` + `newspaper_keep_local.py` | 수집기가 업로드 후 로컬을 지우던 `shutil.rmtree(local_dir)` 한 줄을 **'오늘치는 남기고 지난 날짜만 정리'**로 교체(멱등·백업·문법검사·`--revert`·`--dry-run`). 지난 날짜는 `metadata.json` 보존. 보관일수 `NEWSPAPER_KEEP_DAYS`(기본 1) |
 | `setup-news-cron.sh` | 위 동기화를 30분마다 돌리는 cron 등록(멱등). cron 에 `XDG_RUNTIME_DIR` 을 넣어 gog keyring 잠금 해제 문제를 피한다 |
 | `notion_push.py` / `notion-briefing-*.txt` | (구) 노션 저장 — **시트로 대체됨, 미사용** |
 

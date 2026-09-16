@@ -114,14 +114,21 @@
 ```
 최상위 폴더 ID `1Alujf1JqgEl2C5OaEt1F7MOS9wkjUJsx` (바뀌면 `NEWS_DRIVE_ROOT_ID` 로 덮어쓰기).
 
-**흐름** — 웹은 드라이브를 직접 부르지 않는다(느리고 인증 끊기면 페이지가 멈춤).
+**흐름 (2026-09-16 변경: 서버 로컬 우선 — 구글 인증 불필요)**
 ```
-구글 드라이브 ──(gog CLI)──▶ scripts/news_sync.py ──▶ ~/.openclaw/news_cache/<날짜>/ ──▶ stock/app.py ──▶ 뷰어 패널
-                             (cron 30분마다)            index.json + 파일들          (/api/news/*)
+05:30 cron  ~/newspaper/scripts/run_daily.sh
+              네이버카페 → 사진+PDF 생성 → 드라이브 업로드(백업) → 오늘치는 로컬에 남김 ★
+                                                                    ~/newspaper/data/newspapers/YYYY-MM/YYYY-MM-DD/
+                                                                              │ 심볼릭 링크(복사 안 함)
+scripts/news_sync.py (cron 30분) ─────────────────────────────────────────────┘
+              └→ ~/.openclaw/news_cache/<날짜>/ (index.json) → stock/app.py(/api/news/*) → 뷰어 패널
+       로컬에 없으면 폴백: 구글 드라이브(gog CLI)
 ```
+★ 이 '남김'이 `patch-newspaper-keep-local.sh` 가 하는 일. 원래는 업로드 후 폴더째 삭제했다.
 | 파일 | 역할 |
 |---|---|
-| `scripts/news_sync.py` | 드라이브 → 로컬 캐시. `gog` 재사용(새 키 불필요). `--probe`/`--force` 지원 |
+| `scripts/news_sync.py` | 캐시 준비. **로컬 우선**(`--source auto`), 없으면 드라이브. `--probe`/`--force`/`--source` |
+| `scripts/patch-newspaper-keep-local.sh` | 수집기가 오늘치를 안 지우게 하는 패치(백업·검증·`--revert`) |
 | `scripts/setup-news-cron.sh` | 30분마다 동기화 cron 등록(멱등) |
 | `stock/news_files.py` | 캐시 읽기 · 썸네일 · ZIP 만들기 |
 | `stock/app.py` | `/api/news/today`·`/file`·`/thumb`·`/zip`·`POST /refresh` |
