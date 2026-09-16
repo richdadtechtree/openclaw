@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<title>#gpt 채널 다이제스트</title>
+<title>오늘 신문 요약</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root {
@@ -36,6 +36,7 @@
   .wrap{max-width:720px;margin:0 auto;padding:0 20px 96px}
   header.mast{padding:40px 0 18px}
   .eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--faint);font-weight:600;display:flex;align-items:center;gap:10px}
+  .eyebrow .label{font-family:var(--sans);letter-spacing:.04em;font-size:12.5px}
   .eyebrow .live{display:inline-flex;align-items:center;gap:6px;color:var(--live);letter-spacing:.08em}
   .eyebrow .live .pulse{width:8px;height:8px;border-radius:50%;background:var(--live)}
   .eyebrow::after{content:"";flex:1;height:1px;background:var(--line-strong)}
@@ -157,9 +158,9 @@
 <body>
 <div class="wrap">
   <header class="mast">
-    <div class="eyebrow"><span>#gpt Channel Digest</span><span class="live"><span class="pulse"></span>LIVE</span></div>
+    <div class="eyebrow"><span class="label">오늘 신문 요약</span><span class="live"><span class="pulse"></span>LIVE</span></div>
     <h1 class="date" id="date">불러오는 중…</h1>
-    <p class="lede">슬랙에 접속하지 않아도, #gpt 채널 대화를 시간순으로 한눈에.</p>
+    <p class="lede">쉽게 보는 오늘 뉴스</p>
     <div class="datebar">
       <input type="date" id="datepick" aria-label="날짜 선택">
       <button class="btn" id="today">오늘</button>
