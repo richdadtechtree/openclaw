@@ -167,16 +167,20 @@
   .lb-bar{display:flex;align-items:center;gap:6px;padding:10px 12px;
           padding-top:max(10px,env(safe-area-inset-top));color:#e7eaf1;
           background:linear-gradient(#0b0e14ee,#0b0e1400);position:relative;z-index:2}
-  .lb-count{font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums;color:#c7cedb;margin-right:auto}
+  .lb-count{font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums;color:#c7cedb}
   .lb-count b{color:#fff;font-weight:700}
+  .lb-native{font-family:var(--mono);font-size:11.5px;color:#8b93a4;margin-right:auto;margin-left:7px}
   .lb-btn{appearance:none;border:1px solid #2b3244;background:#161a23;color:#e7eaf1;border-radius:9px;
           min-width:38px;height:36px;font-size:15px;line-height:1;cursor:pointer;display:inline-flex;
           align-items:center;justify-content:center;text-decoration:none;padding:0 9px}
   .lb-btn:hover{border-color:#7f9bf5;color:#fff}
   .lb-btn:disabled{opacity:.35;cursor:default}
-  .lb-stage{flex:1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
-  .lb-stage img{max-width:100%;max-height:100%;object-fit:contain;transform-origin:0 0;
-                will-change:transform;user-select:none;-webkit-user-drag:none;background:#fff}
+  .lb-stage{flex:1;position:relative;overflow:hidden}
+  /* ⚠️ 확대를 transform:scale 로 하면 브라우저가 '작게 그려둔 그림을 늘려' 글씨가 뭉개진다
+     (will-change:transform 이면 더 심하다). 그래서 실제 width/height 를 바꿔서
+     그 크기로 '다시 그리게' 한다 → 원본 해상도까지는 글씨가 또렷하다.
+     이동(translate)만 transform 으로 하는 건 화질에 영향이 없다. */
+  .lb-stage img{position:absolute;left:0;top:0;user-select:none;-webkit-user-drag:none;background:#fff}
   .lb-stage.zoomed{cursor:grab}
   .lb-stage.zoomed:active{cursor:grabbing}
   .lb-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:2;width:44px;height:64px;
@@ -237,7 +241,7 @@
 <!-- 신문 사진 넘겨 보기. 썸네일을 누르면 열린다. -->
 <div class="lb" id="lb" hidden role="dialog" aria-modal="true" aria-label="신문 사진 보기">
   <div class="lb-bar">
-    <span class="lb-count" id="lb-count"></span>
+    <span class="lb-count" id="lb-count"></span><span class="lb-native" id="lb-native"></span>
     <button class="lb-btn" id="lb-out" title="축소" aria-label="축소">−</button>
     <button class="lb-btn" id="lb-in" title="확대" aria-label="확대">＋</button>
     <a class="lb-btn" id="lb-dl" href="#" title="이 장 저장" aria-label="이 장 저장">⤓</a>
@@ -599,7 +603,7 @@ function fillGrid(d){
 /* ── 신문 넘겨 보기(뷰어) ───────────────────────────────────────────────
    신문은 글씨가 작아서 '크게 띄우기'만으론 부족하다. 확대(핀치·더블탭·＋−)와
    이동(드래그)까지 있어야 실제로 읽힌다. 아래가 그 최소 구현. */
-const V={list:[],i:0,scale:1,tx:0,ty:0,fit:1,base:{w:0,h:0},drag:null,pts:new Map(),pinch:null};
+const V={list:[],i:0,zoom:1,tx:0,ty:0,nat:{w:1,h:1},fitW:0,fitH:0,stage:null,drag:null,pts:new Map(),pinch:null};
 const $=id=>document.getElementById(id);
 
 function openViewer(i){
@@ -625,42 +629,69 @@ function showPage(){
   $("lb-dl").href=im.download_url;
   $("lb-prev").disabled=V.i<=0;
   $("lb-next").disabled=V.i>=V.list.length-1;
-  resetZoom();
-  img.onload=()=>{ img.style.visibility="visible"; measure(); };
+  V.zoom=1;
+  img.onload=()=>{ V.zoom=1; measure(); img.style.visibility="visible"; };
   // 다음·이전 장을 미리 받아둔다 → 넘길 때 하얗게 안 뜬다
   [V.i+1,V.i-1].forEach(k=>{ if(V.list[k]) new Image().src=V.list[k].url; });
 }
 function measure(){
-  const img=$("lb-img");
-  V.base={w:img.clientWidth,h:img.clientHeight};
-  applyTransform();
+  // 사진 원본 크기와, 화면에 '딱 맞게' 넣었을 때의 크기를 계산해 둔다.
+  const img=$("lb-img"), st=$("lb-stage").getBoundingClientRect();
+  V.nat={w:img.naturalWidth||1,h:img.naturalHeight||1};
+  const fit=Math.min(st.width/V.nat.w, st.height/V.nat.h);
+  V.fitW=V.nat.w*fit; V.fitH=V.nat.h*fit;
+  V.stage={w:st.width,h:st.height};
+  if(V.zoom===undefined) V.zoom=1;
+  center(); paint();
 }
-function resetZoom(){ V.scale=1; V.tx=0; V.ty=0; applyTransform(); }
+function center(){
+  V.tx=(V.stage.w-V.fitW*V.zoom)/2;
+  V.ty=(V.stage.h-V.fitH*V.zoom)/2;
+}
 function clampPan(){
-  // 확대했을 때 이미지가 화면 밖으로 완전히 빠져나가지 않도록 잡아둔다.
-  const st=$("lb-stage").getBoundingClientRect();
-  const w=V.base.w*V.scale, h=V.base.h*V.scale;
-  const minX=Math.min(0,st.width-w), minY=Math.min(0,st.height-h);
-  const maxX=Math.max(0,st.width-w), maxY=Math.max(0,st.height-h);
-  V.tx=Math.max(minX,Math.min(maxX,V.tx));
-  V.ty=Math.max(minY,Math.min(maxY,V.ty));
+  const w=V.fitW*V.zoom, h=V.fitH*V.zoom;
+  V.tx = w<=V.stage.w ? (V.stage.w-w)/2 : Math.max(V.stage.w-w, Math.min(0, V.tx));
+  V.ty = h<=V.stage.h ? (V.stage.h-h)/2 : Math.max(V.stage.h-h, Math.min(0, V.ty));
 }
-function applyTransform(){
-  const st=$("lb-stage");
-  if(V.scale<=1.001){ V.tx=0; V.ty=0; st.classList.remove("zoomed"); }
-  else { clampPan(); st.classList.add("zoomed"); }
-  $("lb-img").style.transform=`translate(${V.tx}px,${V.ty}px) scale(${V.scale})`;
+let paintQueued=false;
+function paint(){
+  // 손가락 핀치 중엔 매 프레임 크기를 바꾸면 버벅이므로 한 프레임에 한 번만 그린다.
+  if(paintQueued) return;
+  paintQueued=true;
+  requestAnimationFrame(()=>{
+    paintQueued=false;
+    const img=$("lb-img"), st=$("lb-stage");
+    clampPan();
+    img.style.width=(V.fitW*V.zoom)+"px";
+    img.style.height=(V.fitH*V.zoom)+"px";
+    img.style.transform=`translate(${Math.round(V.tx)}px,${Math.round(V.ty)}px)`;
+    st.classList.toggle("zoomed", V.zoom>1.001);
+    // '선명하게 보이는 한계'를 정확히 계산해 알려준다.
+    // 요즘 폰은 화면 점이 촘촘해서(devicePixelRatio 2~3), CSS 크기 그대로가 아니라
+    // 화면의 실제 점 개수로 따져야 한다. 예: 1600px 사진, 3배 화면 → CSS 533px 에서 이미 1:1.
+    const sharpW=V.nat.w/(window.devicePixelRatio||1);
+    const native=(V.fitW*V.zoom)>=sharpW*0.98;
+    $("lb-native").textContent = V.zoom<=1.001 ? "" : (native?"원본 한계":Math.round(V.zoom*100)+"%");
+  });
 }
+function maxZoom(){
+  // 선명한 한계(1:1)의 3배까지만 허용. 그 이상은 없는 정보를 늘리는 것이라 의미가 없다.
+  const sharpW=V.nat.w/(window.devicePixelRatio||1);
+  return Math.max(1.5, (sharpW*3)/(V.fitW||1));
+}
+function resetZoom(){ V.zoom=1; if(V.stage) center(); paint(); }
 function zoomAt(factor,cx,cy){
   const st=$("lb-stage").getBoundingClientRect();
-  const x=(cx??st.width/2+st.left)-st.left, y=(cy??st.height/2+st.top)-st.top;
-  const next=Math.max(1,Math.min(6,V.scale*factor));
-  if(next===V.scale) return;
-  // 손가락/마우스가 가리킨 지점을 기준으로 확대 (그 지점이 제자리에 남는다)
-  V.tx=x-(x-V.tx)*(next/V.scale);
-  V.ty=y-(y-V.ty)*(next/V.scale);
-  V.scale=next; applyTransform();
+  const x=(cx??(st.left+st.width/2))-st.left, y=(cy??(st.top+st.height/2))-st.top;
+  const next=Math.max(1,Math.min(maxZoom(),V.zoom*factor));
+  if(Math.abs(next-V.zoom)<0.001) return;
+  const k=next/V.zoom;
+  // 손가락이 가리킨 지점이 제자리에 남도록 위치를 보정한다
+  V.tx=x-(x-V.tx)*k;
+  V.ty=y-(y-V.ty)*k;
+  V.zoom=next; paint();
 }
+function applyTransform(){ paint(); }   // 옛 이름 호환
 function go(step){
   const n=V.i+step;
   if(n<0||n>=V.list.length) return;
@@ -691,7 +722,7 @@ stage.addEventListener("wheel",e=>{
   if(!e.ctrlKey) return;                       // 트랙패드 핀치는 ctrl+wheel 로 온다
   e.preventDefault(); zoomAt(e.deltaY<0?1.15:1/1.15,e.clientX,e.clientY);
 },{passive:false});
-function toggleZoomAt(x,y){ V.scale>1.001?resetZoom():zoomAt(2.6,x,y); }
+function toggleZoomAt(x,y){ V.zoom>1.001?resetZoom():zoomAt(2.6,x,y); }
 stage.addEventListener("dblclick",e=>toggleZoomAt(e.clientX,e.clientY));
 // ⚠️ 휴대폰(터치)에서는 dblclick 이벤트가 안 오는 경우가 많다 → 탭 두 번을 직접 센다.
 let lastTap=0,lastTapX=0,lastTapY=0;
@@ -710,21 +741,21 @@ stage.addEventListener("pointerdown",e=>{
 });
 function pinchState(){
   const [a,b]=[...V.pts.values()];
-  return {d:Math.hypot(a.x-b.x,a.y-b.y),cx:(a.x+b.x)/2,cy:(a.y+b.y)/2,scale:V.scale};
+  return {d:Math.hypot(a.x-b.x,a.y-b.y),cx:(a.x+b.x)/2,cy:(a.y+b.y)/2,zoom:V.zoom};
 }
 stage.addEventListener("pointermove",e=>{
   if(!V.pts.has(e.pointerId)) return;
   V.pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
   if(V.pts.size===2&&V.pinch){
     const now=pinchState();
-    const target=Math.max(1,Math.min(6,V.pinch.scale*(now.d/V.pinch.d)));
-    zoomAt(target/V.scale,now.cx,now.cy);
+    const target=Math.max(1,Math.min(maxZoom(),V.pinch.zoom*(now.d/V.pinch.d)));
+    zoomAt(target/V.zoom,now.cx,now.cy);
     return;
   }
   if(!V.drag) return;
   const dx=e.clientX-V.drag.x, dy=e.clientY-V.drag.y;
   V.drag.moved=Math.max(V.drag.moved,Math.hypot(dx,dy));
-  if(V.scale>1.001){ V.tx=V.drag.tx+dx; V.ty=V.drag.ty+dy; applyTransform(); }
+  if(V.zoom>1.001){ V.tx=V.drag.tx+dx; V.ty=V.drag.ty+dy; paint(); }
 });
 function endPointer(e){
   V.pts.delete(e.pointerId);
@@ -732,7 +763,7 @@ function endPointer(e){
   if(!V.drag) return;
   const dx=e.clientX-V.drag.x, dy=e.clientY-V.drag.y, dt=Date.now()-V.drag.t;
   // 확대 안 한 상태에서 옆으로 쓸면 장 넘기기
-  if(V.scale<=1.001&&Math.abs(dx)>55&&Math.abs(dx)>Math.abs(dy)*1.6&&dt<700) go(dx<0?1:-1);
+  if(V.zoom<=1.001&&Math.abs(dx)>55&&Math.abs(dx)>Math.abs(dy)*1.6&&dt<700) go(dx<0?1:-1);
   else if(V.drag.moved<6){
     // 제자리 탭 — 두 번 두드리면 확대/원복
     if(maybeDoubleTap(e.clientX,e.clientY)){ V.drag=null; return; }
@@ -741,7 +772,7 @@ function endPointer(e){
     //    → 사진의 실제 화면 위치와 비교해 확실히 바깥일 때만 닫는다.
     const r=$("lb-img").getBoundingClientRect();
     const outside=e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom;
-    if(V.scale<=1.001&&outside) closeViewer();
+    if(V.zoom<=1.001&&outside) closeViewer();
   }
   V.drag=null;
 }

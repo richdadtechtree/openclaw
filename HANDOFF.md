@@ -142,6 +142,12 @@ scripts/news_sync.py (cron 30분) ───────────────�
 - ⚠️ 함정 2개(2026-09-16에 실제로 겪음): ①**터치에선 `dblclick` 이벤트가 안 온다** → 탭 두 번을 직접 센다.
   ②`e.target` 으로 '여백 탭'을 판정하면 사진 위를 눌러도 닫혔다 → **사진의 실제 화면 좌표**와 비교한다.
 - ZIP 은 `what=photos`(기본, 사진만) / `what=all`(사진+PDF) 두 가지.
+- ⚠️ **확대하면 글씨가 뭉개지던 문제**(2026-09-16): `transform:scale()` + `will-change:transform` 으로
+  확대하면 브라우저가 **작게 래스터한 레이어를 늘려** 텍스트가 뭉개진다. → 확대는 **실제 width/height 를
+  바꿔서** 그 크기로 다시 그리게 하고, `transform` 은 **이동(translate)에만** 쓴다. 핀치 중엔 rAF 로 한 프레임
+  한 번만 갱신. 배율 상한·'원본 한계' 표시는 **devicePixelRatio 를 반영**해 계산한다(3배 화면이면 CSS 533px 에서 이미 1:1).
+- ℹ️ **원본 해상도 한계**: 카페 이미지는 `?type=w1600`(파일명에 `1280_` 접두사면 1280). 그 이상은 늘려도
+  정보가 없다. 더 선명하게 하려면 수집 단계에서 더 큰 원본을 받아야 한다(`naver_cafe.py` 의 URL 생성부).
 - ⚠️ **`hidden` 속성 함정**: `.news-grid{display:grid}` 가 브라우저 기본 `[hidden]{display:none}` 를
   이겨서 '사진 접기'가 안 먹었다(2026-09-16). display 를 지정한 요소를 `hidden` 으로 숨기려면
   `.클래스[hidden]{display:none}` 를 **반드시 같이** 써야 한다(`.lb`, `.news-grid`, `.news-actions`).
