@@ -51,6 +51,8 @@ Git으로 서버와 자동 동기화됩니다. 별도 프로젝트인 **stock**(
 | `book_slack.py` | **책 글귀 → 슬랙 직접 발송(AI 미경유)**. `get_notion_book.py` 를 실행해 결과가 있을 때만 보낸다. **글귀가 없으면 아무것도 안 보내고 조용히 종료(exit 1)** → AI 창작 원천 차단. cron 은 이 스크립트를 호출할 것. 역할 분담 — **책읽남=자료 수집, 뚜떵또=최종 발송(기본)**, `--as bookman` 으로 전환. `--dry-run` 지원 |
 | `news_sync.py` | **그날 신문 원본(사진·PDF)을 웹이 읽을 캐시로 준비**. ①**서버 로컬 우선** — 수집기(`~/newspaper/data/newspapers/YYYY-MM/YYYY-MM-DD/`)가 만들어 둔 파일을 **심볼릭 링크**로 연결(인증·네트워크·디스크 추가 0). ②없으면 구글 드라이브(`gog` CLI, 형태 자동탐색+기억 `.gog_shape.json`, `--probe` 진단). `--source auto|local|drive`. 종료코드 0=성공/2=아직 없음/1=오류 |
 | `patch-newspaper-keep-local.sh` + `newspaper_keep_local.py` | 수집기가 업로드 후 로컬을 지우던 `shutil.rmtree(local_dir)` 한 줄을 **'오늘치는 남기고 지난 날짜만 정리'**로 교체(멱등·백업·문법검사·`--revert`·`--dry-run`). 지난 날짜는 `metadata.json` 보존. 보관일수 `NEWSPAPER_KEEP_DAYS`(기본 1) |
+| `patch-newspaper-title-filter.sh` + `newspaper_title_filter.py` | ⚠️ **2026-09-16 사고 대응**: 수집기가 제목의 **날짜만** 보고 글을 골라 `26.9.16 미모`(6장)를 신문(30장)으로 착각해 드라이브까지 덮어썼다. → 제목에 `NEWSPAPER_TITLE_KEYWORD`(기본 `신문스크랩`)가 있어야 통과하도록 조건 추가. 못 찾으면 실패 처리 → `run_daily.sh` 재시도 루프가 돈다. `NEWSPAPER_TITLE_EXCLUDE` 도 지원 |
+| `set-newspaper-schedule.sh` | 신문 수집 cron 시작 시각 변경(기본 05:00). `run_daily.sh` 가 원래 5분 간격·07:00 마감 재시도라 **05:00~07:00 사이 5분마다 확인**이 된다 |
 | `setup-news-cron.sh` | 위 동기화를 30분마다 돌리는 cron 등록(멱등). cron 에 `XDG_RUNTIME_DIR` 을 넣어 gog keyring 잠금 해제 문제를 피한다 |
 | `notion_push.py` / `notion-briefing-*.txt` | (구) 노션 저장 — **시트로 대체됨, 미사용** |
 

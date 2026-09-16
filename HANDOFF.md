@@ -129,6 +129,8 @@ scripts/news_sync.py (cron 30분) ───────────────�
 |---|---|
 | `scripts/news_sync.py` | 캐시 준비. **로컬 우선**(`--source auto`), 없으면 드라이브. `--probe`/`--force`/`--source` |
 | `scripts/patch-newspaper-keep-local.sh` | 수집기가 오늘치를 안 지우게 하는 패치(백업·검증·`--revert`) |
+| `scripts/patch-newspaper-title-filter.sh` | 제목에 `신문스크랩` 있는 글만 집도록(날짜만 보던 것 수정). 백업·검증·`--revert` |
+| `scripts/set-newspaper-schedule.sh` | 수집 시작 05:00 (→ 07:00 까지 5분마다 재시도) |
 | `scripts/setup-news-cron.sh` | 30분마다 동기화 cron 등록(멱등) |
 | `stock/news_files.py` | 캐시 읽기 · 썸네일 · ZIP 만들기 |
 | `stock/app.py` | `/api/news/today`·`/file`·`/thumb`·`/zip`·`POST /refresh` |
@@ -152,6 +154,15 @@ python3 ~/.openclaw/scripts/news_sync.py
 - **cron 에서 gog keyring 이 안 열리는 문제**: keyring 암호가 게이트웨이 systemd 유닛의
   `Environment=` 에만 있다. `news_sync.py` 가 `systemctl --user show openclaw-gateway -p Environment`
   로 필요한 변수만 빌려온다(그래서 cron 라인에 `XDG_RUNTIME_DIR` 이 필요). 값은 로그에 절대 찍지 않는다.
+- **⚠️ 2026-09-16 사고 — 엉뚱한 글을 신문으로 받아 드라이브를 덮어씀**
+  낮에 강제 재수집(`metadata.json` 치워두고 `run_daily.sh`)을 했더니, 수집기가
+  `26.9.16 미모`(사진 6장)를 집어와 **드라이브 `신문스크랩/2026-09/2026-09-16` 의
+  `01~06.jpg` 와 PDF 를 덮어썼다**(07~30 은 아침 정상본 그대로 남음).
+  - 원인: `naver_cafe.py` 가 `is_match = bool(date_pattern.search(title))` — **날짜만** 봤다.
+    아침엔 신문 글이 맨 위였지만 저녁엔 같은 날짜의 다른 글이 위에 올라와 그걸 집었다.
+  - 조치: `patch-newspaper-title-filter.sh` 로 제목 키워드 조건 추가(기본 `신문스크랩`).
+  - 교훈: **강제 재수집은 드라이브를 덮어쓴다.** 같은 이름으로 올라가므로 복구하려면
+    올바른 글로 다시 받아 덮어써야 한다. 아침 정상본 정보는 `metadata.json.bak-*` 에 남는다.
 - **🔑 구글 인증 만료(`invalid_grant`)** — 2026-09-16 실제로 겪음. `gog auth list` 에 계정이 보여도
   실제 요청에서 `oauth2: "invalid_grant" "Bad Request"` 로 거부되면 **리프레시 토큰이 무효화된 것**.
   gog 를 쓰는 모든 기능(드라이브·캘린더·Gmail·시트)이 함께 막히므로 신문 기능만의 문제가 아니다.
