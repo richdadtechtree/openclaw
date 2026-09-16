@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<title>#gpt 채널 다이제스트</title>
+<title>오늘 신문 요약</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root {
@@ -36,6 +36,7 @@
   .wrap{max-width:720px;margin:0 auto;padding:0 20px 96px}
   header.mast{padding:40px 0 18px}
   .eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--faint);font-weight:600;display:flex;align-items:center;gap:10px}
+  .eyebrow .label{font-family:var(--sans);letter-spacing:.04em;font-size:12.5px}
   .eyebrow .live{display:inline-flex;align-items:center;gap:6px;color:var(--live);letter-spacing:.08em}
   .eyebrow .live .pulse{width:8px;height:8px;border-radius:50%;background:var(--live)}
   .eyebrow::after{content:"";flex:1;height:1px;background:var(--line-strong)}
@@ -103,7 +104,7 @@
   footer{margin-top:40px;padding-top:18px;border-top:1px solid var(--line);font-family:var(--mono);font-size:11.5px;color:var(--faint);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
   @media (max-width:520px){.entry{padding-left:66px}.entry .time{width:40px;font-size:12px}.entry .node{left:47px}.entry::before{left:53px}.daybreak{margin-left:66px}}
   @media (prefers-reduced-motion:no-preference){
-    .entry{animation:rise .4s ease both}
+    .entry.is-new{animation:rise .4s ease both}   /* 새 메시지에만 등장 효과(기존 카드는 가만히) */
     @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
     .pulse{animation:blink 2s ease-in-out infinite}
     @keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
@@ -157,9 +158,9 @@
 <body>
 <div class="wrap">
   <header class="mast">
-    <div class="eyebrow"><span>#gpt Channel Digest</span><span class="live"><span class="pulse"></span>LIVE</span></div>
+    <div class="eyebrow"><span class="label">오늘 신문 요약</span><span class="live"><span class="pulse"></span>LIVE</span></div>
     <h1 class="date" id="date">불러오는 중…</h1>
-    <p class="lede">슬랙에 접속하지 않아도, #gpt 채널 대화를 시간순으로 한눈에.</p>
+    <p class="lede">쉽게 보는 오늘 뉴스</p>
     <div class="datebar">
       <input type="date" id="datepick" aria-label="날짜 선택">
       <button class="btn" id="today">오늘</button>
@@ -364,7 +365,18 @@ async function load(){
   }
   render();
 }
+/* 화면에 영향을 주는 값들을 문자열 하나로 묶은 '지문'.
+   20초마다 새로 받아와도 이 지문이 같으면 = 바뀐 게 없다 → 다시 그리지 않는다.
+   (예전엔 무조건 feed 를 비우고 다시 만들어서 화면이 20초마다 깜빡였다.) */
+function snapshot(){ return JSON.stringify([state.data,[...state.active].sort()]); }
+let lastSnapshot=null;      // 마지막으로 그린 지문
+let seenKeys=new Set();     // 이미 화면에 있던 메시지들 → 이번에 처음 보이는 것만 애니메이션
+
 function render(){
+  const snap=snapshot();
+  if(snap===lastSnapshot) return;   // ← 깜빡임 방지의 핵심
+  lastSnapshot=snap;
+
   const msgs=[...(state.data.messages||[])].sort((a,b)=>(a.ts||"").localeCompare(b.ts||""));
   document.getElementById("date").textContent=krDate(state.data.date||state.date);
   document.getElementById("datepick").value=state.data.date||state.date;
@@ -381,7 +393,10 @@ function render(){
     feed.insertAdjacentHTML("beforeend",'<div class="empty"><div class="big">아직 표시할 메시지가 없어요</div>이 날짜에 #gpt 채널에 올라온 대화가 없습니다.</div>');
   }
   shown.forEach(m=>{
-    const c=cat(m.source);const el=document.createElement("article");el.className="entry";el.style.setProperty("--dot",c.color);
+    const c=cat(m.source);const el=document.createElement("article");
+    // 이번에 처음 등장하는 메시지에만 'is-new' → 그 카드만 스윽 나타난다
+    el.className="entry"+(seenKeys.has(msgKey(m))?"":" is-new");
+    el.style.setProperty("--dot",c.color);
     const txt=m.text||"";
     // 신문 브리핑이면 전용 서식, 아니면 기존 그대로
     const brf=isBriefing(txt)?briefing(txt):null;
@@ -395,7 +410,10 @@ function render(){
     feed.appendChild(el);
   });
   document.getElementById("foot-count").textContent=`메시지 ${msgs.length} · 표시 ${shown.length}`;
+  seenKeys=new Set(msgs.map(msgKey));   // 다음 렌더 때 '새 것'을 가려내기 위한 기준
 }
+// 메시지 한 건을 구별하는 열쇠. ts 는 슬랙에서 메시지마다 고유하다.
+function msgKey(m){ return (m.ts||"")+"|"+(m.kind||""); }
 function chip(key,label,n,color){
   const b=document.createElement("button");b.className="chip"+(key==="all"?" all":"");b.dataset.key=key;
   if(color)b.style.setProperty("--dot",color);
@@ -424,7 +442,12 @@ async function loadNews(){
   renderNews(d);
 }
 
+let lastNewsSnapshot=null;   // 신문 패널도 똑같이: 목록이 그대로면 버튼을 다시 만들지 않는다
 function renderNews(d){
+  const snap=JSON.stringify(d);
+  if(snap===lastNewsSnapshot) return;
+  lastNewsSnapshot=snap;
+
   const box=document.getElementById("news");
   const acts=document.getElementById("news-actions");
   const grid=document.getElementById("news-grid");
