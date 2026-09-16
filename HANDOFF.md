@@ -142,6 +142,10 @@ scripts/news_sync.py (cron 30분) ───────────────�
 - ⚠️ 함정 2개(2026-09-16에 실제로 겪음): ①**터치에선 `dblclick` 이벤트가 안 온다** → 탭 두 번을 직접 센다.
   ②`e.target` 으로 '여백 탭'을 판정하면 사진 위를 눌러도 닫혔다 → **사진의 실제 화면 좌표**와 비교한다.
 - ZIP 은 `what=photos`(기본, 사진만) / `what=all`(사진+PDF) 두 가지.
+- ⚠️ **`hidden` 속성 함정**: `.news-grid{display:grid}` 가 브라우저 기본 `[hidden]{display:none}` 를
+  이겨서 '사진 접기'가 안 먹었다(2026-09-16). display 를 지정한 요소를 `hidden` 으로 숨기려면
+  `.클래스[hidden]{display:none}` 를 **반드시 같이** 써야 한다(`.lb`, `.news-grid`, `.news-actions`).
+  토글 기능은 **접기/펼치기 양방향을 다 눌러봐야** 한다 — 처음엔 그리드가 비어 있어 접힌 것처럼 보였다.
 
 **서버에서 켜는 법**
 ```bash
