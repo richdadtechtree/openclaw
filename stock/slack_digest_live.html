@@ -153,6 +153,47 @@
     .news-grid{grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px}
     .news-btn{font-size:13px;padding:8px 12px}
   }
+  /* ── 신문 넘겨 보기(뷰어) ────────────────────────────────────────────
+     신문 사진은 글씨가 작아서 '확대'가 핵심이다. 그래서 단순 크게보기가 아니라
+     확대·이동(핀치/더블탭/드래그)까지 넣었다. 배경은 항상 어둡게 — 종이가 밝아서
+     주변이 밝으면 눈이 부시고 글씨가 안 읽힌다. */
+  .lb{position:fixed;inset:0;z-index:60;background:#0b0e14;display:flex;flex-direction:column;
+      touch-action:none;overscroll-behavior:contain}
+  .lb[hidden]{display:none}
+  .lb-bar{display:flex;align-items:center;gap:6px;padding:10px 12px;
+          padding-top:max(10px,env(safe-area-inset-top));color:#e7eaf1;
+          background:linear-gradient(#0b0e14ee,#0b0e1400);position:relative;z-index:2}
+  .lb-count{font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums;color:#c7cedb;margin-right:auto}
+  .lb-count b{color:#fff;font-weight:700}
+  .lb-btn{appearance:none;border:1px solid #2b3244;background:#161a23;color:#e7eaf1;border-radius:9px;
+          min-width:38px;height:36px;font-size:15px;line-height:1;cursor:pointer;display:inline-flex;
+          align-items:center;justify-content:center;text-decoration:none;padding:0 9px}
+  .lb-btn:hover{border-color:#7f9bf5;color:#fff}
+  .lb-btn:disabled{opacity:.35;cursor:default}
+  .lb-stage{flex:1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+  .lb-stage img{max-width:100%;max-height:100%;object-fit:contain;transform-origin:0 0;
+                will-change:transform;user-select:none;-webkit-user-drag:none;background:#fff}
+  .lb-stage.zoomed{cursor:grab}
+  .lb-stage.zoomed:active{cursor:grabbing}
+  .lb-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:2;width:44px;height:64px;
+          border:0;border-radius:10px;background:#161a23cc;color:#e7eaf1;font-size:26px;line-height:1;
+          cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .lb-nav:hover{background:#2f4272;color:#fff}
+  .lb-nav[disabled]{opacity:.25;cursor:default}
+  .lb-nav.prev{left:10px} .lb-nav.next{right:10px}
+  .lb-hint{position:absolute;left:50%;bottom:max(14px,env(safe-area-inset-bottom));transform:translateX(-50%);
+           font-family:var(--mono);font-size:11.5px;color:#8b93a4;background:#0b0e14cc;border-radius:999px;
+           padding:5px 12px;pointer-events:none;transition:opacity .4s;z-index:2;
+           white-space:nowrap;max-width:94vw;overflow:hidden;text-overflow:ellipsis}
+  @media (max-width:520px){.lb-hint{font-size:11px;padding:4px 10px}}
+  .lb-hint.gone{opacity:0}
+  .lb-spin{position:absolute;width:26px;height:26px;border:2.5px solid #2b3244;border-top-color:#7f9bf5;
+           border-radius:50%;animation:lbspin .7s linear infinite}
+  @keyframes lbspin{to{transform:rotate(360deg)}}
+  @media (max-width:520px){
+    .lb-nav{width:38px;height:54px;font-size:22px;background:#161a2399}
+    .lb-nav.prev{left:4px} .lb-nav.next{right:4px}
+  }
 </style>
 </head>
 <body>
@@ -187,6 +228,21 @@
     <span id="foot-count">—</span>
     <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST</span>
   </footer>
+</div>
+
+<!-- 신문 사진 넘겨 보기. 썸네일을 누르면 열린다. -->
+<div class="lb" id="lb" hidden role="dialog" aria-modal="true" aria-label="신문 사진 보기">
+  <div class="lb-bar">
+    <span class="lb-count" id="lb-count"></span>
+    <button class="lb-btn" id="lb-out" title="축소" aria-label="축소">−</button>
+    <button class="lb-btn" id="lb-in" title="확대" aria-label="확대">＋</button>
+    <a class="lb-btn" id="lb-dl" href="#" title="이 장 저장" aria-label="이 장 저장">⤓</a>
+    <button class="lb-btn" id="lb-close" title="닫기 (Esc)" aria-label="닫기">✕</button>
+  </div>
+  <button class="lb-nav prev" id="lb-prev" aria-label="이전 장">‹</button>
+  <div class="lb-stage" id="lb-stage"><img id="lb-img" alt=""></div>
+  <button class="lb-nav next" id="lb-next" aria-label="다음 장">›</button>
+  <div class="lb-hint" id="lb-hint">좌우로 넘기기 · 더블탭 확대 · Esc 닫기</div>
 </div>
 
 <script>
@@ -427,7 +483,7 @@ function syncChips(){document.querySelectorAll(".chip").forEach(ch=>{const k=ch.
    /api/news/today 가 그날 PDF·사진 목록을 준다. 파일은 서버가 구글 드라이브에서
    미리 받아둔 것(scripts/news_sync.py)이라, 여기서는 목록만 받아 버튼으로 그린다.
    사진 썸네일은 '펼치기'를 눌러야 불러온다 → 페이지 첫 로딩을 가볍게 유지. */
-const newsState={open:false,date:"",busy:false};
+const newsState={open:false,date:"",busy:false,images:[]};
 
 function mb(n){ n=Number(n||0); if(!n) return ""; return n<1024*1024 ? (n/1024).toFixed(0)+"KB" : (n/1024/1024).toFixed(1)+"MB"; }
 
@@ -460,6 +516,7 @@ function renderNews(d){
 
   // 날짜가 바뀌면 펼침 상태와 그려둔 썸네일을 초기화한다.
   if(newsState.date!==d.date){ newsState.date=d.date; newsState.open=false; grid.innerHTML=""; }
+  newsState.images=d.images||[];   // 뷰어가 쓸 목록
 
   if(!d.ready){
     // 아직 안 올라왔거나(오늘 새벽) 캐시에 없는 지난 날짜.
@@ -496,7 +553,8 @@ function renderNews(d){
   }
   if(d.count){
     acts.insertAdjacentHTML("beforeend",
-      `<a class="news-btn" href="${d.zip_url}"><span>🗂 전체 ZIP</span><span class="sz">${mb(d.total_size)}</span></a>`);
+      `<a class="news-btn" href="${d.zip_url}"><span>🗂 사진 ${d.count}장 ZIP</span>`+
+      `<span class="sz">${mb(d.photos_size||d.total_size)}</span></a>`);
   }
 
   // 사진 썸네일(접힘/펼침)
@@ -515,21 +573,177 @@ function renderNews(d){
   };
 
   const src=d.source_url?` · <a href="${d.source_url}" target="_blank" rel="noopener">원문 글</a>`:"";
-  note.innerHTML=`사진을 누르면 새 탭에서 크게 볼 수 있고, 오른쪽 아래 ⤓ 를 누르면 그 장만 저장됩니다.${src}`;
+  note.innerHTML=`사진을 누르면 <b>넘겨 보기</b>가 열립니다(확대·좌우 넘김). 오른쪽 아래 ⤓ 는 그 장만 저장.${src}`;
 }
 
 function fillGrid(d){
   const grid=document.getElementById("news-grid");
   grid.innerHTML=d.images.map((im,i)=>
-    `<a class="news-cell" href="${im.url}" target="_blank" rel="noopener" title="${im.name}">`+
+    `<a class="news-cell" href="${im.url}" data-i="${i}" title="${im.name}">`+
     `<img loading="lazy" decoding="async" src="${im.thumb}" alt="${im.name}">`+
     `<span class="no">${String(i+1).padStart(2,"0")}</span>`+
     `<span class="dl" data-href="${im.download_url}" title="이 장만 저장">⤓</span></a>`).join("");
-  // ⤓ 는 링크 안의 링크라 <a> 로 못 넣는다 → 클릭을 가로채서 직접 내려받는다.
+  // 썸네일 클릭 → 뷰어 열기(새 탭 대신). ⤓ 는 링크 안의 링크라 <a> 로 못 넣어 클릭을 가로챈다.
+  grid.querySelectorAll(".news-cell").forEach(cell=>{
+    cell.addEventListener("click",ev=>{ev.preventDefault();openViewer(+cell.dataset.i);});
+  });
   grid.querySelectorAll(".dl").forEach(el=>{
     el.addEventListener("click",ev=>{ev.preventDefault();ev.stopPropagation();location.href=el.dataset.href;});
   });
 }
+
+/* ── 신문 넘겨 보기(뷰어) ───────────────────────────────────────────────
+   신문은 글씨가 작아서 '크게 띄우기'만으론 부족하다. 확대(핀치·더블탭·＋−)와
+   이동(드래그)까지 있어야 실제로 읽힌다. 아래가 그 최소 구현. */
+const V={list:[],i:0,scale:1,tx:0,ty:0,fit:1,base:{w:0,h:0},drag:null,pts:new Map(),pinch:null};
+const $=id=>document.getElementById(id);
+
+function openViewer(i){
+  if(!newsState.images||!newsState.images.length) return;
+  V.list=newsState.images; V.i=i;
+  $("lb").hidden=false;
+  document.body.style.overflow="hidden";     // 뒤쪽 페이지가 같이 스크롤되지 않게
+  showPage();
+  $("lb-hint").classList.remove("gone");
+  clearTimeout(V.hintT); V.hintT=setTimeout(()=>$("lb-hint").classList.add("gone"),2600);
+}
+function closeViewer(){
+  $("lb").hidden=true;
+  document.body.style.overflow="";
+}
+function showPage(){
+  const im=V.list[V.i]; if(!im) return;
+  const img=$("lb-img");
+  img.style.visibility="hidden";
+  img.src=im.url;                              // 뷰어는 썸네일이 아니라 원본을 쓴다
+  img.alt=`${V.i+1}번째 장`;
+  $("lb-count").innerHTML=`<b>${String(V.i+1).padStart(2,"0")}</b> / ${V.list.length}`;
+  $("lb-dl").href=im.download_url;
+  $("lb-prev").disabled=V.i<=0;
+  $("lb-next").disabled=V.i>=V.list.length-1;
+  resetZoom();
+  img.onload=()=>{ img.style.visibility="visible"; measure(); };
+  // 다음·이전 장을 미리 받아둔다 → 넘길 때 하얗게 안 뜬다
+  [V.i+1,V.i-1].forEach(k=>{ if(V.list[k]) new Image().src=V.list[k].url; });
+}
+function measure(){
+  const img=$("lb-img");
+  V.base={w:img.clientWidth,h:img.clientHeight};
+  applyTransform();
+}
+function resetZoom(){ V.scale=1; V.tx=0; V.ty=0; applyTransform(); }
+function clampPan(){
+  // 확대했을 때 이미지가 화면 밖으로 완전히 빠져나가지 않도록 잡아둔다.
+  const st=$("lb-stage").getBoundingClientRect();
+  const w=V.base.w*V.scale, h=V.base.h*V.scale;
+  const minX=Math.min(0,st.width-w), minY=Math.min(0,st.height-h);
+  const maxX=Math.max(0,st.width-w), maxY=Math.max(0,st.height-h);
+  V.tx=Math.max(minX,Math.min(maxX,V.tx));
+  V.ty=Math.max(minY,Math.min(maxY,V.ty));
+}
+function applyTransform(){
+  const st=$("lb-stage");
+  if(V.scale<=1.001){ V.tx=0; V.ty=0; st.classList.remove("zoomed"); }
+  else { clampPan(); st.classList.add("zoomed"); }
+  $("lb-img").style.transform=`translate(${V.tx}px,${V.ty}px) scale(${V.scale})`;
+}
+function zoomAt(factor,cx,cy){
+  const st=$("lb-stage").getBoundingClientRect();
+  const x=(cx??st.width/2+st.left)-st.left, y=(cy??st.height/2+st.top)-st.top;
+  const next=Math.max(1,Math.min(6,V.scale*factor));
+  if(next===V.scale) return;
+  // 손가락/마우스가 가리킨 지점을 기준으로 확대 (그 지점이 제자리에 남는다)
+  V.tx=x-(x-V.tx)*(next/V.scale);
+  V.ty=y-(y-V.ty)*(next/V.scale);
+  V.scale=next; applyTransform();
+}
+function go(step){
+  const n=V.i+step;
+  if(n<0||n>=V.list.length) return;
+  V.i=n; showPage();
+}
+
+// ── 입력: 버튼 ──────────────────────────────────────────────────────────
+$("lb-close").onclick=closeViewer;
+$("lb-prev").onclick=()=>go(-1);
+$("lb-next").onclick=()=>go(1);
+$("lb-in").onclick=()=>zoomAt(1.6);
+$("lb-out").onclick=()=>zoomAt(1/1.6);
+
+// ── 입력: 키보드 ────────────────────────────────────────────────────────
+document.addEventListener("keydown",e=>{
+  if($("lb").hidden) return;
+  if(e.key==="Escape") closeViewer();
+  else if(e.key==="ArrowRight"||e.key===" ") { e.preventDefault(); go(1); }
+  else if(e.key==="ArrowLeft") go(-1);
+  else if(e.key==="+"||e.key==="=") zoomAt(1.6);
+  else if(e.key==="-") zoomAt(1/1.6);
+  else if(e.key==="0") resetZoom();
+});
+
+// ── 입력: 마우스 휠(Ctrl) / 더블클릭 ────────────────────────────────────
+const stage=$("lb-stage");
+stage.addEventListener("wheel",e=>{
+  if(!e.ctrlKey) return;                       // 트랙패드 핀치는 ctrl+wheel 로 온다
+  e.preventDefault(); zoomAt(e.deltaY<0?1.15:1/1.15,e.clientX,e.clientY);
+},{passive:false});
+function toggleZoomAt(x,y){ V.scale>1.001?resetZoom():zoomAt(2.6,x,y); }
+stage.addEventListener("dblclick",e=>toggleZoomAt(e.clientX,e.clientY));
+// ⚠️ 휴대폰(터치)에서는 dblclick 이벤트가 안 오는 경우가 많다 → 탭 두 번을 직접 센다.
+let lastTap=0,lastTapX=0,lastTapY=0;
+function maybeDoubleTap(x,y){
+  const now=Date.now();
+  if(now-lastTap<320&&Math.hypot(x-lastTapX,y-lastTapY)<30){ lastTap=0; toggleZoomAt(x,y); return true; }
+  lastTap=now; lastTapX=x; lastTapY=y; return false;
+}
+
+// ── 입력: 손가락 — 드래그 이동 / 두 손가락 핀치 / 스와이프로 장 넘기기 ──
+stage.addEventListener("pointerdown",e=>{
+  stage.setPointerCapture(e.pointerId);
+  V.pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(V.pts.size===2){ V.pinch=pinchState(); V.drag=null; }
+  else { V.drag={x:e.clientX,y:e.clientY,tx:V.tx,ty:V.ty,t:Date.now(),moved:0}; }
+});
+function pinchState(){
+  const [a,b]=[...V.pts.values()];
+  return {d:Math.hypot(a.x-b.x,a.y-b.y),cx:(a.x+b.x)/2,cy:(a.y+b.y)/2,scale:V.scale};
+}
+stage.addEventListener("pointermove",e=>{
+  if(!V.pts.has(e.pointerId)) return;
+  V.pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(V.pts.size===2&&V.pinch){
+    const now=pinchState();
+    const target=Math.max(1,Math.min(6,V.pinch.scale*(now.d/V.pinch.d)));
+    zoomAt(target/V.scale,now.cx,now.cy);
+    return;
+  }
+  if(!V.drag) return;
+  const dx=e.clientX-V.drag.x, dy=e.clientY-V.drag.y;
+  V.drag.moved=Math.max(V.drag.moved,Math.hypot(dx,dy));
+  if(V.scale>1.001){ V.tx=V.drag.tx+dx; V.ty=V.drag.ty+dy; applyTransform(); }
+});
+function endPointer(e){
+  V.pts.delete(e.pointerId);
+  if(V.pts.size<2) V.pinch=null;
+  if(!V.drag) return;
+  const dx=e.clientX-V.drag.x, dy=e.clientY-V.drag.y, dt=Date.now()-V.drag.t;
+  // 확대 안 한 상태에서 옆으로 쓸면 장 넘기기
+  if(V.scale<=1.001&&Math.abs(dx)>55&&Math.abs(dx)>Math.abs(dy)*1.6&&dt<700) go(dx<0?1:-1);
+  else if(V.drag.moved<6){
+    // 제자리 탭 — 두 번 두드리면 확대/원복
+    if(maybeDoubleTap(e.clientX,e.clientY)){ V.drag=null; return; }
+    // 사진 바깥의 '어두운 여백'을 톡 치면 닫기.
+    // ⚠️ e.target 만 믿으면 사진 위를 눌러도 닫히는 일이 있었다(2026-09-16 발견)
+    //    → 사진의 실제 화면 위치와 비교해 확실히 바깥일 때만 닫는다.
+    const r=$("lb-img").getBoundingClientRect();
+    const outside=e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom;
+    if(V.scale<=1.001&&outside) closeViewer();
+  }
+  V.drag=null;
+}
+stage.addEventListener("pointerup",endPointer);
+stage.addEventListener("pointercancel",e=>{V.pts.delete(e.pointerId);V.pinch=null;V.drag=null;});
+window.addEventListener("resize",()=>{ if(!$("lb").hidden) measure(); });
 
 // ↻ 받아오기: 서버에게 드라이브에서 다시 가져오라고 시키고, 잠시 뒤 목록을 새로고침.
 document.getElementById("news-refresh").addEventListener("click",async(e)=>{

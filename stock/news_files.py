@@ -142,15 +142,22 @@ def ensure_thumb(date, name, width=420):
         return src  # 썸네일 실패는 치명적이지 않다 → 원본으로 대체
 
 
-def ensure_zip(date):
-    """사진+PDF 를 한 번에 받을 ZIP. 처음 요청될 때 만들고 그다음부터 재사용."""
+def ensure_zip(date, what="photos"):
+    """
+    한 번에 받을 ZIP 을 만든다(처음 요청될 때 만들고 그다음부터 재사용).
+      what="photos" (기본) → 사진만        · 파일명 photos.zip
+      what="all"           → 사진 + PDF    · 파일명 all.zip
+    """
     index = load_index(date)
     if not index:
         return None
-    names = sorted(allowed_names(index))
+    if what == "all":
+        names = sorted(allowed_names(index))
+    else:
+        names = sorted(im["name"] for im in index.get("images") or [])
     if not names:
         return None
-    zpath = os.path.join(day_dir(date), "photos.zip")
+    zpath = os.path.join(day_dir(date), "photos.zip" if what != "all" else "all.zip")
     if os.path.isfile(zpath) and os.path.getsize(zpath) > 0:
         return zpath
     tmp = zpath + ".tmp"
@@ -201,7 +208,8 @@ def summary(date):
             "thumb": "/api/news/thumb?date=%s&name=%s" % (date, im["name"]),
         })
 
-    total = (pdf["size"] if pdf else 0) + sum(i["size"] for i in images)
+    photos_size = sum(i["size"] for i in images)
+    total = (pdf["size"] if pdf else 0) + photos_size
     return {
         "ok": True, "ready": True, "date": date,
         "title": index.get("title") or "",
@@ -210,7 +218,9 @@ def summary(date):
         "pdf": pdf, "images": images, "count": len(images),
         "expected_count": index.get("expected_count") or len(images),
         "total_size": total,
-        "zip_url": "/api/news/zip?date=%s" % date,
+        "photos_size": photos_size,
+        "zip_url": "/api/news/zip?date=%s" % date,                 # 사진만
+        "zip_all_url": "/api/news/zip?date=%s&what=all" % date,    # 사진+PDF
         "latest": latest_date(),
         "thumbs": HAVE_PIL,
     }

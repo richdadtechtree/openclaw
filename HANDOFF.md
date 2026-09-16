@@ -134,7 +134,14 @@ scripts/news_sync.py (cron 30분) ───────────────�
 | `scripts/setup-news-cron.sh` | 30분마다 동기화 cron 등록(멱등) |
 | `stock/news_files.py` | 캐시 읽기 · 썸네일 · ZIP 만들기 |
 | `stock/app.py` | `/api/news/today`·`/file`·`/thumb`·`/zip`·`POST /refresh` |
-| `stock/slack_digest_live.html` | 상단 패널(`#news`) — PDF 받기/보기, 전체 ZIP, 사진 30장 접힘 그리드 |
+| `stock/slack_digest_live.html` | 상단 패널(`#news`) + **넘겨 보기 뷰어(`#lb`)** — PDF 받기/보기, 사진 ZIP, 접힘 그리드, 확대·좌우넘김 |
+
+**넘겨 보기 뷰어 메모** (썸네일 클릭 → 전체화면)
+- 조작: ← → / 스와이프 = 장 넘김 · 더블탭·더블클릭·＋− = 확대 · 두 손가락 핀치 · 드래그 이동 · Esc·✕·여백탭 = 닫기 · `0` = 원래 크기
+- 뷰어는 **썸네일이 아니라 원본**을 쓴다(글씨를 읽어야 하므로). 앞뒤 장은 미리 받아둔다.
+- ⚠️ 함정 2개(2026-09-16에 실제로 겪음): ①**터치에선 `dblclick` 이벤트가 안 온다** → 탭 두 번을 직접 센다.
+  ②`e.target` 으로 '여백 탭'을 판정하면 사진 위를 눌러도 닫혔다 → **사진의 실제 화면 좌표**와 비교한다.
+- ZIP 은 `what=photos`(기본, 사진만) / `what=all`(사진+PDF) 두 가지.
 
 **서버에서 켜는 법**
 ```bash

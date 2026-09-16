@@ -623,10 +623,11 @@ def sync_from_local(date, verbose=True):
                 tuple((i["name"], i.get("size")) for i in ix.get("images") or []))
 
     if fingerprint(before) != fingerprint(index):
-        try:
-            os.remove(os.path.join(dest, "photos.zip"))
-        except OSError:
-            pass
+        for stale in ("photos.zip", "all.zip"):
+            try:
+                os.remove(os.path.join(dest, stale))
+            except OSError:
+                pass
         shutil.rmtree(os.path.join(dest, ".thumb"), ignore_errors=True)
 
     if verbose:

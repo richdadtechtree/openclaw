@@ -241,15 +241,17 @@ def news_thumb(name: str, date: str = ""):
 
 
 @app.get("/api/news/zip")
-def news_zip(date: str = ""):
-    """그날 사진+PDF 를 한 번에 받는 ZIP."""
+def news_zip(date: str = "", what: str = "photos"):
+    """그날 사진을 한 번에 받는 ZIP. what=all 이면 PDF 도 함께."""
     if _news is None:
         return JSONResponse(status_code=503, content={"ok": False, "reason": "news_files 모듈 없음"})
     date = date or _news.today_kst()
-    path = _news.ensure_zip(date)
+    what = "all" if what == "all" else "photos"
+    path = _news.ensure_zip(date, what)
     if not path:
         return JSONResponse(status_code=404, content={"ok": False, "reason": "받을 파일이 없습니다"})
-    return FileResponse(path, media_type="application/zip", filename="news-%s.zip" % date)
+    name = "news-%s%s.zip" % (date, "" if what == "all" else "-photos")
+    return FileResponse(path, media_type="application/zip", filename=name)
 
 
 @app.post("/api/news/refresh")
