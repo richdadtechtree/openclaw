@@ -92,6 +92,10 @@
   .brf-line{margin:6px 0;font-size:15px;line-height:1.7}
   .brf-src{display:inline-flex;align-items:center;gap:6px;margin-top:11px;font-family:var(--mono);font-size:11.5px;color:var(--faint);border:1px dashed var(--line-strong);border-radius:6px;padding:3px 9px}
   .brf-src.fail{color:var(--c-side);border-color:color-mix(in srgb,var(--c-side) 35%,transparent)}
+  /* 링크가 '어느 사이트로 가는지' 눌러보기 전에 보여준다 — 엉뚱한 기사 예방 */
+  .brf-src .brf-host{font-weight:700;color:var(--muted)}
+  .brf-src.warn{color:var(--c-alert);border-style:solid;border-color:color-mix(in srgb,var(--c-alert) 45%,transparent);background:color-mix(in srgb,var(--c-alert) 8%,transparent)}
+  .brf-src .brf-warn{font-family:var(--sans);font-weight:700}
   @media (max-width:520px){
     .brf-cat{font-size:19px;margin:24px 0 13px}
     .brf-title{font-size:16.5px}
@@ -442,7 +446,15 @@ function briefing(raw){
     }
     if(m=line.match(/^•?\s*(원문\s*확인.*)$/)){
       const fail=/실패|없음|불가/.test(m[1]);
-      open(); art+='<div class="brf-src'+(fail?" fail":"")+'">'+inline(m[1])+"</div>";
+      // 링크가 '어디로 가는지' 미리 보여준다. 누르고 나서 엉뚱한 기사를 만나는 걸 막는 장치.
+      const u=(m[1].match(/https?:\/\/[^\s<>|)\]]+/)||[])[0]||"";
+      let host=""; try{ host=u?new URL(u).hostname.replace(/^www\./,""):""; }catch(e){}
+      // 구글뉴스 등 '중계 주소'는 언론사 주소가 아니라 다른 기사로 빠질 수 있다 → 경고 표시
+      const relay=/^(news\.google\.com|google\.com|bit\.ly|t\.co|buff\.ly|.*\.feedburner\.com|feedproxy\.google\.com)$/.test(host);
+      open();
+      art+='<div class="brf-src'+(fail?" fail":"")+(relay?" warn":"")+'">'+inline(m[1])+
+           (host?'<span class="brf-host">'+esc(host)+'</span>':"")+
+           (relay?'<span class="brf-warn">⚠ 중계 주소 — 다른 기사로 갈 수 있음</span>':"")+"</div>";
       flush();                                     // ← 기사 끝. 다음 기사는 여백 두고 새 블록
       continue;
     }

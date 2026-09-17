@@ -8,6 +8,11 @@ from bs4 import BeautifulSoup
 import urllib.parse
 import feedparser
 
+# 링크가 정말 그 기사인지 확인해 주는 도구(표준 라이브러리만 사용).
+# scripts/ 는 workspace/ 의 형제 폴더라 경로를 직접 붙여 준다.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
+import verify_article_url as verifier
+
 # RSS URLs config
 FEEDS = {
     "매일경제": [
@@ -94,7 +99,16 @@ def fetch_article_body(url):
             res.encoding = res.apparent_encoding
             
         soup = BeautifulSoup(res.text, 'html.parser')
-        
+
+        # ⚠️ 먼저 '다른 기사'가 섞여 있는 영역을 통째로 들어낸다.
+        #    관련기사·추천기사·많이 본 뉴스 박스가 본문에 딸려 들어오면
+        #    AI 가 엉뚱한 기사를 요약해 버린다(= '엉뚱한 기사' 사고의 한 원인).
+        for sel in ("aside", "nav", "footer", "header", "script", "style", "iframe", "ins",
+                    ".related", ".relate", ".link_news", ".article_rel", ".news_rel",
+                    "#relatedNews", ".recommend", ".most_view", ".ad", ".banner", ".sns"):
+            for junk in soup.select(sel):
+                junk.decompose()
+
         # Selectors for main article body
         selectors = [
             "#artText", ".art_txt", "#news_cnt_detail", ".news_cnt_detail_wrap", 
@@ -114,11 +128,17 @@ def fetch_article_body(url):
         if not body_text:
             # Fallback: Find the div with the most paragraphs or long text
             candidates = []
-            for tag in soup.find_all(['div', 'section']):
-                paragraphs = tag.find_all('p', recursive=False)
+            for tag in soup.find_all(['article', 'div', 'section']):
                 text_len = len(clean_text(tag.get_text()))
-                if text_len > 200 and ('ad' not in tag.get('class', []) and 'footer' not in tag.get('class', [])):
-                    candidates.append((tag, text_len))
+                if text_len <= 200:
+                    continue
+                if 'ad' in tag.get('class', []) or 'footer' in tag.get('class', []):
+                    continue
+                # 링크 글자가 30% 를 넘으면 본문이 아니라 '기사 목록'이다 → 버린다.
+                link_len = sum(len(clean_text(a.get_text())) for a in tag.find_all('a'))
+                if link_len / text_len > 0.3:
+                    continue
+                candidates.append((tag, text_len))
             if candidates:
                 # Sort by text length descending
                 candidates.sort(key=lambda x: x[1], reverse=True)
@@ -185,35 +205,11 @@ def parse_rss_feed(feed_url, outlet_name, max_hours=24):
         print(f"Error parsing feed {feed_url}: {e}", file=sys.stderr)
     return articles
 
-def fetch_google_news_fallback(keyword, outlet_name, count=5):
-    """Fallback search using Google RSS search feeds to gather recent articles with strict domain."""
-    query = urllib.parse.quote(keyword)
-    url = f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko"
-    articles = []
-    try:
-        feed = feedparser.parse(url)
-        for entry in feed.entries:
-            link = entry.get('link', '')
-            
-            # Domain check
-            if outlet_name == "매일경제" and "mk.co.kr" not in link:
-                continue
-            if outlet_name == "한국경제" and "hankyung.com" not in link:
-                continue
-                
-            section_slug, genre = derive_genre(link)
-            articles.append({
-                "title": entry.get('title', ''),
-                "link": link,
-                "published": entry.get('published', ''),
-                "section": section_slug,
-                "genre": genre
-            })
-            if len(articles) >= count:
-                break
-    except Exception as e:
-        print(f"Error in Google News Fallback: {e}", file=sys.stderr)
-    return articles
+# ⚠️ 2026-09-17 제거: 구글뉴스(news.google.com/rss/...) 폴백.
+#    구글뉴스가 주는 주소는 언론사 주소가 아니라 구글의 중계 주소라서,
+#    눌러 보면 다른 기사나 구글뉴스 화면으로 빠진다(실제 사고 원인).
+#    RSS 만으로도 매체당 5건은 충분히 모이므로 폴백 자체를 없앴다.
+#    혹시 링크가 섞여 들어와도 아래 verify 단계에서 'relay_link' 로 걸러진다.
 
 
 def main():
@@ -221,7 +217,8 @@ def main():
     max_hours = 24
     results = {
         "fetched_at": datetime.now(timezone.utc).isoformat(),
-        "articles": []
+        "articles": [],     # ✅ 링크가 제목과 일치하는 것으로 '확인된' 기사만 들어간다
+        "rejected": []      # ❌ 왜 버렸는지 기록 (디버깅용 — AI 는 이 목록을 쓰면 안 된다)
     }
     
     # Track collected titles to prevent duplicates
@@ -261,33 +258,39 @@ def main():
                     seen_titles.add(norm_title)
                     outlet_articles.append(art)
                     
-        # If STILL less than 5, trigger fallback search
         if len(outlet_articles) < 5:
-            fallback_needed = 5 - len(outlet_articles)
-            print(f"Warning: Found only {len(outlet_articles)} articles from {outlet}. Fetching {fallback_needed} fallback articles via Google News...")
-            fallback_query = f"site:mk.co.kr" if outlet == "매일경제" else f"site:hankyung.com"
-            # Add general economy keywords to find relevant articles
-            fallback_query += " 경제 OR 부동산 OR 증권"
-            fallback_arts = fetch_google_news_fallback(fallback_query, outlet, count=fallback_needed * 2)
-            
-            for art in fallback_arts:
-                norm_title = clean_text(art["title"]).replace(" ", "")
-                if norm_title not in seen_titles:
-                    seen_titles.add(norm_title)
-                    art["outlet"] = outlet
-                    outlet_articles.append(art)
-                    if len(outlet_articles) >= 5:
-                        break
-                        
-        # Take the top 5 most relevant/recent articles
-        selected_articles = outlet_articles[:5]
-        
-        # Now fetch the body content for the selected articles
-        for idx, art in enumerate(selected_articles):
-            print(f"[{outlet}] Fetching body {idx+1}/5: {art['title']}")
+            print(f"Note: {outlet} 에서 {len(outlet_articles)}건만 모았습니다(구글뉴스 폴백은 사용하지 않음).")
+
+        # 검증에서 몇 건 탈락할 수 있으니 여유 있게 8건까지 후보로 둔다.
+        selected_articles = outlet_articles[:8]
+
+        # ★ 핵심: 링크가 정말 그 제목의 기사인지 한 건씩 확인한다.
+        #    통과한 기사만 news_data.json 에 넣는다 → AI 는 확인된 것만 쓸 수 있다.
+        kept = 0
+        for art in selected_articles:
+            if kept >= 5:
+                break
+            check = verifier.verify(art["link"], art["title"], outlet)
+            art["verified"] = check["verified"]
+            art["verify_reason"] = check["reason"]
+            art["verify_score"] = check["score"]
+            art["page_title"] = check["page_title"]
+
+            if not check["verified"]:
+                print(f"[{outlet}] ❌ 링크 불일치({check['reason']}) — 버림: {art['title'][:40]}",
+                      file=sys.stderr)
+                art["outlet"] = outlet
+                results["rejected"].append(art)
+                continue
+
+            # 확인된 '최종 주소'로 바꿔 둔다(리다이렉트·추적 파라미터 제거 효과)
+            art["link"] = check["canonical_url"] or check["final_url"]
+            print(f"[{outlet}] ✅ 확인({check['reason']}, {check['score']:.2f}) "
+                  f"본문 받는 중: {art['title'][:40]}")
             body = fetch_article_body(art["link"])
             art["content"] = body if body else "본문 내용을 가져오는 데 실패했습니다."
             results["articles"].append(art)
+            kept += 1
             # Sleep briefly to respect the servers
             time.sleep(0.5)
             
@@ -296,7 +299,12 @@ def main():
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
         
-    print(f"News fetching complete. Saved {len(results['articles'])} articles to {output_path}")
+    print(f"News fetching complete. 확인된 기사 {len(results['articles'])}건 저장 "
+          f"(링크 불일치로 버린 기사 {len(results['rejected'])}건) → {output_path}")
+    if not results["articles"]:
+        print("⚠️ 확인된 기사가 한 건도 없습니다. 브리핑을 만들지 말고 이 사실을 먼저 알리세요.",
+              file=sys.stderr)
+        sys.exit(2)
 
 if __name__ == "__main__":
     main()
