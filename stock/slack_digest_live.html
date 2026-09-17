@@ -318,6 +318,64 @@ function isBriefing(t){
   return /신문\s*브리핑/.test(t) && /•/.test(t) && t.length>200;
 }
 
+/* ── 검증·면책 안내문 숨기기 ────────────────────────────────────────
+   AI 가 브리핑 끝에 습관처럼 붙이는 "확인했다 / 확정 사실이 아니다" 안내문은
+   읽는 사람에게 새 정보가 없어서 뷰어에서만 감춘다(발송 쪽은 그대로 둔다).
+     예) 검증: metadata.json 날짜 대조함.
+         ※ 지면 30쪽과 metadata 날짜를 대조함. 수치·단위는 지면에서 다시
+            확인함. 기사 속 전망은 확정 사실이 아님.
+   ⚠️ 넓게 지우면 진짜 기사까지 사라진다. 그래서 조건을 두 겹으로 건다 —
+      ① 줄이 "검증:" 으로 시작하거나 "※ / ＊ / ⚠" 로 시작하고
+      ② 안내문에서만 쓰는 낱말(대조·확인함·확정 사실이 아님 …)이 들어 있을 것. */
+const NOTE_WORD=/(대조(?:함|했|한)|재?확인함|확정\s*사실이?\s*아님|사실이\s*아님|metadata|지면\s*\d+\s*쪽|검증)/;
+const NOTE_MARK=/^(?:검증\s*[:：]|[※＊]|⚠️?)/u;           // 안내문 머리 기호
+const NOTE_LEAD=/^[\s*_~>·\-]+/;                          // 앞에 붙은 공백·볼드기호(*·_)
+
+// 이 한 줄이 통째로 안내문인가?
+function isNote(s){
+  const t=String(s||"").replace(NOTE_LEAD,"").trim();
+  if(!t) return false;
+  if(/^검증\s*[:：]/.test(t)) return true;                  // "검증: …" 은 무조건 안내문
+  return NOTE_MARK.test(t) && NOTE_WORD.test(t);            // "※ …대조함/확인함…"
+}
+
+// 줄 '끝'에 안내문이 붙어 온 경우(제목 … ※ 지면 30쪽과 …)에만 그 부분을 잘라낸다.
+// 뒤에 진짜 본문이 더 이어지는 줄은 건드리지 않으려고, 문장이 안내문투로 '끝날 때'만 자른다.
+const NOTE_TAIL=/(?:아님|확인함|대조함|확인했음|확인함니다)\s*[.。!]?\s*$/;
+function stripNote(s){
+  const t=String(s||"");
+  const i=t.search(/[※＊]|⚠/u);
+  if(i<=0) return t;                                        // ※ 가 없거나 줄 맨 앞(=isNote 담당)
+  const tail=t.slice(i);
+  return (NOTE_WORD.test(tail) && NOTE_TAIL.test(tail)) ? t.slice(0,i).trim() : t;
+}
+
+/* 메시지 원문에서 안내문 줄을 걷어낸다.
+   안내문이 두세 줄로 접혀 올 수도 있어서, 한 번 안내문이 시작되면
+   '안내문 낱말이 계속 나오는 동안' 이어지는 줄까지 함께 지운다.
+   단 불릿(•)이나 다른 내용이 나오면 즉시 멈춘다(본문 보호). */
+function dropNotes(raw){
+  const out=[]; let inNote=false;
+  for(const rawLine of String(raw||"").replace(/\r/g,"").split("\n")){
+    const line=rawLine.trim();
+    if(isNote(line)){ inNote=true; continue; }                       // 안내문 시작
+    if(inNote){
+      if(!line){ continue; }                                         // 안내문 사이 빈 줄
+      if(!/^[•\-*]/.test(line) && NOTE_WORD.test(line) && line.length<160){ continue; }  // 접혀 온 뒷줄
+      inNote=false;                                                  // 본문 재개
+    }
+    out.push(stripNote(rawLine));                                    // 줄 끝에 붙은 안내문만 제거
+  }
+  return out.join("\n").trim();
+}
+
+// 메시지 전체가 안내문뿐이면 카드 자체를 만들지 않는다(빈 카드 방지).
+function isNoteOnly(raw){
+  const t=String(raw||"").trim();
+  if(!t) return false;
+  return !!t && !dropNotes(t) && /(?:검증\s*[:：]|[※＊]|⚠)/u.test(t);
+}
+
 // 기사 제목 한 줄 → 머리표(🔴 반드시 체크) + 큰 제목 + 작은 부제(중요한 이유)
 function briefTitle(t){
   let flag="";
@@ -353,7 +411,8 @@ function briefing(raw){
       let rest=(m[2]||"").replace(/^[\s*]+/,"");        // 앞쪽 공백·볼드기호 제거
       const pm=rest.match(/^\(\s*(\d+)\s*\/\s*(\d+)\s*\)/);
       if(pm){ part=pm[1]+"/"+pm[2]; rest=rest.slice(pm[0].length); }
-      rest=rest.replace(/^[\s*]+/,"").trim();
+      rest=stripNote(rest.replace(/^[\s*]+/,"").trim());   // 줄 끝 "※ …확인함." 제거
+      if(isNote(rest)) rest="";                             // 헤더 뒤가 통째로 안내문이면 버린다
       if(/^검증/.test(rest)){
         const k=rest.lastIndexOf("확인함.");           // 검증 문구 뒤에 본문이 이어지면 살린다
         rest = k>=0 ? rest.slice(k+"확인함.".length).trim() : "";
@@ -374,7 +433,7 @@ function briefing(raw){
   for(const rawLine of body.split("\n")){
     const line=rawLine.trim();
     if(!line) continue;
-    if(/^검증\s*[:：]/.test(line)) continue;       // 남아 있는 검증 문구 줄도 제거
+    if(isNote(line)) continue;                   // 남아 있는 검증·면책 안내문 줄 제거
 
     let m;
     if(m=line.match(/^•\s*(WHAT|WHY|HOW|What|Why|How)\s*[:：]\s*([\s\S]*)$/)){
@@ -441,7 +500,10 @@ function render(){
   if(snap===lastSnapshot) return;   // ← 깜빡임 방지의 핵심
   lastSnapshot=snap;
 
-  const msgs=[...(state.data.messages||[])].sort((a,b)=>(a.ts||"").localeCompare(b.ts||""));
+  // 검증·면책 안내문만 담긴 메시지는 아예 목록에서 뺀다(카운트·필터도 함께 맞춰짐)
+  const msgs=[...(state.data.messages||[])]
+    .filter(m=>!isNoteOnly(m.text||""))
+    .sort((a,b)=>(a.ts||"").localeCompare(b.ts||""));
   document.getElementById("date").textContent=krDate(state.data.date||state.date);
   document.getElementById("datepick").value=state.data.date||state.date;
   
@@ -461,7 +523,7 @@ function render(){
     // 이번에 처음 등장하는 메시지에만 'is-new' → 그 카드만 스윽 나타난다
     el.className="entry"+(seenKeys.has(msgKey(m))?"":" is-new");
     el.style.setProperty("--dot",c.color);
-    const txt=m.text||"";
+    const txt=dropNotes(m.text||"")||(m.text||"");   // 안내문 줄을 걷어낸 본문(다 지워지면 원문 유지)
     // 신문 브리핑이면 전용 서식, 아니면 기존 그대로
     const brf=isBriefing(txt)?briefing(txt):null;
     const bodyHTML=brf?brf.html:mrkdwn(txt);
