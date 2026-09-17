@@ -67,6 +67,22 @@ SECTION_GENRE_MAP = {
     "health": "건강",
 }
 
+# 기사처럼 생겼지만 '뉴스'가 아닌 것들. 브리핑 자리를 잡아먹고 시간만 쓴다.
+# (실제로 매경 헤드라인 RSS 에 "오늘의 운세 2026년 9월 18일" 이 들어와 1순위로 뽑혔다)
+# ⚠️ 괄호·고정 문구로 못박는다. '인사' 같은 낱말 하나로 거르면 멀쩡한 기사가 날아간다.
+JUNK_TITLE_PATTERNS = (
+    "오늘의 운세", "[운세]", "띠별 운세", "별자리 운세",
+    "[부고]", "[인사]", "[동정]", "[포토]", "[사진]", "[만평]", "[카드뉴스]",
+    "오늘의 날씨", "[날씨]", "로또 ", "[오늘의 매경]", "[알림]", "[정정보도]",
+)
+
+
+def is_junk_title(title):
+    """뉴스가 아닌 글이면 True."""
+    t = (title or "").strip()
+    return any(pat in t for pat in JUNK_TITLE_PATTERNS)
+
+
 def derive_genre(url):
     """기사 URL 경로에서 섹션 슬러그를 뽑아 한글 장르로 변환한다.
     확실히 매핑되지 않으면 (섹션 슬러그, None)을 돌려주고,
@@ -88,17 +104,22 @@ def derive_genre(url):
     genre = SECTION_GENRE_MAP.get(slug) if slug else None
     return slug, genre
 
-def fetch_article_body(url):
-    """Fetches the main text content of the news article."""
+def fetch_article_body(url, html=None):
+    """기사 본문 글자만 뽑아낸다.
+
+    html 을 넘겨주면 **새로 받지 않고 그걸 쓴다.**
+    (검증 단계에서 이미 같은 페이지를 받아뒀기 때문 — 두 번 받으면 시간이 2배 든다.)
+    """
     try:
-        res = requests.get(url, headers=HEADERS, timeout=10)
-        res.raise_for_status()
-        
-        # Check encoding
-        if res.encoding == 'ISO-8859-1':
-            res.encoding = res.apparent_encoding
-            
-        soup = BeautifulSoup(res.text, 'html.parser')
+        if html is None:
+            res = requests.get(url, headers=HEADERS, timeout=8)
+            res.raise_for_status()
+            # Check encoding
+            if res.encoding == 'ISO-8859-1':
+                res.encoding = res.apparent_encoding
+            html = res.text
+
+        soup = BeautifulSoup(html, 'html.parser')
 
         # ⚠️ 먼저 '다른 기사'가 섞여 있는 영역을 통째로 들어낸다.
         #    관련기사·추천기사·많이 본 뉴스 박스가 본문에 딸려 들어오면
@@ -192,6 +213,9 @@ def parse_rss_feed(feed_url, outlet_name, max_hours=24):
                 if time_diff > timedelta(hours=max_hours):
                     continue  # Skip older articles
             
+            if is_junk_title(title):
+                continue          # 운세·부고·포토 등은 아예 후보에서 뺀다
+
             section_slug, genre = derive_genre(link)
             articles.append({
                 "title": title,
@@ -213,7 +237,8 @@ def parse_rss_feed(feed_url, outlet_name, max_hours=24):
 
 
 def main():
-    print("Starting news fetcher...")
+    started = time.time()
+    print("신문 기사 수집 시작 — 링크 검증까지 보통 20~40초 걸립니다.", flush=True)
     max_hours = 24
     results = {
         "fetched_at": datetime.now(timezone.utc).isoformat(),
@@ -262,45 +287,52 @@ def main():
             print(f"Note: {outlet} 에서 {len(outlet_articles)}건만 모았습니다(구글뉴스 폴백은 사용하지 않음).")
 
         # 검증에서 몇 건 탈락할 수 있으니 여유 있게 8건까지 후보로 둔다.
-        selected_articles = outlet_articles[:8]
+        selected_articles = outlet_articles[:6]
 
         # ★ 핵심: 링크가 정말 그 제목의 기사인지 한 건씩 확인한다.
         #    통과한 기사만 news_data.json 에 넣는다 → AI 는 확인된 것만 쓸 수 있다.
         kept = 0
-        for art in selected_articles:
+        print(f"[{outlet}] 후보 {len(selected_articles)}건 — 링크가 진짜 그 기사인지 확인합니다"
+              f"(한 건당 1~3초)", flush=True)
+        for n, art in enumerate(selected_articles, 1):
             if kept >= 5:
                 break
-            check = verifier.verify(art["link"], art["title"], outlet)
+            t0 = time.time()
+            # keep_html=True → 검증하며 받은 HTML 을 그대로 재활용(요청 횟수 절반)
+            check = verifier.verify(art["link"], art["title"], outlet, keep_html=True)
             art["verified"] = check["verified"]
             art["verify_reason"] = check["reason"]
             art["verify_score"] = check["score"]
             art["page_title"] = check["page_title"]
 
+            art.pop("html", None)                 # 결과 json 에 HTML 을 남기지 않는다
+
             if not check["verified"]:
-                print(f"[{outlet}] ❌ 링크 불일치({check['reason']}) — 버림: {art['title'][:40]}",
-                      file=sys.stderr)
+                print(f"[{outlet}] {n}/{len(selected_articles)} ❌ 링크 불일치"
+                      f"({check['reason']}) — 버림: {art['title'][:40]}",
+                      file=sys.stderr, flush=True)
                 art["outlet"] = outlet
                 results["rejected"].append(art)
                 continue
 
             # 확인된 '최종 주소'로 바꿔 둔다(리다이렉트·추적 파라미터 제거 효과)
             art["link"] = check["canonical_url"] or check["final_url"]
-            print(f"[{outlet}] ✅ 확인({check['reason']}, {check['score']:.2f}) "
-                  f"본문 받는 중: {art['title'][:40]}")
-            body = fetch_article_body(art["link"])
+            print(f"[{outlet}] {n}/{len(selected_articles)} ✅ 확인"
+                  f"({check['reason']}, {check['score']:.2f}, {time.time()-t0:.1f}초) "
+                  f"{art['title'][:40]}", flush=True)
+            body = fetch_article_body(art["link"], html=check.get("html"))
             art["content"] = body if body else "본문 내용을 가져오는 데 실패했습니다."
             results["articles"].append(art)
             kept += 1
-            # Sleep briefly to respect the servers
-            time.sleep(0.5)
+            time.sleep(0.2)          # 서버 예의상 아주 짧게 (이제 요청이 절반이라 충분)
             
     # Save results to json
     output_path = os.path.join(os.path.dirname(__file__), "news_data.json")
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
         
-    print(f"News fetching complete. 확인된 기사 {len(results['articles'])}건 저장 "
-          f"(링크 불일치로 버린 기사 {len(results['rejected'])}건) → {output_path}")
+    print(f"\n완료 ({time.time()-started:.0f}초). 확인된 기사 {len(results['articles'])}건 저장 "
+          f"(링크 불일치로 버린 기사 {len(results['rejected'])}건) → {output_path}", flush=True)
     if not results["articles"]:
         print("⚠️ 확인된 기사가 한 건도 없습니다. 브리핑을 만들지 말고 이 사실을 먼저 알리세요.",
               file=sys.stderr)

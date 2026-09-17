@@ -52,7 +52,7 @@ from difflib import SequenceMatcher
 from html.parser import HTMLParser
 
 # ── 설정값 ────────────────────────────────────────────────────────────────
-TIMEOUT = 12                 # 한 페이지 기다리는 최대 초
+TIMEOUT = 8                  # 한 페이지 기다리는 최대 초 (느린 서버는 빨리 포기)
 MAX_BYTES = 1_200_000        # 너무 큰 페이지는 앞부분만 (제목은 <head> 에 있다)
 TITLE_PASS = 0.60            # 제목 유사도 합격선 (0~1)
 CONTAIN_PASS = 0.80          # 한쪽이 다른 쪽을 품고 있을 때의 합격선
@@ -230,7 +230,8 @@ def fetch(url: str) -> tuple[str, str, str]:
 
 
 # ── 핵심: 한 건 검증 ──────────────────────────────────────────────────────
-def verify(url: str, title: str, outlet: str = "", strict_host: bool = True) -> dict:
+def verify(url: str, title: str, outlet: str = "", strict_host: bool = True,
+           keep_html: bool = False) -> dict:
     """링크가 정말 그 제목의 기사인지 확인한다.
 
     반환 dict:
@@ -239,6 +240,10 @@ def verify(url: str, title: str, outlet: str = "", strict_host: bool = True) -> 
       score        제목 유사도 0~1
       final_url    리다이렉트까지 따라간 최종 주소 (이걸 브리핑에 쓰면 된다)
       page_title   페이지가 스스로 밝힌 제목 (틀렸을 때 사람이 바로 비교 가능)
+      html         keep_html=True 일 때만 — 방금 받아온 HTML
+
+    ⚡ keep_html: 검증하려면 어차피 페이지를 한 번 받아야 한다. 그 HTML 을 돌려주면
+       부르는 쪽이 **같은 페이지를 두 번 받지 않아도 된다**(속도 2배).
     """
     out = {
         "url": url, "title": title, "outlet": outlet,
@@ -256,6 +261,8 @@ def verify(url: str, title: str, outlet: str = "", strict_host: bool = True) -> 
 
     final_url, html, err = fetch(url)
     out["final_url"] = final_url
+    if keep_html:
+        out["html"] = html          # 부르는 쪽이 본문 추출에 재활용한다
     if err or not html:
         out["reason"] = f"fetch_failed({err or 'empty'})"
         return out
