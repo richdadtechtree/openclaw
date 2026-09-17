@@ -194,26 +194,38 @@ MARKS_MAX_PAGES = 100            # 하루치 장수 상한
 SAFE_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,80}")   # 사진 파일 이름 형태만
 
 
+# 보는 사람(브라우저) 구분표. 브라우저가 처음 접속할 때 스스로 만든 무작위 글자다.
+# ⚠️ 이 값이 그대로 '파일 이름'이 되므로 형식을 엄격히 검사한다. 검사를 빼면
+#    who=../../etc/passwd 같은 값으로 엉뚱한 파일을 건드릴 수 있다.
+VIEWER_RE = re.compile(r"[A-Za-z0-9_-]{6,64}")
+
+
+def valid_viewer(viewer):
+    return bool(viewer) and bool(VIEWER_RE.fullmatch(viewer))
+
+
 def marks_root():
     return os.path.expanduser(os.getenv("NEWS_MARKS_DIR", "~/.openclaw/news_marks"))
 
 
-def marks_path(date):
-    return os.path.join(marks_root(), "%s.json" % date)
+def marks_path(date, viewer):
+    """사람(브라우저)마다 파일이 따로다 → 서로 섞이지 않는다.
+    ~/.openclaw/news_marks/<날짜>/<구분표>.json"""
+    return os.path.join(marks_root(), date, "%s.json" % viewer)
 
 
-def load_marks(date):
-    """그날의 형광펜 표시. 없으면 빈 dict."""
-    if not valid_date(date):
+def load_marks(date, viewer):
+    """그 사람이 그날 그어둔 형광펜. 없으면 빈 dict."""
+    if not (valid_date(date) and valid_viewer(viewer)):
         return {}
     try:
-        with open(marks_path(date), encoding="utf-8") as f:
+        with open(marks_path(date, viewer), encoding="utf-8") as f:
             data = json.load(f)
         return data.get("marks", {}) if isinstance(data, dict) else {}
     except FileNotFoundError:
         return {}
     except Exception as e:
-        print("[marks] 읽기 실패 %s: %r" % (date, e))
+        print("[marks] 읽기 실패 %s/%s: %r" % (date, viewer, e))
         return {}
 
 
@@ -268,22 +280,24 @@ def clean_marks(raw, date=""):
     return cleaned
 
 
-def save_marks(date, raw):
-    """형광펜 표시를 저장한다. 반환 (성공여부, 정리된 표시)."""
-    if not valid_date(date):
+def save_marks(date, viewer, raw):
+    """그 사람의 형광펜을 저장한다. 반환 (성공여부, 정리된 표시)."""
+    if not (valid_date(date) and valid_viewer(viewer)):
         return False, {}
     marks = clean_marks(raw, date)
+    path = marks_path(date, viewer)
     try:
-        os.makedirs(marks_root(), exist_ok=True)
-        tmp = marks_path(date) + ".tmp"
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
         # 임시 파일에 쓰고 바꿔치기 — 저장 도중 꺼져도 기존 파일이 깨지지 않는다
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({"date": date, "saved_at": datetime.now(KST).isoformat(),
+            json.dump({"date": date, "viewer": viewer,
+                       "saved_at": datetime.now(KST).isoformat(),
                        "marks": marks}, f, ensure_ascii=False)
-        os.replace(tmp, marks_path(date))
+        os.replace(tmp, path)
         return True, marks
     except Exception as e:
-        print("[marks] 저장 실패 %s: %r" % (date, e))
+        print("[marks] 저장 실패 %s/%s: %r" % (date, viewer, e))
         return False, marks
 
 

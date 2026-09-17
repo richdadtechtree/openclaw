@@ -36,9 +36,11 @@ function makePng(w, h) {
 }
 const PNG = makePng(800, 1200);
 
-// 서버의 marks 저장소를 흉내낸다(메모리에 보관 — 새로고침해도 남는지 확인용)
-let STORE = {};
+// 서버의 marks 저장소를 흉내낸다. 실제 서버처럼 **사람(who)별로** 따로 담는다.
+let STORE = {};            // { who: marks }
 let postCount = 0;
+let lastWho = '';
+const WHO_RE = /^[A-Za-z0-9_-]{6,64}$/;
 
 const srv = http.createServer((req, res) => {
   const u = req.url.split('?')[0];
@@ -48,18 +50,24 @@ const srv = http.createServer((req, res) => {
   if (u === '/api/news/today') return send('application/json', JSON.stringify({ ok: true, ready: false, date: '2026-09-17' }));
   if (u === '/page.png') return send('image/png', PNG);
   if (u === '/api/news/marks') {
+    const who = new URL(req.url, 'http://x').searchParams.get('who') || '';
+    lastWho = who;
+    if (!WHO_RE.test(who)) {                      // 실제 서버와 같은 검사
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ ok: false, reason: 'who 형식이 올바르지 않습니다' }));
+    }
     if (req.method === 'POST') {
       let body = '';
       req.on('data', c => body += c);
       return req.on('end', () => {
-        try { STORE = JSON.parse(body).marks || {}; } catch (_) { STORE = {}; }
+        try { STORE[who] = JSON.parse(body).marks || {}; } catch (_) { STORE[who] = {}; }
         postCount++;
-        send('application/json', JSON.stringify({ ok: true, date: '2026-09-17',
-          pages: Object.keys(STORE).length,
-          strokes: Object.values(STORE).reduce((a, v) => a + v.length, 0) }));
+        send('application/json', JSON.stringify({ ok: true, date: '2026-09-17', who,
+          pages: Object.keys(STORE[who]).length }));
       });
     }
-    return send('application/json', JSON.stringify({ ok: true, date: '2026-09-17', marks: STORE }));
+    return send('application/json', JSON.stringify({ ok: true, date: '2026-09-17', who,
+      marks: STORE[who] || {} }));
   }
   res.writeHead(404); res.end();
 });
@@ -95,7 +103,9 @@ const marksOf = (page, name) => page.evaluate(n => (M.marks[n] || []).length, na
   let pass = true;
   const check = (ok, msg, extra = '') => { pass &&= ok; console.log((ok ? '  ✅ ' : '  ❌ ') + msg + (extra ? `  ${extra}` : '')); };
 
-  let page = await browser.newPage({ viewport: { width: 1100, height: 850 } });
+  // 컨텍스트 하나 = 저장소 하나 = '사람 한 명'. 나중에 같은 사람으로 다시 열어야 해서 명시적으로 만든다.
+  const ctx = await browser.newContext({ viewport: { width: 1100, height: 850 } });
+  let page = await ctx.newPage();
   await page.goto(base + '/slack');
   await openViewer(page);
   await page.waitForTimeout(300);
@@ -115,8 +125,10 @@ const marksOf = (page, name) => page.evaluate(n => (M.marks[n] || []).length, na
   check(inRange, '좌표가 0~1 비율로 저장된다(기기 달라도 같은 자리)',
         `첫 점 ${pts[0].map(v => v.toFixed(2))}`);
   await page.waitForTimeout(1100);              // 저장 debounce(0.7초) 대기
-  check(postCount > 0 && (STORE['01.jpg'] || []).length === 1, '서버에 저장된다',
-        `POST ${postCount}회`);
+  const mine = STORE[lastWho] || {};
+  check(postCount > 0 && (mine['01.jpg'] || []).length === 1, '서버에 저장된다',
+        `POST ${postCount}회, 구분표 ${lastWho.slice(0, 8)}…`);
+  check(WHO_RE.test(lastWho), '브라우저가 만든 구분표가 올바른 형식이다');
   check(await page.textContent('#lb-saved') === '저장됨' || postCount > 0, '"저장됨" 표시가 뜬다');
 
   console.log('\n[확대해도 글씨에 붙어 따라가나]');
@@ -162,9 +174,9 @@ const marksOf = (page, name) => page.evaluate(n => (M.marks[n] || []).length, na
   check(await marksOf(page, '02.jpg') === 0, '지우개로 그 줄이 지워진다');
   await page.waitForTimeout(1100);
 
-  console.log('\n[페이지를 새로 열어도 남아있나 — 서버 저장의 핵심]');
+  console.log('\n[같은 브라우저로 다시 열면 내 형광펜이 그대로 — 서버 저장의 핵심]');
   await page.close();
-  page = await browser.newPage({ viewport: { width: 1100, height: 850 } });
+  page = await ctx.newPage();                    // 같은 컨텍스트 = 같은 저장소 = 같은 사람
   await page.goto(base + '/slack');
   await openViewer(page);
   await page.waitForTimeout(500);
@@ -177,6 +189,35 @@ const marksOf = (page, name) => page.evaluate(n => (M.marks[n] || []).length, na
     return n;                                    // 실제로 칠해진 점 개수
   });
   check(painted > 500, '화면에도 실제로 그려진다', `칠해진 점 ${painted}개`);
+
+  console.log('\n[다른 사람(다른 브라우저)에게는 안 보인다]');
+  const other = await browser.newContext({ viewport: { width: 1100, height: 850 } });
+  const page2 = await other.newPage();
+  await page2.goto(base + '/slack');
+  await openViewer(page2);
+  await page2.waitForTimeout(500);
+  const otherWho = await page2.evaluate(() => whoId());
+  const myWho = await page.evaluate(() => whoId());
+  check(otherWho !== myWho, '브라우저마다 다른 구분표를 갖는다',
+        `${myWho.slice(0, 6)}… vs ${otherWho.slice(0, 6)}…`);
+  check(await marksOf(page2, '01.jpg') === 0, '다른 사람 화면엔 내 형광펜이 안 보인다');
+  const otherPainted = await page2.evaluate(() => {
+    const c = document.getElementById('lb-mark');
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i] > 10) n++;
+    return n;
+  });
+  check(otherPainted === 0, '화면에도 아무것도 안 그려진다', `칠해진 점 ${otherPainted}개`);
+
+  console.log('\n[코드로 기기 잇기 — 폰↔PC 연결]');
+  await page2.evaluate((id) => {                 // 내 코드를 그대로 붙여 넣은 상황
+    window.prompt = () => id;
+    changeWho();
+  }, myWho);
+  await page2.waitForTimeout(500);
+  check(await page2.evaluate(() => whoId()) === myWho, '코드를 넣으면 같은 사람이 된다');
+  check(await marksOf(page2, '01.jpg') === 1, '그 기기에서도 내 형광펜이 보인다');
+  await other.close();
 
   await browser.close(); srv.close();
   console.log('\n총평: ' + (pass ? '✅ 전부 통과' : '❌ 실패 있음'));
