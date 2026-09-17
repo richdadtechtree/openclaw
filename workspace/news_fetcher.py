@@ -334,10 +334,19 @@ def probe():
                 print(f"   ❌ {url}\n      → 접속 실패: {err}", flush=True)
                 continue
             items = _parse_rss_stdlib_from_text(text, url)
-            head = items[0]["link"] if items else "-"
             mark = "✅" if items else "⚠️ "
-            print(f"   {mark} {url}\n      → {len(text):,}바이트, 기사 {len(items)}건, 첫 링크: {head[:70]}",
-                  flush=True)
+            print(f"   {mark} {url}\n      → {len(text):,}바이트, 기사 {len(items)}건", flush=True)
+            if items:
+                # 이 피드가 정말 그 분야를 주는지 본다. 주소의 /news/<분야>/ 를 세어 보면
+                # '증권 피드인데 국제 기사만 온다' 같은 엇갈림이 바로 드러난다.
+                counts = {}
+                for it in items:
+                    _, sec = derive_genre(it["link"])
+                    key = sec or (urllib.parse.urlparse(it["link"]).path.split("/") + ["?"])[2]
+                    counts[key] = counts.get(key, 0) + 1
+                top = sorted(counts.items(), key=lambda kv: -kv[1])[:4]
+                print("      → 분야: " + ", ".join(f"{k} {v}건" for k, v in top), flush=True)
+                print(f"      → 첫 기사: {items[0]['title'][:40]}", flush=True)
         print()
     print("기사 0건인 주소는 FEEDS 에서 빼거나 다른 주소로 바꾸면 됩니다.")
     return 0
@@ -381,8 +390,8 @@ def main():
                     art["outlet"] = outlet
                     outlet_articles.append(art)
                     
-        # If we couldn't find enough articles from RSS, relax time constraint
-        if len(outlet_articles) < 5:
+        # 시간 조건을 풀어 재시도 — 단 0건이면 '차단'이라 또 해봐야 소용없으니 건너뛴다
+        if 0 < len(outlet_articles) < 5:
             print(f"Warning: Only found {len(outlet_articles)} articles from {outlet} within {max_hours}h. Relaxing time filter to 48 hours...")
             seen_titles_relaxed = set()
             relaxed_articles = []
@@ -406,7 +415,11 @@ def main():
                     seen_titles.add(norm_title)
                     outlet_articles.append(art)
                     
-        if len(outlet_articles) < 5:
+        if not outlet_articles:
+            print(f"⚠️  {outlet}: 기사를 한 건도 못 받았습니다(주소가 막혔거나 바뀐 듯).\n"
+                  f"    원인 확인 → python3 workspace/news_fetcher.py --probe\n"
+                  f"    다른 매체 기사만으로 브리핑은 계속 진행합니다.", file=sys.stderr, flush=True)
+        elif len(outlet_articles) < 5:
             print(f"Note: {outlet} 에서 {len(outlet_articles)}건만 모았습니다(구글뉴스 폴백은 사용하지 않음).")
 
         # 검증에서 몇 건 탈락할 수 있으니 여유 있게 8건까지 후보로 둔다.

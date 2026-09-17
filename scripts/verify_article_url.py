@@ -200,14 +200,53 @@ def article_id(url: str) -> str:
 
 
 # ── 페이지 가져오기 ───────────────────────────────────────────────────────
-def fetch(url: str) -> tuple[str, str, str]:
-    """페이지를 연다. 반환 (최종주소, HTML, 오류메시지)."""
-    req = urllib.request.Request(url, headers={
+def _headers(url: str, full: bool = False) -> dict:
+    """요청에 붙일 헤더.
+
+    full=True 면 **진짜 브라우저에 더 가깝게** 만든다. 한국경제처럼 봇을 막는 사이트가
+    403(거부)을 줄 때 한 번 더 시도하기 위한 것 — 사이트가 보는 것은 헤더뿐이라
+    Referer·Sec-Fetch 같은 브라우저 기본 헤더가 없으면 프로그램으로 판정되기 쉽다.
+    """
+    h = {
         "User-Agent": UA,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.5",
-        "Accept-Encoding": "gzip",
+        "Accept": ("application/rss+xml,application/xml;q=0.9,text/html;q=0.8,*/*;q=0.7"
+                   if full else
+                   "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"),
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.5",
+    }
+    if not full:
+        h["Accept-Encoding"] = "gzip"
+        return h
+    try:
+        u = urllib.parse.urlparse(url)
+        origin = f"{u.scheme}://{u.netloc}"
+    except Exception:
+        origin = ""
+    h.update({
+        "Referer": origin + "/" if origin else "",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-User": "?1",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
     })
+    return {k: v for k, v in h.items() if v}     # 빈 값은 빼고 보낸다
+
+
+# 봇 차단으로 보이는 응답 코드 — 이럴 때만 '브라우저 흉내' 헤더로 한 번 더 시도한다
+_BLOCKED = (401, 403, 405, 406, 409, 429)
+
+
+def fetch(url: str, full_headers: bool = False) -> tuple[str, str, str]:
+    """페이지를 연다. 반환 (최종주소, HTML, 오류메시지).
+
+    403 등 '봇 차단' 으로 보이면 헤더를 더 브라우저처럼 바꿔 **한 번만** 더 시도한다.
+    (무한 재시도는 상대 서버에 민폐라 딱 1회만)
+    """
+    req = urllib.request.Request(url, headers=_headers(url, full_headers))
     try:
         with urllib.request.urlopen(req, timeout=TIMEOUT) as res:
             final_url = res.geturl()                 # 리다이렉트 따라간 최종 주소
@@ -224,7 +263,10 @@ def fetch(url: str) -> tuple[str, str, str]:
                 enc = m.group(1).decode("ascii", "ignore") if m else "utf-8"
             return final_url, raw.decode(enc, errors="replace"), ""
     except urllib.error.HTTPError as e:
-        return url, "", f"HTTP {e.code}"
+        if e.code in _BLOCKED and not full_headers:
+            return fetch(url, full_headers=True)      # 브라우저 흉내로 딱 한 번 재시도
+        suffix = " (브라우저 헤더로 재시도했지만 여전히 거부)" if full_headers else ""
+        return url, "", f"HTTP {e.code}{suffix}"
     except Exception as e:                            # 타임아웃·DNS·SSL 등
         return url, "", f"{type(e).__name__}: {e}"
 
