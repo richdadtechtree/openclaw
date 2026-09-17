@@ -178,6 +178,115 @@ def ensure_zip(date, what="photos"):
         return None
 
 
+# ── 형광펜 표시 저장 ──────────────────────────────────────────────────────
+# 신문 사진 위에 그은 형광펜을 서버에 보관한다. 폰에서 칠한 걸 PC 에서도 본다.
+#
+# ⚠️ 왜 news_cache 가 아닌 별도 폴더인가:
+#    news_cache 는 news_sync.py 가 NEWS_CACHE_KEEP_DAYS(기본 7일) 지나면 통째로 지운다.
+#    사진은 다시 받으면 되지만 **사람이 직접 그은 표시는 복구할 방법이 없다.**
+#    그래서 지워지지 않는 자리에 따로 둔다.
+#
+# 좌표는 **0~1 비율**로 저장한다(사진 왼쪽 위가 0,0 / 오른쪽 아래가 1,1).
+# 픽셀로 저장하면 화면 크기·확대 배율이 다른 기기에서 위치가 어긋난다.
+MARKS_MAX_STROKES = 400          # 한 장에 그을 수 있는 선 개수
+MARKS_MAX_POINTS = 2000          # 선 하나의 점 개수
+MARKS_MAX_PAGES = 100            # 하루치 장수 상한
+SAFE_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,80}")   # 사진 파일 이름 형태만
+
+
+def marks_root():
+    return os.path.expanduser(os.getenv("NEWS_MARKS_DIR", "~/.openclaw/news_marks"))
+
+
+def marks_path(date):
+    return os.path.join(marks_root(), "%s.json" % date)
+
+
+def load_marks(date):
+    """그날의 형광펜 표시. 없으면 빈 dict."""
+    if not valid_date(date):
+        return {}
+    try:
+        with open(marks_path(date), encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get("marks", {}) if isinstance(data, dict) else {}
+    except FileNotFoundError:
+        return {}
+    except Exception as e:
+        print("[marks] 읽기 실패 %s: %r" % (date, e))
+        return {}
+
+
+def _clean_stroke(st):
+    """선 하나를 안전한 형태로 다듬는다. 이상하면 None."""
+    if not isinstance(st, dict):
+        return None
+    pts = st.get("pts")
+    if not isinstance(pts, list) or len(pts) < 1:
+        return None
+    out = []
+    for pt in pts[:MARKS_MAX_POINTS]:
+        if not (isinstance(pt, (list, tuple)) and len(pt) == 2):
+            continue
+        try:
+            x, y = float(pt[0]), float(pt[1])
+        except (TypeError, ValueError):
+            continue
+        # 사진 밖으로 나간 좌표는 가장자리로 붙인다(0~1 유지)
+        out.append([round(min(max(x, 0.0), 1.0), 4), round(min(max(y, 0.0), 1.0), 4)])
+    if not out:
+        return None
+    color = st.get("c")
+    if not (isinstance(color, str) and re.fullmatch(r"#[0-9a-fA-F]{6}", color)):
+        color = "#ffe14d"
+    try:
+        width = float(st.get("w", 0.018))
+    except (TypeError, ValueError):
+        width = 0.018
+    return {"c": color, "w": round(min(max(width, 0.002), 0.2), 4), "pts": out}
+
+
+def clean_marks(raw, date=""):
+    """브라우저가 보낸 값을 그대로 믿지 않고 형태·크기를 검사해 정리한다."""
+    if not isinstance(raw, dict):
+        return {}
+    index = load_index(date) if date else None
+    allowed = allowed_names(index) if index else None   # 그날 실제로 있는 사진 이름만
+    cleaned = {}
+    for name, strokes in list(raw.items())[:MARKS_MAX_PAGES]:
+        if not isinstance(name, str) or not isinstance(strokes, list):
+            continue
+        # 사진 '파일 이름' 형태만 받는다. 지금은 JSON 키로만 쓰지만, 나중에 누가
+        # 이 값을 경로에 쓰면 ../../ 같은 장난이 사고가 된다 → 입구에서 막는다.
+        if not SAFE_NAME_RE.fullmatch(name):
+            continue
+        if allowed is not None and name not in allowed:
+            continue                                     # 없는 사진 이름은 버린다
+        keep = [s for s in (_clean_stroke(x) for x in strokes[:MARKS_MAX_STROKES]) if s]
+        if keep:
+            cleaned[name] = keep
+    return cleaned
+
+
+def save_marks(date, raw):
+    """형광펜 표시를 저장한다. 반환 (성공여부, 정리된 표시)."""
+    if not valid_date(date):
+        return False, {}
+    marks = clean_marks(raw, date)
+    try:
+        os.makedirs(marks_root(), exist_ok=True)
+        tmp = marks_path(date) + ".tmp"
+        # 임시 파일에 쓰고 바꿔치기 — 저장 도중 꺼져도 기존 파일이 깨지지 않는다
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"date": date, "saved_at": datetime.now(KST).isoformat(),
+                       "marks": marks}, f, ensure_ascii=False)
+        os.replace(tmp, marks_path(date))
+        return True, marks
+    except Exception as e:
+        print("[marks] 저장 실패 %s: %r" % (date, e))
+        return False, marks
+
+
 def summary(date):
     """
     화면이 그대로 쓸 수 있는 형태로 정리해서 준다.

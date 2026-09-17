@@ -185,6 +185,28 @@
      그 크기로 '다시 그리게' 한다 → 원본 해상도까지는 글씨가 또렷하다.
      이동(translate)만 transform 으로 하는 건 화질에 영향이 없다. */
   .lb-stage img{position:absolute;left:0;top:0;user-select:none;-webkit-user-drag:none;background:#fff}
+  /* ── 형광펜 ───────────────────────────────────────────────────────────
+     사진 '위'에 투명한 그림판을 정확히 겹쳐 둔다. 사진과 똑같은 위치·크기·이동을
+     그대로 따라가므로, 확대하거나 끌어도 형광펜이 글씨에 딱 붙어 있다.
+     mix-blend-mode:multiply → 진짜 형광펜처럼 글씨가 비쳐 보인다(덧칠해도 안 진해짐). */
+  .lb-mark{position:absolute;left:0;top:0;pointer-events:none;mix-blend-mode:multiply;opacity:.62}
+  .lb-stage.marking{cursor:crosshair}
+  .lb-stage.marking img{cursor:crosshair}
+  /* 형광펜 모드일 때 아래쪽에 뜨는 작은 도구모음 */
+  .lb-tools{position:absolute;left:50%;bottom:max(14px,env(safe-area-inset-bottom));transform:translateX(-50%);
+            z-index:3;display:flex;gap:6px;align-items:center;background:#0b0e14e6;border:1px solid #2b3244;
+            border-radius:999px;padding:6px 8px;box-shadow:0 6px 24px -10px #000}
+  .lb-tools button{appearance:none;border:1px solid transparent;background:transparent;color:#e7eaf1;
+            border-radius:999px;height:32px;min-width:34px;padding:0 10px;font-size:13px;cursor:pointer;
+            display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+  .lb-tools button:hover{background:#1b2130}
+  .lb-tools button[aria-pressed="true"]{background:#2f4272;border-color:#7f9bf5;color:#fff}
+  .lb-tools .sep{width:1px;height:20px;background:#2b3244}
+  .lb-tools .pen{width:16px;height:16px;border-radius:4px;border:1px solid #00000040}
+  .lb-saved{font-family:var(--mono);font-size:11px;color:#8b93a4;padding:0 4px}
+  @media (max-width:520px){
+    .lb-tools button{height:30px;min-width:32px;padding:0 8px;font-size:12px}
+  }
   .lb-stage.zoomed{cursor:grab}
   .lb-stage.zoomed:active{cursor:grabbing}
   .lb-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:2;width:44px;height:64px;
@@ -254,15 +276,28 @@
 <div class="lb" id="lb" hidden role="dialog" aria-modal="true" aria-label="신문 사진 보기">
   <div class="lb-bar">
     <span class="lb-count" id="lb-count"></span><span class="lb-native" id="lb-native"></span>
+    <button class="lb-btn" id="lb-pen" title="형광펜 (H)" aria-label="형광펜" aria-pressed="false">🖍</button>
     <button class="lb-btn" id="lb-out" title="축소" aria-label="축소">−</button>
     <button class="lb-btn" id="lb-in" title="확대" aria-label="확대">＋</button>
     <a class="lb-btn" id="lb-dl" href="#" title="이 장 저장" aria-label="이 장 저장">⤓</a>
     <button class="lb-btn" id="lb-close" title="닫기 (Esc)" aria-label="닫기">✕</button>
   </div>
   <button class="lb-nav prev" id="lb-prev" aria-label="이전 장">‹</button>
-  <div class="lb-stage" id="lb-stage"><img id="lb-img" alt=""></div>
+  <div class="lb-stage" id="lb-stage"><img id="lb-img" alt=""><canvas class="lb-mark" id="lb-mark"></canvas></div>
   <button class="lb-nav next" id="lb-next" aria-label="다음 장">›</button>
-  <div class="lb-hint" id="lb-hint">좌우로 넘기기 · 더블탭 확대 · Esc 닫기</div>
+  <div class="lb-hint" id="lb-hint">좌우로 넘기기 · 더블탭 확대 · 🖍 형광펜(H) · Esc 닫기</div>
+  <div class="lb-tools" id="lb-tools" hidden>
+    <button id="lb-c1" title="노랑" aria-label="노랑"><span class="pen" style="background:#ffe14d"></span></button>
+    <button id="lb-c2" title="초록" aria-label="초록"><span class="pen" style="background:#9dff8a"></span></button>
+    <button id="lb-c3" title="분홍" aria-label="분홍"><span class="pen" style="background:#ff9ec7"></span></button>
+    <span class="sep"></span>
+    <button id="lb-erase" title="지우개 — 그은 줄을 톡 치면 지워집니다" aria-pressed="false">🧽 지우개</button>
+    <button id="lb-undo" title="되돌리기">↩</button>
+    <button id="lb-clear" title="이 장 형광펜 모두 지우기">비우기</button>
+    <span class="sep"></span>
+    <span class="lb-saved" id="lb-saved"></span>
+    <button id="lb-pen-off" title="형광펜 끄기">✕ 끄기</button>
+  </div>
 </div>
 
 <script>
@@ -712,6 +747,113 @@ function placeNav(){
   $("lb-next").style.right=pos+"px";
 }
 
+/* ══ 형광펜 ═══════════════════════════════════════════════════════════════
+   신문 사진 위에 손가락·마우스로 줄을 긋는다.
+
+   좌표를 왜 '비율(0~1)'로 저장하나:
+     화면 크기도 확대 배율도 기기마다 다르다. 픽셀로 저장하면 폰에서 그은 줄이
+     PC 에서 엉뚱한 데 찍힌다. 사진 왼쪽 위를 0,0 / 오른쪽 아래를 1,1 로 보면
+     어디서 보든 같은 글자 위에 얹힌다.
+
+   저장은 서버(/api/news/marks). 마지막으로 그은 지 0.7초 뒤에 한 번만 보낸다
+   (선 하나 그을 때마다 보내면 통신이 너무 잦다). */
+const M={on:false, erase:false, color:"#ffe14d", marks:{}, date:"", cur:null, saveT:null, loaded:false};
+
+const markName=()=> (V.list[V.i]||{}).name || "";          // 지금 보는 사진의 파일 이름
+const markList=()=> (M.marks[markName()] ||= []);          // 그 사진에 그은 줄 목록
+
+async function loadMarks(date){
+  M.marks={}; M.date=date; M.loaded=false;
+  try{
+    const r=await fetch(`/api/news/marks?date=${date}`,{cache:"no-store"});
+    const d=await r.json();
+    if(d&&d.ok&&d.marks) M.marks=d.marks;
+    M.loaded=true;
+  }catch(e){ /* 못 불러와도 보는 데는 지장 없다 */ }
+  drawMarks();
+}
+function saveMarksSoon(){
+  clearTimeout(M.saveT);
+  setSaved("저장 중…");
+  M.saveT=setTimeout(saveMarks,700);
+}
+async function saveMarks(){
+  clearTimeout(M.saveT);
+  if(!M.date) return;
+  try{
+    const r=await fetch(`/api/news/marks?date=${M.date}`,{
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({marks:M.marks})});
+    const d=await r.json();
+    setSaved(d&&d.ok ? "저장됨" : "저장 실패");
+  }catch(e){ setSaved("저장 실패 — 인터넷 확인"); }
+}
+let savedT=null;
+function setSaved(t){
+  const el=$("lb-saved"); if(!el) return;
+  el.textContent=t; clearTimeout(savedT);
+  if(t==="저장됨") savedT=setTimeout(()=>{ if(el.textContent==="저장됨") el.textContent=""; },1800);
+}
+
+/* 화면 좌표 → 사진 안에서의 비율(0~1). 사진 밖이면 가장자리로 붙인다. */
+function toImgXY(cx,cy){
+  const r=$("lb-img").getBoundingClientRect();
+  if(!r.width||!r.height) return null;
+  const clamp=v=>Math.min(Math.max(v,0),1);
+  return [clamp((cx-r.left)/r.width), clamp((cy-r.top)/r.height)];
+}
+
+/* 형광펜 그림판을 사진과 똑같은 위치·크기로 맞추고 다시 그린다.
+   캔버스 픽셀 수는 화면 점 밀도(devicePixelRatio)만큼 키워야 선이 안 뭉갠다. */
+function drawMarks(){
+  const cv=$("lb-mark"), img=$("lb-img");
+  if(!cv||!img) return;
+  const w=V.fitW*V.zoom, h=V.fitH*V.zoom;
+  if(!(w>0&&h>0)) return;
+  const dpr=Math.min(window.devicePixelRatio||1, 2.5);      // 너무 키우면 느려진다
+  cv.style.width=w+"px"; cv.style.height=h+"px";
+  cv.style.transform=img.style.transform;                    // 사진과 같은 위치로 이동
+  const pw=Math.round(w*dpr), ph=Math.round(h*dpr);
+  if(cv.width!==pw||cv.height!==ph){ cv.width=pw; cv.height=ph; }
+  const ctx=cv.getContext("2d");
+  ctx.clearRect(0,0,pw,ph);
+  ctx.lineCap="round"; ctx.lineJoin="round";
+  const all=(M.marks[markName()]||[]).concat(M.cur?[M.cur]:[]);
+  for(const st of all){
+    ctx.strokeStyle=st.c; ctx.lineWidth=Math.max(2, st.w*ph);
+    ctx.beginPath();
+    st.pts.forEach(([x,y],k)=>{ const px=x*pw, py=y*ph; k?ctx.lineTo(px,py):ctx.moveTo(px,py); });
+    if(st.pts.length===1){ const [x,y]=st.pts[0]; ctx.lineTo(x*pw+0.1, y*ph); }  // 점 하나도 보이게
+    ctx.stroke();
+  }
+}
+
+/* 지우개 — 톡 친 자리에서 가장 가까운 줄을 지운다. */
+function eraseAt(nx,ny){
+  const list=M.marks[markName()]||[];
+  let hit=-1, best=Infinity;
+  const aspect=(V.fitH||1)/(V.fitW||1);            // 가로세로 비율을 맞춰야 거리 계산이 맞다
+  for(let i=list.length-1;i>=0;i--){
+    for(const [x,y] of list[i].pts){
+      const dx=(x-nx), dy=(y-ny)*aspect;
+      const d=Math.hypot(dx,dy);
+      if(d<best){ best=d; hit=i; }
+    }
+  }
+  if(hit>=0 && best<0.035){ list.splice(hit,1); drawMarks(); saveMarksSoon(); return true; }
+  return false;
+}
+
+function setPen(on){
+  M.on=on; M.erase=false;
+  $("lb-pen").setAttribute("aria-pressed", on?"true":"false");
+  $("lb-erase").setAttribute("aria-pressed","false");
+  $("lb-tools").hidden=!on;
+  $("lb-stage").classList.toggle("marking", on);
+  if(on){ showNav(); setSaved(""); }
+  else saveMarks();                                 // 끌 때 확실히 한 번 저장
+}
+
 function openViewer(i){
   if(!newsState.images||!newsState.images.length) return;
   V.list=newsState.images; V.i=i;
@@ -721,11 +863,15 @@ function openViewer(i){
   $("lb-hint").classList.remove("gone");
   clearTimeout(V.hintT); V.hintT=setTimeout(()=>$("lb-hint").classList.add("gone"),2600);
   V.navPos=null; showNav();                    // 열자마자 한 번 보여주고 1초 뒤 감춘다
+  if(M.date!==state.date || !M.loaded) loadMarks(state.date);   // 그날 형광펜 불러오기
+  else drawMarks();
 }
 function closeViewer(){
   $("lb").hidden=true;
   document.body.style.overflow="";
   clearTimeout(V.navT);                        // 닫은 뒤 타이머가 남아 돌지 않게
+  if(M.on) setPen(false);                      // 형광펜 모드였다면 끄면서 저장
+  else saveMarks();                            // 아직 못 보낸 게 있으면 지금 보낸다
 }
 function showPage(){
   const im=V.list[V.i]; if(!im) return;
@@ -775,6 +921,7 @@ function paint(){
     img.style.transform=`translate(${Math.round(V.tx)}px,${Math.round(V.ty)}px)`;
     st.classList.toggle("zoomed", V.zoom>1.001);
     placeNav();                                // 여백이 바뀌면 화살표 위치도 따라간다
+    drawMarks();                               // 형광펜도 사진과 같이 움직인다
     // '선명하게 보이는 한계'를 정확히 계산해 알려준다.
     // 요즘 폰은 화면 점이 촘촘해서(devicePixelRatio 2~3), CSS 크기 그대로가 아니라
     // 화면의 실제 점 개수로 따져야 한다. 예: 1600px 사진, 3배 화면 → CSS 533px 에서 이미 1:1.
@@ -806,6 +953,7 @@ function go(step){
   if(n<0||n>=V.list.length) return;
   V.i=n; showPage();
   showNav();                                   // 넘길 땐 화살표를 다시 보여준다
+  drawMarks();                                 // 장마다 형광펜이 따로 있다
 }
 
 // ── 입력: 버튼 ──────────────────────────────────────────────────────────
@@ -824,10 +972,40 @@ $("lb").addEventListener("mousemove",showNav);
 $("lb-in").onclick=()=>zoomAt(1.6);
 $("lb-out").onclick=()=>zoomAt(1/1.6);
 
+// ── 형광펜 버튼들 ───────────────────────────────────────────────────────
+$("lb-pen").onclick=()=>setPen(!M.on);
+$("lb-pen-off").onclick=()=>setPen(false);
+[["lb-c1","#ffe14d"],["lb-c2","#9dff8a"],["lb-c3","#ff9ec7"]].forEach(([id,col])=>{
+  $(id).onclick=()=>{
+    M.color=col; M.erase=false;
+    $("lb-erase").setAttribute("aria-pressed","false");
+    ["lb-c1","lb-c2","lb-c3"].forEach(k=>$(k).setAttribute("aria-pressed", k===id?"true":"false"));
+  };
+});
+$("lb-c1").setAttribute("aria-pressed","true");        // 기본은 노랑
+$("lb-erase").onclick=()=>{
+  M.erase=!M.erase;
+  $("lb-erase").setAttribute("aria-pressed", M.erase?"true":"false");
+};
+$("lb-undo").onclick=()=>{
+  const list=M.marks[markName()];
+  if(list&&list.length){ list.pop(); drawMarks(); saveMarksSoon(); }
+};
+$("lb-clear").onclick=()=>{
+  const list=M.marks[markName()];
+  if(!list||!list.length) return;
+  if(!confirm(`이 장(${V.i+1}쪽)에 그은 형광펜을 모두 지울까요?`)) return;
+  M.marks[markName()]=[]; drawMarks(); saveMarksSoon();
+};
+// 도구모음을 누를 때 사진 쪽 동작(그리기·닫기)이 같이 일어나지 않게 막는다
+$("lb-tools").addEventListener("pointerdown",e=>e.stopPropagation());
+
 // ── 입력: 키보드 ────────────────────────────────────────────────────────
 document.addEventListener("keydown",e=>{
   if($("lb").hidden) return;
-  if(e.key==="Escape") closeViewer();
+  if(e.key==="Escape"){ M.on ? setPen(false) : closeViewer(); }   // 형광펜 중이면 모드만 끈다
+  else if(e.key==="h"||e.key==="H") setPen(!M.on);
+  else if((e.key==="z"||e.key==="Z")&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); $("lb-undo").onclick(); }
   else if(e.key==="ArrowRight"||e.key===" ") { e.preventDefault(); go(1); }
   else if(e.key==="ArrowLeft") go(-1);
   else if(e.key==="+"||e.key==="=") zoomAt(1.6);
@@ -855,7 +1033,16 @@ function maybeDoubleTap(x,y){
 stage.addEventListener("pointerdown",e=>{
   stage.setPointerCapture(e.pointerId);
   V.pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
-  if(V.pts.size===2){ V.pinch=pinchState(); V.drag=null; }
+  // 형광펜 모드: 손가락 하나면 '그리기'. 두 손가락이면 평소처럼 확대(핀치).
+  if(M.on && V.pts.size===1){
+    const q=toImgXY(e.clientX,e.clientY);
+    if(q){
+      if(M.erase){ eraseAt(q[0],q[1]); V.drag=null; return; }
+      M.cur={c:M.color, w:0.018, pts:[q]};
+      V.drag=null; drawMarks(); return;
+    }
+  }
+  if(V.pts.size===2){ V.pinch=pinchState(); V.drag=null; M.cur=null; }
   else { V.drag={x:e.clientX,y:e.clientY,tx:V.tx,ty:V.ty,t:Date.now(),moved:0}; }
 });
 function pinchState(){
@@ -865,6 +1052,13 @@ function pinchState(){
 stage.addEventListener("pointermove",e=>{
   if(!V.pts.has(e.pointerId)) return;
   V.pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(M.cur){                                   // 형광펜을 긋는 중
+    const q=toImgXY(e.clientX,e.clientY);
+    const last=M.cur.pts[M.cur.pts.length-1];
+    // 너무 촘촘한 점은 버린다 — 저장 용량과 그리는 속도 둘 다 아낀다
+    if(q && Math.hypot(q[0]-last[0],q[1]-last[1])>0.002){ M.cur.pts.push(q); drawMarks(); }
+    return;
+  }
   if(V.pts.size===2&&V.pinch){
     const now=pinchState();
     const target=Math.max(1,Math.min(maxZoom(),V.pinch.zoom*(now.d/V.pinch.d)));
@@ -879,6 +1073,11 @@ stage.addEventListener("pointermove",e=>{
 function endPointer(e){
   V.pts.delete(e.pointerId);
   if(V.pts.size<2) V.pinch=null;
+  if(M.cur){                                   // 긋기 끝 → 목록에 넣고 저장 예약
+    markList().push(M.cur); M.cur=null;
+    drawMarks(); saveMarksSoon(); V.drag=null; return;
+  }
+  if(M.on){ V.drag=null; return; }             // 형광펜 모드에선 넘기기·닫기 동작 안 함
   if(!V.drag) return;
   const dx=e.clientX-V.drag.x, dy=e.clientY-V.drag.y, dt=Date.now()-V.drag.t;
   // 확대 안 한 상태에서 옆으로 쓸면 장 넘기기
@@ -896,7 +1095,10 @@ function endPointer(e){
   V.drag=null;
 }
 stage.addEventListener("pointerup",endPointer);
-stage.addEventListener("pointercancel",e=>{V.pts.delete(e.pointerId);V.pinch=null;V.drag=null;});
+stage.addEventListener("pointercancel",e=>{
+  V.pts.delete(e.pointerId); V.pinch=null; V.drag=null;
+  if(M.cur){ markList().push(M.cur); M.cur=null; drawMarks(); saveMarksSoon(); }
+});
 window.addEventListener("resize",()=>{ if(!$("lb").hidden) measure(); });
 
 // ↻ 받아오기: 서버에게 드라이브에서 다시 가져오라고 시키고, 잠시 뒤 목록을 새로고침.
