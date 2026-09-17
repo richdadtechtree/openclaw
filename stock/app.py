@@ -4,7 +4,7 @@ import time
 from datetime import datetime
 
 import uvicorn
-from fastapi import FastAPI, BackgroundTasks, Body
+from fastapi import FastAPI, BackgroundTasks
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
@@ -207,50 +207,6 @@ def news_today(date: str = ""):
     if not _news.valid_date(date):
         return JSONResponse(status_code=400, content={"ok": False, "reason": "날짜 형식은 YYYY-MM-DD"})
     return JSONResponse(_news.summary(date))
-
-
-# ── 형광펜 표시 (신문 사진 위에 그은 줄) ────────────────────────────────────
-# 폰에서 칠한 걸 PC 에서도 보려고 서버에 둔다. 저장 위치는 news_files.marks_path().
-@app.get("/api/news/marks")
-def news_marks_get(date: str = "", who: str = ""):
-    """그 사람(브라우저)이 그날 그어둔 형광펜을 돌려준다.
-
-    who = 브라우저가 처음 접속할 때 스스로 만든 무작위 구분표.
-    로그인이 없는 대신 이걸로 사람을 나눈다 → 남의 형광펜이 안 보인다.
-    """
-    if _news is None:
-        return JSONResponse(status_code=503, content={"ok": False, "reason": "news_files 모듈 없음"})
-    date = date or _news.today_kst()
-    if not _news.valid_date(date):
-        return JSONResponse(status_code=400, content={"ok": False, "reason": "날짜 형식은 YYYY-MM-DD"})
-    if not _news.valid_viewer(who):
-        return JSONResponse(status_code=400, content={"ok": False, "reason": "who 형식이 올바르지 않습니다"})
-    return JSONResponse({"ok": True, "date": date, "who": who,
-                         "marks": _news.load_marks(date, who)})
-
-
-@app.post("/api/news/marks")
-def news_marks_post(date: str = "", who: str = "", payload: dict = Body(default=None)):
-    """형광펜 표시를 통째로 저장한다(그 날짜의 전체 목록을 덮어쓴다).
-
-    브라우저가 보낸 값은 그대로 믿지 않고 news_files.clean_marks() 로
-    좌표 범위·개수·색 형식을 검사한 뒤 저장한다.
-    """
-    if _news is None:
-        return JSONResponse(status_code=503, content={"ok": False, "reason": "news_files 모듈 없음"})
-    date = date or _news.today_kst()
-    if not _news.valid_date(date):
-        return JSONResponse(status_code=400, content={"ok": False, "reason": "날짜 형식은 YYYY-MM-DD"})
-    if not _news.valid_viewer(who):
-        return JSONResponse(status_code=400, content={"ok": False, "reason": "who 형식이 올바르지 않습니다"})
-    raw = (payload or {}).get("marks", {})
-    ok, marks = _news.save_marks(date, who, raw)
-    if not ok:
-        return JSONResponse(status_code=500, content={"ok": False, "reason": "저장 실패"})
-    pages = len(marks)
-    strokes = sum(len(v) for v in marks.values())
-    return JSONResponse({"ok": True, "date": date, "who": who,
-                         "pages": pages, "strokes": strokes})
 
 
 @app.get("/api/news/file")

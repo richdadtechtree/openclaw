@@ -295,7 +295,6 @@
     <button id="lb-undo" title="되돌리기">↩</button>
     <button id="lb-clear" title="이 장 형광펜 모두 지우기">비우기</button>
     <span class="sep"></span>
-    <button id="lb-who" title="이 기기의 형광펜 코드 — 다른 기기와 기록을 잇고 싶을 때">🔑</button>
     <span class="lb-saved" id="lb-saved"></span>
     <button id="lb-pen-off" title="형광펜 끄기">✕ 끄기</button>
   </div>
@@ -756,97 +755,30 @@ function placeNav(){
      PC 에서 엉뚱한 데 찍힌다. 사진 왼쪽 위를 0,0 / 오른쪽 아래를 1,1 로 보면
      어디서 보든 같은 글자 위에 얹힌다.
 
-   저장은 서버(/api/news/marks). 마지막으로 그은 지 0.7초 뒤에 한 번만 보낸다
-   (선 하나 그을 때마다 보내면 통신이 너무 잦다). */
-const M={on:false, erase:false, color:"#ffe14d", marks:{}, date:"", cur:null, saveT:null, loaded:false, who:""};
+   저장은 하지 않는다 — 이 창의 메모리에만 있다(아래 '일회성' 설명 참고). */
+const M={on:false, erase:false, color:"#ffe14d", marks:{}, date:"", cur:null};
 
-/* ── '누구의 형광펜인가' 구분표 ────────────────────────────────────────
-   이 웹은 로그인이 없다. 그래서 브라우저가 처음 들어올 때 **무작위 글자**를
-   하나 만들어 저장해 두고, 그걸 이름표처럼 쓴다.
-     · 내 형광펜은 나만 보인다(다른 사람 브라우저는 다른 이름표를 갖는다).
-     · 같은 브라우저로 다시 오면 이름표가 같으니 그대로 이어진다.
-   ⚠️ 시크릿 모드나 저장이 막힌 브라우저에서는 localStorage 가 터진다.
-      그래도 페이지가 멈추면 안 되므로 단계적으로 물러난다:
-      localStorage → sessionStorage → 메모리(그 창에서만 유지). */
-const WHO_KEY="news_mark_who";
-function newWho(){
-  const a=new Uint8Array(12);
-  (self.crypto||{}).getRandomValues ? crypto.getRandomValues(a)
-                                    : a.forEach((_,i)=>a[i]=Math.floor(Math.random()*256));
-  return [...a].map(b=>b.toString(36).padStart(2,"0")).join("").slice(0,24);
-}
-function readStore(k){
-  for(const st of [()=>localStorage, ()=>sessionStorage]){
-    try{ const v=st().getItem(k); if(v) return v; }catch(e){}
-  }
-  return "";
-}
-function writeStore(k,v){
-  let saved=false;
-  for(const st of [()=>localStorage, ()=>sessionStorage]){
-    try{ st().setItem(k,v); saved=true; }catch(e){}
-  }
-  return saved;
-}
-function whoId(){
-  if(M.who) return M.who;
-  let id=readStore(WHO_KEY);
-  if(!/^[A-Za-z0-9_-]{6,64}$/.test(id||"")){    // 없거나 망가졌으면 새로 만든다
-    id=newWho();
-    if(!writeStore(WHO_KEY,id)) console.info("[형광펜] 이 브라우저는 저장이 막혀 있어 창을 닫으면 기록이 사라집니다.");
-  }
-  M.who=id;
-  return id;
-}
-/* 다른 기기에서 쓰던 구분표로 바꾸기 — 폰과 PC 를 같은 기록으로 잇고 싶을 때. */
-function changeWho(){
-  const cur=whoId();
-  const next=prompt(
-    "이 기기의 형광펜 코드입니다. 복사해서 다른 기기에 붙여 넣으면 같은 기록을 씁니다.\n"+
-    "(다른 기기 코드를 붙여 넣고 확인을 누르면 그 기록으로 바뀝니다)", cur);
-  if(next===null) return;                        // 취소
-  const id=(next||"").trim();
-  if(id===cur) return;
-  if(!/^[A-Za-z0-9_-]{6,64}$/.test(id)){ alert("코드 형식이 올바르지 않습니다."); return; }
-  writeStore(WHO_KEY,id); M.who=id;
-  loadMarks(state.date);                         // 바뀐 사람 기준으로 다시 불러온다
-  setSaved("코드 변경됨");
+/* ── 형광펜은 '일회성' 이다 (2026-09-17) ──────────────────────────────
+   그은 줄은 이 창의 메모리(M.marks)에만 있다.
+     · 새로고침하거나 창을 닫으면 사라진다.
+     · 서버에도, 브라우저 저장소에도 **아무것도 남기지 않는다.**
+     · 접속한 사람마다 각자의 창에서만 보이므로 자연히 완전히 분리된다.
+       (IP 로 나누는 것보다 정확하다 — 같은 WiFi 를 쓰는 가족은 IP 가 같고,
+        휴대폰은 이동하면 IP 가 바뀐다.)
+   창이 열려 있는 동안에는 장을 넘겨도, 뷰어를 닫았다 다시 열어도 유지된다.
+   날짜를 바꾸면 다른 신문이므로 비운다. */
+function resetMarksIfNewDate(){
+  if(M.date!==state.date){ M.marks={}; M.date=state.date; M.cur=null; }
 }
 
 const markName=()=> (V.list[V.i]||{}).name || "";          // 지금 보는 사진의 파일 이름
 const markList=()=> (M.marks[markName()] ||= []);          // 그 사진에 그은 줄 목록
 
-async function loadMarks(date){
-  M.marks={}; M.date=date; M.loaded=false;
-  try{
-    const r=await fetch(`/api/news/marks?date=${date}&who=${encodeURIComponent(whoId())}`,{cache:"no-store"});
-    const d=await r.json();
-    if(d&&d.ok&&d.marks) M.marks=d.marks;
-    M.loaded=true;
-  }catch(e){ /* 못 불러와도 보는 데는 지장 없다 */ }
-  drawMarks();
-}
-function saveMarksSoon(){
-  clearTimeout(M.saveT);
-  setSaved("저장 중…");
-  M.saveT=setTimeout(saveMarks,700);
-}
-async function saveMarks(){
-  clearTimeout(M.saveT);
-  if(!M.date) return;
-  try{
-    const r=await fetch(`/api/news/marks?date=${M.date}&who=${encodeURIComponent(whoId())}`,{
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({marks:M.marks})});
-    const d=await r.json();
-    setSaved(d&&d.ok ? "저장됨" : "저장 실패");
-  }catch(e){ setSaved("저장 실패 — 인터넷 확인"); }
-}
 let savedT=null;
 function setSaved(t){
   const el=$("lb-saved"); if(!el) return;
   el.textContent=t; clearTimeout(savedT);
-  if(t==="저장됨") savedT=setTimeout(()=>{ if(el.textContent==="저장됨") el.textContent=""; },1800);
+  if(t) savedT=setTimeout(()=>{ if(el.textContent===t) el.textContent=""; },2000);
 }
 
 /* 화면 좌표 → 사진 안에서의 비율(0~1). 사진 밖이면 가장자리로 붙인다. */
@@ -894,7 +826,7 @@ function eraseAt(nx,ny){
       if(d<best){ best=d; hit=i; }
     }
   }
-  if(hit>=0 && best<0.035){ list.splice(hit,1); drawMarks(); saveMarksSoon(); return true; }
+  if(hit>=0 && best<0.035){ list.splice(hit,1); drawMarks(); return true; }
   return false;
 }
 
@@ -904,8 +836,7 @@ function setPen(on){
   $("lb-erase").setAttribute("aria-pressed","false");
   $("lb-tools").hidden=!on;
   $("lb-stage").classList.toggle("marking", on);
-  if(on){ showNav(); setSaved(""); }
-  else saveMarks();                                 // 끌 때 확실히 한 번 저장
+  if(on){ showNav(); setSaved("이 창에서만 유지 · 새로고침하면 사라짐"); }
 }
 
 function openViewer(i){
@@ -917,15 +848,15 @@ function openViewer(i){
   $("lb-hint").classList.remove("gone");
   clearTimeout(V.hintT); V.hintT=setTimeout(()=>$("lb-hint").classList.add("gone"),2600);
   V.navPos=null; showNav();                    // 열자마자 한 번 보여주고 1초 뒤 감춘다
-  if(M.date!==state.date || !M.loaded) loadMarks(state.date);   // 그날 형광펜 불러오기
-  else drawMarks();
+  resetMarksIfNewDate();                       // 날짜가 바뀌었으면 비운다
+  drawMarks();
 }
 function closeViewer(){
   $("lb").hidden=true;
   document.body.style.overflow="";
   clearTimeout(V.navT);                        // 닫은 뒤 타이머가 남아 돌지 않게
-  if(M.on) setPen(false);                      // 형광펜 모드였다면 끄면서 저장
-  else saveMarks();                            // 아직 못 보낸 게 있으면 지금 보낸다
+  if(M.on) setPen(false);                      // 형광펜 모드였다면 꺼 둔다
+  // 그은 줄은 메모리에 그대로 남는다 → 다시 열면 보인다(새로고침하면 사라짐)
 }
 function showPage(){
   const im=V.list[V.i]; if(!im) return;
@@ -1041,16 +972,15 @@ $("lb-erase").onclick=()=>{
   M.erase=!M.erase;
   $("lb-erase").setAttribute("aria-pressed", M.erase?"true":"false");
 };
-$("lb-who").onclick=changeWho;
 $("lb-undo").onclick=()=>{
   const list=M.marks[markName()];
-  if(list&&list.length){ list.pop(); drawMarks(); saveMarksSoon(); }
+  if(list&&list.length){ list.pop(); drawMarks(); }
 };
 $("lb-clear").onclick=()=>{
   const list=M.marks[markName()];
   if(!list||!list.length) return;
   if(!confirm(`이 장(${V.i+1}쪽)에 그은 형광펜을 모두 지울까요?`)) return;
-  M.marks[markName()]=[]; drawMarks(); saveMarksSoon();
+  M.marks[markName()]=[]; drawMarks();
 };
 // 도구모음을 누를 때 사진 쪽 동작(그리기·닫기)이 같이 일어나지 않게 막는다
 $("lb-tools").addEventListener("pointerdown",e=>e.stopPropagation());
@@ -1130,7 +1060,7 @@ function endPointer(e){
   if(V.pts.size<2) V.pinch=null;
   if(M.cur){                                   // 긋기 끝 → 목록에 넣고 저장 예약
     markList().push(M.cur); M.cur=null;
-    drawMarks(); saveMarksSoon(); V.drag=null; return;
+    drawMarks(); V.drag=null; return;
   }
   if(M.on){ V.drag=null; return; }             // 형광펜 모드에선 넘기기·닫기 동작 안 함
   if(!V.drag) return;
@@ -1152,7 +1082,7 @@ function endPointer(e){
 stage.addEventListener("pointerup",endPointer);
 stage.addEventListener("pointercancel",e=>{
   V.pts.delete(e.pointerId); V.pinch=null; V.drag=null;
-  if(M.cur){ markList().push(M.cur); M.cur=null; drawMarks(); saveMarksSoon(); }
+  if(M.cur){ markList().push(M.cur); M.cur=null; drawMarks(); }
 });
 window.addEventListener("resize",()=>{ if(!$("lb").hidden) measure(); });
 
