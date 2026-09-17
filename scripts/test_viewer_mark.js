@@ -12,6 +12,9 @@
  *   ⑤ 확대해도 형광펜이 사진에 딱 붙어 따라간다
  *   ⑥ 창이 열려 있는 동안엔 장을 넘기거나 뷰어를 닫았다 열어도 유지된다
  *   ⑦ 장마다 따로 · 되돌리기 · 지우개 · 모드 중 스와이프 차단
+ *   ⑧ **직선 도구**: 살짝 기울여 그어도 자를 댄 것처럼 반듯해진다
+ *   ⑨ **동그라미 도구**: 끈 범위에 들어가는 타원이 그려지고, 테두리를 톡 치면 지워진다
+ *   ⑩ 색 3가지(빨강·파랑·노랑) · 휴대폰에서 도구모음이 화면을 안 넘친다
  *
  * 실행: npm i playwright && node scripts/test_viewer_mark.js
  */
@@ -155,6 +158,58 @@ const marksOf = (page, name) => page.evaluate(n => (M.marks[n] || []).length, na
   await stroke(page, 0.8, 0.7, 0.2, 0.7);       // 크게 옆으로 쓸기
   check(await page.evaluate(() => V.i) === pg, '옆으로 쓸어도 장이 안 넘어간다(그리기 우선)');
   check(await marksOf(page, '02.jpg') === 2, '대신 줄이 하나 더 그어진다');
+
+  console.log('\n[직선 도구 — 자를 댄 것처럼]');
+  await page.evaluate(() => { M.marks[markName()] = []; setTool('line'); drawMarks(); });
+  await stroke(page, 0.15, 0.300, 0.85, 0.318);   // 일부러 살짝 기울여서 긋는다
+  const line = await page.evaluate(() => M.marks['02.jpg'][0]);
+  check(line.t === 'line' && line.pts.length === 2, '직선은 시작·끝 두 점만 저장한다',
+        `${line.pts.length}점`);
+  check(Math.abs(line.pts[0][1] - line.pts[1][1]) < 1e-9, '기울여 그어도 완전한 수평이 된다',
+        `세로 차이 ${Math.abs(line.pts[0][1] - line.pts[1][1]).toFixed(6)}`);
+
+  await page.evaluate(() => { M.marks[markName()] = []; drawMarks(); });
+  await stroke(page, 0.20, 0.20, 0.80, 0.62);     // 확실한 대각선
+  const diag = await page.evaluate(() => M.marks['02.jpg'][0]);
+  check(Math.abs(diag.pts[0][1] - diag.pts[1][1]) > 0.1, '확실한 대각선은 그은 대로 둔다',
+        `세로 차이 ${Math.abs(diag.pts[0][1] - diag.pts[1][1]).toFixed(3)}`);
+
+  console.log('\n[동그라미 도구]');
+  await page.evaluate(() => { M.marks[markName()] = []; setTool('oval'); drawMarks(); });
+  await stroke(page, 0.25, 0.30, 0.75, 0.55);
+  const oval = await page.evaluate(() => M.marks['02.jpg'][0]);
+  check(oval.t === 'oval', '동그라미로 저장된다');
+  const shape = await page.evaluate(() => {
+    // 타원이면 '가운데는 비고 테두리만' 칠해져 있어야 한다
+    const c = document.getElementById('lb-mark'), ctx = c.getContext('2d');
+    const px = (rx, ry) => ctx.getImageData(Math.round(c.width * rx), Math.round(c.height * ry), 1, 1).data[3];
+    return { center: px(0.5, 0.425), edgeTop: px(0.5, 0.30), outside: px(0.05, 0.05) };
+  });
+  check(shape.center === 0 && shape.edgeTop > 10 && shape.outside === 0,
+        '가운데는 비고 테두리만 그려진다(기사를 둘러싸는 모양)',
+        `가운데 ${shape.center} · 테두리 ${shape.edgeTop} · 바깥 ${shape.outside}`);
+
+  await page.click('#lb-erase');
+  const box = await page.evaluate(() => { const b = document.getElementById('lb-img').getBoundingClientRect();
+    return { l: b.left, t: b.top, w: b.width, h: b.height }; });
+  await page.mouse.click(box.l + box.w * 0.5, box.t + box.h * 0.30);   // 테두리 윗부분을 톡
+  await page.waitForTimeout(120);
+  check(await marksOf(page, '02.jpg') === 0, '테두리를 톡 치면 지워진다(가운데가 아니어도)');
+  await page.click('#lb-erase');
+
+  console.log('\n[색 · 도구모음 크기]');
+  await page.click('#lb-c2');                      // 파랑
+  await page.evaluate(() => { M.marks[markName()] = []; setTool('line'); drawMarks(); });
+  await stroke(page, 0.2, 0.4, 0.8, 0.4);
+  check(await page.evaluate(() => M.marks['02.jpg'][0].c) === '#4da3ff', '파랑으로 그어진다');
+  await page.click('#lb-c1');                      // 다시 빨강
+  check(await page.evaluate(() => M.color) === '#ff5b5b', '빨강으로 되돌아온다');
+  // 뒤에 오는 '되돌리기·지우개' 검사가 기대하는 상태로 되돌려 놓는다
+  // (이 장에 자유 긋기 2줄 — 하나는 화면 한가운데를 지나가야 지우개 검사가 성립)
+  await page.evaluate(() => { M.marks[markName()] = []; setTool('free'); drawMarks(); });
+  await stroke(page, 0.3, 0.5, 0.7, 0.5);
+  await stroke(page, 0.8, 0.7, 0.2, 0.7);
+  check(await marksOf(page, '02.jpg') === 2, '(검사 준비) 자유 긋기 2줄 복원');
 
   console.log('\n[되돌리기 · 지우개]');
   await page.click('#lb-undo');
