@@ -223,5 +223,89 @@ class TestRoundRobin(unittest.TestCase):
                          ["헤드라인기사1", "증권기사1", "부동산기사1"], self.titles)
 
 
+# ── 막힌 링크를 네이버로 되살리기 ─────────────────────────────────────────
+class _BlockedHandler(http.server.BaseHTTPRequestHandler):
+    """기사 원문은 403 으로 막고(한국경제 상황), 네이버 검색은 정상 응답하는 서버."""
+    hostport = ""
+
+    def do_GET(self):                                    # noqa: N802
+        if self.path.startswith("/rss"):
+            body = (f'<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel>'
+                    f'<item><title>전세대출 규제 강화</title>'
+                    f'<link>http://{self.hostport}/blocked/2026091712345</link>'
+                    f'<pubDate>Wed, 17 Sep 2026 06:00:00 +0900</pubDate></item>'
+                    f'</channel></rss>').encode()
+        elif self.path.startswith("/v1/search/news.json"):
+            body = json.dumps({"items": [{
+                "title": "전세대출 규제 강화…실수요자 숨통",
+                "originallink": f"http://{self.hostport}/blocked/2026091712345",
+                "link": f"http://{self.hostport}/naver/0004",
+            }]}, ensure_ascii=False).encode()
+        elif self.path.startswith("/naver/"):            # 네이버 링크는 열린다
+            body = (b'<html><head><meta charset="utf-8">'
+                    b'<title>\xea\xb8\xb0\xec\x82\xac</title></head>'
+                    b'<body><div class="art_txt"><p>\xeb\xb3\xb8\xeb\xac\xb8</p></div></body></html>')
+        else:                                             # 원문은 계속 막힘
+            self.send_error(403)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *a):
+        pass
+
+
+class TestNaverRecovery(unittest.TestCase):
+    """원문이 403 으로 막혀도 네이버에서 같은 기사를 찾아 링크를 되살리는지.
+
+    2026-09-17 --probe 결과 한국경제가 모든 주소에서 HTTP 403 이었다.
+    제목은 있으니, 네이버를 거쳐 그 기사에 닿을 수 있어야 한다.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.srv = socketserver.TCPServer(("127.0.0.1", 0), _BlockedHandler)
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+        hp = f"127.0.0.1:{cls.srv.server_address[1]}"
+        _BlockedHandler.hostport = hp
+
+        sys.path.insert(0, os.path.join(REPO, "workspace"))
+        sys.path.insert(0, os.path.join(REPO, "scripts"))
+        import news_fetcher as NF                                    # noqa: E402
+        import naver_article_search as NA                            # noqa: E402
+        NA.API = f"http://{hp}/v1/search/news.json"
+        NA.OUTLET_HOSTS = {"테스트신문": ("127.0.0.1",)}    # 가짜 매체를 '원문'으로 인정
+        os.environ["NAVER_CLIENT_ID"] = "testid"
+        os.environ["NAVER_CLIENT_SECRET"] = "testsecret"
+        NF.naver = NA
+        NF.FEEDS = {"테스트신문": [f"http://{hp}/rss"]}
+        NF.time.sleep = lambda *_: None
+
+        outdir = tempfile.mkdtemp()
+        orig_dirname = NF.os.path.dirname
+        NF.os.path.dirname = (lambda p: outdir
+                              if str(p).endswith("news_fetcher.py") else orig_dirname(p))
+        try:
+            NF.main()
+        except SystemExit:
+            pass
+        with open(os.path.join(outdir, "news_data.json"), encoding="utf-8") as f:
+            cls.data = json.load(f)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+
+    def test_막힌_기사가_네이버로_살아난다(self):
+        self.assertEqual(len(self.data["articles"]), 1, self.data)
+        art = self.data["articles"][0]
+        self.assertTrue(art["verify_reason"].startswith("naver("), art["verify_reason"])
+        self.assertIn("/naver/", art["link"])          # 열리는 링크로 바뀌었다
+        self.assertIn("/blocked/", art["origin_url"])  # 원문 주소는 보관
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

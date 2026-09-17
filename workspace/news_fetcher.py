@@ -12,6 +12,13 @@ from email.utils import parsedate_to_datetime
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
 import verify_article_url as verifier
 
+# 링크가 막혔을 때 네이버에서 같은 기사를 찾아 주는 도구(키가 없으면 그냥 안 쓴다)
+try:
+    import naver_article_search as naver
+    naver.load_env()
+except Exception:
+    naver = None
+
 # ⚠️ 이 서버엔 파이썬이 여러 개다(시스템 python3, 여러 venv). 어떤 것엔 requests·bs4·
 #    feedparser 가 있고 어떤 것엔 없다. 그래서 "있으면 쓰고, 없으면 표준 라이브러리로"
 #    돌아가게 만든다. 어느 파이썬으로 실행해도 ModuleNotFoundError 없이 동작한다.
@@ -319,6 +326,24 @@ def parse_rss_feed(feed_url, outlet_name, max_hours=24):
 #    혹시 링크가 섞여 들어와도 아래 verify 단계에서 'relay_link' 로 걸러진다.
 
 
+def _recover_via_naver(title, outlet):
+    """링크 검증에 실패했을 때 네이버에서 같은 기사를 찾아 링크를 되살린다.
+
+    네이버 키가 없거나 비슷한 기사가 없으면 **조용히 None** — 그러면 그 기사는 버려진다.
+    (억지로 링크를 붙이느니 안 쓰는 게 낫다)
+    """
+    if naver is None:
+        return None
+    try:
+        known = tuple(naver.OUTLET_HOSTS.keys())      # 인정 매체 목록은 naver 쪽에서만 관리
+        outlets = (outlet,) if outlet in known else known
+        r = naver.search_best(title, outlets=outlets)
+        return r if r.get("found") else None
+    except Exception as e:
+        print(f"    (네이버 검색 실패: {e})", file=sys.stderr, flush=True)
+        return None
+
+
 def probe():
     """어느 RSS 주소가 살아 있는지 점검한다 (--probe).
 
@@ -441,22 +466,38 @@ def main():
             art["verify_score"] = check["score"]
             art["page_title"] = check["page_title"]
 
+            page_html = check.pop("html", None)   # 본문 추출에 재활용할 HTML
             art.pop("html", None)                 # 결과 json 에 HTML 을 남기지 않는다
 
             if not check["verified"]:
-                print(f"[{outlet}] {n}/{len(selected_articles)} ❌ 링크 불일치"
-                      f"({check['reason']}) — 버림: {art['title'][:40]}",
-                      file=sys.stderr, flush=True)
-                art["outlet"] = outlet
-                results["rejected"].append(art)
-                continue
+                # 원문이 막혔거나(403) 주소가 틀렸어도, 제목이 있으니 포기하지 않는다.
+                # 네이버에서 같은 제목의 매경·한경 기사를 찾아 링크를 되살려 본다.
+                rec = _recover_via_naver(art["title"], outlet)
+                if rec:
+                    art["link"] = rec["link"]
+                    art["verified"] = True
+                    art["verify_reason"] = f"naver({rec['score']:.2f})"
+                    art["verify_score"] = rec["score"]
+                    art["page_title"] = rec["title"]
+                    art["origin_url"] = rec["origin_url"]
+                    page_html = None              # 새 주소라 받아둔 HTML 은 못 쓴다
+                    print(f"[{outlet}] {n}/{len(selected_articles)} ♻️  네이버로 링크 복구"
+                          f"({rec['score']:.2f}) {art['title'][:40]}", flush=True)
+                else:
+                    print(f"[{outlet}] {n}/{len(selected_articles)} ❌ 링크 불일치"
+                          f"({check['reason']}) — 버림: {art['title'][:40]}",
+                          file=sys.stderr, flush=True)
+                    art["outlet"] = outlet
+                    results["rejected"].append(art)
+                    continue
+            else:
+                # 확인된 '최종 주소'로 바꿔 둔다(리다이렉트·추적 파라미터 제거 효과)
+                art["link"] = check["canonical_url"] or check["final_url"]
+                print(f"[{outlet}] {n}/{len(selected_articles)} ✅ 확인"
+                      f"({check['reason']}, {check['score']:.2f}, {time.time()-t0:.1f}초) "
+                      f"{art['title'][:40]}", flush=True)
 
-            # 확인된 '최종 주소'로 바꿔 둔다(리다이렉트·추적 파라미터 제거 효과)
-            art["link"] = check["canonical_url"] or check["final_url"]
-            print(f"[{outlet}] {n}/{len(selected_articles)} ✅ 확인"
-                  f"({check['reason']}, {check['score']:.2f}, {time.time()-t0:.1f}초) "
-                  f"{art['title'][:40]}", flush=True)
-            body = fetch_article_body(art["link"], html=check.get("html"))
+            body = fetch_article_body(art["link"], html=page_html)
             art["content"] = body if body else "본문 내용을 가져오는 데 실패했습니다."
             results["articles"].append(art)
             kept += 1
