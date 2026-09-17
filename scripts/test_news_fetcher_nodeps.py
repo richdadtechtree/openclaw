@@ -138,5 +138,90 @@ class TestNoDeps(unittest.TestCase):
         self.assertNotIn("메뉴 글자", content)
 
 
+# ── 피드 편식 방지 ────────────────────────────────────────────────────────
+_MANY = {"/rss/headline": "헤드라인기사", "/rss/stock": "증권기사", "/rss/estate": "부동산기사"}
+
+
+def _rss_many(path, hostport):
+    """한 피드에 기사 8건씩 — 예전 코드라면 첫 피드가 후보를 독식했다."""
+    name = _MANY[path]
+    sec = path.rsplit("/", 1)[1]
+    items = "".join(
+        f"<item><title>{name}{i}</title>"
+        f"<link>http://{hostport}/news/{sec}/{10000000 + i}</link>"
+        f"<pubDate>Wed, 17 Sep 2026 06:00:00 +0900</pubDate></item>" for i in range(1, 9))
+    return f'<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel>{items}</channel></rss>'
+
+
+class _ManyHandler(http.server.BaseHTTPRequestHandler):
+    hostport = ""
+
+    def do_GET(self):                                    # noqa: N802
+        if self.path in _MANY:
+            body = _rss_many(self.path, self.hostport).encode()
+        elif self.path.startswith("/news/"):
+            _, sec, num = self.path.strip("/").split("/")
+            name = _MANY["/rss/" + sec]
+            body = (f'<!doctype html><html><head><meta charset="utf-8">'
+                    f'<meta property="og:title" content="{name}{int(num) % 100}">'
+                    f'<link rel="canonical" href="{self.path}"></head>'
+                    f'<body><div class="art_txt"><p>본문</p></div></body></html>').encode()
+        else:
+            self.send_error(404)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *a):
+        pass
+
+
+class TestRoundRobin(unittest.TestCase):
+    """피드를 번갈아 뽑는지 확인.
+
+    예전엔 피드를 순서대로 이어 붙이고 앞에서 잘라서, 첫 피드(헤드라인)가 후보를
+    독식하고 증권·부동산 피드는 한 건도 못 들어왔다. 실제로 2026-09-17 실행에서
+    5건이 전부 매경 헤드라인 피드에서만 나왔다.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.srv = socketserver.TCPServer(("127.0.0.1", 0), _ManyHandler)
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+        _ManyHandler.hostport = f"127.0.0.1:{cls.srv.server_address[1]}"
+
+        sys.path.insert(0, os.path.join(REPO, "workspace"))
+        import news_fetcher as NF                                    # noqa: E402
+        NF.FEEDS = {"테스트신문": [f"http://{_ManyHandler.hostport}{p}" for p in _MANY]}
+        NF.time.sleep = lambda *_: None
+
+        outdir = tempfile.mkdtemp()
+        orig_dirname = NF.os.path.dirname
+        NF.os.path.dirname = (lambda p: outdir
+                              if str(p).endswith("news_fetcher.py") else orig_dirname(p))
+        try:
+            NF.main()
+        except SystemExit:
+            pass
+        with open(os.path.join(outdir, "news_data.json"), encoding="utf-8") as f:
+            cls.titles = [a["title"] for a in json.load(f)["articles"]]
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+
+    def test_한_피드가_독식하지_않는다(self):
+        kinds = {t.rstrip("0123456789") for t in self.titles}
+        self.assertGreaterEqual(len(kinds), 3,
+                                f"분야가 섞이지 않았다: {self.titles}")
+
+    def test_각_피드의_첫_기사가_먼저_들어온다(self):
+        self.assertEqual(self.titles[:3],
+                         ["헤드라인기사1", "증권기사1", "부동산기사1"], self.titles)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

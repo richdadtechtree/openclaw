@@ -43,8 +43,15 @@ FEEDS = {
         "https://www.mk.co.kr/rss/50300009/",  # 부동산
         "https://www.mk.co.kr/rss/30300018/"   # 국제
     ],
+    # ⚠️ 한국경제는 2026-09-17 실행에서 all-news 가 0건이었다(주소가 막혔거나 바뀐 듯).
+    #    그래서 후보를 여러 개 두고 **기사가 나오는 주소를 쓴다**. 안 되는 주소는
+    #    조용히 건너뛰므로 손해가 없다. 어느 게 살아 있는지는 --probe 로 확인한다.
     "한국경제": [
-        "https://www.hankyung.com/feed/all-news"
+        "https://www.hankyung.com/feed/all-news",
+        "https://www.hankyung.com/feed/economy",
+        "https://www.hankyung.com/feed/finance",
+        "https://www.hankyung.com/feed/realestate",
+        "https://www.hankyung.com/feed/stock",
     ]
 }
 
@@ -212,6 +219,11 @@ def _parse_rss_stdlib(feed_url):
     if err or not xml_text:
         print(f"RSS 읽기 실패 {feed_url}: {err}", file=sys.stderr)
         return []
+    return _parse_rss_stdlib_from_text(xml_text, feed_url)
+
+
+def _parse_rss_stdlib_from_text(xml_text, feed_url=""):
+    """이미 받아온 RSS 글자 → 기사 목록. (--probe 와 공용)"""
     entries = []
     try:
         root = ET.fromstring(xml_text)
@@ -307,6 +319,30 @@ def parse_rss_feed(feed_url, outlet_name, max_hours=24):
 #    혹시 링크가 섞여 들어와도 아래 verify 단계에서 'relay_link' 로 걸러진다.
 
 
+def probe():
+    """어느 RSS 주소가 살아 있는지 점검한다 (--probe).
+
+    한국경제처럼 '0건' 이 나올 때 원인을 눈으로 확인하려고 만든 진단 도구.
+    주소마다 HTTP 상태 · 받은 크기 · 기사 수 · 첫 기사 링크를 보여준다.
+    """
+    print("RSS 주소 점검 — 어느 것이 살아 있는지 봅니다\n", flush=True)
+    for outlet, urls in FEEDS.items():
+        print(f"■ {outlet}")
+        for url in urls:
+            _, text, err = verifier.fetch(url)
+            if err:
+                print(f"   ❌ {url}\n      → 접속 실패: {err}", flush=True)
+                continue
+            items = _parse_rss_stdlib_from_text(text, url)
+            head = items[0]["link"] if items else "-"
+            mark = "✅" if items else "⚠️ "
+            print(f"   {mark} {url}\n      → {len(text):,}바이트, 기사 {len(items)}건, 첫 링크: {head[:70]}",
+                  flush=True)
+        print()
+    print("기사 0건인 주소는 FEEDS 에서 빼거나 다른 주소로 바꾸면 됩니다.")
+    return 0
+
+
 def main():
     started = time.time()
     print("신문 기사 수집 시작 — 링크 검증까지 보통 20~40초 걸립니다.", flush=True)
@@ -324,9 +360,21 @@ def main():
         print(f"Fetching from {outlet}...")
         outlet_articles = []
         
+        # ⚠️ 예전엔 피드를 순서대로 이어 붙이고 앞에서 6건을 잘랐다. 그러면 첫 피드
+        #    (헤드라인)가 30건을 채워 **증권·부동산·경제 피드는 한 건도 못 들어왔다.**
+        #    → 피드들을 **한 건씩 번갈아** 가져온다(라운드로빈). 분야가 골고루 섞인다.
+        per_feed = []
         for url in urls:
-            feed_articles = parse_rss_feed(url, outlet, max_hours=max_hours)
-            for art in feed_articles:
+            got = parse_rss_feed(url, outlet, max_hours=max_hours)
+            if got:
+                per_feed.append(got)
+            print(f"  · {url.split('/')[-1] or url}: {len(got)}건", flush=True)
+
+        for i in range(max(len(f) for f in per_feed) if per_feed else 0):
+            for feed_arts in per_feed:
+                if i >= len(feed_arts):
+                    continue
+                art = feed_arts[i]
                 norm_title = clean_text(art["title"]).replace(" ", "")
                 if norm_title not in seen_titles:
                     seen_titles.add(norm_title)
@@ -338,9 +386,13 @@ def main():
             print(f"Warning: Only found {len(outlet_articles)} articles from {outlet} within {max_hours}h. Relaxing time filter to 48 hours...")
             seen_titles_relaxed = set()
             relaxed_articles = []
-            for url in urls:
-                feed_articles = parse_rss_feed(url, outlet, max_hours=48)
-                for art in feed_articles:
+            relaxed_per_feed = [g for g in
+                                (parse_rss_feed(u, outlet, max_hours=48) for u in urls) if g]
+            for i in range(max(len(f) for f in relaxed_per_feed) if relaxed_per_feed else 0):
+                for feed_arts in relaxed_per_feed:
+                    if i >= len(feed_arts):
+                        continue
+                    art = feed_arts[i]
                     norm_title = clean_text(art["title"]).replace(" ", "")
                     if norm_title not in seen_titles_relaxed:
                         seen_titles_relaxed.add(norm_title)
@@ -358,7 +410,7 @@ def main():
             print(f"Note: {outlet} 에서 {len(outlet_articles)}건만 모았습니다(구글뉴스 폴백은 사용하지 않음).")
 
         # 검증에서 몇 건 탈락할 수 있으니 여유 있게 8건까지 후보로 둔다.
-        selected_articles = outlet_articles[:6]
+        selected_articles = outlet_articles[:10]   # 검증이 건당 0.1초라 넉넉히 본다
 
         # ★ 핵심: 링크가 정말 그 제목의 기사인지 한 건씩 확인한다.
         #    통과한 기사만 news_data.json 에 넣는다 → AI 는 확인된 것만 쓸 수 있다.
@@ -410,4 +462,6 @@ def main():
         sys.exit(2)
 
 if __name__ == "__main__":
+    if "--probe" in sys.argv:
+        sys.exit(probe())
     main()
