@@ -316,6 +316,118 @@ def verify(url: str, title: str, outlet: str = "", strict_host: bool = True,
     return out
 
 
+# ── 본문 뽑기 (bs4 없이, 표준 라이브러리만) ───────────────────────────────
+# 서버에 파이썬이 여러 개(시스템 python3 / 여러 venv)라 bs4·feedparser 가 있는 것도
+# 없는 것도 있다. 어느 걸로 실행해도 돌아가게 하려고 표준 라이브러리 판을 둔다.
+
+# 통째로 버릴 태그 — 본문이 아니라 광고·메뉴·관련기사 영역
+_JUNK_TAGS = {"script", "style", "aside", "nav", "footer", "header", "iframe",
+              "ins", "noscript", "form", "button", "figure", "select"}
+# class/id 에 이런 낱말이 있으면 '다른 기사 목록'일 가능성이 높다 → 버린다
+_JUNK_WORDS = ("related", "relate", "linknews", "articlerel", "newsrel", "recommend",
+               "mostview", "popular", "banner", "sns", "share", "comment", "reply",
+               "copyright", "gnb", "lnb", "breadcrumb", "tag", "subscribe")
+# class/id 에 이런 낱말이 있으면 '본문 영역'이다 → 여기 글을 우선 쓴다
+_BODY_WORDS = ("arttext", "arttxt", "newscntdetail", "newscnt", "articletxt",
+               "articlebody", "articleview", "artview", "newsbody", "articlecontent",
+               "articletext", "storybody")
+# 닫는 태그가 없는 태그들 (스택이 꼬이지 않게 따로 관리)
+_VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input",
+         "link", "meta", "param", "source", "track", "wbr"}
+
+
+def _ident(attrs: dict) -> str:
+    """class 와 id 를 합쳐 기호를 뗀 문자열 — 'art_txt' 와 'art-txt' 를 같게 본다."""
+    raw = (attrs.get("class", "") + " " + attrs.get("id", "")).lower()
+    return re.sub(r"[^a-z0-9]", "", raw)
+
+
+class BodyParser(HTMLParser):
+    """기사 본문 글자만 모으는 파서.
+
+    - 광고·메뉴·관련기사 영역(_JUNK_*)에 들어가면 그 안의 글은 통째로 무시한다.
+    - 본문 영역(_BODY_WORDS)에 들어가면 거기서 모은 글을 1순위로 쓴다.
+    - 아무것도 못 찾으면 <p> 안의 글을 2순위로 쓴다.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.stack: list[str] = []      # 열려 있는 태그 이름
+        self.skip_at: list[int] = []    # 버리는 구간이 시작된 깊이
+        self.body_at: list[int] = []    # 본문 구간이 시작된 깊이
+        self.body: list[str] = []       # 본문 영역에서 모은 글
+        self.paras: list[str] = []      # <p> 안에서 모은 글
+        self.in_p = 0
+
+    # 지금 위치가 '버리는 구간' 안인가
+    @property
+    def skipping(self) -> bool:
+        return bool(self.skip_at)
+
+    def handle_starttag(self, tag, attrs):
+        if tag in _VOID:
+            if tag == "br" and not self.skipping:
+                self._add(" ")
+            return
+        a = {k.lower(): (v or "") for k, v in attrs}
+        self.stack.append(tag)
+        depth = len(self.stack)
+        ident = _ident(a)
+        if tag in _JUNK_TAGS or any(w in ident for w in _JUNK_WORDS):
+            self.skip_at.append(depth)
+        elif any(w in ident for w in _BODY_WORDS):
+            self.body_at.append(depth)
+        if tag == "p" and not self.skipping:
+            self.in_p += 1
+
+    def handle_endtag(self, tag):
+        if tag in _VOID or tag not in self.stack:
+            return
+        # 닫히지 않은 태그가 있어도 견디게, 해당 태그까지 되감는다
+        while self.stack:
+            top = self.stack.pop()
+            depth = len(self.stack) + 1
+            while self.skip_at and self.skip_at[-1] >= depth:
+                self.skip_at.pop()
+            while self.body_at and self.body_at[-1] >= depth:
+                self.body_at.pop()
+            if top in ("p", "div", "li", "h1", "h2", "h3", "br"):
+                self._add(" ")          # 문단 끝 — 문장이 '…밝혔다.회사' 로 붙는 걸 막는다
+            if top == "p" and self.in_p:
+                self.in_p -= 1
+            if top == tag:
+                break
+
+    def _add(self, text: str) -> None:
+        if self.body_at:
+            self.body.append(text)
+        if self.in_p:
+            self.paras.append(text)
+
+    def handle_data(self, data):
+        if self.skipping or not data.strip():
+            return
+        self._add(data)
+
+
+def extract_body(html: str, limit: int = 1500) -> str:
+    """HTML → 기사 본문 글자. bs4 가 없어도 동작한다.
+
+    limit 글자를 넘으면 뒤를 자르고 '...' 을 붙인다(브리핑엔 앞부분이면 충분).
+    """
+    if not html:
+        return ""
+    p = BodyParser()
+    try:
+        p.feed(html)
+    except Exception:
+        pass                      # 깨진 HTML 이어도 그때까지 모은 건 쓴다
+    text = "".join(p.body).strip() or "".join(p.paras).strip()
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\s*\n\s*", " ", text).strip()
+    return text[:limit] + "..." if len(text) > limit else text
+
+
 # ── news_data.json 통째로 걸러내기 ────────────────────────────────────────
 def verify_json(path: str, write: bool = False, strict_host: bool = True) -> int:
     with open(path, encoding="utf-8") as f:

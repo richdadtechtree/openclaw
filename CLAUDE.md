@@ -24,6 +24,7 @@ Git으로 서버와 자동 동기화됩니다. 별도 프로젝트인 **stock**(
   ⚠️ **시스템 `python3` 에는 `requests` 가 없다** → 외부 API를 쓰는 스크립트(`book_slack.py`,
   `get_notion_book.py` 등)는 venv 파이썬 절대경로로 실행할 것: `/home/ubuntu/newspaper/.venv/bin/python`
   (stock 쪽은 `~/stock/stock/venv/bin/python`). **cron 등록 시 특히 주의.**
+  ✅ **예외**: `workspace/news_fetcher.py` + `scripts/verify_article_url.py` 는 `requests`·`bs4`·`feedparser` 가 **없어도** 표준 라이브러리로 돌아간다(있으면 그걸 쓴다). `.venv` 가 켜져 있든 아니든 `python3` 로 그냥 실행하면 된다. 확인: `python3 scripts/test_news_fetcher_nodeps.py`
 - **openclaw 재시작**: `openclaw daemon restart` (systemd user 서비스 `openclaw-gateway`).
 - **git 권한**: `richdadtechtree/openclaw`만 push 가능. **`richdadtechtree/stock`은 push 불가(403)** → stock 변경은 openclaw `scripts/`에 파일 두고 서버가 복사/적용하거나, 서버에서 직접 편집.
 - **자동 동기화**: openclaw main에 push → 서버 cron이 1분마다 `git-auto-pull.sh`로 pull + 재시작. 런타임 파일(세션/로그/미디어/*.sqlite/*.bak)은 `.gitignore`로 추적 제외 → pull 안전.

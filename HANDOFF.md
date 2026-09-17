@@ -125,6 +125,13 @@
     페이지를 **두 번** 받은 것(검증 1회 + 본문 1회). → `verify(..., keep_html=True)` 로 검증 때 받은
     HTML 을 본문 추출에 **재활용**(요청 절반), 타임아웃 12→8초, 후보 8→6건, sleep 0.5→0.2초.
     진행 상황을 `flush=True` 로 실시간 출력 + 총 소요 시간 표시(멈춘 줄 알고 끊는 일 방지).
+  - 🐍 **2026-09-17 후속(파이썬 환경)**: `.venv` 가 켜진 상태에서 돌렸다가
+    `ModuleNotFoundError: No module named 'bs4'` 로 멈췄다. → **외부 라이브러리를 선택사항으로** 바꿨다.
+    `requests`/`bs4`/`feedparser` 가 있으면 쓰고, 없으면 표준 라이브러리로 같은 일을 한다
+    (RSS=`xml.etree`+`parsedate_to_datetime`, 본문=`verify_article_url.extract_body`, HTTP=`urllib`).
+    없을 때는 안내 한 줄만 찍고 정상 진행 → **어느 파이썬으로 실행해도 된다.**
+    표준 라이브러리 본문 추출기도 광고·메뉴·관련기사 영역을 동일하게 제거한다(class/id 기준).
+    검증: `python3 scripts/test_news_fetcher_nodeps.py` — 세 라이브러리를 일부러 없앤 채 전 과정 4건 통과.
   - 🧹 같은 실행에서 **"오늘의 운세 2026년 9월 18일"** 이 1순위 기사로 뽑혔다(매경 헤드라인 RSS 혼입).
     → `JUNK_TITLE_PATTERNS`/`is_junk_title()` 추가, RSS 파싱 단계에서 제외(네트워크 낭비 0).
     운세·부고·인사·포토·만평·날씨·로또 등 **괄호/고정문구로 못박아** 오인 제거 방지

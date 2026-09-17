@@ -3,15 +3,36 @@ import sys
 import json
 import time
 from datetime import datetime, timedelta, timezone
-import requests
-from bs4 import BeautifulSoup
 import urllib.parse
-import feedparser
+import xml.etree.ElementTree as ET
+from email.utils import parsedate_to_datetime
 
 # 링크가 정말 그 기사인지 확인해 주는 도구(표준 라이브러리만 사용).
 # scripts/ 는 workspace/ 의 형제 폴더라 경로를 직접 붙여 준다.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts"))
 import verify_article_url as verifier
+
+# ⚠️ 이 서버엔 파이썬이 여러 개다(시스템 python3, 여러 venv). 어떤 것엔 requests·bs4·
+#    feedparser 가 있고 어떤 것엔 없다. 그래서 "있으면 쓰고, 없으면 표준 라이브러리로"
+#    돌아가게 만든다. 어느 파이썬으로 실행해도 ModuleNotFoundError 없이 동작한다.
+try:
+    import requests
+except ImportError:
+    requests = None
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    BeautifulSoup = None
+try:
+    import feedparser
+except ImportError:
+    feedparser = None
+
+if not (requests and BeautifulSoup and feedparser):
+    missing = [n for n, m in (("requests", requests), ("bs4", BeautifulSoup),
+                              ("feedparser", feedparser)) if not m]
+    print(f"[안내] {', '.join(missing)} 없이 표준 라이브러리로 실행합니다(결과는 동일).",
+          file=sys.stderr, flush=True)
 
 # RSS URLs config
 FEEDS = {
@@ -112,12 +133,21 @@ def fetch_article_body(url, html=None):
     """
     try:
         if html is None:
-            res = requests.get(url, headers=HEADERS, timeout=8)
-            res.raise_for_status()
-            # Check encoding
-            if res.encoding == 'ISO-8859-1':
-                res.encoding = res.apparent_encoding
-            html = res.text
+            if requests is not None:
+                res = requests.get(url, headers=HEADERS, timeout=8)
+                res.raise_for_status()
+                # Check encoding
+                if res.encoding == 'ISO-8859-1':
+                    res.encoding = res.apparent_encoding
+                html = res.text
+            else:
+                _, html, err = verifier.fetch(url)     # 표준 라이브러리로 받기
+                if err:
+                    raise RuntimeError(err)
+
+        if BeautifulSoup is None:
+            # bs4 가 없으면 표준 라이브러리 추출기 사용(광고·관련기사 제거는 동일하게 한다)
+            return verifier.extract_body(html)
 
         soup = BeautifulSoup(html, 'html.parser')
 
@@ -171,21 +201,60 @@ def fetch_article_body(url, html=None):
         print(f"Error fetching article body from {url}: {e}", file=sys.stderr)
         return ""
 
+def _parse_rss_stdlib(feed_url):
+    """feedparser 없이 RSS 를 읽는다(표준 라이브러리만).
+
+    feedparser 의 entry 와 같은 모양(dict)으로 돌려주므로 아래 코드는 그대로 쓴다.
+    pubDate 는 RFC822 형식('Wed, 17 Sep 2026 06:00:00 +0900')이라
+    email 모듈의 parsedate_to_datetime 으로 해석한다.
+    """
+    _, xml_text, err = verifier.fetch(feed_url)
+    if err or not xml_text:
+        print(f"RSS 읽기 실패 {feed_url}: {err}", file=sys.stderr)
+        return []
+    entries = []
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as e:
+        print(f"RSS 형식 오류 {feed_url}: {e}", file=sys.stderr)
+        return []
+    for item in root.iter("item"):
+        def txt(tag):
+            el = item.find(tag)
+            return (el.text or "").strip() if el is not None and el.text else ""
+        published = txt("pubDate")
+        parsed = None
+        if published:
+            try:
+                dt = parsedate_to_datetime(published)
+                # tz 정보가 없으면 UTC 로 본다(비교할 때 터지지 않게)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                parsed = dt.astimezone(timezone.utc).timetuple()[:6]
+            except Exception:
+                parsed = None
+        entries.append({"title": txt("title"), "link": txt("link"),
+                        "published": published, "published_parsed": parsed})
+    return entries
+
+
 def parse_rss_feed(feed_url, outlet_name, max_hours=24):
     """Parses a single RSS feed and filters by time and strict outlet domain."""
     articles = []
     try:
-        # Use feedparser first
-        feed = feedparser.parse(feed_url)
-        
-        # If feedparser fails or is empty, try requesting raw XML and parse it
-        if not feed.entries:
-            res = requests.get(feed_url, headers=HEADERS, timeout=10)
-            feed = feedparser.parse(res.content)
-            
+        if feedparser is not None:
+            feed = feedparser.parse(feed_url)
+            # 비어 있으면 원문 XML 을 직접 받아 다시 시도
+            if not feed.entries and requests is not None:
+                res = requests.get(feed_url, headers=HEADERS, timeout=10)
+                feed = feedparser.parse(res.content)
+            entries = feed.entries
+        else:
+            entries = _parse_rss_stdlib(feed_url)
+
         now = datetime.now(timezone.utc)
-        
-        for entry in feed.entries:
+
+        for entry in entries:
             title = entry.get('title', '')
             link = entry.get('link', '')
             published = entry.get('published', '')
@@ -198,8 +267,10 @@ def parse_rss_feed(feed_url, outlet_name, max_hours=24):
             
             # Convert published time to datetime object
             pub_date = None
-            if hasattr(entry, 'published_parsed') and entry.published_parsed:
-                pub_date = datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)
+            # feedparser 는 객체, 표준 라이브러리 판은 dict — 둘 다 .get 으로 읽힌다
+            parsed = entry.get('published_parsed') if hasattr(entry, 'get') else None
+            if parsed:
+                pub_date = datetime(*parsed[:6], tzinfo=timezone.utc)
             elif published:
                 try:
                     # Try basic ISO parsing
