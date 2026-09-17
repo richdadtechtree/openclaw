@@ -193,17 +193,16 @@
   .lb-stage.marking{cursor:crosshair}
   .lb-stage.marking img{cursor:crosshair}
   /* 형광펜 모드일 때 아래쪽에 뜨는 작은 도구모음 */
-  /* ⚠️ 버튼이 9개라 좁은 폰(360px)에서는 한 줄에 다 안 들어간다(실측 470px).
-     → flex-wrap 으로 **두 줄로 접히게** 하고, 화면 폭을 넘지 않도록 max-width 를 건다.
-        이러면 어떤 화면 크기에서도 잘려 나가는 버튼이 없다. */
-  .lb-tools{position:absolute;left:50%;bottom:max(14px,env(safe-area-inset-bottom));transform:translateX(-50%);
-            z-index:3;display:flex;flex-wrap:wrap;justify-content:center;gap:5px;align-items:center;
-            /* ⚠️ position:absolute 인 flex 상자는 너비가 '최소'로 줄어들어, 줄바꿈이 켜져 있으면
-               버튼 하나 폭까지 쪼그라들어 5줄이 된다(실측 183px 높이 = 화면의 23%).
-               width:max-content 로 '내용이 필요한 만큼' 잡아주면, 들어갈 땐 한 줄로 두고
-               정말 좁을 때만 두 줄로 접힌다. */
-            width:max-content;max-width:calc(100vw - 16px);background:#0b0e14e6;border:1px solid #2b3244;
-            border-radius:18px;padding:6px 8px;box-shadow:0 6px 24px -10px #000}
+  /* 도구모음은 **사진 위에 떠 있지 않고** 상단 바 바로 아래 '한 줄'을 차지한다.
+     .lb 가 세로 flex 이고 .lb-stage 가 flex:1 이라, 이 줄이 생기면 사진 영역이 그만큼
+     줄어들고 사진은 남은 자리에 다시 맞춰진다 → **지면을 절대 가리지 않는다.**
+     ⚠️ display:flex 를 주면 hidden 속성이 안 먹는다(작성자 규칙이 UA 규칙을 이긴다).
+        실제로 형광펜을 켜지 않아도 도구모음이 계속 떠 있었다 → [hidden] 규칙을 따로 둔다.
+     ⚠️ 버튼이 9개라 좁은 폰에서는 한 줄에 다 안 들어간다 → flex-wrap 으로 두 줄로 접는다. */
+  .lb-tools{display:flex;flex-wrap:wrap;justify-content:center;gap:5px;align-items:center;
+            padding:6px 10px;background:#11151f;border-bottom:1px solid #242a36;
+            position:relative;z-index:2}
+  .lb-tools[hidden]{display:none}
   .lb-tools button{appearance:none;border:1px solid transparent;background:transparent;color:#e7eaf1;
             border-radius:999px;height:32px;min-width:34px;padding:0 10px;font-size:13px;cursor:pointer;
             display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
@@ -293,9 +292,6 @@
     <button class="lb-btn" id="lb-close" title="닫기 (Esc)" aria-label="닫기">✕</button>
   </div>
   <button class="lb-nav prev" id="lb-prev" aria-label="이전 장">‹</button>
-  <div class="lb-stage" id="lb-stage"><img id="lb-img" alt=""><canvas class="lb-mark" id="lb-mark"></canvas></div>
-  <button class="lb-nav next" id="lb-next" aria-label="다음 장">›</button>
-  <div class="lb-hint" id="lb-hint">좌우로 넘기기 · 휠/더블탭 확대 · 🖍 형광펜(H) · Esc 닫기</div>
   <div class="lb-tools" id="lb-tools" hidden>
     <button id="lb-c1" title="빨강" aria-label="빨강"><span class="pen" style="background:#ff5b5b"></span></button>
     <button id="lb-c2" title="파랑" aria-label="파랑"><span class="pen" style="background:#4da3ff"></span></button>
@@ -312,6 +308,9 @@
     <span class="lb-saved" id="lb-saved"></span>
     <button id="lb-pen-off" title="형광펜 끄기">✕ 끄기</button>
   </div>
+  <div class="lb-stage" id="lb-stage"><img id="lb-img" alt=""><canvas class="lb-mark" id="lb-mark"></canvas></div>
+  <button class="lb-nav next" id="lb-next" aria-label="다음 장">›</button>
+  <div class="lb-hint" id="lb-hint">좌우로 넘기기 · 휠/더블탭 확대 · 🖍 형광펜(H) · Esc 닫기</div>
 </div>
 
 <script>
@@ -896,6 +895,8 @@ function setPen(on){
   $("lb-tools").hidden=!on;
   $("lb-stage").classList.toggle("marking", on);
   const eraseBtn=$("lb-erase"); if(eraseBtn) eraseBtn.setAttribute("aria-pressed","false");
+  // 도구모음 줄이 생기거나 사라지면 사진이 쓸 수 있는 높이가 달라진다 → 다시 맞춘다
+  if($("lb-img").naturalWidth) measure();
   if(on){ showNav(); setSaved("이 창에서만 유지 · 새로고침하면 사라짐"); }
 }
 

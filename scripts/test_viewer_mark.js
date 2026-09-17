@@ -15,6 +15,8 @@
  *   ⑧ **직선 도구**: 살짝 기울여 그어도 자를 댄 것처럼 반듯해진다
  *   ⑨ **동그라미 도구**: 끈 범위에 들어가는 타원이 그려지고, 테두리를 톡 치면 지워진다
  *   ⑩ 색 3가지(빨강·파랑·노랑) · 휴대폰에서 도구모음이 화면을 안 넘친다
+ *   ⑪ **도구모음은 형광펜을 켰을 때만 나오고, 사진을 가리지 않는다**
+ *      (상단 바 아래 한 줄을 차지 → 사진이 남은 자리에 다시 맞춰진다)
  *
  * 실행: npm i playwright && node scripts/test_viewer_mark.js
  */
@@ -98,11 +100,30 @@ const marksOf = (page, name) => page.evaluate(n => (M.marks[n] || []).length, na
   await page.waitForTimeout(300);
 
   console.log('\n[형광펜 켜기]');
+  // 켜기 전엔 도구모음이 보이면 안 된다.
+  // ⚠️ display:flex 를 주면 hidden 속성이 안 먹어서 계속 떠 있었던 적이 있다(실제 버그였음).
+  const toolsH = () => page.evaluate(() =>
+    Math.round(document.getElementById('lb-tools').getBoundingClientRect().height));
+  const imgBox = () => page.evaluate(() => {
+    const t = document.getElementById('lb-tools').getBoundingClientRect();
+    const i = document.getElementById('lb-img').getBoundingClientRect();
+    const s = document.getElementById('lb-stage').getBoundingClientRect();
+    return { toolsBottom: Math.round(t.bottom), imgTop: Math.round(i.top),
+             imgH: Math.round(i.height), stageH: Math.round(s.height),
+             overlap: t.height > 0 && !(t.bottom <= i.top + 0.5 || t.top >= i.bottom - 0.5) };
+  });
+  check(await toolsH() === 0, '형광펜을 켜기 전엔 도구모음이 안 보인다');
+
   await page.click('#lb-pen');
   check(await page.evaluate(() => M.on), '🖍 버튼으로 형광펜이 켜진다');
   check(await page.isVisible('#lb-tools'), '도구모음(색·지우개·되돌리기)이 나타난다');
   check(await page.evaluate(() => document.getElementById('lb-stage').classList.contains('marking')),
         '사진 위 커서가 그리기 모드로 바뀐다');
+  const lay = await imgBox();
+  check(!lay.overlap, '도구모음이 사진(신문)을 가리지 않는다',
+        `도구모음 아래끝 ${lay.toolsBottom}px ≤ 사진 위끝 ${lay.imgTop}px`);
+  check(lay.imgH <= lay.stageH + 1, '사진이 남은 영역 안에 들어간다',
+        `사진 ${lay.imgH}px ≤ 영역 ${lay.stageH}px`);
 
   console.log('\n[줄 긋기 · 저장]');
   await stroke(page, 0.2, 0.30, 0.8, 0.30);
