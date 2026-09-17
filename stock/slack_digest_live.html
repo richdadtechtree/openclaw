@@ -285,7 +285,7 @@
   <button class="lb-nav prev" id="lb-prev" aria-label="이전 장">‹</button>
   <div class="lb-stage" id="lb-stage"><img id="lb-img" alt=""><canvas class="lb-mark" id="lb-mark"></canvas></div>
   <button class="lb-nav next" id="lb-next" aria-label="다음 장">›</button>
-  <div class="lb-hint" id="lb-hint">좌우로 넘기기 · 더블탭 확대 · 🖍 형광펜(H) · Esc 닫기</div>
+  <div class="lb-hint" id="lb-hint">좌우로 넘기기 · 휠/더블탭 확대 · 🖍 형광펜(H) · Esc 닫기</div>
   <div class="lb-tools" id="lb-tools" hidden>
     <button id="lb-c1" title="노랑" aria-label="노랑"><span class="pen" style="background:#ffe14d"></span></button>
     <button id="lb-c2" title="초록" aria-label="초록"><span class="pen" style="background:#9dff8a"></span></button>
@@ -1000,9 +1000,27 @@ document.addEventListener("keydown",e=>{
 
 // ── 입력: 마우스 휠(Ctrl) / 더블클릭 ────────────────────────────────────
 const stage=$("lb-stage");
+/* 마우스 휠로 확대·축소. 위로 굴리면 커지고 아래로 굴리면 작아진다.
+   커서가 가리킨 지점을 기준으로 확대되므로(zoomAt), 보고 싶은 기사에 대고 굴리면 된다.
+
+   ⚠️ 휠이 주는 값(deltaY)은 기기마다 단위가 제각각이다.
+      · 마우스 휠      : 한 칸에 100 안팎 (deltaMode 0 = 픽셀)
+      · 어떤 브라우저  : 3 안팎 (deltaMode 1 = 줄 수)  → 16 을 곱해 픽셀로 맞춘다
+      · 트랙패드       : 아주 잘게 여러 번 (2~10)
+      그래서 단위를 픽셀로 통일하고, 한 번에 너무 확 튀지 않게 상한을 둔다.
+   지수(exp)를 쓰는 이유: 확대는 '더하기'가 아니라 '곱하기'다. 그래야 많이 확대한
+   상태에서도, 축소한 상태에서도 굴린 만큼 똑같은 느낌으로 변한다. */
+function wheelFactor(e){
+  let d=e.deltaY;
+  if(e.deltaMode===1) d*=16;                   // 줄 단위 → 픽셀로 환산
+  else if(e.deltaMode===2) d*=400;             // 페이지 단위 → 픽셀로 환산
+  d=Math.max(-240,Math.min(240,d));            // 한 번에 너무 크게 튀지 않게
+  const step=e.ctrlKey?0.0035:0.0022;          // 트랙패드 핀치(ctrl+휠)는 조금 더 민감하게
+  return Math.exp(-d*step);                    // 위로 굴리면(d<0) 1보다 커짐 = 확대
+}
 stage.addEventListener("wheel",e=>{
-  if(!e.ctrlKey) return;                       // 트랙패드 핀치는 ctrl+wheel 로 온다
-  e.preventDefault(); zoomAt(e.deltaY<0?1.15:1/1.15,e.clientX,e.clientY);
+  e.preventDefault();                          // 뒤 페이지가 같이 스크롤되지 않게
+  zoomAt(wheelFactor(e), e.clientX, e.clientY);
 },{passive:false});
 function toggleZoomAt(x,y){ V.zoom>1.001?resetZoom():zoomAt(2.6,x,y); }
 stage.addEventListener("dblclick",e=>toggleZoomAt(e.clientX,e.clientY));
