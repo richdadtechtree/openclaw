@@ -193,6 +193,14 @@
   .lb-nav:hover{background:#2f4272;color:#fff}
   .lb-nav[disabled]{opacity:.25;cursor:default}
   .lb-nav.prev{left:10px} .lb-nav.next{right:10px}
+  /* ── 화살표가 신문 글씨를 가리지 않게 ────────────────────────────────
+     ① 1초 동안 아무 조작이 없으면 스르륵 사라진다(화면을 만지거나 마우스를
+        움직이면 곧바로 다시 나온다).
+     ② 사진 양옆에 빈 공간이 있으면 JS 가 화살표를 그 여백으로 옮긴다
+        (placeNav) → 아예 지면 위에 올라가지 않는다.
+     사라져 있는 동안엔 pointer-events 를 꺼서 잘못 눌리는 일도 없다. */
+  .lb-nav{transition:opacity .3s ease, background .15s}
+  .lb-nav.idle, .lb-nav[disabled].idle{opacity:0;pointer-events:none}
   .lb-hint{position:absolute;left:50%;bottom:max(14px,env(safe-area-inset-bottom));transform:translateX(-50%);
            font-family:var(--mono);font-size:11.5px;color:#8b93a4;background:#0b0e14cc;border-radius:999px;
            padding:5px 12px;pointer-events:none;transition:opacity .4s;z-index:2;
@@ -671,8 +679,38 @@ function fillGrid(d){
 /* ── 신문 넘겨 보기(뷰어) ───────────────────────────────────────────────
    신문은 글씨가 작아서 '크게 띄우기'만으론 부족하다. 확대(핀치·더블탭·＋−)와
    이동(드래그)까지 있어야 실제로 읽힌다. 아래가 그 최소 구현. */
-const V={list:[],i:0,zoom:1,tx:0,ty:0,nat:{w:1,h:1},fitW:0,fitH:0,stage:null,drag:null,pts:new Map(),pinch:null};
+const V={list:[],i:0,zoom:1,tx:0,ty:0,nat:{w:1,h:1},fitW:0,fitH:0,stage:null,drag:null,pts:new Map(),pinch:null,
+         navT:null,navPos:null};
 const $=id=>document.getElementById(id);
+
+/* ── 넘김 화살표: 자동 숨김 ───────────────────────────────────────────
+   신문 사진 위에 화살표가 얹혀 글씨를 가린다는 문제. 1초 동안 아무 조작이
+   없으면 감추고, 만지거나 마우스를 움직이면 다시 보여준다. */
+const NAV_HIDE_MS=1000;
+function showNav(){
+  $("lb-prev").classList.remove("idle");
+  $("lb-next").classList.remove("idle");
+  clearTimeout(V.navT);
+  V.navT=setTimeout(hideNav, NAV_HIDE_MS);
+}
+function hideNav(){
+  $("lb-prev").classList.add("idle");
+  $("lb-next").classList.add("idle");
+}
+/* 사진 양옆 여백이 화살표가 들어갈 만큼 넓으면, 화살표를 '사진 바깥'으로 옮긴다.
+   → 지면 위에 아예 안 올라간다. 좁으면(휴대폰 세로 등) 화면 가장자리에 붙인다. */
+function placeNav(){
+  if(!V.stage) return;
+  const btnW=window.innerWidth<=520?38:44;      // CSS 의 화살표 너비와 맞춘다
+  const edge=window.innerWidth<=520?4:10;
+  const gap=(V.stage.w - V.fitW*V.zoom)/2;      // 사진 한쪽 여백
+  // 여백 안에 화살표가 통째로 들어가면 사진 바로 바깥에 붙인다
+  const pos=(gap>=btnW+edge+4) ? Math.round(gap-btnW-4) : edge;
+  if(pos===V.navPos) return;                   // 값이 그대로면 다시 쓰지 않는다(버벅임 방지)
+  V.navPos=pos;
+  $("lb-prev").style.left=pos+"px";
+  $("lb-next").style.right=pos+"px";
+}
 
 function openViewer(i){
   if(!newsState.images||!newsState.images.length) return;
@@ -682,10 +720,12 @@ function openViewer(i){
   showPage();
   $("lb-hint").classList.remove("gone");
   clearTimeout(V.hintT); V.hintT=setTimeout(()=>$("lb-hint").classList.add("gone"),2600);
+  V.navPos=null; showNav();                    // 열자마자 한 번 보여주고 1초 뒤 감춘다
 }
 function closeViewer(){
   $("lb").hidden=true;
   document.body.style.overflow="";
+  clearTimeout(V.navT);                        // 닫은 뒤 타이머가 남아 돌지 않게
 }
 function showPage(){
   const im=V.list[V.i]; if(!im) return;
@@ -734,6 +774,7 @@ function paint(){
     img.style.height=(V.fitH*V.zoom)+"px";
     img.style.transform=`translate(${Math.round(V.tx)}px,${Math.round(V.ty)}px)`;
     st.classList.toggle("zoomed", V.zoom>1.001);
+    placeNav();                                // 여백이 바뀌면 화살표 위치도 따라간다
     // '선명하게 보이는 한계'를 정확히 계산해 알려준다.
     // 요즘 폰은 화면 점이 촘촘해서(devicePixelRatio 2~3), CSS 크기 그대로가 아니라
     // 화면의 실제 점 개수로 따져야 한다. 예: 1600px 사진, 3배 화면 → CSS 533px 에서 이미 1:1.
@@ -764,12 +805,22 @@ function go(step){
   const n=V.i+step;
   if(n<0||n>=V.list.length) return;
   V.i=n; showPage();
+  showNav();                                   // 넘길 땐 화살표를 다시 보여준다
 }
 
 // ── 입력: 버튼 ──────────────────────────────────────────────────────────
 $("lb-close").onclick=closeViewer;
 $("lb-prev").onclick=()=>go(-1);
 $("lb-next").onclick=()=>go(1);
+
+// 감춰진 화살표 되살리기 — 화면을 만지거나(터치·클릭) 마우스를 움직이면 다시 나온다.
+$("lb").addEventListener("pointerdown",showNav);
+$("lb").addEventListener("mousemove",showNav);
+// 화살표에 마우스를 올려둔 동안엔 사라지지 않게(누르려는데 사라지면 곤란하다)
+["lb-prev","lb-next"].forEach(id=>{
+  $(id).addEventListener("mouseenter",()=>clearTimeout(V.navT));
+  $(id).addEventListener("mouseleave",showNav);
+});
 $("lb-in").onclick=()=>zoomAt(1.6);
 $("lb-out").onclick=()=>zoomAt(1/1.6);
 
