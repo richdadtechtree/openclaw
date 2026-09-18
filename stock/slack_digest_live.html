@@ -218,6 +218,7 @@
   }
   .lb-stage.zoomed{cursor:grab}
   .lb-stage.zoomed:active{cursor:grabbing}
+  .lb-stage.panning{cursor:grabbing}           /* 오른쪽 버튼으로 끌어 옮기는 중 */
   .lb-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:2;width:44px;height:64px;
           border:0;border-radius:10px;background:#161a23cc;color:#e7eaf1;font-size:26px;line-height:1;
           cursor:pointer;display:flex;align-items:center;justify-content:center}
@@ -310,7 +311,7 @@
   </div>
   <div class="lb-stage" id="lb-stage"><img id="lb-img" alt=""><canvas class="lb-mark" id="lb-mark"></canvas></div>
   <button class="lb-nav next" id="lb-next" aria-label="다음 장">›</button>
-  <div class="lb-hint" id="lb-hint">좌우로 넘기기 · 휠/더블탭 확대 · 🖍 형광펜(H) · Esc 닫기</div>
+  <div class="lb-hint" id="lb-hint">좌우로 넘기기 · 휠/더블탭 확대 · 확대 후 방향키·우클릭 드래그로 이동 · 🖍 형광펜(H) · Esc 닫기</div>
 </div>
 
 <script>
@@ -993,6 +994,21 @@ function zoomAt(factor,cx,cy){
   V.ty=y-(y-V.ty)*k;
   V.zoom=next; paint();
 }
+/* ── 확대한 사진을 끌어 옮기기(팬) ──────────────────────────────────────
+   확대를 안 한 상태(1배)에서는 사진이 화면에 딱 맞아 움직일 곳이 없다.
+   경계 밖으로 나가지 않게 막는 일은 paint() 안의 clampPan() 이 알아서 한다. */
+function panBy(dx,dy){
+  if(V.zoom<=1.001) return false;              // 옮길 여백이 없음
+  V.tx+=dx; V.ty+=dy; paint();
+  return true;
+}
+/* 키보드 한 번에 움직일 거리 — 화면 크기의 12%(너무 작으면 답답, 크면 훌쩍 넘어간다).
+   방향키를 꾹 누르면 브라우저가 알아서 반복해 주므로 부드럽게 이어진다. */
+function panStep(){
+  const st=V.stage||{w:600,h:600};
+  return { x:Math.max(40, st.w*0.12), y:Math.max(40, st.h*0.12) };
+}
+
 function applyTransform(){ paint(); }   // 옛 이름 호환
 function go(step){
   const n=V.i+step;
@@ -1058,14 +1074,40 @@ $("lb-clear").onclick=()=>{
 $("lb-tools").addEventListener("pointerdown",e=>e.stopPropagation());
 
 // ── 입력: 키보드 ────────────────────────────────────────────────────────
+/* 방향키는 '장 넘기기' 와 '화면 옮기기' 둘 다에 쓰고 싶은 키다. 그래서 이렇게 나눈다.
+     · 확대한 상태(1배 초과) → 방향키 = **화면 옮기기** (지금 보는 기사를 계속 읽으려는 상황)
+     · 원래 크기            → 방향키 = **장 넘기기** (지금까지 하던 대로)
+   확대한 채로 장을 넘기고 싶을 때가 있으므로, 배율과 상관없이 넘길 수 있는 길도 둔다:
+     Shift+←/→  ·  PageUp/PageDown  ·  스페이스(다음 장)
+   WASD 로도 옮길 수 있게 해 둔다(게임처럼 왼손만으로). */
+const ARROW_DELTA={ArrowLeft:[1,0],ArrowRight:[-1,0],ArrowUp:[0,1],ArrowDown:[0,-1],
+                   a:[1,0],d:[-1,0],w:[0,1],s:[0,-1],A:[1,0],D:[-1,0],W:[0,1],S:[0,-1]};
 document.addEventListener("keydown",e=>{
   if($("lb").hidden) return;
-  if(e.key==="Escape"){ M.on ? setPen(false) : closeViewer(); }   // 형광펜 중이면 모드만 끈다
-  else if(e.key==="h"||e.key==="H") setPen(!M.on);
-  else if((e.key==="z"||e.key==="Z")&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); $("lb-undo").onclick(); }
-  else if(e.key==="ArrowRight"||e.key===" ") { e.preventDefault(); go(1); }
-  else if(e.key==="ArrowLeft") go(-1);
-  else if(e.key==="+"||e.key==="=") zoomAt(1.6);
+  if(e.key==="Escape"){ M.on ? setPen(false) : closeViewer(); return; }   // 형광펜 중이면 모드만 끈다
+  if(e.key==="h"||e.key==="H"){ setPen(!M.on); return; }
+  if((e.key==="z"||e.key==="Z")&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); $("lb-undo").onclick(); return; }
+
+  // 배율과 상관없이 장 넘기기
+  if(e.key==="PageDown"){ e.preventDefault(); go(1); return; }
+  if(e.key==="PageUp"){ e.preventDefault(); go(-1); return; }
+  if(e.shiftKey&&e.key==="ArrowRight"){ e.preventDefault(); go(1); return; }
+  if(e.shiftKey&&e.key==="ArrowLeft"){ e.preventDefault(); go(-1); return; }
+  if(e.key===" "){ e.preventDefault(); go(1); return; }
+
+  const mv=ARROW_DELTA[e.key];
+  if(mv){
+    e.preventDefault();
+    const st=panStep();
+    // 확대한 상태면 옮기고, 아니면(옮길 여백이 없으면) 장을 넘긴다
+    if(!panBy(mv[0]*st.x, mv[1]*st.y)){
+      if(e.key==="ArrowRight"||e.key==="d"||e.key==="D") go(1);
+      else if(e.key==="ArrowLeft"||e.key==="a"||e.key==="A") go(-1);
+    }
+    return;
+  }
+
+  if(e.key==="+"||e.key==="=") zoomAt(1.6);
   else if(e.key==="-") zoomAt(1/1.6);
   else if(e.key==="0") resetZoom();
 });
@@ -1105,9 +1147,21 @@ function maybeDoubleTap(x,y){
 }
 
 // ── 입력: 손가락 — 드래그 이동 / 두 손가락 핀치 / 스와이프로 장 넘기기 ──
+// 오른쪽 버튼을 눌렀을 때 브라우저 메뉴가 뜨면 끌어 옮길 수가 없다 → 사진 위에서만 막는다.
+// (사진 저장은 상단 바의 ⤓ 버튼으로 하면 된다)
+stage.addEventListener("contextmenu",e=>e.preventDefault());
+
 stage.addEventListener("pointerdown",e=>{
   stage.setPointerCapture(e.pointerId);
   V.pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  // ★ 오른쪽 버튼 = 언제나 '화면 끌어 옮기기'.
+  //   형광펜 모드에서는 왼쪽 버튼이 그리기라, 옮기려면 이 길이 필요하다.
+  if(e.button===2){
+    M.cur=null;
+    V.drag={x:e.clientX,y:e.clientY,tx:V.tx,ty:V.ty,t:Date.now(),moved:0,pan:true};
+    stage.classList.add("panning");
+    return;
+  }
   // 형광펜 모드: 손가락 하나면 '그리기'. 두 손가락이면 평소처럼 확대(핀치).
   if(M.on && V.pts.size===1){
     const q=toImgXY(e.clientX,e.clientY);
@@ -1165,6 +1219,8 @@ function endPointer(e){
     if(!tooSmall) markList().push(st);
     drawMarks(); V.drag=null; return;
   }
+  // 오른쪽 버튼으로 옮긴 것뿐이면 여기서 끝 — 장을 넘기거나 닫으면 안 된다
+  if(V.drag && V.drag.pan){ V.drag=null; stage.classList.remove("panning"); return; }
   if(M.on){ V.drag=null; return; }             // 형광펜 모드에선 넘기기·닫기 동작 안 함
   if(!V.drag) return;
   const dx=e.clientX-V.drag.x, dy=e.clientY-V.drag.y, dt=Date.now()-V.drag.t;
@@ -1184,7 +1240,7 @@ function endPointer(e){
 }
 stage.addEventListener("pointerup",endPointer);
 stage.addEventListener("pointercancel",e=>{
-  V.pts.delete(e.pointerId); V.pinch=null; V.drag=null;
+  V.pts.delete(e.pointerId); V.pinch=null; V.drag=null; stage.classList.remove("panning");
   if(M.cur){
     const st=M.cur; M.cur=null;
     if(!(st.t!=="free" && strokeSpan(st)<0.012)) markList().push(st);
