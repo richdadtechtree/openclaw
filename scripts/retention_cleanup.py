@@ -125,20 +125,26 @@ def parse_date_name(name):
 
 def measure(path):
     """
-    (실제 바이트, 심볼릭 링크 개수) 를 돌려준다.
+    (실제 바이트, 심볼릭 링크 개수, 깨진 링크 개수) 를 돌려준다.
 
     ⚠️ news_cache 안의 사진은 수집기 원본을 가리키는 **심볼릭 링크**일 수 있다.
        링크를 지워도 원본은 그대로라 디스크가 비지 않는다 → 링크는 0바이트로 세고
        개수만 따로 알려서 "절약했다"고 착각하지 않게 한다.
+
+    ⚠️ **깨진 링크**(원본이 이미 지워진 링크)를 따로 세는 이유 — 2026-09-20 실제로 겪음:
+       캐시는 14일 보관인데 수집기 원본은 1일 보관이라, 캐시에 날짜 폴더는 남았는데
+       **사진이 안 열리는 상태**가 됐다(96개 중 62개가 깨짐). 목록에는 보이니 아무도
+       눈치채지 못한다 → --status 가 대놓고 알려주게 한다.
+       해결: `.env` 에 `NEWS_LOCAL_MODE=copy` (캐시가 복사본을 갖는다).
     """
-    total, links = 0, 0
+    total, links, broken = 0, 0, 0
     if os.path.islink(path):
-        return 0, 1
+        return 0, 1, (0 if os.path.exists(path) else 1)
     if os.path.isfile(path):
         try:
-            return os.lstat(path).st_size, 0
+            return os.lstat(path).st_size, 0, 0
         except OSError:
-            return 0, 0
+            return 0, 0, 0
     for root, dirs, files in os.walk(path):
         # 링크로 된 하위 폴더를 따라 들어가면 엉뚱한 곳 크기를 센다 → 막는다.
         dirs[:] = [d for d in dirs if not os.path.islink(os.path.join(root, d))]
@@ -146,12 +152,14 @@ def measure(path):
             p = os.path.join(root, name)
             if os.path.islink(p):
                 links += 1
+                if not os.path.exists(p):    # 따라갔더니 아무것도 없다 = 깨진 링크
+                    broken += 1
                 continue
             try:
                 total += os.lstat(p).st_size
             except OSError:
                 pass
-    return total, links
+    return total, links, broken
 
 
 def remove(path):
@@ -229,7 +237,7 @@ def sweep(target, days=None, dry_run=False, verbose=True, keep_latest=True, toda
             if verbose:
                 print("  · %-11s %s 는 가장 최근이라 남김" % (target.key, d))
             continue
-        size, links = measure(path)
+        size, links, _broken = measure(path)
         if dry_run:
             print("  [미리보기] 지울 것: %s (%s%s)"
                   % (path, human(size), "" if not links else ", 링크 %d개" % links))
@@ -278,15 +286,28 @@ def status(today=None):
         if not entries:
             print("   남은 자료: 없음\n")
             continue
-        total, links = 0, 0
-        for _, path in entries:
-            s, l = measure(path)
-            total += s
+        total, links, broken = 0, 0, 0
+        broken_by_date = []
+        for d, path in entries:
+            sz, l, b = measure(path)
+            total += sz
             links += l
+            broken += b
+            if b:
+                broken_by_date.append((d, b))
         oldest, newest = entries[0][0], entries[-1][0]
         print("   남은 자료: %d개 · %s ~ %s (가장 오래된 것 %d일 전) · %s%s"
               % (len(entries), oldest, newest, (today - oldest).days, human(total),
                  "" if not links else " + 링크 %d개(원본은 다른 곳)" % links))
+        if broken:
+            # 보관 기간을 늘려도 소용없는 상태라 크게 알린다.
+            print("   ⚠️ 깨진 링크 %d개 — 원본이 이미 지워져 **사진이 안 열립니다**" % broken)
+            print("      해당 날짜: %s"
+                  % ", ".join("%s(%d장)" % (d, n) for d, n in broken_by_date))
+            print("      원인: 캐시는 %d일 보관인데 수집기 원본은 1일 보관(NEWSPAPER_KEEP_DAYS)"
+                  % days)
+            print("      해결: echo 'NEWS_LOCAL_MODE=copy' >> ~/.openclaw/.env"
+                  "   (다음 동기화부터 캐시가 사진을 복사해 갖는다)")
         if days > 0:
             over = [d for d, _ in entries if d < cutoff_for(days, today)]
             if over:

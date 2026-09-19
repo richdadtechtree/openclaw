@@ -151,6 +151,47 @@ class TestSafety(Base):
         self.assertEqual(r["freed"], 0)                # 링크라 실제 절약은 0
         self.assertEqual(r["links"], 1)                # 대신 링크 개수로 알려준다
 
+
+class TestBrokenLink(Base):
+    """2026-09-20 실제 사고: 캐시는 14일 보관인데 원본이 1일 만에 지워져
+    '폴더는 있는데 사진이 안 열리는' 상태가 됐다(96개 중 62개). 이제 잡아낸다."""
+
+    def _make_linked_day(self, d, broken):
+        origin_dir = os.path.join(self.tmp, "newspaper", d.isoformat())
+        os.makedirs(origin_dir, exist_ok=True)
+        day = os.path.join(self.cache, d.isoformat())
+        os.makedirs(day, exist_ok=True)
+        for i in range(3):
+            origin = os.path.join(origin_dir, "%02d.jpg" % i)
+            with open(origin, "wb") as f:
+                f.write(b"x" * 10)
+            os.symlink(origin, os.path.join(day, "%02d.jpg" % i))
+            if broken:
+                os.remove(origin)          # 수집기가 원본을 지운 상황 재현
+        return day
+
+    def test_깨진_링크를_세어_알려준다(self):
+        day = self._make_linked_day(TODAY - timedelta(days=3), broken=True)
+        size, links, broken = rc.measure(day)
+        self.assertEqual(links, 3)
+        self.assertEqual(broken, 3)
+        self.assertEqual(size, 0)
+
+    def test_원본이_살아있으면_깨짐으로_안_센다(self):
+        day = self._make_linked_day(TODAY - timedelta(days=1), broken=False)
+        size, links, broken = rc.measure(day)
+        self.assertEqual(links, 3)
+        self.assertEqual(broken, 0)
+
+    def test_링크_하나만_넘겨도_판정한다(self):
+        origin = os.path.join(self.tmp, "gone.jpg")
+        open(origin, "w").close()
+        link = os.path.join(self.tmp, "link.jpg")
+        os.symlink(origin, link)
+        self.assertEqual(rc.measure(link), (0, 1, 0))
+        os.remove(origin)
+        self.assertEqual(rc.measure(link), (0, 1, 1))
+
     def test_홈_밖_경로는_거부한다(self):
         outside = tempfile.mkdtemp(prefix="retention-outside-")
         try:
