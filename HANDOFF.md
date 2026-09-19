@@ -401,8 +401,16 @@ python3 ~/.openclaw/scripts/news_sync.py
   → 해결: `gog auth doctor`(자가진단) 후 `gog auth add bbonoyo@gmail.com` 재인증. ⚠️ 구글 클라우드 OAuth 동의 화면이 **'테스트'** 상태면
   리프레시 토큰이 **7일마다** 만료된다 → 매주 재인증이 싫으면 앱을 **'프로덕션'으로 게시**할 것.
   `news_sync.py` 는 이 오류를 알아보고 재인증 안내를 바로 띄운다.
-- **디스크**: 하루 15~35MB(움직이는 GIF 가 크다). 기본 **7일치만 보관**하고 자동 삭제
+- **디스크 / 보관 기간** (2026-09-19 개편 → `scripts/retention_cleanup.py` 한 곳에서 관리):
+  하루 15~35MB(움직이는 GIF 가 크다). 기본 **14일치(달력 기준) 보관** 후 자동 삭제
   (`NEWS_CACHE_KEEP_DAYS`). 캐시 경로는 `.gitignore` 로 추적 제외 — git 에 올라가지 않는다.
+  - ⚠️ **예전 방식의 함정**: `news_sync.py` 가 '최근 N개 날짜 폴더' 를 남기는 방식이라
+    신문이 평일에만 올라오면 달력으로는 **9~10일 전 자료까지** 남았다(사용자가 실제로 9/2 화면을
+    보고 의문을 제기 → 확인해 보니 그건 사진이 아니라 `slack_logs` 의 텍스트였다). 이제 달력 기준.
+  - **텍스트 요약 로그**(`~/.openclaw/slack_logs/<날짜>.jsonl`)는 **무제한 보관**이 기본.
+    하루 수십~수백 KB 라 용량 영향이 사실상 없고, 지우면 지난 브리핑을 웹에서 못 본다.
+    제한하고 싶으면 `.env` 에 `SLACK_LOG_KEEP_DAYS=90` 처럼 적으면 된다.
+  - 현황 확인: `python3 ~/.openclaw/scripts/retention_cleanup.py --status`
 - **썸네일**: Pillow 가 있으면 420px 로 줄여서 준다(사진 1장당 ~30KB→~2KB). 없으면 원본을 그대로
   주기 때문에 기능은 죽지 않고 데이터만 더 쓴다. 사진 그리드는 **기본 접힘** → 첫 로딩은 가볍다.
 - **보안**: `/api/news/file` 은 `index.json` 에 적힌 파일명만 통과시킨다(`../../etc/passwd` 류 차단, 404).

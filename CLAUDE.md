@@ -60,6 +60,7 @@ Git으로 서버와 자동 동기화됩니다. 별도 프로젝트인 **stock**(
 | `patch-newspaper-keep-local.sh` + `newspaper_keep_local.py` | 수집기가 업로드 후 로컬을 지우던 `shutil.rmtree(local_dir)` 한 줄을 **'오늘치는 남기고 지난 날짜만 정리'**로 교체(멱등·백업·문법검사·`--revert`·`--dry-run`). 지난 날짜는 `metadata.json` 보존. 보관일수 `NEWSPAPER_KEEP_DAYS`(기본 1) |
 | `patch-newspaper-title-filter.sh` + `newspaper_title_filter.py` | ⚠️ **2026-09-16 사고 대응**: 수집기가 제목의 **날짜만** 보고 글을 골라 `26.9.16 미모`(6장)를 신문(30장)으로 착각해 드라이브까지 덮어썼다. → 제목에 `NEWSPAPER_TITLE_KEYWORD`(기본 `신문스크랩`)가 있어야 통과하도록 조건 추가. 못 찾으면 실패 처리 → `run_daily.sh` 재시도 루프가 돈다. `NEWSPAPER_TITLE_EXCLUDE` 도 지원 |
 | `set-newspaper-schedule.sh` | 신문 수집 cron 시작 시각 변경(기본 05:00). `run_daily.sh` 가 원래 5분 간격·07:00 마감 재시도라 **05:00~07:00 사이 5분마다 확인**이 된다 |
+| `retention_cleanup.py` | **날짜별 자료 보관 기간을 한 곳에서 관리**(2026-09-19 신설). 대상: `news_cache`(사진·PDF, 기본 **14일**) · `slack_logs`(요약 텍스트, 기본 **무제한**) · `news_marks`(형광펜 잔재, 14일). **달력 날짜 기준** — 예전 '최근 N개 폴더' 방식은 평일만 올라오는 신문 탓에 9~10일 전까지 남았다. 안전장치: 이름이 정확히 `YYYY-MM-DD` 인 것만 삭제 · **가장 최근 1개는 무조건 보존** · 홈 밖 경로 거부 · 심볼릭 링크는 링크만 지우고 원본 보존. `--status`(현황) / `--dry-run`(미리보기) / `--days` / `--only`. cron 불필요 — `news_sync.py` 가 30분마다 불러 쓴다. 검증: `python3 scripts/test_retention_cleanup.py` (12항목) |
 | `setup-news-cron.sh` | 위 동기화를 30분마다 돌리는 cron 등록(멱등). cron 에 `XDG_RUNTIME_DIR` 을 넣어 gog keyring 잠금 해제 문제를 피한다 |
 | `notion_push.py` / `notion-briefing-*.txt` | (구) 노션 저장 — **시트로 대체됨, 미사용** |
 

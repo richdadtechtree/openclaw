@@ -634,7 +634,7 @@ def sync_from_local(date, verbose=True):
         print("[%s] 서버 로컬에서 가져옴(%s) · PDF %s · 사진 %d장\n  ← %s"
               % (date, "복사" if mode == "copy" else "링크",
                  "O" if index["pdf"] else "X", len(index["images"]), src))
-    prune(int(os.getenv("NEWS_CACHE_KEEP_DAYS", "7")), verbose=verbose)
+    prune(verbose=verbose)
     return 0
 
 
@@ -710,7 +710,7 @@ def sync(date, force=False, verbose=True):
     say("[%s] 새로 받음 %d · 그대로 %d · 실패 %d · PDF %s · 사진 %d장"
         % (date, fetched, skipped, len(failed),
            "O" if index["pdf"] else "X", len(index["images"])))
-    prune(int(os.getenv("NEWS_CACHE_KEEP_DAYS", "7")), verbose=verbose)
+    prune(verbose=verbose)
     return 1 if failed and not index["images"] and not index["pdf"] else 0
 
 
@@ -729,18 +729,29 @@ def human(n):
         n /= 1024
 
 
-def prune(keep_days, verbose=False):
-    """오래된 날짜 폴더 정리(하루치가 15~25MB라 방치하면 디스크를 먹는다)."""
-    if keep_days <= 0:
-        return
-    root = cache_root()
-    if not os.path.isdir(root):
-        return
-    dates = sorted(d for d in os.listdir(root) if re.fullmatch(r"\d{4}-\d{2}-\d{2}", d))
-    for old in dates[:-keep_days]:
-        shutil.rmtree(os.path.join(root, old), ignore_errors=True)
+def prune(verbose=False):
+    """
+    오래된 자료 정리(하루치가 15~35MB라 방치하면 디스크를 먹는다).
+
+    실제 규칙은 `retention_cleanup.py` 한 곳에 모여 있다(2026-09-19).
+    여기서 부르는 이유는 **cron 을 하나 더 만들지 않기 위해서**다. 이 스크립트는
+    이미 30분마다 돌고 있으니, 동기화가 끝날 때마다 같이 청소하면 된다.
+
+    ⚠️ 예전에는 '최근 N개 날짜 폴더' 를 남겼는데, 신문이 평일에만 올라와서
+       달력으로는 9~10일 전 자료까지 남았다 → 이제 **달력 날짜 기준**이다.
+    """
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import retention_cleanup
+    except Exception as e:           # 파일이 없거나 깨져도 동기화는 계속돼야 한다
         if verbose:
-            print("  · 오래된 캐시 삭제: %s" % old, flush=True)
+            print("  ⚠️ 보관 정리 건너뜀(retention_cleanup 불러오기 실패): %r" % e)
+        return
+    try:
+        retention_cleanup.sweep_all(verbose=verbose)
+    except Exception as e:
+        if verbose:
+            print("  ⚠️ 보관 정리 중 오류(동기화 자체는 성공): %r" % e)
 
 
 # ─────────────────────────────────────────────────────────────────── 진단용
