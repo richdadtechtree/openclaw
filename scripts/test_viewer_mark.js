@@ -15,6 +15,8 @@
  *   ⑧ **직선 도구**: 살짝 기울여 그어도 자를 댄 것처럼 반듯해진다
  *   ⑨ **동그라미 도구**: 끈 범위에 들어가는 타원이 그려지고, 테두리를 톡 치면 지워진다
  *   ⑩ 색 3가지(빨강·파랑·노랑) · 휴대폰에서 도구모음이 화면을 안 넘친다
+ *   ⑫ **동그라미는 그린 직후 위치를 옮길 수 있다**(안쪽을 끌기 · 방향키 미세조정)
+ *   ⑬ **선 굵기 3단계**(가늘게·보통·굵게) — 새로 긋는 선에 적용, 이미 그은 줄은 그대로
  *   ⑪ **도구모음은 형광펜을 켰을 때만 나오고, 사진을 가리지 않는다**
  *      (상단 바 아래 한 줄을 차지 → 사진이 남은 자리에 다시 맞춰진다)
  *
@@ -84,6 +86,14 @@ async function stroke(page, x1, y1, x2, y2) {
 }
 
 const marksOf = (page, name) => page.evaluate(n => (M.marks[n] || []).length, name);
+
+/** 지금 '고른 상태'인 동그라미의 가운데·크기 (없으면 null) */
+const selInfo = (page) => page.evaluate(() => {
+  const st = M.sel; if (!st) return null;
+  const [a, b] = st.pts;
+  return { t: st.t, cx: (a[0] + b[0]) / 2, cy: (a[1] + b[1]) / 2,
+           w: Math.abs(b[0] - a[0]), h: Math.abs(b[1] - a[1]) };
+});
 
 (async () => {
   await new Promise(r => srv.listen(0, r));
@@ -217,6 +227,103 @@ const marksOf = (page, name) => page.evaluate(n => (M.marks[n] || []).length, na
   await page.waitForTimeout(120);
   check(await marksOf(page, '02.jpg') === 0, '테두리를 톡 치면 지워진다(가운데가 아니어도)');
   await page.click('#lb-erase');
+
+  console.log('\n[동그라미 옮기기 — 그린 직후 위치 조정]');
+  await page.evaluate(() => { M.marks[markName()] = []; setTool('oval'); drawMarks(); });
+  await stroke(page, 0.25, 0.30, 0.65, 0.50);       // 동그라미 하나 그리기
+  const s0 = await selInfo(page);
+  check(!!s0 && s0.t === 'oval', '그린 직후 그 동그라미가 "고른 상태"가 된다');
+  const noticeMv = await page.textContent('#lb-saved');
+  check(/끌면 옮길 수 있어요/.test(noticeMv || ''), '옮길 수 있다는 안내가 뜬다', `"${noticeMv}"`);
+
+  await stroke(page, 0.45, 0.40, 0.55, 0.46);       // 안쪽을 잡고 오른쪽 아래로 끌기
+  const s1 = await selInfo(page);
+  check(await marksOf(page, '02.jpg') === 1, '안쪽을 끌면 새로 그려지지 않는다(통째로 이동)');
+  check(Math.abs(s1.cx - (s0.cx + 0.10)) < 0.01 && Math.abs(s1.cy - (s0.cy + 0.06)) < 0.01,
+        '끈 만큼 정확히 옮겨진다',
+        `가운데 ${s0.cx.toFixed(2)},${s0.cy.toFixed(2)} → ${s1.cx.toFixed(2)},${s1.cy.toFixed(2)}`);
+  check(Math.abs(s1.w - s0.w) < 1e-9 && Math.abs(s1.h - s0.h) < 1e-9, '옮겨도 크기는 그대로다');
+
+  await page.keyboard.press('ArrowRight');
+  const s2 = await selInfo(page);
+  check(s2.cx > s1.cx + 0.003 && Math.abs(s2.cy - s1.cy) < 1e-9,
+        '방향키로 조금씩 미세 조정된다', `가로 +${(s2.cx - s1.cx).toFixed(4)}`);
+
+  await stroke(page, 0.55, 0.46, 0.99, 0.99);       // 사진 밖까지 끌어보기
+  const s3 = await selInfo(page);
+  const inside = await page.evaluate(() =>
+    M.marks[markName()][0].pts.every(([x, y]) => x >= 0 && x <= 1 && y >= 0 && y <= 1));
+  check(inside, '사진 밖으로는 안 나간다(가장자리에서 멈춘다)');
+  check(Math.abs(s3.w - s0.w) < 1e-9 && Math.abs(s3.h - s0.h) < 1e-9,
+        '가장자리에 닿아도 찌그러지지 않는다');
+
+  await stroke(page, 0.05, 0.05, 0.20, 0.15);       // 멀리 떨어진 곳에서 시작
+  check(await marksOf(page, '02.jpg') === 2, '딴 곳을 끌면 새 동그라미가 그려진다(고르기 해제)');
+
+  await page.keyboard.press('Escape');
+  check(await page.evaluate(() => M.sel === null) && await page.evaluate(() => M.on),
+        'Esc 는 고르기만 풀고 형광펜은 켜진 채로 둔다');
+
+  await page.evaluate(() => { M.marks[markName()] = []; setTool('oval'); drawMarks(); });
+  await stroke(page, 0.30, 0.30, 0.70, 0.50);
+  await page.evaluate(() => go(-1)); await page.waitForTimeout(250);
+  check(await page.evaluate(() => M.sel === null), '장을 넘기면 고르기가 풀린다');
+  await page.evaluate(() => go(1)); await page.waitForTimeout(250);
+
+  await page.evaluate(() => { M.marks[markName()] = []; setTool('line'); drawMarks(); });
+  await stroke(page, 0.2, 0.40, 0.8, 0.40);
+  check(await page.evaluate(() => M.sel === null), '직선·자유 긋기는 고른 상태가 되지 않는다(평소대로)');
+
+  console.log('\n[선 굵기 3단계]');
+  await page.evaluate(() => { M.marks[markName()] = []; setTool('line'); drawMarks(); });
+  await page.click('#lb-w1'); await stroke(page, 0.2, 0.30, 0.8, 0.30);   // 가늘게
+  await page.click('#lb-w3'); await stroke(page, 0.2, 0.70, 0.8, 0.70);   // 굵게
+  const ws = await page.evaluate(() => M.marks[markName()].map(st => st.w));
+  check(ws[1] > ws[0] * 2, '굵게로 바꾸면 더 굵은 선이 그어진다',
+        `가늘게 ${ws[0].toFixed(4)} → 굵게 ${ws[1].toFixed(4)}`);
+  check(Math.abs(ws[0] - 0.018 * 0.6) < 1e-9, '먼저 그은 줄의 굵기는 나중에 바뀌지 않는다');
+  check(await page.getAttribute('#lb-w3', 'aria-pressed') === 'true' &&
+        await page.getAttribute('#lb-w2', 'aria-pressed') === 'false',
+        '고른 굵기 버튼만 눌린 것으로 보인다');
+  const thick = await page.evaluate(() => {
+    const c = document.getElementById('lb-mark'), ctx = c.getContext('2d');
+    const col = ctx.getImageData(Math.round(c.width * 0.5), 0, 1, c.height).data;
+    let thin = 0, fat = 0;                           // 위쪽=가는 선, 아래쪽=굵은 선
+    for (let y = 0; y < c.height; y++) if (col[y * 4 + 3] > 10) (y < c.height / 2 ? thin++ : fat++);
+    return { thin, fat };
+  });
+  check(thick.fat > thick.thin && thick.thin > 0, '화면에도 실제로 더 굵게 그려진다',
+        `가는 선 ${thick.thin}점 · 굵은 선 ${thick.fat}점`);
+  await page.keyboard.press('[');
+  check(await page.evaluate(() => M.wk) === 1, '[ 키로 한 단계 가늘어진다');
+
+  await page.evaluate(() => { M.marks[markName()] = []; setTool('oval'); drawMarks(); });
+  await stroke(page, 0.30, 0.30, 0.70, 0.50);
+  const ow0 = await page.evaluate(() => M.marks[markName()][0].w);
+  await page.click('#lb-w3');
+  const ow1 = await page.evaluate(() => M.marks[markName()][0].w);
+  check(ow1 > ow0, '방금 그린 동그라미는 굵기를 바꾸면 그 자리에서 같이 바뀐다',
+        `${ow0.toFixed(4)} → ${ow1.toFixed(4)}`);
+  await page.click('#lb-c2');
+  check(await page.evaluate(() => M.marks[markName()][0].c) === '#4da3ff',
+        '색도 그 자리에서 같이 바뀐다');
+
+  console.log('\n[버튼이 늘어나도 폰 화면에서 괜찮나]');
+  await page.setViewportSize({ width: 390, height: 780 });
+  await page.waitForTimeout(400);
+  const mob = await page.evaluate(() => {
+    const el = document.getElementById('lb-tools');
+    const t = el.getBoundingClientRect(), i = document.getElementById('lb-img').getBoundingClientRect();
+    return { overlap: t.height > 0 && !(t.bottom <= i.top + 0.5 || t.top >= i.bottom - 0.5),
+             overflow: el.scrollWidth > window.innerWidth + 1, imgH: Math.round(i.height) };
+  });
+  check(!mob.overlap && !mob.overflow && mob.imgH > 50,
+        '폰 화면에서도 도구모음이 넘치거나 사진을 가리지 않는다',
+        `사진 높이 ${mob.imgH}px · 가로 넘침 ${mob.overflow ? '있음' : '없음'}`);
+  await page.setViewportSize({ width: 1100, height: 850 });
+  await page.waitForTimeout(400);
+  // 뒤 검사들이 기대하는 상태로 되돌려 놓는다
+  await page.evaluate(() => { setWeight(1); M.marks[markName()] = []; M.sel = null; setTool('line'); drawMarks(); });
 
   console.log('\n[색 · 도구모음 크기]');
   await page.click('#lb-c2');                      // 파랑
