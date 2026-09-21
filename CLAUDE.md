@@ -47,6 +47,8 @@ Git으로 서버와 자동 동기화됩니다. 별도 프로젝트인 **stock**(
 | `slack_briefing.py` | stock 대시보드 캡처 → 슬랙 (openclaw cron `stock-slack-briefing`, 평일 15:40) |
 | `slack_text.py` | 텍스트 → 슬랙 |
 | `test_slack_alert.py` | 관심종목 오늘 변동 슬랙 테스트(국장/미장 구분, KRX 장시간 표시) |
+| `pilates_blog.py` | **마이비필라테스 네이버 블로그 글 매일 1편 → 슬랙 #심부름(`C0BNB0YRGSY`)**. 규칙서 `workspace/mybpilates_blog_prompt.md`(30일 주제 풀 + 글쓰기 규칙)를 읽어 **한국시간 기준 '며칠'** 에 맞는 주제를 고르고, AI(1순위 게이트웨이 무툴 에이전트 → 2순위 제미나이)에게 글을 받아 **코드가 직접 규칙을 검사**한다 — 제목 25~35자·특수문자 금지·메인 키워드 위치, 본문 1000~1200자, `[사진1]~[사진5]`, 키워드 3~4회, 소제목 2~3개, '완치' 같은 의학적 단정 차단. 위반하면 지적해서 **최대 3회 재작성**, 그래도 남으면 경고를 붙여 보낸다. **표준 라이브러리만 사용** → venv 불필요(`python3` 그대로). `--dry-run`/`--day`/`--date`/`--check`/`--list`/`--channel`. 검증: `python3 scripts/test_pilates_blog.py` (29항목) |
+| `setup-pilates-cron.sh` | 위 글을 **매일 06:00 KST** 에 돌리는 cron 등록(멱등). 서버 시간대를 읽어 06:00 KST 에 해당하는 **로컬 시각으로 자동 환산**(UTC 서버면 21:00). `KST_HOUR`/`SCHEDULE` 로 조정 |
 | `debate.py` | `#ai-토론` 슬랙 채널: GPT/Gemini/Qwen/Mistral 다중 모델 토론(개별답변·토론·상태·도움말). `debate` 에이전트가 exec 로 호출, stdout 그대로 답장. GPT는 API키 대신 게이트웨이 경유 ChatGPT Plus OAuth(무툴 에이전트 `debate-gpt`). 상세: HANDOFF.md "AI 토론 채널" |
 | `get_notion_book.py` | 책읽남(bookman) 독서 브리핑. 노션 '독서 리스트' DB에서 **실제로 적혀 있는 문장만** 1건 추출. 못 찾으면 지어내지 않고 exit 2. **색칠·형광펜·인용 문장을 최우선**으로 고르고, 애매한 줄은 버리는 대신 후순위로 미룬다(빈손 방지). 본문은 캐시. 노션 **`책읽남` 열이 `제외`** 인 책은 후보에서 뺀다. `--check`/`--list`/`--book`/`--build-cache`/`--reset` 지원 |
 | `book_slack.py` | **책 글귀 → 슬랙 직접 발송(AI 미경유)**. `get_notion_book.py` 를 실행해 결과가 있을 때만 보낸다. **글귀가 없으면 아무것도 안 보내고 조용히 종료(exit 1)** → AI 창작 원천 차단. cron 은 이 스크립트를 호출할 것. 역할 분담 — **책읽남=자료 수집, 뚜떵또=최종 발송(기본)**, `--as bookman` 으로 전환. `--dry-run` 지원 |

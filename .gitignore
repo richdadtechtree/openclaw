@@ -94,6 +94,9 @@ slack_logs/
 news_cache/
 news_marks/
 
+# 필라테스 블로그 지난 글 기록 (매일 한 줄씩 쌓이는 런타임 파일)
+workspace/pilates_blog/
+
 
 # ── npm / 플러그인 바이너리 (빌드 결과물) ────────────────────────────────────
 npm/

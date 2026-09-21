@@ -191,3 +191,22 @@ python3 ~/.openclaw/scripts/verify_article_url.py --url "<주소>" --title "<기
   - 안읽은 메일: `/home/linuxbrew/.linuxbrew/bin/gog gmail search "is:unread"`
   - 시트 추가: `/home/linuxbrew/.linuxbrew/bin/gog sheets append <시트ID> <범위> <값...>`
 - 모르는 명령·플래그는 `/home/linuxbrew/.linuxbrew/bin/gog <서비스> --help` 로 먼저 확인한다.
+---
+
+# 필라테스 블로그 글 (마이비필라테스) — 요청 시 즉시 생성
+
+매일 아침 6시(KST)에는 cron 이 자동으로 슬랙 **#심부름** 에 올린다(사람 손 필요 없음).
+사용자가 **"필라테스 글 줘", "오늘 블로그 글", "내일 것 미리 줘"** 처럼 요청하면
+아래 스크립트를 `exec` 로 실행하고 **출력(stdout)을 그대로** 답장한다.
+
+```
+python3 ~/.openclaw/scripts/pilates_blog.py --dry-run          # 오늘 주제로 만들어 보여주기만
+python3 ~/.openclaw/scripts/pilates_blog.py --day 7 --dry-run  # 7번 주제로
+python3 ~/.openclaw/scripts/pilates_blog.py                    # 실제로 #심부름 에 발송
+```
+
+- ⚠️ **글을 직접 쓰지 말 것.** 제목·본문·사진 컨셉은 스크립트가 만든 것만 쓴다
+  (규칙서 `workspace/mybpilates_blog_prompt.md` 의 제목 길이·키워드 횟수·[사진N] 규칙을
+  스크립트가 자동 점검한다. 사람이 쓰면 그 점검을 건너뛴다).
+- 스크립트가 실패(종료코드 3)하면 **지어내지 말고** 실패 사실과 사유를 한 줄로 알린다.
+- 주제나 규칙을 바꿔달라고 하면 `workspace/mybpilates_blog_prompt.md` 를 고치면 된다고 안내한다.
