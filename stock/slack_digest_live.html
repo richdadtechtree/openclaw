@@ -192,6 +192,10 @@
   .lb-mark{position:absolute;left:0;top:0;pointer-events:none;mix-blend-mode:multiply;opacity:.62}
   .lb-stage.marking{cursor:crosshair}
   .lb-stage.marking img{cursor:crosshair}
+  /* 방금 그린 동그라미 위에 커서를 올리면 '옮길 수 있다'고 모양으로 알려준다.
+     .marking 보다 클래스가 하나 더 많아 우선순위가 높다 → 십자 커서를 이긴다. */
+  .lb-stage.marking.movable,.lb-stage.marking.movable img{cursor:move}
+  .lb-stage.moving,.lb-stage.moving img{cursor:grabbing}
   /* 형광펜 모드일 때 아래쪽에 뜨는 작은 도구모음 */
   /* 도구모음은 **사진 위에 떠 있지 않고** 상단 바 바로 아래 '한 줄'을 차지한다.
      .lb 가 세로 flex 이고 .lb-stage 가 flex:1 이라, 이 줄이 생기면 사진 영역이 그만큼
@@ -210,6 +214,10 @@
   .lb-tools button[aria-pressed="true"]{background:#2f4272;border-color:#7f9bf5;color:#fff}
   .lb-tools .sep{width:1px;height:20px;background:#2b3244}
   .lb-tools .pen{width:16px;height:16px;border-radius:4px;border:1px solid #00000040}
+  /* 선 굵기 견본 — 버튼 안에 '그 굵기의 막대'를 그려 눈으로 바로 비교되게 한다 */
+  .lb-tools .gauge{width:17px;height:16px;display:inline-flex;align-items:center;justify-content:center}
+  .lb-tools .gauge i{display:block;width:100%;border-radius:999px;background:#c9d2e6}
+  .lb-tools button[aria-pressed="true"] .gauge i{background:#fff}
   .lb-saved{font-family:var(--mono);font-size:11px;color:#8b93a4;padding:0 4px}
   @media (max-width:520px){
     .lb-tools{gap:4px;padding:5px 6px}
@@ -299,8 +307,12 @@
     <button id="lb-c3" title="노랑" aria-label="노랑"><span class="pen" style="background:#ffd93b"></span></button>
     <span class="sep"></span>
     <button id="lb-t-line" title="직선 — 자를 댄 것처럼 반듯하게" aria-pressed="true">━</button>
-    <button id="lb-t-oval" title="동그라미 — 기사를 둥글게 표시" aria-pressed="false">○</button>
+    <button id="lb-t-oval" title="동그라미 — 기사를 둥글게 표시 (그린 직후 끌어서 위치 조정)" aria-pressed="false">○</button>
     <button id="lb-t-free" title="자유롭게 긋기" aria-pressed="false">✎</button>
+    <span class="sep"></span>
+    <button id="lb-w1" title="가는 선 ( [ )" aria-label="가는 선" aria-pressed="false"><span class="gauge"><i style="height:2px"></i></span></button>
+    <button id="lb-w2" title="보통 굵기" aria-label="보통 굵기" aria-pressed="true"><span class="gauge"><i style="height:4px"></i></span></button>
+    <button id="lb-w3" title="굵은 선 ( ] )" aria-label="굵은 선" aria-pressed="false"><span class="gauge"><i style="height:7px"></i></span></button>
     <span class="sep"></span>
     <button id="lb-erase" title="지우개 — 그은 줄을 톡 치면 지워집니다" aria-pressed="false">🧽</button>
     <button id="lb-undo" title="되돌리기 (Ctrl+Z)">↩</button>
@@ -770,7 +782,8 @@ function placeNav(){
      어디서 보든 같은 글자 위에 얹힌다.
 
    저장은 하지 않는다 — 이 창의 메모리에만 있다(아래 '일회성' 설명 참고). */
-const M={on:false, erase:false, color:"#ff5b5b", tool:"line", marks:{}, date:"", cur:null};
+const M={on:false, erase:false, color:"#ff5b5b", tool:"line", wk:1,
+         marks:{}, date:"", cur:null, sel:null, move:null};
 
 /* ── 형광펜은 '일회성' 이다 (2026-09-17) ──────────────────────────────
    그은 줄은 이 창의 메모리(M.marks)에만 있다.
@@ -782,7 +795,7 @@ const M={on:false, erase:false, color:"#ff5b5b", tool:"line", marks:{}, date:"",
    창이 열려 있는 동안에는 장을 넘겨도, 뷰어를 닫았다 다시 열어도 유지된다.
    날짜를 바꾸면 다른 신문이므로 비운다. */
 function resetMarksIfNewDate(){
-  if(M.date!==state.date){ M.marks={}; M.date=state.date; M.cur=null; }
+  if(M.date!==state.date){ M.marks={}; M.date=state.date; M.cur=null; M.sel=null; }
 }
 
 const markName=()=> (V.list[V.i]||{}).name || "";          // 지금 보는 사진의 파일 이름
@@ -818,6 +831,47 @@ function snapStraight(a,b){
 function strokeSpan(st){
   const a=st.pts[0], b=st.pts[st.pts.length-1];
   return Math.hypot(b[0]-a[0], (b[1]-a[1])*aspect());
+}
+
+/* ── 선 굵기 ──────────────────────────────────────────────────────────
+   굵기도 '사진 높이의 몇 %' 라는 비율로 저장한다. 그래야 확대해도 글씨와 같은
+   비율로 함께 굵어져, 어느 배율에서 보든 그을 때 본 모습 그대로다.
+   도구마다 기본값이 다르다 — 동그라미는 테두리라 가늘어야 안쪽 글씨가 안 가려진다.
+   여기에 사용자가 고른 배율(M.wk = 가늘게 0.6 · 보통 1 · 굵게 1.7)을 곱한다. */
+const BASE_W={free:0.018, line:0.018, oval:0.009};
+const strokeW=(tool)=> (BASE_W[tool]||0.018)*M.wk;
+
+/* ── 방금 그린 동그라미를 통째로 옮기기 (2026-09-21) ──────────────────
+   동그라미는 한 번에 기사에 딱 맞게 두르기가 어렵다(특히 손가락). 그래서
+   **그린 직후 그 하나만** '고른 상태'로 두고, 안쪽을 끌면 위치를 옮길 수 있게 했다.
+   고른 상태가 풀리는 때 — 딴 곳 긋기 · 도구 바꾸기 · 장 넘기기 · 지우개 켜기 · Esc · 형광펜 끄기.
+   (색·굵기를 바꾸는 건 '고른 동그라미'에 바로 적용되므로 풀리지 않는다)
+   풀린 뒤에는 예전처럼 지우개로 지우고 다시 그린다 — 평소 '긋기'와 헷갈리지 않게 '방금 것'만 허용. */
+function selStroke(){
+  const list=M.marks[markName()];
+  // 지워지거나 장이 바뀌어 목록에서 사라졌으면 고른 상태가 아니다
+  if(!M.sel||!list||list.indexOf(M.sel)<0){ M.sel=null; return null; }
+  return M.sel;
+}
+/* 고른 동그라미를 감싸는 네모 칸 [왼쪽,위,오른쪽,아래] — 판정과 점선 표시에 함께 쓴다 */
+function selBox(st){
+  const [a,b]=st.pts;
+  return [Math.min(a[0],b[0]),Math.min(a[1],b[1]),Math.max(a[0],b[0]),Math.max(a[1],b[1])];
+}
+/* 누른 자리가 그 동그라미 '안'인가. 테두리 바로 바깥도 조금 인정한다(손가락은 뚱뚱하다).
+   세로 여유는 aspect 로 나눠야 가로와 '눈으로 본 거리'가 같아진다. */
+const SEL_PAD=0.012;
+function inSel(st,nx,ny){
+  const [x0,y0,x1,y1]=selBox(st), py=SEL_PAD/aspect();
+  return nx>=x0-SEL_PAD && nx<=x1+SEL_PAD && ny>=y0-py && ny<=y1+py;
+}
+/* 처음 자리(orig)에서 dx,dy 만큼 민다. 사진 밖으로 나가지 않게 이동량을 먼저 깎는다. */
+function moveSel(st,orig,dx,dy){
+  const xs=orig.map(p=>p[0]), ys=orig.map(p=>p[1]);
+  dx=Math.max(-Math.min(...xs), Math.min(1-Math.max(...xs), dx));
+  dy=Math.max(-Math.min(...ys), Math.min(1-Math.max(...ys), dy));
+  st.pts=orig.map(([x,y])=>[x+dx,y+dy]);
+  drawMarks();
 }
 
 /* 지우개가 '이 표시를 눌렀나' 판정할 때 쓸 대표 점들.
@@ -859,7 +913,7 @@ function drawMarks(){
   ctx.lineCap="round"; ctx.lineJoin="round";
   const all=(M.marks[markName()]||[]).concat(M.cur?[M.cur]:[]);
   for(const st of all){
-    ctx.strokeStyle=st.c; ctx.lineWidth=Math.max(2, st.w*ph);
+    ctx.strokeStyle=st.c; ctx.lineWidth=Math.max(1.5, st.w*ph);   // 가는 선도 가늘게 나오도록
     ctx.beginPath();
     if(st.t==="oval"){
       // 끌어서 만든 네모 칸에 딱 들어가는 타원 — 기사를 둥글게 둘러싸는 표시
@@ -872,6 +926,17 @@ function drawMarks(){
       if(st.pts.length===1){ const [x,y]=st.pts[0]; ctx.lineTo(x*pw+0.1, y*ph); }  // 점 하나도 보이게
     }
     ctx.stroke();
+  }
+  /* 고른 동그라미에는 점선 네모를 덧그린다 — '여기를 끌면 옮길 수 있어요' 표시.
+     점선은 표시가 아니라 안내라서, 옮기기가 끝나 고른 상태가 풀리면 같이 사라진다. */
+  const sel=selStroke();
+  if(sel){
+    ctx.save();
+    const [x0,y0,x1,y1]=selBox(sel);
+    ctx.strokeStyle=sel.c; ctx.lineWidth=Math.max(1.2, 0.003*ph);
+    ctx.setLineDash([Math.max(5,0.012*ph), Math.max(4,0.010*ph)]);
+    ctx.strokeRect(x0*pw, y0*ph, (x1-x0)*pw, (y1-y0)*ph);
+    ctx.restore();
   }
 }
 
@@ -886,12 +951,16 @@ function eraseAt(nx,ny){
       if(d<best){ best=d; hit=i; }
     }
   }
-  if(hit>=0 && best<0.035){ list.splice(hit,1); drawMarks(); return true; }
+  if(hit>=0 && best<0.035){
+    if(list[hit]===M.sel) M.sel=null;            // 고른 동그라미를 지웠으면 점선도 없앤다
+    list.splice(hit,1); drawMarks(); return true;
+  }
   return false;
 }
 
 function setPen(on){
-  M.on=on; M.erase=false;
+  M.on=on; M.erase=false; M.sel=null; M.move=null;
+  $("lb-stage").classList.remove("movable","moving");
   $("lb-pen").setAttribute("aria-pressed", on?"true":"false");
   $("lb-tools").hidden=!on;
   $("lb-stage").classList.toggle("marking", on);
@@ -1015,6 +1084,7 @@ function go(step){
   if(n<0||n>=V.list.length) return;
   V.i=n; showPage();
   showNav();                                   // 넘길 땐 화살표를 다시 보여준다
+  M.sel=null;                                  // 다른 장으로 갔으니 '방금 그린 것'도 없다
   drawMarks();                                 // 장마다 형광펜이 따로 있다
 }
 
@@ -1043,6 +1113,8 @@ COLORS.forEach(([id,col])=>{
   $(id).onclick=()=>{
     M.color=col; setErase(false);
     COLORS.forEach(([k])=>$(k).setAttribute("aria-pressed", k===id?"true":"false"));
+    const sel=selStroke();                     // 방금 그린 동그라미는 색도 바로 바뀐다
+    if(sel){ sel.c=col; drawMarks(); }
   };
 });
 $("lb-c1").setAttribute("aria-pressed","true");        // 기본은 빨강
@@ -1051,24 +1123,41 @@ $("lb-c1").setAttribute("aria-pressed","true");        // 기본은 빨강
 const TOOLS=[["lb-t-line","line"],["lb-t-oval","oval"],["lb-t-free","free"]];
 function setTool(t){
   M.tool=t; setErase(false);
+  M.sel=null;                                  // 도구를 바꾸면 '방금 그린 것' 고르기는 끝
   TOOLS.forEach(([id,k])=>$(id).setAttribute("aria-pressed", k===t?"true":"false"));
+  drawMarks();                                 // 점선 안내를 지운다
 }
 TOOLS.forEach(([id,t])=>{ $(id).onclick=()=>setTool(t); });
 
+// 선 굵기 — 가늘게 · 보통(기본) · 굵게. 앞으로 그을 선에 적용된다.
+// 이미 그은 줄은 그을 때의 굵기를 그대로 간직한다(방금 그린 동그라미만 예외로 같이 바뀐다).
+const WEIGHTS=[["lb-w1",0.6],["lb-w2",1],["lb-w3",1.7]];
+function setWeight(k){
+  M.wk=k;
+  WEIGHTS.forEach(([id,v])=>$(id).setAttribute("aria-pressed", v===k?"true":"false"));
+  const sel=selStroke();
+  if(sel){ sel.w=strokeW(sel.t); drawMarks(); }
+}
+WEIGHTS.forEach(([id,v])=>{ $(id).onclick=()=>setWeight(v); });
+
 function setErase(on){
   M.erase=on;
+  if(on){ M.sel=null; drawMarks(); }           // 지울 땐 옮기기 안내(점선)를 치운다
   $("lb-erase").setAttribute("aria-pressed", on?"true":"false");
 }
 $("lb-erase").onclick=()=>setErase(!M.erase);
 $("lb-undo").onclick=()=>{
   const list=M.marks[markName()];
-  if(list&&list.length){ list.pop(); drawMarks(); }
+  if(list&&list.length){
+    if(M.sel===list[list.length-1]) M.sel=null;  // 되돌린 게 고른 것이면 같이 푼다
+    list.pop(); drawMarks();
+  }
 };
 $("lb-clear").onclick=()=>{
   const list=M.marks[markName()];
   if(!list||!list.length) return;
   if(!confirm(`이 장(${V.i+1}쪽)에 그은 형광펜을 모두 지울까요?`)) return;
-  M.marks[markName()]=[]; drawMarks();
+  M.marks[markName()]=[]; M.sel=null; drawMarks();
 };
 // 도구모음을 누를 때 사진 쪽 동작(그리기·닫기)이 같이 일어나지 않게 막는다
 $("lb-tools").addEventListener("pointerdown",e=>e.stopPropagation());
@@ -1084,9 +1173,19 @@ const ARROW_DELTA={ArrowLeft:[1,0],ArrowRight:[-1,0],ArrowUp:[0,1],ArrowDown:[0,
                    a:[1,0],d:[-1,0],w:[0,1],s:[0,-1],A:[1,0],D:[-1,0],W:[0,1],S:[0,-1]};
 document.addEventListener("keydown",e=>{
   if($("lb").hidden) return;
-  if(e.key==="Escape"){ M.on ? setPen(false) : closeViewer(); return; }   // 형광펜 중이면 모드만 끈다
+  // Esc 는 한 단계씩 물러난다: 동그라미 고르기 해제 → 형광펜 끄기 → 뷰어 닫기
+  if(e.key==="Escape"){
+    if(selStroke()){ M.sel=null; drawMarks(); return; }
+    M.on ? setPen(false) : closeViewer(); return;
+  }
   if(e.key==="h"||e.key==="H"){ setPen(!M.on); return; }
   if((e.key==="z"||e.key==="Z")&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); $("lb-undo").onclick(); return; }
+  // 선 굵기 한 단계씩 — [ 가늘게 / ] 굵게
+  if(M.on&&(e.key==="["||e.key==="]")){
+    const i=WEIGHTS.findIndex(([,v])=>v===M.wk);
+    const k=Math.max(0, Math.min(WEIGHTS.length-1, (i<0?1:i)+(e.key==="]"?1:-1)));
+    setWeight(WEIGHTS[k][1]); return;
+  }
 
   // 배율과 상관없이 장 넘기기
   if(e.key==="PageDown"){ e.preventDefault(); go(1); return; }
@@ -1094,6 +1193,17 @@ document.addEventListener("keydown",e=>{
   if(e.shiftKey&&e.key==="ArrowRight"){ e.preventDefault(); go(1); return; }
   if(e.shiftKey&&e.key==="ArrowLeft"){ e.preventDefault(); go(-1); return; }
   if(e.key===" "){ e.preventDefault(); go(1); return; }
+
+  // 방금 그린 동그라미가 고른 상태면 방향키는 '그 동그라미 미세 조정'이 된다.
+  // (Shift+←→ 는 위에서 이미 장 넘기기로 처리되므로 여기 오지 않는다)
+  const selK=M.on?selStroke():null;
+  if(selK&&ARROW_DELTA[e.key]){
+    e.preventDefault();
+    const [kx,ky]=ARROW_DELTA[e.key];          // 화면을 미는 방향이라 부호가 반대다
+    const step=0.004;                          // 한 번에 사진 가로의 0.4%
+    moveSel(selK, selK.pts.map(p=>p.slice()), -kx*step, -ky*step/aspect());
+    return;
+  }
 
   const mv=ARROW_DELTA[e.key];
   if(mv){
@@ -1167,11 +1277,19 @@ stage.addEventListener("pointerdown",e=>{
     const q=toImgXY(e.clientX,e.clientY);
     if(q){
       if(M.erase){ eraseAt(q[0],q[1]); V.drag=null; return; }
+      // ★ 방금 그린 동그라미 '안'을 눌렀다 → 새로 긋지 말고 통째로 옮긴다
+      const sel=selStroke();
+      if(sel&&inSel(sel,q[0],q[1])){
+        M.move={st:sel, from:q, orig:sel.pts.map(p=>p.slice())};
+        stage.classList.add("moving");
+        V.drag=null; return;
+      }
+      if(sel){ M.sel=null; }                   // 딴 데서 시작했으면 고르기는 여기서 끝
       // 직선·동그라미는 '시작점과 끝점' 두 개만 있으면 된다(끌면서 끝점만 갱신).
       // 자유 긋기만 지나온 점을 전부 쌓는다.
       M.cur = (M.tool==="free")
-        ? {c:M.color, w:0.018, t:"free", pts:[q]}
-        : {c:M.color, w:(M.tool==="oval"?0.009:0.018), t:M.tool, pts:[q,q]};
+        ? {c:M.color, w:strokeW("free"), t:"free", pts:[q]}
+        : {c:M.color, w:strokeW(M.tool), t:M.tool, pts:[q,q]};
       V.drag=null; drawMarks(); return;
     }
   }
@@ -1185,6 +1303,11 @@ function pinchState(){
 stage.addEventListener("pointermove",e=>{
   if(!V.pts.has(e.pointerId)) return;
   V.pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(M.move){                                  // 동그라미를 통째로 옮기는 중
+    const q=toImgXY(e.clientX,e.clientY);
+    if(q) moveSel(M.move.st, M.move.orig, q[0]-M.move.from[0], q[1]-M.move.from[1]);
+    return;
+  }
   if(M.cur){                                   // 표시를 긋는 중
     const q=toImgXY(e.clientX,e.clientY);
     if(!q) return;
@@ -1209,14 +1332,31 @@ stage.addEventListener("pointermove",e=>{
   V.drag.moved=Math.max(V.drag.moved,Math.hypot(dx,dy));
   if(V.zoom>1.001){ V.tx=V.drag.tx+dx; V.ty=V.drag.ty+dy; paint(); }
 });
+/* 누르지 않고 지나가기만 할 때 — 고른 동그라미 위면 커서를 '옮기기' 모양으로.
+   (손가락에는 커서가 없으니 마우스일 때만 본다) */
+stage.addEventListener("pointermove",e=>{
+  if(e.pointerType!=="mouse"||M.move||M.cur) return;
+  const sel=M.on?selStroke():null;
+  const q=sel?toImgXY(e.clientX,e.clientY):null;
+  stage.classList.toggle("movable", !!(sel&&q&&inSel(sel,q[0],q[1])));
+});
+
 function endPointer(e){
   V.pts.delete(e.pointerId);
   if(V.pts.size<2) V.pinch=null;
+  if(M.move){                                  // 옮기기 끝 — 고른 상태는 그대로 둔다(계속 조정 가능)
+    M.move=null; stage.classList.remove("moving"); V.drag=null; return;
+  }
   if(M.cur){                                   // 긋기 끝
     const st=M.cur; M.cur=null;
     // 살짝 눌렀다 뗀 것(길이가 거의 0)은 점만 남아 지저분하므로 버린다
     const tooSmall = st.t!=="free" && strokeSpan(st) < 0.012;
-    if(!tooSmall) markList().push(st);
+    if(!tooSmall){
+      markList().push(st);
+      // 동그라미는 한 번에 맞추기 어렵다 → 방금 그린 것을 고른 상태로 두어 옮길 수 있게
+      M.sel = st.t==="oval" ? st : null;
+      if(M.sel) setSaved("동그라미 안쪽을 끌면 옮길 수 있어요 · 방향키로 미세조정 · Esc 로 확정");
+    }
     drawMarks(); V.drag=null; return;
   }
   // 오른쪽 버튼으로 옮긴 것뿐이면 여기서 끝 — 장을 넘기거나 닫으면 안 된다
@@ -1240,7 +1380,9 @@ function endPointer(e){
 }
 stage.addEventListener("pointerup",endPointer);
 stage.addEventListener("pointercancel",e=>{
-  V.pts.delete(e.pointerId); V.pinch=null; V.drag=null; stage.classList.remove("panning");
+  V.pts.delete(e.pointerId); V.pinch=null; V.drag=null;
+  stage.classList.remove("panning","moving");
+  if(M.move){ M.move=null; return; }           // 옮기던 중 끊겼으면 그 자리에 둔다
   if(M.cur){
     const st=M.cur; M.cur=null;
     if(!(st.t!=="free" && strokeSpan(st)<0.012)) markList().push(st);
