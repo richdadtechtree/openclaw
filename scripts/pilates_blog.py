@@ -23,11 +23,13 @@ pilates_blog.py — 미리 써둔 마이비필라테스 블로그 글을 **하�
   이러면 모델이 죽어도 창고에 글이 남아 있는 한 배달은 멈추지 않는다.
   (같은 이유로 book_slack.py 도 'AI 미경유' 구조다 — HANDOFF.md 참고)
 
-창고에 글이 떨어지면?
---------------------
-  · 남은 글이 적어지면(기본 5편 이하) 발송 메시지 끝에 "재고 N편" 을 붙여 알린다.
-  · 다 떨어지면 글을 **지어내지 않고**, "글이 떨어졌다"는 안내만 한 번 보낸다.
-  → 그때 클로드에게 "필라테스 글 30편 더 써줘" 하면 창고가 다시 찬다.
+배달은 멈추지 않는다
+-------------------
+  · 한 바퀴(창고 전체)를 다 보내면 **자동으로 처음부터 다시** 돈다. 그래서 글이 끊기지 않는다.
+  · 다시 보내는 글에는 "🔁 N회차 — 전에 보낸 글" 안내가 붙는다.
+    네이버는 같은 글을 그대로 올리면 중복 문서로 보므로, 도입부와 경험 문장을 바꿔 올리시면 된다.
+  · 새 글이 5편 이하로 남으면 미리 알려준다 → 클로드에게 "필라테스 글 더 써줘" 하면 창고가 늘어난다.
+  · 새로 넣은 글은 **보낸 횟수가 0이라 가장 먼저** 나간다.
 
 글 파일 형식 (workspace/pilates_posts/day01-….md)
 -------------------------------------------------
@@ -63,7 +65,7 @@ pilates_blog.py — 미리 써둔 마이비필라테스 블로그 글을 **하�
 종료 코드
 ---------
   0 = 정상 (배달 또는 --dry-run 성공)
-  1 = 보낼 글이 없음 (창고가 빔) — 안내만 보내고 조용히 끝
+  1 = 창고에 글 파일이 하나도 없음 — 안내만 보내고 조용히 끝
   2 = 창고/파일 형식 문제
   3 = 슬랙 발송 실패 · 설정 누락
 """
@@ -163,11 +165,20 @@ def parse_post(text):
         elif key == "주제":
             post["topic"] = val
 
-    # 사진 컨셉: "1. ..." 다섯 줄
+    # 사진 컨셉: "1. ..." 로 시작하고, 번호 없는 다음 줄들은 그 사진의 추가 설명이다.
+    #   1. 촬영: 무엇을 어떤 각도로
+    #      포인트: 사진에 꼭 담겨야 할 동작 정보
+    #      캡션: 사진 밑에 넣을 한 줄
     for line in photo_raw.splitlines():
-        m = re.match(r"^\s*(\d+)[.)]\s*(.+)$", line.strip())
+        stripped = line.strip()
+        if not stripped:
+            continue
+        m = re.match(r"^(\d+)[.)]\s*(.+)$", stripped)
         if m:
             post["photos"].append(m.group(2).strip())
+        elif post["photos"]:
+            # 번호 없는 줄 = 바로 앞 사진의 이어지는 설명
+            post["photos"][-1] += "\n" + stripped
 
     if not post["title"]:
         return None, "'제목:' 줄이 없습니다"
@@ -218,6 +229,27 @@ def load_sent(state_file=None):
     return sent
 
 
+def load_sent_counts(state_file=None):
+    """글마다 **몇 번** 보냈는지 센다. (바퀴 수 계산에 쓴다)"""
+    path = state_file or SENT_FILE
+    counts = {}
+    if not os.path.isfile(path):
+        return counts
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    name = json.loads(line).get("file")
+                except Exception:
+                    continue
+                if name:
+                    name = os.path.basename(name)
+                    counts[name] = counts.get(name, 0) + 1
+    except OSError:
+        pass
+    return counts
+
+
 def mark_sent(record, state_file=None):
     """방금 보낸 글을 기록에 남긴다 (한 줄 JSON)."""
     path = state_file or SENT_FILE
@@ -230,14 +262,23 @@ def mark_sent(record, state_file=None):
 
 
 def pick_next(posts_dir=None, state_file=None):
-    """아직 안 보낸 글 중 **제일 앞 것**을 고른다. 남은 편수도 함께 돌려준다.
+    """다음에 배달할 글을 고른다. **창고가 비지 않는 한 배달은 멈추지 않는다.**
 
-    반환: (파일경로 또는 None, 남은 편수)
+    고르는 방법: 지금까지 **가장 적게 보낸 글** 중 파일 이름이 제일 앞인 것.
+      · 1바퀴째에는 결국 day01 → day02 → … 순서가 된다.
+      · 한 바퀴를 다 돌면 자동으로 2바퀴째가 시작된다(다시 day01부터).
+      · 중간에 새 글을 넣으면 보낸 횟수가 0이므로 **새 글이 먼저** 나간다.
+
+    반환: (파일경로 또는 None, 이번 바퀴에 남은 편수, 지금이 몇 바퀴째인지)
     """
     files = list_post_files(posts_dir)
-    sent = load_sent(state_file)
-    remaining = [f for f in files if os.path.basename(f) not in sent]
-    return (remaining[0] if remaining else None), len(remaining)
+    if not files:
+        return None, 0, 1
+    counts = load_sent_counts(state_file)
+    per_file = [(counts.get(os.path.basename(f), 0), f) for f in files]
+    fewest = min(n for n, _ in per_file)
+    candidates = sorted(f for n, f in per_file if n == fewest)
+    return candidates[0], len(candidates), fewest + 1
 
 
 # ── 3. 규칙 점검 (클로드가 쓴 글이라도 기계가 한 번 더 센다) ───────────────
@@ -304,6 +345,10 @@ def validate(post):
     if len(post["photos"]) != 5:
         issues.append(f"사진 컨셉 {len(post['photos'])}개 (5개 필요)")
 
+    thin = [i for i, p in enumerate(post["photos"], 1) if len(p.replace("\n", "")) < 20]
+    if thin:
+        issues.append("사진 컨셉 " + ", ".join(f"{i}번" for i in thin) + " 설명이 너무 짧음")
+
     # (7) 검증되지 않은 의학적 단정
     hits = [p for p in BANNED_PHRASES if p in body]
     if hits:
@@ -325,10 +370,20 @@ def to_slack_bold(text):
     return re.sub(r"\*\*([^*\n]+)\*\*", r"*\1*", text)
 
 
-def build_message(date_str, post, warnings=None, remaining=None, low_stock=5):
+def render_photos(photos):
+    """사진 컨셉을 보기 좋게 편다. 여러 줄짜리는 들여쓰기해서 붙인다."""
+    out = []
+    for i, p in enumerate(photos, 1):
+        parts = p.split("\n")
+        out.append(f"{i}. {parts[0]}")
+        out.extend(f"    {extra}" for extra in parts[1:])
+    return "\n".join(out)
+
+
+def build_message(date_str, post, warnings=None, remaining=None, low_stock=5, round_no=1):
     """규칙서의 '출력 형식' 그대로 최종 메시지를 만든다."""
     subs = ", ".join(post["subs"]) if post["subs"] else "-"
-    photo_lines = "\n".join(f"{i}. {p}" for i, p in enumerate(post["photos"], 1))
+    photo_lines = render_photos(post["photos"])
     msg = (
         f"📝 *마이비필라테스 블로그 글* ({date_str})\n"
         f"🔑 메인 키워드: {post['main']}\n"
@@ -348,9 +403,15 @@ def build_message(date_str, post, warnings=None, remaining=None, low_stock=5):
     if warnings:
         msg += "\n\n⚠️ 자동 점검에서 걸린 부분 (발행 전 눈으로 확인):\n" + \
                "\n".join(f"- {w}" for w in warnings)
-    if remaining is not None and remaining <= low_stock:
-        msg += (f"\n\n📦 남은 글 {remaining}편입니다. "
-                f"다 떨어지기 전에 클로드에게 \"필라테스 글 더 써줘\" 라고 부탁하세요.")
+    if round_no >= 2:
+        # 한 바퀴를 다 돌아 **다시 보내는 글**이다. 그대로 올리면 네이버에서 중복 문서로 본다.
+        msg += (f"\n\n🔁 *{round_no}회차 — 전에 한 번 보낸 글입니다.*\n"
+                f"그대로 올리지 마시고 도입부와 경험 문장만 새로 바꿔서 올려주세요.\n"
+                f"새 글이 필요하면 클로드에게 \"필라테스 글 더 써줘\" 라고 부탁하세요.")
+    elif remaining is not None and remaining <= low_stock:
+        msg += (f"\n\n📦 새 글이 {remaining}편 남았습니다. "
+                f"다 떨어지면 처음 글부터 다시 보내드립니다(내용은 같습니다).\n"
+                f"새 글이 필요하면 클로드에게 \"필라테스 글 더 써줘\" 라고 부탁하세요.")
     return msg
 
 
@@ -466,10 +527,12 @@ def main(argv=None):
         if not files:
             print(f"창고가 비어 있습니다: {posts_dir}")
             return 1
-        print(f"창고: {posts_dir}  (총 {len(files)}편, 보냄 {len(sent)}편)")
+        counts = load_sent_counts()
+        print(f"창고: {posts_dir}  (총 {len(files)}편, 보낸 적 있는 글 {len(sent)}편)")
         for f in files:
             post, err = read_post(f)
-            mark = "✔ 보냄" if os.path.basename(f) in sent else "· 대기"
+            n = counts.get(os.path.basename(f), 0)
+            mark = f"✔ {n}번" if n else "· 대기"
             title = post["title"] if post else f"[형식 오류] {err}"
             print(f"  {mark}  {os.path.basename(f):<28} {title}")
         return 0
@@ -502,7 +565,7 @@ def main(argv=None):
         return 2 if bad else 0
 
     # ── 배달할 글 고르기 ───────────────────────────────────────────────────
-    remaining = len([f for f in files if os.path.basename(f) not in sent])
+    remaining, round_no = len(files), 1
     if args.file:
         target = args.file
         if not os.path.isfile(target):
@@ -516,11 +579,12 @@ def main(argv=None):
             return 2
         target = matches[0]
     else:
-        target, remaining = pick_next(posts_dir)
+        target, remaining, round_no = pick_next(posts_dir)
 
-    # 창고가 비었으면 — **지어내지 않는다.** 안내만 한 번 보낸다.
+    # 창고에 글 파일이 **하나도 없을 때만** 배달을 멈춘다.
+    # (전부 보낸 경우에는 멈추지 않고 처음부터 다시 돈다 — pick_next 참고)
     if not target:
-        print("ℹ️  보낼 글이 없습니다 (창고가 비었거나 전부 보냈습니다).", file=sys.stderr)
+        print("ℹ️  창고에 글 파일이 하나도 없습니다.", file=sys.stderr)
         if not args.dry_run:
             token, channel = slack_creds(args)
             if token:
@@ -537,7 +601,7 @@ def main(argv=None):
         return 2
 
     warnings = validate(post)
-    message = build_message(today, post, warnings, remaining, low_stock)
+    message = build_message(today, post, warnings, remaining, low_stock, round_no)
 
     if args.dry_run:
         print(f"── 배달할 글: {os.path.basename(target)} (발송 안 함) " + "─" * 12)
@@ -554,13 +618,14 @@ def main(argv=None):
         return 3
 
     print(f"✅ 배달 완료 → {channel}  [{os.path.basename(target)}] {post['title']}")
-    print(f"   남은 글 {max(remaining - 1, 0)}편")
+    print(f"   {round_no}바퀴째 / 이번 바퀴에 남은 글 {max(remaining - 1, 0)}편")
     if warnings:
         print("   ⚠️ 점검 사항: " + " / ".join(warnings))
     if not args.no_mark:
         mark_sent({"date": today, "file": os.path.basename(target),
                    "title": post["title"], "main": post["main"],
-                   "chars": body_length(post["body"]), "warnings": warnings})
+                   "chars": body_length(post["body"]), "round": round_no,
+                   "warnings": warnings})
     return 0
 
 

@@ -44,7 +44,10 @@ def make_post_text(main_kw="필라테스 초보",
     filler = "저희 회원님들과 함께 해온 기록을 담담하게 적어둡니다. "
     while pb.body_length(body) < chars:
         body += filler
-    photo_lines = "\n".join(f"{i}. 사진{i} 컨셉 설명" for i in range(1, photos + 1))
+    photo_lines = "\n".join(
+        f"{i}. 촬영: 사진{i} 장면을 어떤 각도로 찍을지 적은 설명\n"
+        f"   포인트: 사진에 담겨야 할 동작 정보\n"
+        f"   캡션: 사진 밑에 넣을 한 줄" for i in range(1, photos + 1))
     return (f"제목: {title}\n"
             f"메인: {main_kw}\n"
             f"서브: 필라테스 입문, 필라테스 준비물\n"
@@ -72,6 +75,13 @@ class 글파일읽기(unittest.TestCase):
         self.assertIsNone(post)
         self.assertIn("제목", err)
 
+    def test_사진설명이_여러_줄이면_붙여_읽는다(self):
+        post, err = pb.parse_post(make_post_text())
+        self.assertIsNone(err)
+        self.assertEqual(len(post["photos"]), 5)          # 줄이 3개여도 사진은 1개로 센다
+        self.assertIn("포인트:", post["photos"][0])
+        self.assertIn("캡션:", post["photos"][0])
+
     def test_사진표시가_없어도_본문은_읽힌다(self):
         text = make_post_text().split(pb.PHOTO_MARK)[0]
         post, err = pb.parse_post(text)
@@ -93,27 +103,38 @@ class 차례고르기(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_안보낸_글중_제일_앞을_고른다(self):
-        target, remaining = pb.pick_next(self.posts, self.state)
+        target, remaining, rnd = pb.pick_next(self.posts, self.state)
         self.assertTrue(os.path.basename(target).startswith("day01"))
-        self.assertEqual(remaining, 3)
+        self.assertEqual((remaining, rnd), (3, 1))
 
     def test_보낸_글은_건너뛴다(self):
         pb.mark_sent({"file": "day01-글.md"}, self.state)
-        target, remaining = pb.pick_next(self.posts, self.state)
+        target, remaining, rnd = pb.pick_next(self.posts, self.state)
         self.assertTrue(os.path.basename(target).startswith("day02"))
-        self.assertEqual(remaining, 2)
+        self.assertEqual((remaining, rnd), (2, 1))
 
-    def test_다_보내면_None(self):
+    def test_다_보내면_처음부터_다시_돈다(self):
+        """한 바퀴가 끝나도 멈추지 않는다 — 배달이 끊기면 안 된다."""
         for i in (1, 2, 3):
             pb.mark_sent({"file": f"day{i:02d}-글.md"}, self.state)
-        target, remaining = pb.pick_next(self.posts, self.state)
-        self.assertIsNone(target)
-        self.assertEqual(remaining, 0)
+        target, remaining, rnd = pb.pick_next(self.posts, self.state)
+        self.assertTrue(os.path.basename(target).startswith("day01"))
+        self.assertEqual(rnd, 2)                       # 2바퀴째
+        self.assertEqual(remaining, 3)
 
-    def test_빈_창고는_None(self):
+    def test_새로_넣은_글이_먼저_나간다(self):
+        for i in (1, 2, 3):
+            pb.mark_sent({"file": f"day{i:02d}-글.md"}, self.state)
+        with open(os.path.join(self.posts, "day04-새글.md"), "w", encoding="utf-8") as f:
+            f.write(make_post_text(title="필라테스 초보 네 번째 이야기를 적어봅니다 오늘"))
+        target, remaining, rnd = pb.pick_next(self.posts, self.state)
+        self.assertTrue(os.path.basename(target).startswith("day04"))
+        self.assertEqual(rnd, 1)                       # 아직 0번 보낸 글이라 1바퀴째
+
+    def test_글_파일이_하나도_없으면_None(self):
         empty = os.path.join(self.tmp, "empty")
         os.makedirs(empty)
-        self.assertEqual(pb.pick_next(empty, self.state), (None, 0))
+        self.assertEqual(pb.pick_next(empty, self.state), (None, 0, 1))
 
 
 class 글자수세기(unittest.TestCase):
@@ -187,8 +208,19 @@ class 최종메시지(unittest.TestCase):
         self.assertNotIn("**첫 번째", msg)
 
     def test_재고가_적으면_알려준다(self):
-        self.assertIn("남은 글 3편", pb.build_message("2026-09-21", self.post(), remaining=3))
-        self.assertNotIn("남은 글", pb.build_message("2026-09-21", self.post(), remaining=20))
+        self.assertIn("새 글이 3편 남았습니다", pb.build_message("2026-09-21", self.post(), remaining=3))
+        self.assertNotIn("남았습니다", pb.build_message("2026-09-21", self.post(), remaining=20))
+
+    def test_두번째_바퀴는_회차를_알려준다(self):
+        msg = pb.build_message("2026-09-21", self.post(), remaining=3, round_no=2)
+        self.assertIn("2회차", msg)
+        self.assertIn("그대로 올리지 마시고", msg)
+        self.assertNotIn("새 글이 3편 남았습니다", msg)   # 회차 안내가 재고 안내를 대신한다
+
+    def test_사진설명_여러_줄이_들여쓰기된다(self):
+        msg = pb.build_message("2026-09-21", self.post())
+        self.assertIn("1. 촬영:", msg)
+        self.assertIn("    포인트:", msg)
 
     def test_점검경고가_붙는다(self):
         msg = pb.build_message("2026-09-21", self.post(), warnings=["본문 900자"])
@@ -232,11 +264,18 @@ class 전체흐름(unittest.TestCase):
         self.assertIn("2번째", self.sent[1][1])          # 같은 글을 두 번 안 보낸다
         self.assertEqual(self.sent[0][0], pb.DEFAULT_CHANNEL)   # #심부름
 
-    def test_창고가_비면_안내만_보낸다(self):
+    def test_한_바퀴_돌면_멈추지_않고_다시_보낸다(self):
         self.run_main(); self.run_main()
         self.sent.clear()
-        self.assertEqual(self.run_main(), 1)             # 종료코드 1 = 보낼 글 없음
+        self.assertEqual(self.run_main(), 0)             # 멈추지 않는다
         self.assertEqual(len(self.sent), 1)
+        self.assertIn("1번째", self.sent[0][1])          # 처음 글로 돌아왔다
+        self.assertIn("2회차", self.sent[0][1])          # 재탕임을 분명히 알린다
+
+    def test_글_파일이_없을_때만_안내로_끝난다(self):
+        empty = os.path.join(self.tmp, "empty")
+        os.makedirs(empty)
+        self.assertEqual(pb.main_for_test(["--posts-dir", empty]), 1)
         self.assertIn("보낼 필라테스 블로그 글이 없습니다", self.sent[0][1])
         self.assertNotIn("📷 오늘의 사진 컨셉", self.sent[0][1])   # 글을 지어내지 않는다
 
