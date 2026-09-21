@@ -36,11 +36,28 @@ if [ ! -f "$SCRIPT" ]; then
   exit 1
 fi
 
-PY="${PYTHON_BIN:-$(command -v python3 || true)}"
-if [ -z "$PY" ]; then
+# ⚠️ venv 가 켜진 상태에서 이 스크립트를 실행하면 `command -v python3` 가
+#    venv 파이썬(예: ~/newspaper/.venv/bin/python3)을 가리킨다.
+#    pilates_blog.py 는 **표준 라이브러리만** 쓰므로 venv 가 전혀 필요 없고,
+#    그 폴더가 지워지거나 옮겨지면 cron 이 조용히 실패한다.
+#    → 그래서 cron 에는 **사라질 걱정이 없는 시스템 파이썬**을 기본으로 넣는다.
+#      (굳이 다른 파이썬을 쓰려면 PYTHON_BIN 으로 지정하면 된다.)
+if [ -n "${PYTHON_BIN:-}" ]; then
+  PY="$PYTHON_BIN"
+elif [ -x /usr/bin/python3 ]; then
+  PY=/usr/bin/python3
+else
+  PY="$(command -v python3 || true)"
+fi
+if [ -z "$PY" ] || [ ! -x "$PY" ]; then
   echo "[error] python3 를 찾지 못했습니다. PYTHON_BIN 으로 지정하세요." >&2
   exit 1
 fi
+case "$PY" in
+  */.venv/*|*/venv/*)
+    echo "[주의] cron 에 venv 파이썬($PY)을 넣습니다. 이 스크립트는 venv 가 필요 없으니" >&2
+    echo "       PYTHON_BIN=/usr/bin/python3 로 다시 등록하시는 편이 안전합니다." >&2 ;;
+esac
 
 # ── 06:00 KST → 서버 로컬 시각으로 환산 ────────────────────────────────────
 if [ -n "${SCHEDULE:-}" ]; then

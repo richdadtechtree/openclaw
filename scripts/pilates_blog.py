@@ -28,7 +28,8 @@ pilates_blog.py — 미리 써둔 마이비필라테스 블로그 글을 **하�
   · 한 바퀴(창고 전체)를 다 보내면 **자동으로 처음부터 다시** 돈다. 그래서 글이 끊기지 않는다.
   · 다시 보내는 글에는 "🔁 N회차 — 전에 보낸 글" 안내가 붙는다.
     네이버는 같은 글을 그대로 올리면 중복 문서로 보므로, 도입부와 경험 문장을 바꿔 올리시면 된다.
-  · 새 글이 5편 이하로 남으면 미리 알려준다 → 클로드에게 "필라테스 글 더 써줘" 하면 창고가 늘어난다.
+  · 새 글이 10편 이하로 남으면 미리 알려준다 → 클로드에게 "필라테스 글 더 써줘" 하면 창고가 늘어난다.
+    (열흘 정도 여유가 생기므로 재탕이 시작되기 전에 채울 수 있다)
   · 새로 넣은 글은 **보낸 횟수가 0이라 가장 먼저** 나간다.
 
 글 파일 형식 (workspace/pilates_posts/day01-….md)
@@ -57,7 +58,7 @@ pilates_blog.py — 미리 써둔 마이비필라테스 블로그 글을 **하�
 ------------------------------------------------------------
   SLACK_BOT_TOKEN_DEFAULT   뚜떵또 봇 토큰 (없으면 SLACK_BOT_TOKEN 폴백)
   SLACK_ERRAND_CHANNEL      보낼 채널 ID (없으면 기본값 C0BNB0YRGSY = #심부름)
-  (선택) PILATES_LOW_STOCK  재고 경고를 띄울 기준 편수 (기본 5)
+  (선택) PILATES_LOW_STOCK  재고 경고를 띄울 기준 편수 (기본 10)
   (선택) PILATES_POSTS_DIR  창고 폴더 경로
 
 ⚠️ 봇이 채널에 없으면 `not_in_channel` 오류 → 슬랙에서 `/invite @뚜떵또` 한 번.
@@ -507,7 +508,7 @@ def main(argv=None):
 
     load_env()
     posts_dir = args.posts_dir
-    low_stock = int(os.getenv("PILATES_LOW_STOCK", "5"))
+    low_stock = int(os.getenv("PILATES_LOW_STOCK", "10"))
     today = datetime.now(KST).strftime("%Y-%m-%d")
 
     # --reset : 보냄 기록 비우기
