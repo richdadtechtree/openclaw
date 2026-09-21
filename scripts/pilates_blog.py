@@ -1,61 +1,77 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-pilates_blog.py — 마이비필라테스 네이버 블로그 글을 매일 1편 만들어 **슬랙 #심부름** 으로 보낸다.
+pilates_blog.py — 미리 써둔 마이비필라테스 블로그 글을 **하루 한 편씩** 슬랙 #심부름 으로 배달한다.
 
 무엇을 하나 (한 줄 요약)
 -----------------------
-  "오늘 날짜(한국시간) → 오늘의 주제 → AI가 글 작성 → 규칙 자동 점검 → 슬랙 발송"
+  "창고(workspace/pilates_posts/)에서 아직 안 보낸 글 중 제일 앞 것 → 규칙 점검 → 슬랙 발송"
 
-전체 흐름
----------
-  1) 규칙서 읽기   workspace/mybpilates_blog_prompt.md  (제목·본문 규칙 + 30일 주제 풀)
-  2) 주제 고르기   한국시간 기준 '며칠' 인지 보고 Day N 주제 선택 (31일 → Day 1 로 순환)
-  3) 글 만들기     AI 모델에게 규칙 + 주제 + 최근에 쓴 제목들을 주고 글을 받는다
-  4) 자동 점검     제목 길이/특수문자, 본문 글자 수, [사진1~5], 키워드 횟수 … 를 직접 센다
-                   → 문제가 있으면 "이 부분이 틀렸다" 고 알려주며 최대 3번까지 다시 쓰게 한다
-  5) 슬랙 발송     규칙서의 출력 형식 그대로 #심부름 채널에 올린다
+⚠️ 이 스크립트는 **글을 쓰지 않는다.** AI도 부르지 않는다.
+   글은 **클로드가 미리 써서 창고에 넣어둔다.** 이 스크립트는 우체부일 뿐이다.
 
-왜 이렇게 만들었나
------------------
-  • **AI 에이전트에게 "블로그 글 써서 보내" 라고 시키는 방식은 쓰지 않는다.**
-    예전에 책 글귀를 그렇게 맡겼다가 AI가 스크립트를 안 돌리고 지어낸 사고가 있었다
-    (HANDOFF.md 참고). 그래서 여기서는 **스크립트가 주인**이고 AI는 "글 쓰는 일"만 한다.
-    주제 선택 · 규칙 점검 · 발송은 전부 코드가 한다.
-  • **파이썬 표준 라이브러리만** 쓴다. 서버 시스템 `python3` 에는 `requests` 가 없기 때문.
-    (이 리포의 단골 함정 — CLAUDE.md 참고) → cron 에 그냥 `python3` 로 걸어도 된다.
+왜 이렇게 바꿨나 (2026-09-21)
+----------------------------
+  처음엔 이 스크립트가 직접 AI를 불러 글을 쓰게 만들었다. 그런데 서버에서 돌려보니
+    · 게이트웨이(ChatGPT 구독 경유) → 500 internal error
+    · 제미나이 키 → 401 "service account is deleted or disabled" (키가 죽어 있음)
+  둘 다 죽어 있었다. 매일 아침 글이 나와야 하는데 **남의 서비스 상태에 목을 매는 구조**였다.
+
+  그래서 역할을 갈랐다:
+    ✍️  글쓰기 = **클로드**(사람이 대화로 부탁 → 품질 확인 → 창고에 저장)
+    📮 배달   = **이 스크립트**(키도, 인터넷 AI도 필요 없음. 슬랙 토큰 하나면 끝)
+  이러면 모델이 죽어도 창고에 글이 남아 있는 한 배달은 멈추지 않는다.
+  (같은 이유로 book_slack.py 도 'AI 미경유' 구조다 — HANDOFF.md 참고)
+
+창고에 글이 떨어지면?
+--------------------
+  · 남은 글이 적어지면(기본 5편 이하) 발송 메시지 끝에 "재고 N편" 을 붙여 알린다.
+  · 다 떨어지면 글을 **지어내지 않고**, "글이 떨어졌다"는 안내만 한 번 보낸다.
+  → 그때 클로드에게 "필라테스 글 30편 더 써줘" 하면 창고가 다시 찬다.
+
+글 파일 형식 (workspace/pilates_posts/day01-….md)
+-------------------------------------------------
+    제목: 필라테스 초보가 첫 수업 전에 알아야 할 세 가지
+    메인: 필라테스 초보
+    서브: 필라테스 입문, 필라테스 준비물, 처음 필라테스
+    주제: Day 1 — 필라테스 초보
+    ===본문===
+    (본문 1000~1200자, 소제목은 **굵게**, [사진1]~[사진5] 배치)
+    ===사진===
+    1. 사진1 컨셉
+    ... 5번까지
 
 사용법
 ------
-  python3 scripts/pilates_blog.py                 # 오늘 주제로 만들어 슬랙 발송
-  python3 scripts/pilates_blog.py --dry-run       # 만들어서 화면에만 출력 (발송 안 함)
-  python3 scripts/pilates_blog.py --day 7         # 주제를 7번으로 강제 (미리 만들어 보기)
-  python3 scripts/pilates_blog.py --check         # 규칙서가 잘 읽히는지만 점검 (AI 호출 없음)
-  python3 scripts/pilates_blog.py --list          # 30일 주제 목록 보기
-  python3 scripts/pilates_blog.py --channel C123  # 다른 채널로 보내기
+  python3 scripts/pilates_blog.py                 # 다음 차례 글을 #심부름 에 배달
+  python3 scripts/pilates_blog.py --dry-run       # 배달 안 하고 화면에만 보기
+  python3 scripts/pilates_blog.py --check         # 창고 전체를 규칙에 맞는지 검사
+  python3 scripts/pilates_blog.py --list          # 창고 목록(보냄/안 보냄) 보기
+  python3 scripts/pilates_blog.py --day 7         # 7번 글을 지정해서 배달
+  python3 scripts/pilates_blog.py --file <경로>   # 특정 파일을 배달
+  python3 scripts/pilates_blog.py --reset         # '보냄' 기록 지우기(처음부터 다시)
 
-필요한 환경변수 (~/.openclaw/.env)
----------------------------------
+필요한 환경변수 (~/.openclaw/.env)  ← AI 키는 하나도 필요 없다
+------------------------------------------------------------
   SLACK_BOT_TOKEN_DEFAULT   뚜떵또 봇 토큰 (없으면 SLACK_BOT_TOKEN 폴백)
   SLACK_ERRAND_CHANNEL      보낼 채널 ID (없으면 기본값 C0BNB0YRGSY = #심부름)
-  GATEWAY_TOKEN             openclaw 게이트웨이 토큰 — 글쓰기 1순위 경로(ChatGPT Plus 구독 사용)
-  GEMINI_API_KEY            2순위 경로(제미나이). 게이트웨이가 죽어 있을 때 대신 쓴다.
-  (선택) PILATES_MODEL_ORDER   "gateway,gemini" 순서 바꾸기
-  (선택) PILATES_GATEWAY_AGENT 게이트웨이로 부를 무툴 에이전트 (기본 openclaw/debate-gpt)
-  (선택) PILATES_NOTIFY_ON_FAIL=0  글 생성 실패 시 슬랙에 실패 알림을 보내지 않기
+  (선택) PILATES_LOW_STOCK  재고 경고를 띄울 기준 편수 (기본 5)
+  (선택) PILATES_POSTS_DIR  창고 폴더 경로
 
-⚠️ 봇이 채널에 없으면 `not_in_channel` 오류가 난다 → 슬랙에서 `/invite @뚜떵또` 한 번 해줄 것.
+⚠️ 봇이 채널에 없으면 `not_in_channel` 오류 → 슬랙에서 `/invite @뚜떵또` 한 번.
 
 종료 코드
 ---------
-  0 = 정상 (발송 또는 --dry-run 성공)
-  2 = 규칙서 문제 (파일 없음 / 주제를 못 읽음)
-  3 = 모델 호출 실패 · 슬랙 발송 실패 · 설정 누락
+  0 = 정상 (배달 또는 --dry-run 성공)
+  1 = 보낼 글이 없음 (창고가 빔) — 안내만 보내고 조용히 끝
+  2 = 창고/파일 형식 문제
+  3 = 슬랙 발송 실패 · 설정 누락
 """
 
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import os
 import re
@@ -67,14 +83,14 @@ from datetime import datetime, timedelta, timezone
 
 # ── 경로 / 상수 ────────────────────────────────────────────────────────────
 HERE = os.path.dirname(os.path.abspath(__file__))
-BASE = os.path.dirname(HERE)                              # ~/.openclaw
-DEFAULT_SPEC = os.path.join(BASE, "workspace", "mybpilates_blog_prompt.md")
-STATE_DIR = os.path.join(BASE, "workspace", "pilates_blog")   # 지난 글 보관(.gitignore 대상)
-HISTORY_FILE = os.path.join(STATE_DIR, "history.jsonl")
+BASE = os.path.dirname(HERE)                                   # ~/.openclaw
+POSTS_DIR = os.getenv("PILATES_POSTS_DIR") or os.path.join(BASE, "workspace", "pilates_posts")
+STATE_DIR = os.path.join(BASE, "workspace", "pilates_blog")    # 보냄 기록(.gitignore 대상)
+SENT_FILE = os.path.join(STATE_DIR, "sent.jsonl")
 
-KST = timezone(timedelta(hours=9))                        # 서버 시간대와 무관하게 '한국 날짜' 사용
-DEFAULT_CHANNEL = "C0BNB0YRGSY"                           # 슬랙 #심부름
-LINE = "━" * 28                                           # 규칙서 출력 형식의 구분선
+KST = timezone(timedelta(hours=9))                             # 서버 시간대와 무관하게 '한국 날짜'
+DEFAULT_CHANNEL = "C0BNB0YRGSY"                                # 슬랙 #심부름
+LINE = "━" * 28
 
 # 제목에 쓰면 안 되는 기호들 (규칙서 "특수문자 사용 금지")
 BANNED_TITLE_CHARS = "★☆♥♡◆◇➤▶◀■□●○※✔✅✨🔥💪💛◈♠♣!?~"
@@ -85,13 +101,11 @@ BANNED_PHRASES = [
     "치료됩니다", "디스크가 낫", "병원 안 가도", "의학적으로 입증된 유일",
 ]
 
-# 본문 글자 수 목표 (규칙서: 1000~1200자, 공백 포함)
-BODY_MIN, BODY_MAX = 1000, 1200
-BODY_HARD_MIN, BODY_HARD_MAX = 900, 1350   # 이 밖이면 "다시 써" 라고 되돌린다
+BODY_MIN, BODY_MAX = 1000, 1200        # 본문 글자 수 목표 (규칙서)
+TITLE_MIN, TITLE_MAX = 25, 35          # 제목 글자 수 목표 (규칙서)
 
-# 제목 글자 수 목표 (규칙서: 25~35자)
-TITLE_MIN, TITLE_MAX = 25, 35
-TITLE_HARD_MIN, TITLE_HARD_MAX = 20, 40
+BODY_MARK = "===본문==="
+PHOTO_MARK = "===사진==="
 
 
 # ── 0. .env 읽기 (다른 스크립트와 같은 방식, 추가 라이브러리 없음) ──────────
@@ -113,299 +127,123 @@ def load_env():
             break
 
 
-# ── 1. 규칙서(마크다운) 읽기 ───────────────────────────────────────────────
-def read_spec(path):
-    """규칙서 파일을 통째로 읽어 문자열로 돌려준다. 없으면 None."""
-    if not os.path.isfile(path):
-        return None
-    with open(path, encoding="utf-8") as f:
-        return f.read()
+# ── 1. 창고에서 글 읽기 ────────────────────────────────────────────────────
+def parse_post(text):
+    """글 파일 한 개를 제목·키워드·본문·사진컨셉으로 나눈다.
 
-
-def strip_comments(md):
-    """마크다운 주석(<!-- ... -->)을 걷어낸다.
-
-    왜 필요한가: 규칙서 맨 위 '사용법 안내' 주석 안에 예시로 적어둔
-    `### Day 3 — …` 같은 줄을 진짜 주제로 잘못 읽는 사고가 있었다.
-    (실제로 주제가 30개가 아니라 31개로 세어졌다.)
+    형식이 어긋나면 (None, 사유) 를 돌려준다 — **추측해서 보내지 않는다.**
     """
-    return re.sub(r"<!--.*?-->", "", md, flags=re.S)
+    if BODY_MARK not in text:
+        return None, f"'{BODY_MARK}' 표시가 없습니다"
+    head, rest = text.split(BODY_MARK, 1)
 
+    if PHOTO_MARK in rest:
+        body, photo_raw = rest.split(PHOTO_MARK, 1)
+    else:
+        body, photo_raw = rest, ""
 
-def split_sections(md):
-    """마크다운을 '## 제목' 단위로 잘라 {제목: 본문} 사전으로 만든다.
+    post = {"title": "", "main": "", "subs": [], "topic": "",
+            "body": body.strip(), "photos": []}
 
-    이렇게 해두면 규칙서에서 필요한 부분(글 작성 규칙, 사진 컨셉 안내 …)만
-    골라 AI에게 전달할 수 있다.
-    """
-    sections, cur, buf = {}, None, []
-    for line in strip_comments(md).splitlines():
-        m = re.match(r"^##\s+(?!#)(.*)$", line)     # '##' 만 (### 은 소제목이라 제외)
-        if m:
-            if cur is not None:
-                sections[cur] = "\n".join(buf).strip()
-            cur, buf = m.group(1).strip(), []
-        elif cur is not None:
-            buf.append(line)
-    if cur is not None:
-        sections[cur] = "\n".join(buf).strip()
-    return sections
-
-
-def parse_topics(md):
-    """'### Day N — 이름' 블록들을 읽어 주제 목록으로 만든다.
-
-    각 주제는 이렇게 생긴 사전이 된다:
-      {"day": 1, "name": "필라테스 초보", "main": "필라테스 초보",
-       "subs": ["필라테스 입문", ...], "direction": "...", "photos": ["...", ...]}
-    """
-    topics = []
-    cur = None
-    for raw in strip_comments(md).splitlines():
-        # 제목(### Day N)은 반드시 줄 맨 앞에서 시작해야 한다.
-        # 들여쓴 줄은 '예시로 적어둔 글' 이지 진짜 주제가 아니다.
-        m = re.match(r"^###\s+Day\s+(\d+)\s*[—\-–]\s*(.+)$", raw)
-        line = raw.strip()
-        if m:
-            if cur:
-                topics.append(cur)
-            cur = {"day": int(m.group(1)), "name": m.group(2).strip(),
-                   "main": "", "subs": [], "direction": "", "photos": []}
+    # 머리말: "키: 값" 줄들
+    for line in head.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
             continue
-        if cur is None:
+        m = re.match(r"^(제목|메인|서브|주제)\s*[:：]\s*(.+)$", line)
+        if not m:
             continue
-        m = re.match(r"^-\s*메인:\s*(.+?)\s*\|\s*서브:\s*(.+)$", line)
-        if m:
-            cur["main"] = m.group(1).strip()
-            cur["subs"] = [s.strip() for s in m.group(2).split(",") if s.strip()]
-            continue
-        m = re.match(r"^-\s*방향:\s*(.+)$", line)
-        if m:
-            cur["direction"] = m.group(1).strip()
-            continue
-        m = re.match(r"^-\s*사진:\s*(.+)$", line)
-        if m:
-            # "①스튜디오 전경 ②호흡 연습" → ["스튜디오 전경", "호흡 연습", ...]
-            parts = re.split(r"[①②③④⑤⑥⑦⑧⑨⑩]", m.group(1))
-            cur["photos"] = [p.strip(" ·,") for p in parts if p.strip(" ·,")]
-    if cur:
-        topics.append(cur)
-    topics.sort(key=lambda t: t["day"])
-    return topics
+        key, val = m.group(1), m.group(2).strip()
+        if key == "제목":
+            post["title"] = val
+        elif key == "메인":
+            post["main"] = val
+        elif key == "서브":
+            post["subs"] = [s.strip() for s in val.split(",") if s.strip()]
+        elif key == "주제":
+            post["topic"] = val
 
-
-def pick_topic(topics, day_of_month):
-    """오늘 날짜(며칠)에 해당하는 주제를 고른다.
-
-    규칙서: 1일→주제1 … 30일→주제30, 31일→주제1 로 순환.
-    주제가 30개가 아니어도(예: 20개만 써둠) 나머지 연산으로 안전하게 돈다.
-    """
-    if not topics:
-        return None
-    idx = (day_of_month - 1) % len(topics)
-    return topics[idx]
-
-
-# ── 2. AI에게 줄 지시문 만들기 ─────────────────────────────────────────────
-def build_rules_text(sections):
-    """규칙서에서 'AI가 알아야 할 규칙' 부분만 모아 하나의 글로 만든다.
-
-    '출력 형식' 섹션은 일부러 뺀다 — 최종 모양은 이 스크립트가 직접 조립하기 때문.
-    (AI가 형식까지 흉내 내면 파싱이 흔들린다.)
-    """
-    want = ["글 작성 규칙", "사진 컨셉 안내", "참고: 네이버 상위노출 핵심 원칙"]
-    chunks = []
-    for name in want:
-        for key, body in sections.items():
-            if key.startswith(name):
-                chunks.append(f"## {key}\n{body}")
-                break
-    return "\n\n".join(chunks).strip()
-
-
-SYSTEM_PROMPT = """너는 '마이비필라테스' 네이버 블로그를 직접 운영하는 필라테스 전문 강사다.
-독자가 읽고 "나도 이런 적 있어" 하고 고개를 끄덕일 만한, 솔직하고 담백한 글을 쓴다.
-
-반드시 지킬 것:
-- 아래 '규칙'을 글자 그대로 지킨다. 특히 글자 수와 [사진N] 표시.
-- 검증되지 않은 의학적 주장(완치, 100% 보장 등)은 절대 쓰지 않는다.
-- 다른 운동이나 다른 업체를 깎아내리지 않는다.
-- AI 티가 나는 말버릇("~해볼까요?", "~인데요!")을 남발하지 않는다.
-- 출력은 지정된 형식만 낸다. 설명·인사말·사과문을 덧붙이지 않는다."""
-
-OUTPUT_FORMAT = """출력은 아래 세 덩어리로만, 표시를 그대로 붙여서 낸다.
-
-[제목]
-(제목 한 줄. 25~35자. 특수문자 없이.)
-
-[본문]
-(본문 1000~1200자. 소제목은 **굵게**. [사진1]~[사진5] 를 본문 흐름에 맞게 한 번씩 배치.)
-
-[사진컨셉]
-1. (사진1 설명 — 무엇을 어떤 각도로 찍을지)
-2. (사진2 설명)
-3. (사진3 설명)
-4. (사진4 설명)
-5. (사진5 설명)"""
-
-
-def build_user_prompt(rules, topic, today_str, recent_titles, feedback=None):
-    """AI에게 보낼 실제 주문서. 규칙 + 오늘 주제 + 겹치면 안 되는 최근 제목 + (재작성 시) 지적사항."""
-    subs = ", ".join(topic["subs"]) if topic["subs"] else "(없음)"
-    photos = "\n".join(f"  {i}. {p}" for i, p in enumerate(topic["photos"], 1)) or "  (지정 없음)"
-
-    parts = [
-        f"# 규칙\n{rules}",
-        "\n# 오늘 쓸 글\n"
-        f"- 날짜: {today_str}\n"
-        f"- 주제: Day {topic['day']} — {topic['name']}\n"
-        f"- 메인 키워드: {topic['main']}  ← 제목 앞부분에 넣고, 본문에 3~4회만 자연스럽게\n"
-        f"- 서브 키워드: {subs}  ← 본문에 1~2회\n"
-        f"- 글의 방향: {topic['direction']}\n"
-        f"- 사진 자리 힌트(이 순서대로 [사진1]~[사진5]):\n{photos}",
-    ]
-    if recent_titles:
-        joined = "\n".join(f"  - {t}" for t in recent_titles)
-        parts.append("\n# 최근에 이미 올린 제목들 (표현·구성이 겹치지 않게 할 것)\n" + joined)
-    if feedback:
-        parts.append("\n# ⚠️ 직전 원고에서 발견된 문제 (이번엔 반드시 고칠 것)\n"
-                     + "\n".join(f"  - {f}" for f in feedback))
-    parts.append("\n# 출력 형식\n" + OUTPUT_FORMAT)
-    return "\n".join(parts)
-
-
-# ── 3. 모델 호출 (표준 라이브러리 HTTP) ────────────────────────────────────
-def http_post_json(url, headers, payload, timeout):
-    """JSON 을 POST 하고 (상태코드, 응답문자열) 을 돌려준다. requests 없이 동작."""
-    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(url, data=data, method="POST")
-    for k, v in headers.items():
-        req.add_header(k, v)
-    req.add_header("Content-Type", "application/json; charset=utf-8")
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return r.status, r.read().decode("utf-8", "replace")
-    except urllib.error.HTTPError as e:                     # 4xx/5xx 도 본문을 봐야 원인을 안다
-        return e.code, e.read().decode("utf-8", "replace")
-    except Exception as e:                                  # 타임아웃·연결 실패 등
-        return 0, f"{type(e).__name__}: {e}"
-
-
-def call_gateway(system_prompt, user_prompt, timeout):
-    """1순위: openclaw 게이트웨이(OpenAI 호환 Chat Completions).
-
-    debate.py 와 같은 길이다. 별도 API 키 없이 ChatGPT Plus 구독 세션을 쓰고,
-    툴이 막힌 전용 에이전트(debate-gpt)를 부르므로 글만 써서 돌려준다.
-    """
-    token = os.getenv("GATEWAY_TOKEN", "")
-    if not token:
-        return None, "GATEWAY_TOKEN 없음"
-    url = os.getenv("PILATES_GATEWAY_URL", "http://127.0.0.1:18789/v1/chat/completions")
-    agent = os.getenv("PILATES_GATEWAY_AGENT", "openclaw/debate-gpt")
-    status, body = http_post_json(
-        url,
-        {"Authorization": f"Bearer {token}"},
-        {"model": agent,
-         "messages": [{"role": "system", "content": system_prompt},
-                      {"role": "user", "content": user_prompt}],
-         "max_tokens": 2200, "temperature": 0.8},
-        timeout,
-    )
-    if status != 200:
-        return None, f"게이트웨이 오류({status}): {body[:200]}"
-    try:
-        return json.loads(body)["choices"][0]["message"]["content"].strip(), None
-    except Exception as e:
-        return None, f"게이트웨이 응답 파싱 실패: {e}"
-
-
-def call_gemini(system_prompt, user_prompt, timeout):
-    """2순위: 제미나이 REST API 직접 호출. 게이트웨이가 죽어 있어도 글이 나오게 하는 보험."""
-    key = os.getenv("GEMINI_API_KEY", "")
-    if not key:
-        return None, "GEMINI_API_KEY 없음"
-    model = os.getenv("PILATES_GEMINI_MODEL", "gemini-flash-latest")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-    status, body = http_post_json(
-        url,
-        {"x-goog-api-key": key},
-        {"systemInstruction": {"parts": [{"text": system_prompt}]},
-         "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
-         "generationConfig": {"maxOutputTokens": 2600, "temperature": 0.8}},
-        timeout,
-    )
-    if status != 200:
-        return None, f"제미나이 오류({status}): {body[:200]}"
-    try:
-        parts = json.loads(body)["candidates"][0]["content"]["parts"]
-        text = "".join(p.get("text", "") for p in parts).strip()
-        return (text, None) if text else (None, "빈 응답(안전 필터 가능)")
-    except Exception as e:
-        return None, f"제미나이 응답 파싱 실패: {e}"
-
-
-def generate(system_prompt, user_prompt, timeout, order=None):
-    """설정된 순서대로 모델을 시도한다. 하나라도 성공하면 그 글을 쓴다."""
-    backends = {"gateway": call_gateway, "gemini": call_gemini}
-    order = order or [s.strip() for s in
-                      os.getenv("PILATES_MODEL_ORDER", "gateway,gemini").split(",") if s.strip()]
-    errors = []
-    for name in order:
-        fn = backends.get(name)
-        if not fn:
-            errors.append(f"{name}: 알 수 없는 경로")
-            continue
-        text, err = fn(system_prompt, user_prompt, timeout)
-        if text:
-            return text, name, errors
-        errors.append(f"{name}: {err}")
-        print(f"   … {name} 실패 → {err}", file=sys.stderr)
-    return None, None, errors
-
-
-# ── 4. AI 답변 쪼개기 ──────────────────────────────────────────────────────
-def parse_draft(text):
-    """AI가 낸 글을 [제목]/[본문]/[사진컨셉] 세 덩어리로 나눈다.
-
-    AI가 표시를 조금 다르게 써도(**[제목]**, 【제목】 등) 최대한 알아듣게 만든다.
-    """
-    if not text:
-        return None, None, []
-    t = text.replace("【", "[").replace("】", "]")
-    t = re.sub(r"\*\*\s*\[(제목|본문|사진컨셉)\]\s*\*\*", r"[\1]", t)
-    t = re.sub(r"^#+\s*\[(제목|본문|사진컨셉)\]", r"[\1]", t, flags=re.M)
-
-    def grab(tag, nexts):
-        stop = "|".join(re.escape(f"[{n}]") for n in nexts)
-        pat = re.escape(f"[{tag}]") + r"\s*(.*?)(?=" + (stop + r"|\Z" if stop else r"\Z") + r")"
-        m = re.search(pat, t, flags=re.S)
-        return m.group(1).strip() if m else ""
-
-    title = grab("제목", ["본문", "사진컨셉"])
-    body = grab("본문", ["사진컨셉"])
-    photo_raw = grab("사진컨셉", [])
-
-    # 제목은 한 줄만. 앞에 "제목:" 이 또 붙어 있으면 떼어낸다.
-    title = title.splitlines()[0].strip() if title else ""
-    title = re.sub(r"^제목\s*[:：]\s*", "", title).strip().strip('"').strip("'")
-
-    # 사진 컨셉은 "1. ..." 형태 다섯 줄을 뽑는다.
-    photos = []
+    # 사진 컨셉: "1. ..." 다섯 줄
     for line in photo_raw.splitlines():
         m = re.match(r"^\s*(\d+)[.)]\s*(.+)$", line.strip())
         if m:
-            photos.append(m.group(2).strip())
-    return title or None, body or None, photos
+            post["photos"].append(m.group(2).strip())
+
+    if not post["title"]:
+        return None, "'제목:' 줄이 없습니다"
+    if not post["main"]:
+        return None, "'메인:' 줄이 없습니다"
+    if not post["body"]:
+        return None, "본문이 비어 있습니다"
+    return post, None
 
 
-# ── 5. 자동 점검 (규칙을 코드가 직접 센다) ─────────────────────────────────
-def body_length(body):
-    """본문 글자 수. [사진N] 표시와 줄바꿈은 빼고, 공백은 포함해서 센다.
+def read_post(path):
+    """파일 한 개를 읽어 (글, 사유) 로 돌려준다."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except OSError as e:
+        return None, f"파일을 못 읽음: {e}"
+    post, err = parse_post(text)
+    if post:
+        post["file"] = path
+    return post, err
 
-    ([사진N] 은 나중에 사진으로 바뀔 자리 표시라 '글' 로 치지 않는 게 맞다.)
+
+def list_post_files(posts_dir=None):
+    """창고의 글 파일을 이름순으로 모은다 (day01, day02, … 순서 = 배달 순서)."""
+    d = posts_dir or POSTS_DIR
+    return sorted(glob.glob(os.path.join(d, "*.md")))
+
+
+# ── 2. '보냄' 기록 (같은 글을 두 번 보내지 않기) ───────────────────────────
+def load_sent(state_file=None):
+    """이미 보낸 글 파일 이름들을 읽어온다."""
+    path = state_file or SENT_FILE
+    sent = set()
+    if not os.path.isfile(path):
+        return sent
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    name = json.loads(line).get("file")
+                except Exception:
+                    continue
+                if name:
+                    sent.add(os.path.basename(name))
+    except OSError:
+        pass
+    return sent
+
+
+def mark_sent(record, state_file=None):
+    """방금 보낸 글을 기록에 남긴다 (한 줄 JSON)."""
+    path = state_file or SENT_FILE
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except OSError as e:
+        print(f"[경고] 보냄 기록 저장 실패(무시하고 계속): {e}", file=sys.stderr)
+
+
+def pick_next(posts_dir=None, state_file=None):
+    """아직 안 보낸 글 중 **제일 앞 것**을 고른다. 남은 편수도 함께 돌려준다.
+
+    반환: (파일경로 또는 None, 남은 편수)
     """
-    t = re.sub(r"\[사진\s*\d+\]", "", body)
-    t = t.replace("\r", "")
+    files = list_post_files(posts_dir)
+    sent = load_sent(state_file)
+    remaining = [f for f in files if os.path.basename(f) not in sent]
+    return (remaining[0] if remaining else None), len(remaining)
+
+
+# ── 3. 규칙 점검 (클로드가 쓴 글이라도 기계가 한 번 더 센다) ───────────────
+def body_length(body):
+    """본문 글자 수. [사진N] 표시와 줄바꿈은 빼고, 공백은 포함해서 센다."""
+    t = re.sub(r"\[사진\s*\d+\]", "", body).replace("\r", "")
     return len(t.replace("\n", ""))
 
 
@@ -417,98 +255,87 @@ def count_keyword(text, keyword):
     return norm(text).count(norm(keyword))
 
 
-def validate(title, body, photos, topic):
+def validate(post):
     """규칙 위반 목록을 돌려준다. (빈 목록 = 완벽)
 
-    두 종류로 나눈다:
-      hard  … 다시 쓰게 만들 정도의 문제 (글자 수 크게 벗어남, 사진 표시 누락 등)
-      soft  … 알려는 주되 그냥 보내도 되는 정도 (목표 범위에서 살짝 벗어남)
+    글은 클로드가 쓰지만, 사람도 기계도 실수한다. 그래서 **보내기 직전에** 한 번 더 센다:
+    제목 길이·특수문자, 본문 글자 수, [사진1~5], 키워드 횟수, 소제목 개수, 금지 표현.
     """
-    hard, soft = [], []
-    main = topic["main"]
+    issues = []
+    title, body, main = post["title"], post["body"], post["main"]
 
     # (1) 제목
     tlen = len(title)
-    if tlen < TITLE_HARD_MIN or tlen > TITLE_HARD_MAX:
-        hard.append(f"제목이 {tlen}자다. 25~35자로 다시 써라.")
-    elif tlen < TITLE_MIN or tlen > TITLE_MAX:
-        soft.append(f"제목 {tlen}자 (권장 25~35자)")
+    if tlen < TITLE_MIN or tlen > TITLE_MAX:
+        issues.append(f"제목 {tlen}자 (권장 25~35자)")
     bad = [c for c in title if c in BANNED_TITLE_CHARS]
     if bad:
-        hard.append(f"제목에 금지된 특수문자 {''.join(sorted(set(bad)))} 가 있다. 빼고 다시 써라.")
+        issues.append(f"제목에 금지 특수문자 {''.join(sorted(set(bad)))}")
     if count_keyword(title, main) == 0:
-        hard.append(f"제목에 메인 키워드 '{main}' 이 없다. 제목 앞부분에 넣어라.")
+        issues.append(f"제목에 메인 키워드 '{main}' 없음")
     else:
         pos = re.sub(r"\s+", "", title).find(re.sub(r"\s+", "", main))
         if pos > max(4, len(re.sub(r"\s+", "", title)) // 2):
-            soft.append(f"메인 키워드가 제목 뒤쪽({pos}번째 글자)에 있다 — 앞부분 권장")
+            issues.append(f"메인 키워드가 제목 뒤쪽({pos}번째 글자) — 앞부분 권장")
 
     # (2) 본문 길이
     blen = body_length(body)
-    if blen < BODY_HARD_MIN or blen > BODY_HARD_MAX:
-        hard.append(f"본문이 {blen}자다. 1000~1200자로 맞춰 다시 써라.")
-    elif blen < BODY_MIN or blen > BODY_MAX:
-        soft.append(f"본문 {blen}자 (권장 1000~1200자)")
+    if blen < BODY_MIN or blen > BODY_MAX:
+        issues.append(f"본문 {blen}자 (권장 1000~1200자)")
 
     # (3) 사진 자리 표시 [사진1]~[사진5]
     missing = [n for n in range(1, 6) if not re.search(rf"\[사진\s*{n}\]", body)]
     if missing:
-        hard.append("본문에 " + ", ".join(f"[사진{n}]" for n in missing) + " 표시가 빠졌다. 넣어라.")
+        issues.append("본문에 " + ", ".join(f"[사진{n}]" for n in missing) + " 없음")
 
-    # (4) 메인 키워드 횟수 (3~4회)
+    # (4) 메인 키워드 횟수 (3~4회, 5회 초과는 네이버 스팸 위험)
     kc = count_keyword(body, main)
     if kc < 3:
-        hard.append(f"본문에 메인 키워드 '{main}' 이 {kc}번뿐이다. 3~4번 자연스럽게 넣어라.")
-    elif kc > 5:
-        hard.append(f"본문에 '{main}' 이 {kc}번 나온다 — 네이버 스팸 처리 위험. 3~4번으로 줄여라.")
-    elif kc == 5:
-        soft.append(f"메인 키워드 {kc}회 (권장 3~4회)")
+        issues.append(f"본문 메인 키워드 {kc}회 (권장 3~4회)")
+    elif kc > 4:
+        issues.append(f"본문 메인 키워드 {kc}회 — 과다(스팸 위험)")
 
-    # (5) 소제목 2~3개 (**굵게** 표시)
+    # (5) 굵은 소제목 2~3개
     subs = re.findall(r"\*\*([^*\n]{2,40})\*\*", body)
-    if len(subs) < 2:
-        hard.append(f"굵은 소제목이 {len(subs)}개다. 2~3개로 나눠 써라.")
-    elif len(subs) > 3:
-        soft.append(f"소제목 {len(subs)}개 (권장 2~3개)")
+    if len(subs) < 2 or len(subs) > 3:
+        issues.append(f"굵은 소제목 {len(subs)}개 (권장 2~3개)")
 
     # (6) 사진 컨셉 5개
-    if len(photos) != 5:
-        hard.append(f"사진 컨셉이 {len(photos)}개다. 정확히 5개를 써라.")
+    if len(post["photos"]) != 5:
+        issues.append(f"사진 컨셉 {len(post['photos'])}개 (5개 필요)")
 
-    # (7) 금지 표현 (검증되지 않은 의학적 주장)
+    # (7) 검증되지 않은 의학적 단정
     hits = [p for p in BANNED_PHRASES if p in body]
     if hits:
-        hard.append("검증되지 않은 표현 " + ", ".join(f"'{h}'" for h in hits) + " 를 빼라.")
+        issues.append("금지 표현 " + ", ".join(f"'{h}'" for h in hits))
 
-    # (8) 키워드가 좁은 구간에 몰려 반복되는지 (규칙: 같은 키워드 3회 이상 연속 반복 금지)
-    flat = re.sub(r"\s+", "", body)
-    k = re.sub(r"\s+", "", main)
+    # (8) 키워드가 좁은 구간에 몰려 반복되는지
+    flat, k = re.sub(r"\s+", "", body), re.sub(r"\s+", "", main)
     if k:
         for m in re.finditer(re.escape(k), flat):
-            window = flat[m.start(): m.start() + 60]
-            if window.count(k) >= 3:
-                soft.append("메인 키워드가 좁은 구간에 3번 이상 몰려 있다")
+            if flat[m.start(): m.start() + 60].count(k) >= 3:
+                issues.append("메인 키워드가 좁은 구간에 3번 이상 몰림")
                 break
-    return hard, soft
+    return issues
 
 
-# ── 6. 최종 메시지 조립 + 슬랙 발송 ────────────────────────────────────────
+# ── 4. 최종 메시지 조립 + 슬랙 발송 ────────────────────────────────────────
 def to_slack_bold(text):
     """마크다운 **굵게** 를 슬랙 표기 *굵게* 로 바꾼다 (슬랙에서 실제로 굵게 보이도록)."""
     return re.sub(r"\*\*([^*\n]+)\*\*", r"*\1*", text)
 
 
-def build_message(date_str, topic, title, body, photos, warnings):
+def build_message(date_str, post, warnings=None, remaining=None, low_stock=5):
     """규칙서의 '출력 형식' 그대로 최종 메시지를 만든다."""
-    subs = ", ".join(topic["subs"]) if topic["subs"] else "-"
-    photo_lines = "\n".join(f"{i}. {p}" for i, p in enumerate(photos, 1))
+    subs = ", ".join(post["subs"]) if post["subs"] else "-"
+    photo_lines = "\n".join(f"{i}. {p}" for i, p in enumerate(post["photos"], 1))
     msg = (
         f"📝 *마이비필라테스 블로그 글* ({date_str})\n"
-        f"🔑 메인 키워드: {topic['main']}\n"
+        f"🔑 메인 키워드: {post['main']}\n"
         f"🏷️ 서브 키워드: {subs}\n"
         f"{LINE}\n\n"
-        f"제목: {title}\n\n"
-        f"{to_slack_bold(body).strip()}\n\n"
+        f"제목: {post['title']}\n\n"
+        f"{to_slack_bold(post['body']).strip()}\n\n"
         f"{LINE}\n\n"
         f"📷 오늘의 사진 컨셉:\n{photo_lines}\n\n"
         f"{LINE}\n"
@@ -521,6 +348,9 @@ def build_message(date_str, topic, title, body, photos, warnings):
     if warnings:
         msg += "\n\n⚠️ 자동 점검에서 걸린 부분 (발행 전 눈으로 확인):\n" + \
                "\n".join(f"- {w}" for w in warnings)
+    if remaining is not None and remaining <= low_stock:
+        msg += (f"\n\n📦 남은 글 {remaining}편입니다. "
+                f"다 떨어지기 전에 클로드에게 \"필라테스 글 더 써줘\" 라고 부탁하세요.")
     return msg
 
 
@@ -532,7 +362,7 @@ def chunk(text, limit=3500):
     """
     parts, cur = [], ""
     for line in text.splitlines(keepends=True):
-        while len(line) > limit:                 # 한 줄이 한도보다 길면 통째로 잘라 넣는다
+        while len(line) > limit:
             if cur:
                 parts.append(cur)
                 cur = ""
@@ -547,6 +377,22 @@ def chunk(text, limit=3500):
     return parts or [text]
 
 
+def http_post_json(url, headers, payload, timeout=30):
+    """JSON 을 POST 하고 (상태코드, 응답문자열) 을 돌려준다. requests 없이 동작."""
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(url, data=data, method="POST")
+    for k, v in headers.items():
+        req.add_header(k, v)
+    req.add_header("Content-Type", "application/json; charset=utf-8")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode("utf-8", "replace")
+    except Exception as e:
+        return 0, f"{type(e).__name__}: {e}"
+
+
 def post_to_slack(text, channel, token):
     """슬랙에 글을 올린다. 성공하면 True."""
     ok_all = True
@@ -557,7 +403,6 @@ def post_to_slack(text, channel, token):
             "https://slack.com/api/chat.postMessage",
             {"Authorization": f"Bearer {token}"},
             {"channel": channel, "text": prefix + part, "unfurl_links": False},
-            30,
         )
         try:
             data = json.loads(body)
@@ -570,186 +415,152 @@ def post_to_slack(text, channel, token):
                 print("   💡 슬랙 채널에서 `/invite @뚜떵또` 로 봇을 초대하세요.", file=sys.stderr)
             elif err == "channel_not_found":
                 print("   💡 채널 ID 를 확인하세요 (.env 의 SLACK_ERRAND_CHANNEL).", file=sys.stderr)
+            elif err in ("invalid_auth", "not_authed", "token_revoked"):
+                print("   💡 SLACK_BOT_TOKEN_DEFAULT 토큰을 확인하세요.", file=sys.stderr)
             ok_all = False
         time.sleep(0.3)
     return ok_all
 
 
-# ── 7. 지난 글 기록 (같은 제목·구성 반복 방지) ─────────────────────────────
-def load_recent_titles(limit=12):
-    """최근에 보낸 제목들을 읽어온다. AI에게 '이것들과 겹치지 마라' 고 알려주기 위함."""
-    if not os.path.isfile(HISTORY_FILE):
-        return []
-    titles = []
-    try:
-        with open(HISTORY_FILE, encoding="utf-8") as f:
-            for line in f:
-                try:
-                    titles.append(json.loads(line).get("title", ""))
-                except Exception:
-                    continue
-    except OSError:
-        return []
-    return [t for t in titles if t][-limit:]
+def slack_creds(args):
+    """보낼 토큰과 채널을 정한다. 토큰이 없으면 (None, 채널)."""
+    token = os.getenv("SLACK_BOT_TOKEN_DEFAULT") or os.getenv("SLACK_BOT_TOKEN")
+    channel = args.channel or os.getenv("SLACK_ERRAND_CHANNEL") or DEFAULT_CHANNEL
+    return token, channel
 
 
-def save_history(record):
-    """오늘 보낸 글을 기록으로 남긴다 (한 줄 JSON)."""
-    try:
-        os.makedirs(STATE_DIR, exist_ok=True)
-        with open(HISTORY_FILE, "a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
-    except OSError as e:
-        print(f"[경고] 기록 저장 실패(무시하고 계속): {e}", file=sys.stderr)
-
-
-# ── 8. 메인 ────────────────────────────────────────────────────────────────
+# ── 5. 메인 ────────────────────────────────────────────────────────────────
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="마이비필라테스 블로그 글 자동 생성 → 슬랙 #심부름")
-    ap.add_argument("--dry-run", action="store_true", help="발송하지 않고 화면에만 출력")
-    ap.add_argument("--check", action="store_true", help="규칙서 파싱만 점검 (AI 호출 없음)")
-    ap.add_argument("--list", action="store_true", help="30일 주제 목록 보기")
-    ap.add_argument("--day", type=int, help="주제 번호 강제 지정 (1~30)")
-    ap.add_argument("--date", help="기준 날짜 강제 (YYYY-MM-DD)")
+    ap = argparse.ArgumentParser(
+        description="미리 써둔 마이비필라테스 블로그 글을 하루 한 편씩 슬랙 #심부름 으로 배달")
+    ap.add_argument("--dry-run", action="store_true", help="배달하지 않고 화면에만 출력")
+    ap.add_argument("--check", action="store_true", help="창고 전체를 규칙에 맞는지 검사")
+    ap.add_argument("--list", action="store_true", help="창고 목록(보냄/안 보냄) 보기")
+    ap.add_argument("--day", type=int, help="dayNN 로 시작하는 글을 지정해 배달")
+    ap.add_argument("--file", help="특정 글 파일을 지정해 배달")
     ap.add_argument("--channel", help="보낼 슬랙 채널 ID")
-    ap.add_argument("--spec", default=os.getenv("PILATES_SPEC", DEFAULT_SPEC), help="규칙서 경로")
-    ap.add_argument("--retries", type=int, default=2, help="규칙 위반 시 다시 쓰게 할 횟수 (기본 2)")
-    ap.add_argument("--timeout", type=float, default=float(os.getenv("PILATES_TIMEOUT_SEC", "180")),
-                    help="모델 응답 대기 초 (기본 180)")
-    ap.add_argument("--no-history", action="store_true", help="기록 파일에 남기지 않음")
+    ap.add_argument("--posts-dir", default=POSTS_DIR, help="창고 폴더 경로")
+    ap.add_argument("--reset", action="store_true", help="'보냄' 기록을 지운다(처음부터 다시)")
+    ap.add_argument("--no-mark", action="store_true", help="보내되 '보냄' 기록은 남기지 않음")
     args = ap.parse_args(argv)
 
     load_env()
+    posts_dir = args.posts_dir
+    low_stock = int(os.getenv("PILATES_LOW_STOCK", "5"))
+    today = datetime.now(KST).strftime("%Y-%m-%d")
 
-    # 1) 규칙서 읽기
-    md = read_spec(args.spec)
-    if md is None:
-        print(f"❌ 규칙서가 없습니다: {args.spec}", file=sys.stderr)
-        return 2
-    sections = split_sections(md)
-    topics = parse_topics(md)
-    rules = build_rules_text(sections)
+    # --reset : 보냄 기록 비우기
+    if args.reset:
+        if os.path.isfile(SENT_FILE):
+            os.remove(SENT_FILE)
+            print(f"🧹 '보냄' 기록을 지웠습니다: {SENT_FILE}")
+        else:
+            print("ℹ️  지울 기록이 없습니다.")
+        return 0
 
+    files = list_post_files(posts_dir)
+    sent = load_sent()
+
+    # --list : 창고 목록
     if args.list:
-        for t in topics:
-            print(f"Day {t['day']:2d} — {t['name']}  (메인: {t['main']}, 사진 {len(t['photos'])}개)")
+        if not files:
+            print(f"창고가 비어 있습니다: {posts_dir}")
+            return 1
+        print(f"창고: {posts_dir}  (총 {len(files)}편, 보냄 {len(sent)}편)")
+        for f in files:
+            post, err = read_post(f)
+            mark = "✔ 보냄" if os.path.basename(f) in sent else "· 대기"
+            title = post["title"] if post else f"[형식 오류] {err}"
+            print(f"  {mark}  {os.path.basename(f):<28} {title}")
         return 0
 
+    # --check : 창고 전체 규칙 검사 (발송 없음)
     if args.check:
-        print(f"규칙서: {args.spec}")
-        print(f"  섹션 {len(sections)}개, 주제 {len(topics)}개, 규칙 본문 {len(rules)}자")
-        problems = []
-        seen = {}
-        for t in topics:
-            seen.setdefault(t["day"], 0)
-            seen[t["day"]] += 1
-        dups = [d for d, n in seen.items() if n > 1]
-        if dups:
-            problems.append("Day 번호가 중복됨: " + ", ".join(str(d) for d in sorted(dups)))
-        if len(topics) < 28:
-            problems.append(f"주제가 {len(topics)}개뿐 (30개 권장)")
-        for t in topics:
-            if not t["main"]:
-                problems.append(f"Day {t['day']}: 메인 키워드 없음")
-            if len(t["photos"]) != 5:
-                problems.append(f"Day {t['day']}: 사진 힌트 {len(t['photos'])}개 (5개 필요)")
-            if not t["direction"]:
-                problems.append(f"Day {t['day']}: 방향 없음")
-        if not rules:
-            problems.append("'글 작성 규칙' 섹션을 못 찾음")
-        print(f"  토큰: 게이트웨이 {'O' if os.getenv('GATEWAY_TOKEN') else 'X'} / "
-              f"제미나이 {'O' if os.getenv('GEMINI_API_KEY') else 'X'} / "
-              f"슬랙 {'O' if (os.getenv('SLACK_BOT_TOKEN_DEFAULT') or os.getenv('SLACK_BOT_TOKEN')) else 'X'}")
-        print(f"  채널: {args.channel or os.getenv('SLACK_ERRAND_CHANNEL') or DEFAULT_CHANNEL}")
-        if problems:
-            print("⚠️ 문제:")
-            for p in problems:
-                print(f"  - {p}")
+        if not files:
+            print(f"❌ 창고가 비어 있습니다: {posts_dir}", file=sys.stderr)
             return 2
-        print("✅ 규칙서 이상 없음")
-        return 0
+        bad = 0
+        for f in files:
+            post, err = read_post(f)
+            name = os.path.basename(f)
+            if not post:
+                print(f"❌ {name}: {err}")
+                bad += 1
+                continue
+            issues = validate(post)
+            if issues:
+                print(f"⚠️  {name} ({body_length(post['body'])}자)")
+                for i in issues:
+                    print(f"      - {i}")
+                bad += 1
+            else:
+                print(f"✅ {name}  {body_length(post['body']):>4}자  {post['title']}")
+        token, channel = slack_creds(args)
+        print(f"\n총 {len(files)}편 / 문제 {bad}편 / 남은(안 보낸) 글 "
+              f"{len([f for f in files if os.path.basename(f) not in sent])}편")
+        print(f"슬랙 토큰 {'O' if token else 'X'} / 채널 {channel}")
+        return 2 if bad else 0
 
-    # 2) 오늘 주제 고르기 (한국시간 기준 — 서버 시간대와 무관하게 정확)
-    if args.date:
-        try:
-            today = datetime.strptime(args.date, "%Y-%m-%d").replace(tzinfo=KST)
-        except ValueError:
-            print("❌ --date 형식은 YYYY-MM-DD 입니다.", file=sys.stderr)
+    # ── 배달할 글 고르기 ───────────────────────────────────────────────────
+    remaining = len([f for f in files if os.path.basename(f) not in sent])
+    if args.file:
+        target = args.file
+        if not os.path.isfile(target):
+            print(f"❌ 파일이 없습니다: {target}", file=sys.stderr)
             return 2
+    elif args.day:
+        matches = [f for f in files
+                   if os.path.basename(f).startswith(f"day{args.day:02d}")]
+        if not matches:
+            print(f"❌ day{args.day:02d} 로 시작하는 글이 없습니다.", file=sys.stderr)
+            return 2
+        target = matches[0]
     else:
-        today = datetime.now(KST)
-    date_str = today.strftime("%Y-%m-%d")
-    topic = pick_topic(topics, args.day if args.day else today.day)
-    if not topic or not topic["main"]:
-        print("❌ 오늘 주제를 규칙서에서 읽지 못했습니다. `--check` 로 확인하세요.", file=sys.stderr)
-        return 2
-    print(f"📅 {date_str} → Day {topic['day']} — {topic['name']} (메인: {topic['main']})")
+        target, remaining = pick_next(posts_dir)
 
-    # 3) 글 만들기 + 자동 점검 (문제가 있으면 지적해서 다시 쓰게 한다)
-    recent = load_recent_titles()
-    feedback, best, errors = None, None, []
-    for attempt in range(1, args.retries + 2):
-        prompt = build_user_prompt(rules, topic, date_str, recent, feedback)
-        print(f"✍️  원고 작성 중… (시도 {attempt}/{args.retries + 1})")
-        raw, backend, errs = generate(SYSTEM_PROMPT, prompt, args.timeout)
-        errors.extend(errs)
-        if not raw:
-            continue
-        title, body, photos = parse_draft(raw)
-        if not title or not body:
-            feedback = ["[제목]/[본문]/[사진컨셉] 표시를 붙여 형식대로 다시 내라."]
-            print("   … 형식을 못 알아봐서 다시 요청합니다.", file=sys.stderr)
-            continue
-        hard, soft = validate(title, body, photos, topic)
-        cand = {"title": title, "body": body, "photos": photos,
-                "hard": hard, "soft": soft, "backend": backend}
-        if best is None or len(hard) < len(best["hard"]):
-            best = cand                                   # 가장 흠 적은 원고를 들고 있는다
-        if not hard:
-            print(f"   ✅ 점검 통과 (모델: {backend}, 본문 {body_length(body)}자)")
-            break
-        print("   ⚠️ 점검에 걸림 → 다시 요청: " + " / ".join(hard), file=sys.stderr)
-        feedback = hard
-
-    if best is None:
-        print("❌ 글을 만들지 못했습니다: " + " | ".join(errors[-3:]), file=sys.stderr)
-        # 조용히 사라지면 "오늘 글이 안 왔네?" 를 알 수 없으니 실패 사실만 짧게 알린다.
-        if os.getenv("PILATES_NOTIFY_ON_FAIL", "1") != "0" and not args.dry_run:
-            token = os.getenv("SLACK_BOT_TOKEN_DEFAULT") or os.getenv("SLACK_BOT_TOKEN")
-            channel = args.channel or os.getenv("SLACK_ERRAND_CHANNEL") or DEFAULT_CHANNEL
+    # 창고가 비었으면 — **지어내지 않는다.** 안내만 한 번 보낸다.
+    if not target:
+        print("ℹ️  보낼 글이 없습니다 (창고가 비었거나 전부 보냈습니다).", file=sys.stderr)
+        if not args.dry_run:
+            token, channel = slack_creds(args)
             if token:
                 post_to_slack(
-                    f"⚠️ {date_str} 마이비필라테스 블로그 글을 만들지 못했습니다.\n"
-                    f"(주제: Day {topic['day']} {topic['name']} / 사유: {errors[-1] if errors else '알 수 없음'})\n"
-                    f"수동 재시도: `python3 ~/.openclaw/scripts/pilates_blog.py`",
+                    f"📭 {today} 보낼 필라테스 블로그 글이 없습니다.\n"
+                    f"클로드에게 \"필라테스 글 더 써줘\" 라고 부탁해 창고를 채워주세요.\n"
+                    f"(창고: `{posts_dir}`)",
                     channel, token)
-        return 3
+        return 1
 
-    warnings = best["hard"] + best["soft"]
-    message = build_message(date_str, topic, best["title"], best["body"], best["photos"], warnings)
+    post, err = read_post(target)
+    if not post:
+        print(f"❌ {os.path.basename(target)} 형식 오류: {err}", file=sys.stderr)
+        return 2
 
-    # 4) 발송
+    warnings = validate(post)
+    message = build_message(today, post, warnings, remaining, low_stock)
+
     if args.dry_run:
-        print("── 보낼 내용 (실제 발송 안 함) " + "─" * 20)
+        print(f"── 배달할 글: {os.path.basename(target)} (발송 안 함) " + "─" * 12)
         print(message)
+        if warnings:
+            print("\n[점검] " + " / ".join(warnings), file=sys.stderr)
         return 0
 
-    token = os.getenv("SLACK_BOT_TOKEN_DEFAULT") or os.getenv("SLACK_BOT_TOKEN")
-    channel = args.channel or os.getenv("SLACK_ERRAND_CHANNEL") or DEFAULT_CHANNEL
+    token, channel = slack_creds(args)
     if not token:
         print("❌ SLACK_BOT_TOKEN_DEFAULT(또는 SLACK_BOT_TOKEN)이 .env 에 없습니다.", file=sys.stderr)
         return 3
     if not post_to_slack(message, channel, token):
         return 3
 
-    print(f"✅ 발송 완료 → {channel} (모델: {best['backend']}, 본문 {body_length(best['body'])}자)")
+    print(f"✅ 배달 완료 → {channel}  [{os.path.basename(target)}] {post['title']}")
+    print(f"   남은 글 {max(remaining - 1, 0)}편")
     if warnings:
-        print("   ⚠️ 남은 점검 사항: " + " / ".join(warnings))
-    if not args.no_history:
-        save_history({"date": date_str, "day": topic["day"], "topic": topic["name"],
-                      "main": topic["main"], "title": best["title"],
-                      "backend": best["backend"], "chars": body_length(best["body"]),
-                      "warnings": warnings})
+        print("   ⚠️ 점검 사항: " + " / ".join(warnings))
+    if not args.no_mark:
+        mark_sent({"date": today, "file": os.path.basename(target),
+                   "title": post["title"], "main": post["main"],
+                   "chars": body_length(post["body"]), "warnings": warnings})
     return 0
 
 
@@ -758,4 +569,15 @@ main_for_test = main
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except BrokenPipeError:
+        # `... | head` 처럼 출력을 중간에 끊으면 나는 오류다. 잘못된 게 아니니 조용히 끝낸다.
+        try:
+            sys.stdout.close()
+        except Exception:
+            pass
+        sys.exit(0)
+    except KeyboardInterrupt:
+        print("\n중단했습니다.", file=sys.stderr)
+        sys.exit(130)

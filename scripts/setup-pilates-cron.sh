@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# setup-pilates-cron.sh — 마이비필라테스 블로그 글을 **매일 아침 6시(한국시간)** 에
-#                         만들어 슬랙 #심부름 으로 보내는 cron 을 등록한다. (멱등)
+# setup-pilates-cron.sh — 미리 써둔 마이비필라테스 블로그 글을 **매일 아침 6시(한국시간)** 에
+#                         슬랙 #심부름 으로 배달하는 cron 을 등록한다. (멱등)
 #
 # 사용법 (서버에서 한 번만):
 #   ~/.openclaw/scripts/setup-pilates-cron.sh
@@ -22,7 +22,7 @@
 #   SCHEDULE="0 6 * * *"   이걸 주면 환산 없이 이 cron 식을 그대로 쓴다
 #   PYTHON_BIN=...    파이썬 실행기 (기본: 자동탐지 python3)
 #
-# 참고: pilates_blog.py 는 표준 라이브러리만 쓰므로 venv 가 필요 없다
+# 참고: pilates_blog.py 는 표준 라이브러리만 쓰고 AI 키도 안 쓴다 → venv 불필요
 #       (이 리포 단골 함정인 "requests 없음" 에 걸리지 않는다).
 set -euo pipefail
 
@@ -82,5 +82,6 @@ echo "[로그] tail -f $LOGFILE"
 echo
 echo "[먼저 해둘 것]"
 echo "  1) 슬랙 #심부름 채널에서  /invite @뚜떵또   (봇이 채널에 없으면 not_in_channel 오류)"
-echo "  2) 지금 바로 한 편 만들어 보기 (발송 안 함):"
+echo "  2) 창고 점검 + 한 편 미리보기 (발송 안 함):"
+echo "       $PY $SCRIPT --check"
 echo "       $PY $SCRIPT --dry-run"

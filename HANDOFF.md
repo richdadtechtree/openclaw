@@ -49,45 +49,44 @@
 6. **stock 관심종목 급등락 알림**: `scheduler.py alert_job`(약 10분) → 텔레그램 `briefing-bot`. 2% 단위. AI 미사용, 정상.
 7. **관심종목 알림 슬랙 확장(+시간대 게이팅)**: 텔레그램 그대로 두고 **슬랙에도** 전송. 국장(숫자코드)=KRX 장중만, 미장=24h. `scripts/stock_alert_slack.py`(`notify_events`) + `patch_scheduler_slack.py` 로 서버 반영·검증 완료. (상세: 아래 C)
 
-## 🧘 마이비필라테스 블로그 글 자동 발송 — ✅ 신규 (2026-09-21)
+## 🧘 마이비필라테스 블로그 글 자동 배달 — ✅ 신규 (2026-09-21)
 
-"심부름 채널에 매일 필라테스 블로그에 올릴 글을 전달해달라" → **매일 06:00(KST) 슬랙 #심부름 자동 발송**.
+"심부름 채널에 매일 필라테스 블로그에 올릴 글을 전달해달라" → **매일 06:00(KST) 슬랙 #심부름 자동 배달**.
 
-- **채널**: `#심부름` = `C0BNB0YRGSY` (openclaw.json 에 `requireMention:false` 로 이미 등록돼 있음).
-- **구성 (3+1개 파일)**
+- **채널**: `#심부름` = `C0BNB0YRGSY` (openclaw.json 에 `requireMention:false` 로 이미 등록).
+- **⚠️ 구조가 한 번 바뀌었다 (같은 날 재설계)**: 처음엔 스크립트가 AI를 불러 글을 쓰게 만들었는데,
+  서버에서 돌려보니 **게이트웨이 500**(`openclaw/debate-gpt` 경로) + **제미나이 401**
+  (`service account is deleted or disabled` = 키 사망) 으로 둘 다 실패했다.
+  → **역할 분리**: ✍️ 글쓰기 = **클로드**(미리 써서 창고에 저장) / 📮 배달 = 스크립트(AI 키 불필요).
+  같은 이유로 `book_slack.py` 도 AI 미경유 구조다. 모델이 죽어도 배달은 멈추지 않는다.
+  - 🔎 **부수 발견**: 게이트웨이 chatCompletions 가 500 → `#ai-토론` 채널의 **GPT 답변도 지금 안 될 가능성**이 높다. 별도 점검 필요.
+- **구성**
   | 파일 | 역할 |
   |---|---|
-  | `workspace/mybpilates_blog_prompt.md` | **규칙서 = 단일 출처.** 글쓰기 규칙 + 30일 주제 풀. 주제·규칙 변경은 **이 파일만** 고치면 된다 |
-  | `scripts/pilates_blog.py` | 주제 선택 → AI 글 생성 → **규칙 자동 점검** → 슬랙 발송 |
-  | `scripts/setup-pilates-cron.sh` | 매일 06:00 KST cron 등록(멱등, 시간대 자동 환산) |
-  | `scripts/test_pilates_blog.py` | 네트워크 없이 도는 검증 29항목 |
-- **설계 원칙 — "AI에게 발송을 맡기지 않는다"**: 예전 책 글귀 환각 발송 사고(아래 11차 참고)와 같은 구조를
-  피했다. **스크립트가 주인**이고 AI는 '글 쓰는 일'만 한다. 주제 선택·규칙 검사·발송은 전부 코드가 한다.
-- **자동 점검(코드가 직접 셈)**: 제목 25~35자·특수문자 금지·메인 키워드 앞부분 배치 / 본문 1000~1200자
-  (`[사진N]`·줄바꿈 제외, 공백 포함) / `[사진1]~[사진5]` 전부 존재 / 메인 키워드 3~4회(5회 초과 = 네이버 스팸
-  위험이라 되돌림) / 굵은 소제목 2~3개 / 사진 컨셉 5개 / "완치·100% 보장" 등 **검증되지 않은 의학적 단정 차단**.
-  → 위반하면 그 내용을 그대로 지적해 **최대 3회 재작성**. 그래도 남는 항목은 메시지 끝에 `⚠️ 자동 점검` 으로 붙여
-  보낸다(사람이 발행 전에 눈으로 확인).
-- **모델 경로**: 1순위 **게이트웨이**(`openclaw/debate-gpt` = 툴이 막힌 전용 무툴 에이전트, ChatGPT Plus 구독 사용,
-  `GATEWAY_TOKEN` 재사용) → 2순위 **제미나이 REST**(`GEMINI_API_KEY` 재사용). **새로 발급할 키 없음.**
-  둘 다 실패하면 글을 지어내지 않고, "오늘 글을 만들지 못했다"는 한 줄만 슬랙에 남긴다(`PILATES_NOTIFY_ON_FAIL=0` 이면 그것도 끔).
-- **의존성 없음**: 표준 라이브러리(`urllib`)만 쓴다 → **venv 절대경로 함정에 안 걸린다**. cron 에 `python3` 그대로 써도 된다.
-- **서버에서 할 일 (2단계)**
+  | `workspace/pilates_posts/day01~30.md` | **글 창고 30편** (클로드가 작성, 규칙 검사 전부 통과) |
+  | `workspace/mybpilates_blog_prompt.md` | **규칙서** — 클로드가 새 글 쓸 때 보는 기준 + 30일 주제 풀 |
+  | `scripts/pilates_blog.py` | 차례 선택 → **규칙 자동 점검** → 슬랙 배달 (AI 안 부름) |
+  | `scripts/setup-pilates-cron.sh` | 06:00 KST cron 등록(멱등, 시간대 자동 환산) |
+  | `scripts/test_pilates_blog.py` | 네트워크 없이 도는 검증 28항목 |
+- **배달 규칙**: 파일 이름 순으로 **아직 안 보낸 글 중 제일 앞 것**. 보낸 기록은
+  `workspace/pilates_blog/sent.jsonl`(gitignore) → **같은 글을 두 번 안 보낸다**.
+  재고 5편 이하면 메시지 끝에 "남은 글 N편" 을 붙이고, **0편이면 글을 지어내지 않고 안내만** 보낸다.
+- **자동 점검(코드가 직접 셈)**: 제목 25~35자·특수문자 금지·키워드 앞배치 / 본문 1000~1200자
+  (`[사진N]`·줄바꿈 제외) / `[사진1]~[사진5]` / 메인 키워드 3~4회(5회 이상 = 네이버 스팸 위험) /
+  굵은 소제목 2~3개 / 사진 컨셉 5개 / "완치" 등 의학적 단정 차단. 30편 전부 통과 확인.
+- **서버에서 할 일**
   ```bash
-  # 1) 슬랙에서 봇 초대 (한 번만)  →  #심부름 채널에서:  /invite @뚜떵또
-  # 2) cron 등록 + 미리보기
+  # 1) 슬랙 #심부름 에서 한 번만:  /invite @뚜떵또
   cd ~/.openclaw
-  python3 scripts/pilates_blog.py --check      # 규칙서 30개 주제가 잘 읽히는지
-  python3 scripts/pilates_blog.py --dry-run    # 실제 글 한 편 만들어 보기(발송 안 함)
+  python3 scripts/pilates_blog.py --check      # 창고 30편 규칙 검사
+  python3 scripts/pilates_blog.py --dry-run    # 다음 차례 글 미리보기
+  python3 scripts/pilates_blog.py              # 실제 배달
   scripts/setup-pilates-cron.sh                # 매일 06:00 KST 등록
-  crontab -l | grep pilates
-  tail -f scripts/pilates-blog.log
   ```
-- **대화로도 즉시 요청 가능**: `workspace/SOUL.md` 에 규칙 추가 — "필라테스 글 줘" 라고 하면 뚜떵또가
-  `pilates_blog.py --dry-run` 을 실행해 **출력을 그대로** 답한다(직접 쓰지 않는다).
-- **`.env`(선택)**: `SLACK_ERRAND_CHANNEL`(기본 `C0BNB0YRGSY`), `PILATES_MODEL_ORDER`, `PILATES_GEMINI_MODEL` 등 — `.env.example` §12 참고.
-- **남은 확인**: 서버에서 실제 1회 발송(`--dry-run` 없이) 해보고 글 품질·글자 수를 눈으로 검수할 것.
-  글이 밋밋하면 규칙서의 `방향:` 문구를 구체적으로 고치는 게 가장 효과가 크다.
+- **글이 떨어지면**: 클로드에게 "필라테스 글 30편 더 써줘" → `workspace/pilates_posts/` 에 day31~ 로 추가.
+  같은 주제를 다시 쓸 때는 각도를 바꿔야 한다(네이버 중복 문서 위험).
+- **`.env`(선택)**: `SLACK_ERRAND_CHANNEL`(기본 `C0BNB0YRGSY`), `PILATES_LOW_STOCK`, `PILATES_POSTS_DIR` — `.env.example` §12.
+- **남은 확인**: 서버에서 실제 1회 배달해 슬랙 표시(굵게·줄바꿈)를 눈으로 검수할 것.
 
 ## 💪 종국이(GYM종국) 데일리·주간 브리핑 — ✅ 신규 (2026-08-16)
 "종국이는 답을 잘하는데 데일리/주간 브리핑을 안 한다" → **자동 브리핑 복원 + 웹 표시**.

@@ -1,127 +1,119 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-test_pilates_blog.py — 블로그 글 자동 생성기가 '규칙대로 도는지' 확인한다.
+test_pilates_blog.py — '글 배달부' 가 제대로 도는지 확인한다.
 
 왜 필요한가
 -----------
-이 스크립트는 매일 아침 아무도 안 볼 때 혼자 돈다. 그래서 조용히 잘못되면
-"오늘 글이 이상하네?" 하고 사람이 눈치챌 때까지 며칠이 지나간다.
-그래서 **AI를 부르지 않고도** 확인할 수 있는 부분(주제 고르기·형식 읽기·규칙 점검)은
-전부 여기서 미리 검사한다.
+이 스크립트는 매일 아침 아무도 안 볼 때 혼자 돈다. 조용히 잘못되면
+"오늘 글이 왜 안 왔지?" 를 며칠 뒤에나 알게 된다. 그래서 **슬랙도 AI도 부르지 않고**
+확인할 수 있는 부분은 전부 여기서 미리 검사한다.
 
 검사 항목
 ---------
-  1. 주제 고르기 — 1일→Day1, 30일→Day30, 31일→Day1 로 순환하는가
-  2. 규칙서 읽기 — 주석(<!-- -->) 안의 예시를 진짜 주제로 착각하지 않는가
-  3. AI 답변 쪼개기 — [제목]/[본문]/[사진컨셉] 을 제대로 나누는가 (표시가 흐트러져도)
-  4. 글자 수 세기 — [사진N] 표시와 줄바꿈을 빼고 세는가
-  5. 규칙 점검기 — 제목 길이·특수문자·사진 누락·키워드 과다·금지 표현을 잡아내는가
-  6. 최종 메시지 — 규칙서의 출력 형식대로 조립되는가
-  7. 전체 흐름 — 가짜 모델을 끼워 넣고 처음부터 끝까지 굴러가는가 (네트워크 없이)
+  1. 글 파일 읽기 — 형식이 어긋나면 추측하지 않고 사유를 말하는가
+  2. 차례 고르기 — 안 보낸 글 중 제일 앞 것을 고르고, 보낸 건 건너뛰는가
+  3. 글자 수 세기 — [사진N] 표시와 줄바꿈을 빼고 세는가
+  4. 규칙 점검기 — 제목 길이·특수문자·사진 누락·키워드 과다·금지 표현을 잡아내는가
+  5. 최종 메시지 — 규칙서의 출력 형식대로 조립되고, 재고가 적으면 알려주는가
+  6. 전체 흐름 — 가짜 창고로 발송 → 다음날 그 다음 글 → 창고가 비면 안내만
 
 실행:  python3 scripts/test_pilates_blog.py      (외부 라이브러리 불필요)
 """
-import io
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pilates_blog as pb
 
 
-SPEC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                    "workspace", "mybpilates_blog_prompt.md")
-
-
-def make_body(main_kw, chars=1100):
-    """검사용 '합격하는 본문' 을 만든다.
-
-    - 메인 키워드 3번
-    - 굵은 소제목 2개
-    - [사진1]~[사진5]
-    - 글자 수를 원하는 만큼 채운다
-    """
-    head = (f"{main_kw}를 처음 시작할 때 저도 똑같은 고민을 했습니다. [사진1]\n\n"
+def make_post_text(main_kw="필라테스 초보",
+                   title="필라테스 초보가 첫 수업 전에 알아야 할 세 가지",
+                   chars=1100, photos=5):
+    """검사용 '합격하는 글 파일' 내용을 만든다."""
+    body = (f"{main_kw}를 시작할 때 저도 똑같은 고민을 했습니다. [사진1]\n\n"
             f"**첫 번째로 확인할 것**\n"
             f"저희 스튜디오에서는 {main_kw} 수업 전에 자세부터 봅니다. [사진2]\n\n"
             f"**두 번째로 확인할 것**\n"
-            f"회원님들이 가장 많이 묻는 부분이기도 합니다. [사진3]\n\n"
+            f"회원님들이 가장 많이 묻는 부분입니다. [사진3]\n\n"
             f"제가 직접 해보니 {main_kw}는 꾸준함이 전부였습니다. [사진4]\n\n"
             f"궁금한 점은 편하게 문의해주세요. [사진5]\n\n")
     filler = "저희 회원님들과 함께 해온 기록을 담담하게 적어둡니다. "
-    while pb.body_length(head) < chars:
-        head += filler
-    return head
+    while pb.body_length(body) < chars:
+        body += filler
+    photo_lines = "\n".join(f"{i}. 사진{i} 컨셉 설명" for i in range(1, photos + 1))
+    return (f"제목: {title}\n"
+            f"메인: {main_kw}\n"
+            f"서브: 필라테스 입문, 필라테스 준비물\n"
+            f"주제: Day 1 — {main_kw}\n"
+            f"{pb.BODY_MARK}\n{body}\n{pb.PHOTO_MARK}\n{photo_lines}\n")
 
 
-class 주제고르기(unittest.TestCase):
+class 글파일읽기(unittest.TestCase):
+    def test_정상_파일을_읽는다(self):
+        post, err = pb.parse_post(make_post_text())
+        self.assertIsNone(err)
+        self.assertEqual(post["main"], "필라테스 초보")
+        self.assertEqual(post["subs"], ["필라테스 입문", "필라테스 준비물"])
+        self.assertEqual(len(post["photos"]), 5)
+        self.assertIn("[사진1]", post["body"])
+
+    def test_본문표시가_없으면_사유를_말한다(self):
+        post, err = pb.parse_post("제목: 무언가\n메인: 키워드\n본문만 덩그러니")
+        self.assertIsNone(post)
+        self.assertIn(pb.BODY_MARK, err)
+
+    def test_제목이_없으면_보내지_않는다(self):
+        text = make_post_text().replace("제목: 필라테스 초보가 첫 수업 전에 알아야 할 세 가지\n", "")
+        post, err = pb.parse_post(text)
+        self.assertIsNone(post)
+        self.assertIn("제목", err)
+
+    def test_사진표시가_없어도_본문은_읽힌다(self):
+        text = make_post_text().split(pb.PHOTO_MARK)[0]
+        post, err = pb.parse_post(text)
+        self.assertIsNone(err)
+        self.assertEqual(post["photos"], [])      # 사진 컨셉 0개 → 점검에서 걸린다
+
+
+class 차례고르기(unittest.TestCase):
     def setUp(self):
-        self.topics = [{"day": i, "name": f"주제{i}", "main": f"키워드{i}",
-                        "subs": [], "direction": "", "photos": []} for i in range(1, 31)]
+        self.tmp = tempfile.mkdtemp(prefix="pilates-test-")
+        self.posts = os.path.join(self.tmp, "posts")
+        os.makedirs(self.posts)
+        for i in (1, 2, 3):
+            with open(os.path.join(self.posts, f"day{i:02d}-글.md"), "w", encoding="utf-8") as f:
+                f.write(make_post_text(title=f"필라테스 초보 {i}번째 이야기를 적어봅니다 오늘도"))
+        self.state = os.path.join(self.tmp, "sent.jsonl")
 
-    def test_날짜대로_고른다(self):
-        self.assertEqual(pb.pick_topic(self.topics, 1)["day"], 1)
-        self.assertEqual(pb.pick_topic(self.topics, 15)["day"], 15)
-        self.assertEqual(pb.pick_topic(self.topics, 30)["day"], 30)
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def test_31일은_1번으로_돌아온다(self):
-        self.assertEqual(pb.pick_topic(self.topics, 31)["day"], 1)
+    def test_안보낸_글중_제일_앞을_고른다(self):
+        target, remaining = pb.pick_next(self.posts, self.state)
+        self.assertTrue(os.path.basename(target).startswith("day01"))
+        self.assertEqual(remaining, 3)
 
-    def test_주제가_적어도_안터진다(self):
-        few = self.topics[:7]
-        self.assertEqual(pb.pick_topic(few, 8)["day"], 1)     # 7개뿐이면 8일은 다시 1번
-        self.assertIsNone(pb.pick_topic([], 5))
+    def test_보낸_글은_건너뛴다(self):
+        pb.mark_sent({"file": "day01-글.md"}, self.state)
+        target, remaining = pb.pick_next(self.posts, self.state)
+        self.assertTrue(os.path.basename(target).startswith("day02"))
+        self.assertEqual(remaining, 2)
 
+    def test_다_보내면_None(self):
+        for i in (1, 2, 3):
+            pb.mark_sent({"file": f"day{i:02d}-글.md"}, self.state)
+        target, remaining = pb.pick_next(self.posts, self.state)
+        self.assertIsNone(target)
+        self.assertEqual(remaining, 0)
 
-class 규칙서읽기(unittest.TestCase):
-    def setUp(self):
-        self.md = io.open(SPEC, encoding="utf-8").read()
-        self.topics = pb.parse_topics(self.md)
-
-    def test_주제가_30개다(self):
-        self.assertEqual(len(self.topics), 30, "30일 주제 풀이 30개가 아닙니다")
-
-    def test_번호가_안겹친다(self):
-        days = [t["day"] for t in self.topics]
-        self.assertEqual(sorted(days), list(range(1, 31)))
-
-    def test_주석_속_예시는_주제가_아니다(self):
-        """규칙서 맨 위 주석에 적어둔 `### Day 3 — …` 예시를 세면 31개가 된다."""
-        self.assertEqual(len([t for t in self.topics if t["day"] == 3]), 1)
-
-    def test_모든_주제에_키워드와_사진힌트가_있다(self):
-        for t in self.topics:
-            self.assertTrue(t["main"], f"Day {t['day']} 메인 키워드 없음")
-            self.assertTrue(t["subs"], f"Day {t['day']} 서브 키워드 없음")
-            self.assertEqual(len(t["photos"]), 5, f"Day {t['day']} 사진 힌트가 5개가 아님")
-
-    def test_규칙본문이_뽑힌다(self):
-        rules = pb.build_rules_text(pb.split_sections(self.md))
-        self.assertIn("제목 규칙", rules)
-        self.assertIn("1000~1200자", rules)
-        # 출력 형식은 스크립트가 직접 만들므로 AI에게 주지 않는다
-        self.assertNotIn("📝 마이비필라테스 블로그 글 (YYYY-MM-DD)", rules)
-
-
-class 답변쪼개기(unittest.TestCase):
-    def test_기본형식(self):
-        raw = "[제목]\n필라테스 초보가 알아야 할 세 가지\n\n[본문]\n본문입니다. [사진1]\n\n[사진컨셉]\n1. 가\n2. 나\n3. 다\n4. 라\n5. 마"
-        title, body, photos = pb.parse_draft(raw)
-        self.assertEqual(title, "필라테스 초보가 알아야 할 세 가지")
-        self.assertIn("본문입니다", body)
-        self.assertEqual(photos, ["가", "나", "다", "라", "마"])
-
-    def test_표시가_흐트러져도_알아듣는다(self):
-        raw = "**[제목]**\n제목: 코어 운동 시작하기\n## [본문]\n내용\n【사진컨셉】\n1) 하나\n2) 둘"
-        title, body, photos = pb.parse_draft(raw)
-        self.assertEqual(title, "코어 운동 시작하기")     # 앞의 '제목:' 은 떼어낸다
-        self.assertEqual(body.strip(), "내용")
-        self.assertEqual(photos, ["하나", "둘"])
-
-    def test_빈_답변은_None(self):
-        self.assertEqual(pb.parse_draft(""), (None, None, []))
+    def test_빈_창고는_None(self):
+        empty = os.path.join(self.tmp, "empty")
+        os.makedirs(empty)
+        self.assertEqual(pb.pick_next(empty, self.state), (None, 0))
 
 
 class 글자수세기(unittest.TestCase):
@@ -135,130 +127,134 @@ class 글자수세기(unittest.TestCase):
 
 
 class 규칙점검(unittest.TestCase):
-    def setUp(self):
-        self.topic = {"day": 1, "name": "필라테스 초보", "main": "필라테스 초보",
-                      "subs": ["필라테스 입문"], "direction": "", "photos": []}
-        self.title = "필라테스 초보가 첫 수업 전에 알아야 할 세 가지"   # 26자
-        self.body = make_body("필라테스 초보", 1100)
-        self.photos = ["가", "나", "다", "라", "마"]
+    def post(self, **kw):
+        p, err = pb.parse_post(make_post_text(**kw))
+        self.assertIsNone(err)
+        return p
 
-    def test_정상_원고는_통과한다(self):
-        hard, soft = pb.validate(self.title, self.body, self.photos, self.topic)
-        self.assertEqual(hard, [], f"정상 원고인데 걸림: {hard}")
+    def test_정상_글은_통과한다(self):
+        self.assertEqual(pb.validate(self.post()), [])
 
-    def test_제목이_너무_짧으면_걸린다(self):
-        hard, _ = pb.validate("필라테스 초보 안내", self.body, self.photos, self.topic)
-        self.assertTrue(any("제목이" in h for h in hard))
+    def test_제목이_짧으면_걸린다(self):
+        issues = pb.validate(self.post(title="필라테스 초보 안내"))
+        self.assertTrue(any("제목" in i for i in issues))
 
     def test_제목_특수문자를_잡는다(self):
-        hard, _ = pb.validate("필라테스 초보가 알아야 할 세 가지★☆", self.body, self.photos, self.topic)
-        self.assertTrue(any("특수문자" in h for h in hard))
-
-    def test_제목에_키워드가_없으면_걸린다(self):
-        hard, _ = pb.validate("처음 운동 시작할 때 알아두면 좋은 것들 정리", self.body, self.photos, self.topic)
-        self.assertTrue(any("메인 키워드" in h for h in hard))
+        issues = pb.validate(self.post(title="필라테스 초보가 알아야 할 세 가지 정리★"))
+        self.assertTrue(any("특수문자" in i for i in issues))
 
     def test_본문이_짧으면_걸린다(self):
-        hard, _ = pb.validate(self.title, make_body("필라테스 초보", 300), self.photos, self.topic)
-        self.assertTrue(any("본문이" in h for h in hard))
+        issues = pb.validate(self.post(chars=400))
+        self.assertTrue(any("본문" in i for i in issues))
 
     def test_사진표시_누락을_잡는다(self):
-        body = self.body.replace("[사진3]", "").replace("[사진5]", "")
-        hard, _ = pb.validate(self.title, body, self.photos, self.topic)
-        self.assertTrue(any("[사진3]" in h and "[사진5]" in h for h in hard))
+        p = self.post()
+        p["body"] = p["body"].replace("[사진3]", "")
+        self.assertTrue(any("[사진3]" in i for i in pb.validate(p)))
 
     def test_키워드_남발을_잡는다(self):
-        body = self.body + "필라테스 초보 " * 6
-        hard, _ = pb.validate(self.title, body, self.photos, self.topic)
-        self.assertTrue(any("스팸" in h for h in hard))
+        p = self.post()
+        p["body"] += "필라테스 초보 " * 6
+        self.assertTrue(any("과다" in i for i in pb.validate(p)))
 
     def test_의학적_단정을_잡는다(self):
-        body = self.body.replace("꾸준함이 전부였습니다", "허리디스크가 완치됩니다")
-        hard, _ = pb.validate(self.title, body, self.photos, self.topic)
-        self.assertTrue(any("완치" in h for h in hard))
+        p = self.post()
+        p["body"] = p["body"].replace("꾸준함이 전부였습니다", "허리디스크가 완치됩니다")
+        self.assertTrue(any("완치" in i for i in pb.validate(p)))
 
     def test_사진컨셉이_5개가_아니면_걸린다(self):
-        hard, _ = pb.validate(self.title, self.body, ["가", "나"], self.topic)
-        self.assertTrue(any("사진 컨셉" in h for h in hard))
+        issues = pb.validate(self.post(photos=3))
+        self.assertTrue(any("사진 컨셉" in i for i in issues))
 
     def test_소제목이_없으면_걸린다(self):
-        body = self.body.replace("**", "")
-        hard, _ = pb.validate(self.title, body, self.photos, self.topic)
-        self.assertTrue(any("소제목" in h for h in hard))
+        p = self.post()
+        p["body"] = p["body"].replace("**", "")
+        self.assertTrue(any("소제목" in i for i in pb.validate(p)))
 
 
 class 최종메시지(unittest.TestCase):
+    def post(self):
+        p, _ = pb.parse_post(make_post_text())
+        return p
+
     def test_출력형식대로_조립된다(self):
-        topic = {"day": 1, "name": "필라테스 초보", "main": "필라테스 초보",
-                 "subs": ["필라테스 입문", "필라테스 준비물"], "direction": "", "photos": []}
-        msg = pb.build_message("2026-09-21", topic, "제목입니다",
-                               "**소제목**\n본문 [사진1]", ["가", "나", "다", "라", "마"], [])
+        msg = pb.build_message("2026-09-21", self.post())
         self.assertIn("📝 *마이비필라테스 블로그 글* (2026-09-21)", msg)
         self.assertIn("🔑 메인 키워드: 필라테스 초보", msg)
-        self.assertIn("🏷️ 서브 키워드: 필라테스 입문, 필라테스 준비물", msg)
-        self.assertIn("제목: 제목입니다", msg)
         self.assertIn("📷 오늘의 사진 컨셉:", msg)
         self.assertIn("✅ 발행 전 체크리스트:", msg)
-        self.assertIn("*소제목*", msg)          # 슬랙에서 굵게 보이도록 ** → *
-        self.assertNotIn("**소제목**", msg)
+        self.assertIn("*첫 번째로 확인할 것*", msg)     # ** → * (슬랙 굵게)
+        self.assertNotIn("**첫 번째", msg)
+
+    def test_재고가_적으면_알려준다(self):
+        self.assertIn("남은 글 3편", pb.build_message("2026-09-21", self.post(), remaining=3))
+        self.assertNotIn("남은 글", pb.build_message("2026-09-21", self.post(), remaining=20))
 
     def test_점검경고가_붙는다(self):
-        topic = {"day": 1, "name": "x", "main": "x", "subs": [], "direction": "", "photos": []}
-        msg = pb.build_message("2026-09-21", topic, "t", "b", ["1"], ["본문 900자"])
+        msg = pb.build_message("2026-09-21", self.post(), warnings=["본문 900자"])
         self.assertIn("⚠️ 자동 점검에서 걸린 부분", msg)
-        self.assertIn("본문 900자", msg)
 
     def test_긴글은_쪼갠다(self):
         parts = pb.chunk("가" * 4000 + "\n" + "나" * 4000)
         self.assertGreater(len(parts), 1)
-        self.assertTrue(all(len(p) <= 3500 + 1 for p in parts))
+        self.assertTrue(all(len(p) <= 3501 for p in parts))
 
 
 class 전체흐름(unittest.TestCase):
-    """가짜 모델을 끼워 넣어 '네트워크 없이' 처음부터 끝까지 돌려본다."""
+    """가짜 창고를 만들어 '슬랙 없이' 처음부터 끝까지 돌려본다."""
 
     def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="pilates-flow-")
+        self.posts = os.path.join(self.tmp, "posts")
+        os.makedirs(self.posts)
+        for i in (1, 2):
+            with open(os.path.join(self.posts, f"day{i:02d}-글.md"), "w", encoding="utf-8") as f:
+                f.write(make_post_text(title=f"필라테스 초보 {i}번째 이야기를 적어봅니다 오늘"))
         self.sent = []
-        self._gen, self._post = pb.generate, pb.post_to_slack
-
-        def fake_generate(system, user, timeout, order=None):
-            main = "필라테스 초보" if "필라테스 초보" in user else "코어 운동"
-            body = make_body(main, 1100)
-            photos = "\n".join(f"{i}. 사진{i} 설명" for i in range(1, 6))
-            return (f"[제목]\n{main}가 첫 수업 전에 알아야 할 세 가지\n\n"
-                    f"[본문]\n{body}\n\n[사진컨셉]\n{photos}"), "fake", []
-
-        pb.generate = fake_generate
+        self._post, self._sentfile = pb.post_to_slack, pb.SENT_FILE
+        pb.SENT_FILE = os.path.join(self.tmp, "sent.jsonl")
         pb.post_to_slack = lambda text, channel, token: self.sent.append((channel, text)) or True
         os.environ["SLACK_BOT_TOKEN_DEFAULT"] = "xoxb-test"
 
     def tearDown(self):
-        pb.generate, pb.post_to_slack = self._gen, self._post
+        pb.post_to_slack, pb.SENT_FILE = self._post, self._sentfile
         os.environ.pop("SLACK_BOT_TOKEN_DEFAULT", None)
+        shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def test_하루치가_발송된다(self):
-        rc = pb.main_for_test(["--date", "2026-09-01", "--no-history"])
-        self.assertEqual(rc, 0)
+    def run_main(self, *extra):
+        return pb.main_for_test(["--posts-dir", self.posts, *extra])
+
+    def test_하루에_한편씩_순서대로_간다(self):
+        self.assertEqual(self.run_main(), 0)
+        self.assertEqual(self.run_main(), 0)
+        self.assertEqual(len(self.sent), 2)
+        self.assertIn("1번째", self.sent[0][1])
+        self.assertIn("2번째", self.sent[1][1])          # 같은 글을 두 번 안 보낸다
+        self.assertEqual(self.sent[0][0], pb.DEFAULT_CHANNEL)   # #심부름
+
+    def test_창고가_비면_안내만_보낸다(self):
+        self.run_main(); self.run_main()
+        self.sent.clear()
+        self.assertEqual(self.run_main(), 1)             # 종료코드 1 = 보낼 글 없음
         self.assertEqual(len(self.sent), 1)
-        channel, text = self.sent[0]
-        self.assertEqual(channel, pb.DEFAULT_CHANNEL)       # #심부름
-        self.assertIn("필라테스 초보", text)
-        self.assertIn("📷 오늘의 사진 컨셉:", text)
+        self.assertIn("보낼 필라테스 블로그 글이 없습니다", self.sent[0][1])
+        self.assertNotIn("📷 오늘의 사진 컨셉", self.sent[0][1])   # 글을 지어내지 않는다
 
-    def test_dry_run은_발송하지_않는다(self):
-        rc = pb.main_for_test(["--date", "2026-09-02", "--dry-run", "--no-history"])
-        self.assertEqual(rc, 0)
+    def test_dry_run은_보내지도_기록하지도_않는다(self):
+        self.assertEqual(self.run_main("--dry-run"), 0)
         self.assertEqual(self.sent, [])
+        self.assertEqual(self.run_main(), 0)
+        self.assertIn("1번째", self.sent[0][1])          # dry-run 이 차례를 까먹지 않았다
 
-    def test_모델이_다_죽으면_실패로_끝난다(self):
-        pb.generate = lambda *a, **k: (None, None, ["gateway: 연결 실패"])
-        os.environ["PILATES_NOTIFY_ON_FAIL"] = "0"          # 실패 알림도 끄고 본다
-        try:
-            rc = pb.main_for_test(["--date", "2026-09-03", "--no-history", "--retries", "0"])
-        finally:
-            os.environ.pop("PILATES_NOTIFY_ON_FAIL", None)
-        self.assertEqual(rc, 3)
-        self.assertEqual(self.sent, [])
+    def test_day_로_지정해서_보낼_수_있다(self):
+        self.assertEqual(self.run_main("--day", "2"), 0)
+        self.assertIn("2번째", self.sent[0][1])
+
+    def test_check_는_창고를_검사한다(self):
+        self.assertEqual(self.run_main("--check"), 0)
+        with open(os.path.join(self.posts, "day03-깨진글.md"), "w", encoding="utf-8") as f:
+            f.write("제목만 있고 본문 표시가 없음")
+        self.assertEqual(self.run_main("--check"), 2)    # 문제 있으면 2
 
 
 if __name__ == "__main__":
