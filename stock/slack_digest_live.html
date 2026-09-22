@@ -368,7 +368,7 @@ function inline(raw){
   return o;
 }
 // 일반 메시지용(줄바꿈 → <br>)
-function mrkdwn(raw){ return inline(raw).replace(/\n/g,"<br>"); }
+function mrkdwn(raw){ return inline(splitListLead(raw)).replace(/\n/g,"<br>"); }
 
 /* ══ 신문 브리핑 전용 서식기 ══════════════════════════════════
    슬랙으로 온 브리핑은 "카테고리 + 제목 + • WHAT/WHY/HOW + • 원문 확인"
@@ -464,6 +464,16 @@ function briefTitle(t){
          (sub?'<div class="brf-sub">'+inline(sub)+"</div>":"");
 }
 
+/* ── "…봐야 할 5가지 1. 첫 항목…" 줄 나누기 ─────────────────────────
+   마지막 요약 묶음은 AI 가 머리말과 1번 항목을 한 줄에 붙여 보내는 일이 많다.
+     예) 🔍 오늘 신문에서 반드시 연결해서 봐야 할 5가지 1. 서울 매매 3% …
+   → "5가지" 바로 뒤에서 줄을 바꿔 머리말 / 1번 항목을 따로 보이게 한다.
+   ⚠️ 뒤에 "1." 이나 "1)" 이 올 때만 자른다 — "3가지 이유로 …" 같은 평범한 문장은 그대로. */
+const LIST_LEAD=/((?:\d+|[한두세네]|다섯|여섯|일곱|여덟|아홉|열)\s*가지)\s*[:：]?[ \t]*(?=\*{0,2}1\s*[.)]\s)/g;
+function splitListLead(s){ return String(s||"").replace(LIST_LEAD,"$1\n"); }
+// 나눈 뒤 머리말 줄 자체("…봐야 할 5가지", 끝에 콜론 허용)를 알아보는 식
+const LIST_LEAD_LINE=/(?:\d+|[한두세네]|다섯|여섯|일곱|여덟|아홉|열)\s*가지\s*[:：]?\s*$/;
+
 // 본문 전체 → {html, part}. part 는 "1/5" 같은 분할 표시(제목에서 떼어내 작은 배지로 보냄)
 function briefing(raw){
   let part="";
@@ -496,15 +506,18 @@ function briefing(raw){
   }
 
   // 불릿(•)은 무조건 새 줄에서 시작하도록 정리 — 제목과 붙어 오는 경우가 많다
-  const body=lines.join("\n").replace(/\s*•\s*/g,"\n• ");
+  const body=splitListLead(lines.join("\n")).replace(/\s*•\s*/g,"\n• ");
 
   const out=[];
   let art=null;                                   // 현재 기사 블록(HTML 조각)
   const open=()=>{ if(art===null) art=""; };
   const flush=()=>{ if(art!==null){ out.push('<div class="brf-art">'+art+"</div>"); art=null; } };
 
-  for(const rawLine of body.split("\n")){
-    const line=rawLine.trim();
+  const bodyLines=body.split("\n");
+  // 다음 '내용 있는' 줄이 "1." / "1)" 로 시작하나? (머리말 판정을 좁히는 데 쓴다)
+  const nextIsItem1=i=>{ for(let j=i+1;j<bodyLines.length;j++){ const t=bodyLines[j].replace(/\*/g,"").trim(); if(t) return /^1\s*[.)]\s/.test(t); } return false; };
+  for(let li=0;li<bodyLines.length;li++){
+    const line=bodyLines[li].trim();
     if(!line) continue;
     if(isNote(line)) continue;                   // 남아 있는 검증·면책 안내문 줄 제거
 
@@ -537,6 +550,11 @@ function briefing(raw){
         rest=after;
         if(!rest) continue;
       }
+    }
+    if(LIST_LEAD_LINE.test(rest) && nextIsItem1(li)){                 // "🔍 … 봐야 할 5가지" = 마지막 요약 묶음의 머리말
+      flush();
+      out.push('<div class="brf-cat">'+inline(rest)+"</div>");
+      continue;
     }
     flush();
     art=briefTitle(rest);                          // (3) 기사 제목 = 다른 크기로 한눈에
