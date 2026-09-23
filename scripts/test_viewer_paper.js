@@ -7,6 +7,7 @@
  * 확인하는 것
  *   ① 처음엔 '글만'(기존 화면 그대로) — 사진 칸 없음 · 폭 720px
  *   ② "• 사진: 03" 줄은 화면에 안 보이고, 기사 번호로만 쓰인다 / 제목 끝 "(사진 04)" 도 인식
+ *      (07.jpg · *사진* · "07, 08" 같은 변형도 인식, "사진 3장 공개" 같은 본문은 오인 안 함)
  *   ③ '글+지면' 을 누르면 기사마다 사진 칸이 붙는다 (번호 있는 기사 = 그 사진, 없는 기사 = 연결 버튼)
  *   ④ 사진을 누르면 뷰어가 **그 장에서, 형광펜 켜진 채로** 열린다
  *   ⑤ 뷰어에서 그은 줄이 닫은 뒤 기사 옆 작은 사진에도 보인다
@@ -137,6 +138,15 @@ const sideInk = (page, k) => page.evaluate((k) => {
   check(!/사진 04/.test(text) && /K의료관광/.test(text), '제목 끝 "(사진 04)" 도 떼어내고 제목은 남는다');
   const pages = await page.evaluate(() => [...document.querySelectorAll('.brf-art')].map(a => a.dataset.page || ''));
   check(pages.join(',') === '3,,4', '기사별 사진 번호를 기억한다', pages.join(','));
+
+  const variants = await page.evaluate(() => {
+    const L = ['• 사진: 07.jpg', '• *사진*: 12.gif', '• 사진 07번', '• 사진: 07, 08', '📰 사진 7/30',
+               '• 사진 3장 공개', '• 사진: 삼성 공장', '• 사진 속 인물 07명 공개'].map(t => (t.match(PAGE_LINE_RE) || [])[1] || '-');
+    const T = ['목동 (사진: 07.jpg)', '목동 [사진 07, 08]', '목동 (사진 설명)'].map(t => (t.match(PAGE_TAIL_RE) || [])[1] || '-');
+    return L.join(',') + ' | ' + T.join(',');
+  });
+  check(variants === '07,12,07,07,7,-,-,- | 07,07,-',
+        'GPT 표기가 조금 달라도 번호를 읽고, 본문 문장("사진 3장 공개")은 번호로 착각 안 함', variants);
 
   console.log('\n[③ 글+지면]');
   await page.click('.viewseg [data-view="paper"]');
