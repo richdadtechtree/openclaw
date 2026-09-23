@@ -60,6 +60,8 @@ const BRIEF = [
   '• WHAT: 2025년 외국인 환자 131만2700명 중 피부과 비중 62.9%.',
   '• WHY: 피부과·성형외과가 저층 상권과 관광 소비를 흡수함.',
   '• HOW: 의료기관 입점 확대가 공실 감소에 기여했다는 분석임.',
+  '',
+  '다음을 사용하여 보냄 <@U0BUG6LJXL0>',   // 슬랙이 붙이는 앱 발신 꼬리표 — 화면에서 지워져야 한다
 ].join('\n');
 
 let newsReady = true;
@@ -68,7 +70,8 @@ const srv = http.createServer((req, res) => {
   const send = (t, b) => { res.writeHead(200, { 'Content-Type': t }); res.end(b); };
   if (u === '/' || u === '/slack') return send('text/html; charset=utf-8', fs.readFileSync(HTML));
   if (u === '/slack/data') return send('application/json', JSON.stringify({ date: '2026-09-23',
-    messages: [{ ts: '2026-09-23T06:29:00', source: 'user', kind: 'text', text: BRIEF }] }));
+    messages: [{ ts: '2026-09-23T06:29:00', source: 'user', kind: 'text', text: BRIEF },
+               { ts: '2026-09-23T06:30:00', source: 'user', kind: 'text', text: '_다음을 사용하여 보냄_ <@U0BUG6LJXL0|ChatGPT>' }] }));
   if (u === '/api/news/today') {
     if (!newsReady) return send('application/json', JSON.stringify({ ok: true, ready: false, date: '2026-09-23' }));
     const images = Array.from({ length: 6 }, (_, i) => {
@@ -136,6 +139,10 @@ const sideInk = (page, k) => page.evaluate((k) => {
   const text = await page.evaluate(() => document.getElementById('feed').innerText);
   check(!/사진\s*:\s*03/.test(text), '"• 사진: 03" 줄은 화면에 안 보인다');
   check(!/사진 04/.test(text) && /K의료관광/.test(text), '제목 끝 "(사진 04)" 도 떼어내고 제목은 남는다');
+  check(!/사용하여 보냄|U0BUG6LJXL0/.test(text), '슬랙 꼬리표 "다음을 사용하여 보냄 @앱" 이 안 보인다');
+  check(await page.evaluate(() => document.querySelectorAll('.entry').length) === 1, '꼬리표만 있던 메시지는 카드로 안 만든다');
+  check(await page.evaluate(() => cleanSent('• HOW: 새 공법을 사용하여 공사함.')) === '• HOW: 새 공법을 사용하여 공사함.',
+        '본문 속 "사용하여" 는 지우지 않는다');
   const pages = await page.evaluate(() => [...document.querySelectorAll('.brf-art')].map(a => a.dataset.page || ''));
   check(pages.join(',') === '3,,4', '기사별 사진 번호를 기억한다', pages.join(','));
 

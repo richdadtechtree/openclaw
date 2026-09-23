@@ -39,6 +39,26 @@ except Exception:
 
 _SLACK_LOG_DIR = os.path.expanduser("~/.openclaw/slack_logs")
 
+# ── 슬랙 '앱 발신 꼬리표' 제거 (2026-09-23) ─────────────────────────────────
+# ChatGPT 같은 슬랙 연결 앱이 사용자 대신 글을 올리면, 슬랙이 본문 끝에
+#   "다음을 사용하여 보냄 <@U0BUG6LJXL0>"   (영어: "Sent using <@U…>")
+# 를 붙인다. AI 가 쓴 글이 아니라 슬랙이 붙이는 것이라 프롬프트로는 못 막는다.
+# → 웹에 넘기기 전에 여기서 지운다(뷰어 slack_digest_live.html 도 한 번 더 지운다).
+# 줄 '끝'에 이 문구(+선택적으로 @멘션)가 올 때만 지운다 → 본문 속 평범한 '사용하여' 는 안전.
+import re as _re
+_SENT_USING_RE = _re.compile(
+    r"[ \t]*[_*~]*(?:다음을\s*사용하여\s*보냄|다음을\s*통해\s*보냄|Sent\s+using)[_*~]*[ \t]*[:：]?[ \t]*"
+    r"(?:<@[A-Z0-9]+(?:\|[^>]*)?>|@[\w.\-]+)?[_*~]*[ \t]*$",
+    _re.IGNORECASE | _re.MULTILINE)
+
+
+def _clean_slack_text(text):
+    """슬랙 앱 발신 꼬리표를 지우고, 그 때문에 남은 빈 줄을 정리한다."""
+    if not text:
+        return text or ""
+    out = _SENT_USING_RE.sub("", text)
+    return _re.sub(r"\n{3,}", "\n\n", out).strip()
+
 
 def _fetch_slack_history_api(date_str):
     import requests
@@ -75,7 +95,9 @@ def _fetch_slack_history_api(date_str):
                 ts_val = float(msg.get("ts", 0))
                 dt = datetime.fromtimestamp(ts_val, kst_tz)
                 ts_iso = dt.isoformat(timespec="seconds")
-                text = msg.get("text", "")
+                text = _clean_slack_text(msg.get("text", ""))
+                if not text:
+                    continue                  # 꼬리표만 있던 메시지는 버린다
 
                 bot_id = msg.get("bot_id")
                 source = "bot" if bot_id else "user"
@@ -114,8 +136,11 @@ def _read_slack_log(date):
                 if not gpt_ch or r.get("channel", "") != gpt_ch:
                     continue
 
+                text = _clean_slack_text(r.get("text", ""))
+                if not text and r.get("kind", "text") == "text":
+                    continue
                 local_msgs.append({"ts": r.get("ts", ""), "source": r.get("source", "unknown"),
-                             "kind": r.get("kind", "text"), "text": r.get("text", ""), "room": "gpt"})
+                             "kind": r.get("kind", "text"), "text": text, "room": "gpt"})
 
     api_msgs = _fetch_slack_history_api(date)
     seen = set()
