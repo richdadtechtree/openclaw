@@ -105,6 +105,9 @@
               align-items:center;justify-content:center;font-family:var(--mono);font-size:.8em;font-weight:800;
               color:var(--accent);background:color-mix(in srgb,var(--accent-bright) 14%,transparent)}
   .brf-num .v{flex:1;min-width:0}
+  /* 항목 아래 딸린 설명 — 항목 글 첫머리에 맞춰 흐리게(요점과 설명이 한눈에 구분되게) */
+  .brf-num .note{display:block;margin-top:.25em;color:var(--muted);font-size:.94em;line-height:1.7}
+  .brf-num + .brf-num{margin-top:.9em}
   .brf-src{display:inline-flex;align-items:center;gap:6px;margin-top:11px;font-family:var(--mono);font-size:11.5px;color:var(--faint);border:1px dashed var(--line-strong);border-radius:6px;padding:3px 9px}
   .brf-src.fail{color:var(--c-side);border-color:color-mix(in srgb,var(--c-side) 35%,transparent)}
   /* (2026-09-17 원문 링크 표시 중단으로 현재 미사용 — 되살릴 때 그대로 쓸 수 있게 남겨 둠) */
@@ -630,6 +633,11 @@ function briefing(raw){
 
   const out=[];
   let inList=false;                               // "…5가지" 머리말 아래 번호 목록을 그리는 중인가
+  let lastItem=-1;                                // 방금 그린 번호 항목의 out 위치(설명 줄을 붙일 곳)
+  const pushItems=(txt)=>splitNumbered(txt).forEach(t=>{ out.push(numItem(t)); lastItem=out.length-1; });
+  // 번호 항목 아래 딸린 설명 줄 → 그 항목 안에 흐린 글씨로 붙인다(2026-09-23: 1번만 특별해 보이던 문제)
+  const addNote=(txt)=>{ out[lastItem]=out[lastItem].replace(/<\/span><\/div>$/,
+                           '<span class="note">'+inline(txt)+'</span></span></div>'); };
   let art=null;                                   // 현재 기사 블록(HTML 조각)
   let pageHint=0;                                 // 이 기사가 실린 사진 번호(본문에 적혀 있을 때만)
   const open=()=>{ if(art===null) art=""; };
@@ -643,8 +651,12 @@ function briefing(raw){
     pageHint=0;
   };
 
-  for(const rawLine of body.split("\n")){
-    const line=rawLine.trim();
+  const LINES=body.split("\n");
+  // i 번째 줄 다음의 '내용 있는 줄' — 목록이 끝나고 새 기사가 시작되는지 미리 보려고 쓴다
+  const nextLine=(i)=>{ for(let j=i+1;j<LINES.length;j++){ const t=LINES[j].trim(); if(t) return t; } return ""; };
+  const KV_RE=/^•\s*(?:WHAT|WHY|HOW|What|Why|How)\s*[:：]/;
+  for(let li=0; li<LINES.length; li++){
+    const line=LINES[li].trim();
     if(!line) continue;
     if(isNote(line)) continue;                   // 남아 있는 검증·면책 안내문 줄 제거
 
@@ -666,6 +678,8 @@ function briefing(raw){
       open(); pageHint=+m[1];
       continue;
     }
+    // 번호 목록 안의 불릿(• …)은 방금 항목의 설명으로 붙인다
+    if(inList && lastItem>=0 && (m=line.match(/^•\s*([\s\S]+)$/))){ addNote(m[1]); continue; }
     if(m=line.match(/^•\s*([\s\S]*)$/)){           // 그 밖의 불릿
       open(); art+='<div class="brf-line">• '+inline(m[1])+"</div>";
       continue;
@@ -676,16 +690,24 @@ function briefing(raw){
     if(lh){
       flush();
       out.push('<div class="brf-sec">'+inline(lh[0])+"</div>");
-      if(lh[1]) splitNumbered(lh[1]).forEach(t=>out.push(numItem(t)));
+      lastItem=-1;
+      if(lh[1]) pushItems(lh[1]);
       inList=true;
       continue;
     }
     // 머리말 아래 이어지는 "2. …" "3. …" 줄들
     if(inList && NUM_ITEM_RE.test(line)){
-      splitNumbered(line.replace(/\*/g,"").trim()).forEach(t=>out.push(numItem(t)));
+      pushItems(line.replace(/\*/g,"").trim());
       continue;
     }
-    inList=false;
+    /* 번호가 아닌 줄 = 보통 바로 위 항목의 '설명 한 줄'. 목록을 끝내는 건 딱 두 경우뿐:
+         ① 카테고리 머리말(부동산·주거 등)  ② 다음 줄이 "• WHAT:" → 이 줄은 새 기사 제목 */
+    if(inList && lastItem>=0){
+      const plain=line.replace(/\*/g,"").trim(), cm2=plain.match(CAT_RE);
+      const isCat=cm2 && (!plain.slice(cm2[0].length).trim() || CAT_GUARD.test(plain.slice(cm2[0].length).trim()));
+      if(!isCat && !KV_RE.test(nextLine(li))){ addNote(plain); continue; }
+    }
+    inList=false; lastItem=-1;
 
     // 불릿이 아니면 카테고리 머리말 또는 기사 제목
     let rest=line.replace(/\*/g,"").trim();        // 제목은 어차피 크게 쓰므로 볼드 기호는 제거

@@ -40,10 +40,19 @@ const JOINED = [
   '🔍 오늘 신문에서 반드시 연결해서 봐야 할 5가지 1. 서울 매매 3% 이상 상승 전망 96% → 한강벨트·기존주택 선호 → 5대 은행 대출한도 소진 → 현금·대출 여력에 따른 매수 양극화 2. 금리 3.5% 유지 → 1. 5배 레버리지 제한 3. 수출 호조',
 ].join('\n');
 const SPLIT = [
-  '*🔍 오늘 신문에서 반드시 연결해서 봐야 할 3가지*',
-  '1. 첫째 흐름',
-  '2. 둘째 흐름',
-  '3. 셋째 흐름',
+  '*🔍 오늘 신문에서 반드시 연결해서 봐야 할 3가지* 1. 서울 매매 3% 이상 상승 전망 96% → 매수 양극화',
+  '공급 기대보다 즉시 입주 가능성과 금융 접근성이 실제 거래를 좌우하는 흐름임.',
+  '',
+  '2. 세제개편 부정 평가 78% → 임대료 전가 우려 → 순증 입주가 핵심',
+  '',
+  '세부담과 공급 시차가 동시에 임차시장에 영향을 줌.',
+  '',
+  '3. 태양광 확대 → 송전망·ESS 필요',
+  '',
+  '발전설비만 늘리면 해결되지 않고 전력망·저장·수요관리가 함께 가야 함.',
+  '',
+  '금융 🔴 반드시 체크 | 목록 뒤에 오는 새 기사',
+  '• WHAT: 이 줄은 기사로 보여야 한다.',
 ].join('\n');
 const PLAIN = '오늘 회의는 3. 5시에 합니다. 2. 준비물 없음';   // 목록 아님 — 그대로 둬야 한다
 
@@ -94,6 +103,19 @@ const srv = http.createServer((req, res) => {
     check(r.a.titles.some(t => /목동/.test(t)), '앞의 기사 제목은 그대로 기사 제목');
     check(r.b.sec.length === 1 && r.b.nums.length === 3, '줄이 나뉘어 온 경우도 같은 모양(머리말 + 3항목)',
           `${r.b.sec.length} + ${r.b.nums.length}`);
+    const bs = await page.evaluate(() => {
+      const c = document.querySelectorAll('.entry .body')[1];
+      return { notes: [...c.querySelectorAll('.brf-num .note')].map(e => e.textContent.slice(0, 8)),
+               titles: [...c.querySelectorAll('.brf-title')].map(e => e.textContent),
+               cats: [...c.querySelectorAll('.brf-cat')].map(e => e.textContent),
+               fs: [...c.querySelectorAll('.brf-num .v')].map(e => getComputedStyle(e).fontWeight + '/' + getComputedStyle(e).fontSize) };
+    });
+    check(bs.notes.length === 3 && /^공급/.test(bs.notes[0]) && /^세부담/.test(bs.notes[1]) && /^발전설비/.test(bs.notes[2]),
+          '항목마다 딸린 설명 줄이 그 항목 안에 붙는다(1번만 특별해지지 않음)', bs.notes.join(' / '));
+    check(new Set(bs.fs).size === 1, '1·2·3 항목이 모두 같은 모양(굵기·크기)', bs.fs.join(' '));
+    check(!bs.titles.some(t => /^\s*[23]\.|공급 기대|세부담/.test(t)), '2·3번이나 설명 줄이 굵은 기사 제목으로 그려지지 않는다');
+    check(bs.titles.some(t => /목록 뒤에 오는 새 기사/.test(t)) && bs.cats.includes('금융'),
+          '목록 뒤에 오는 새 기사(카테고리 + WHAT)는 다시 기사로 그려진다');
     check(r.c.sec.length === 0 && r.c.nums.length === 0 && /3\. 5시에 합니다\. 2\. 준비물/.test(r.c.text),
           '평범한 대화의 숫자는 목록으로 바꾸지 않는다');
     check(r.over <= 0, '가로로 넘치지 않는다');
