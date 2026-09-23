@@ -515,6 +515,15 @@ function dropNotes(raw){
   return out.join("\n").trim();
 }
 
+/* ── 슬랙 '앱 발신 꼬리표' 지우기 (2026-09-23) ─────────────────────────
+   ChatGPT 같은 슬랙 연결 앱이 사용자 대신 글을 올리면 슬랙이 끝에
+   "다음을 사용하여 보냄 <@U0BUG6LJXL0>" (영어: "Sent using <@U…>") 를 붙인다.
+   AI 가 쓴 게 아니라 슬랙이 붙이는 것이라 프롬프트로는 못 막는다 → 화면에서 지운다.
+   (서버 stock/app.py 의 _clean_slack_text 도 같은 일을 한다 — 여기는 옛 로그·서버 미반영 대비 2중 안전장치)
+   줄 '끝'에 이 문구(+멘션)가 올 때만 지운다 → 본문 속 "공법을 사용하여" 같은 말은 안전. */
+const SENT_USING_RE=/[ \t]*[_*~]*(?:다음을\s*사용하여\s*보냄|다음을\s*통해\s*보냄|Sent\s+using)[_*~]*[ \t]*[:：]?[ \t]*(?:<@[A-Z0-9]+(?:\|[^>]*)?>|@[\w.\-]+)?[_*~]*[ \t]*$/gimu;
+function cleanSent(t){ return String(t||"").replace(SENT_USING_RE,"").replace(/\n{3,}/g,"\n\n").trim(); }
+
 // 메시지 전체가 안내문뿐이면 카드 자체를 만들지 않는다(빈 카드 방지).
 function isNoteOnly(raw){
   const t=String(raw||"").trim();
@@ -668,7 +677,7 @@ function render(){
 
   // 검증·면책 안내문만 담긴 메시지는 아예 목록에서 뺀다(카운트·필터도 함께 맞춰짐)
   const msgs=[...(state.data.messages||[])]
-    .filter(m=>!isNoteOnly(m.text||""))
+    .filter(m=>!isNoteOnly(cleanSent(m.text)) && (m.kind==="image" || cleanSent(m.text)))   // 꼬리표만 있던 메시지도 뺀다
     .sort((a,b)=>(a.ts||"").localeCompare(b.ts||""));
   document.getElementById("date").textContent=krDate(state.data.date||state.date);
   document.getElementById("datepick").value=state.data.date||state.date;
@@ -692,7 +701,8 @@ function render(){
     // 이번에 처음 등장하는 메시지에만 'is-new' → 그 카드만 스윽 나타난다
     el.className="entry"+(seenKeys.has(msgKey(m))?"":" is-new");
     el.style.setProperty("--dot",c.color);
-    const txt=dropNotes(m.text||"")||(m.text||"");   // 안내문 줄을 걷어낸 본문(다 지워지면 원문 유지)
+    const raw=cleanSent(m.text);                    // 슬랙 "다음을 사용하여 보냄 @앱" 꼬리표 제거
+    const txt=dropNotes(raw)||raw;                  // 안내문 줄을 걷어낸 본문(다 지워지면 원문 유지)
     // 신문 브리핑이면 전용 서식, 아니면 기존 그대로
     const brf=isBriefing(txt)?briefing(txt):null;
     const bodyHTML=brf?brf.html:mrkdwn(txt);
