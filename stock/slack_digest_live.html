@@ -33,7 +33,7 @@
   *{box-sizing:border-box}
   html,body{margin:0}
   body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.65;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
-  .wrap{max-width:720px;margin:0 auto;padding:0 20px 96px}
+  .wrap{max-width:calc(720px + max(0px, (var(--fs) - 1) * 420px));margin:0 auto;padding:0 20px 96px}
   header.mast{padding:40px 0 18px}
   .eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--faint);font-weight:600;display:flex;align-items:center;gap:10px}
   .eyebrow .label{font-family:var(--sans);letter-spacing:.04em;font-size:12.5px}
@@ -68,28 +68,33 @@
   .card .meta{display:flex;align-items:center;gap:8px;margin-bottom:8px}
   .tag{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--dot);padding:2px 7px;border-radius:5px;background:color-mix(in srgb,var(--dot) 12%,transparent)}
   .kind{font-family:var(--mono);font-size:11px;color:var(--faint)}
-  .body{font-size:15.5px;line-height:1.72;word-break:break-word}
+  /* ── 글자 크기 조절 (2026-09-23) ── 요약 글의 크기는 전부 '기본 px × --fs(배율)' 로 계산한다.
+     툴바의 가− / 가+ 가 --fs 하나만 바꾸면 제목·카테고리·본문·라벨이 같은 비율로 함께 커진다.
+     한국어 가독성: keep-all = 낱말 중간에서 줄을 끊지 않는다('재건'/'축' 처럼 쪼개지지 않게).
+     아주 긴 숫자·주소만 overflow-wrap 으로 예외적으로 끊는다(화면 밖으로 삐져나가지 않게). */
+  :root{--fs:1}
+  .body{font-size:calc(15.5px*var(--fs));line-height:1.75;word-break:keep-all;overflow-wrap:anywhere;letter-spacing:-.003em}
   .body strong{font-weight:700}
   .body em{font-style:italic;color:var(--muted)}
   .body code{font-family:var(--mono);font-size:.9em;background:color-mix(in srgb,var(--muted) 14%,transparent);padding:1px 5px;border-radius:4px}
   .body a{color:var(--accent-bright);text-decoration:none;border-bottom:1px solid color-mix(in srgb,var(--accent-bright) 40%,transparent)}
-  .body .imgnote{display:inline-flex;align-items:center;gap:6px;margin-top:8px;font-family:var(--mono);font-size:12px;color:var(--faint);border:1px dashed var(--line-strong);border-radius:6px;padding:4px 9px}
+  .body .imgnote{display:inline-flex;align-items:center;gap:6px;margin-top:8px;font-family:var(--mono);font-size:calc(12px*var(--fs));color:var(--faint);border:1px dashed var(--line-strong);border-radius:6px;padding:4px 9px}
   /* ── 신문 브리핑 전용 서식 ─────────────────────────────────
      슬랙 원문은 한 덩어리 텍스트라 읽기 힘들어서, 뷰어에서
      헤더 / 카테고리 / 기사 제목 / WHAT·WHY·HOW / 원문확인 으로
      쪼개 각각 다른 크기·굵기로 보여준다. */
-  .brf-head{font-size:18px;font-weight:800;letter-spacing:-.01em;line-height:1.35;margin:2px 0 16px;padding-bottom:11px;border-bottom:2px solid var(--line-strong)}
-  .brf-cat{display:block;font-size:22px;font-weight:800;letter-spacing:-.02em;line-height:1.3;color:var(--accent);margin:30px 0 16px;padding-left:13px;border-left:5px solid var(--accent-bright)}
+  .brf-head{font-size:calc(18px*var(--fs));font-weight:800;letter-spacing:-.01em;line-height:1.35;margin:2px 0 16px;padding-bottom:11px;border-bottom:2px solid var(--line-strong)}
+  .brf-cat{display:block;font-size:calc(22px*var(--fs));font-weight:800;letter-spacing:-.02em;line-height:1.3;color:var(--accent);margin:30px 0 16px;padding-left:13px;border-left:5px solid var(--accent-bright)}
   .brf-cat:first-child{margin-top:2px}
   .brf-art{margin:0 0 34px}            /* ← 원문 확인 뒤 "두 줄" 여백 (기사 단위 줄바꿈) */
   .brf-art:last-child{margin-bottom:2px}
-  .brf-title{font-size:17.5px;font-weight:750;line-height:1.45;letter-spacing:-.012em;margin:0 0 5px;text-wrap:pretty}
-  .brf-flag{display:inline-block;font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.04em;vertical-align:2px;margin-right:8px;padding:2px 7px;border-radius:5px;color:var(--c-side);background:color-mix(in srgb,var(--c-side) 12%,transparent);white-space:nowrap}
-  .brf-sub{font-size:14px;color:var(--muted);line-height:1.6;margin:0 0 11px}
-  .brf-kv{display:flex;gap:10px;margin:6px 0;font-size:15px;line-height:1.7}
-  .brf-kv .k{flex:none;width:50px;font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.07em;color:var(--faint);padding-top:5px}
+  .brf-title{font-size:calc(17.5px*var(--fs));font-weight:750;line-height:1.45;letter-spacing:-.012em;margin:0 0 5px;text-wrap:pretty}
+  .brf-flag{display:inline-block;font-family:var(--mono);font-size:calc(11px*var(--fs));font-weight:700;letter-spacing:.04em;vertical-align:.15em;margin-right:8px;padding:2px 7px;border-radius:5px;color:var(--c-side);background:color-mix(in srgb,var(--c-side) 12%,transparent);white-space:nowrap}
+  .brf-sub{font-size:calc(14px*var(--fs));color:var(--muted);line-height:1.65;margin:0 0 .8em}
+  .brf-kv{display:flex;gap:10px;margin:.45em 0;font-size:calc(15px*var(--fs));line-height:1.75}
+  .brf-kv .k{flex:none;width:calc(50px*var(--fs));font-family:var(--mono);font-size:calc(10.5px*var(--fs));font-weight:700;letter-spacing:.07em;color:var(--faint);padding-top:.45em}
   .brf-kv .v{flex:1;min-width:0}
-  .brf-line{margin:6px 0;font-size:15px;line-height:1.7}
+  .brf-line{margin:.45em 0;font-size:calc(15px*var(--fs));line-height:1.75}
   .brf-src{display:inline-flex;align-items:center;gap:6px;margin-top:11px;font-family:var(--mono);font-size:11.5px;color:var(--faint);border:1px dashed var(--line-strong);border-radius:6px;padding:3px 9px}
   .brf-src.fail{color:var(--c-side);border-color:color-mix(in srgb,var(--c-side) 35%,transparent)}
   /* (2026-09-17 원문 링크 표시 중단으로 현재 미사용 — 되살릴 때 그대로 쓸 수 있게 남겨 둠) */
@@ -97,8 +102,8 @@
   .brf-src.warn{color:var(--c-alert);border-style:solid;border-color:color-mix(in srgb,var(--c-alert) 45%,transparent);background:color-mix(in srgb,var(--c-alert) 8%,transparent)}
   .brf-src .brf-warn{font-family:var(--sans);font-weight:700}
   @media (max-width:520px){
-    .brf-cat{font-size:19px;margin:24px 0 13px}
-    .brf-title{font-size:16.5px}
+    .brf-cat{font-size:calc(19px*var(--fs));margin:24px 0 13px}
+    .brf-title{font-size:calc(16.5px*var(--fs))}
     .brf-kv{display:block}
     .brf-kv .k{display:inline-block;width:auto;margin-right:7px;padding-top:0}
   }
@@ -258,7 +263,16 @@
      '글+지면' 에선 브리핑의 기사마다 오른쪽에 그 기사가 실린 신문 사진을 붙인다.
      사진을 누르면 넘겨 보기 뷰어가 **형광펜이 켜진 채로** 그 장에서 열린다.
      '글만' 으로 돌아가면 사진 칸을 통째로 걷어내 기존 화면과 완전히 같아진다. */
-  .viewseg{margin-left:auto;display:inline-flex;border:1px solid var(--line-strong);border-radius:999px;
+  .tb-right{margin-left:auto;display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .fontctl{display:inline-flex;align-items:center;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface);padding:2px}
+  .fontctl button{appearance:none;border:0;background:transparent;color:var(--ink);font-family:var(--sans);font-weight:700;
+           border-radius:999px;min-width:34px;height:28px;padding:0 8px;cursor:pointer;line-height:1}
+  .fontctl button:hover:not(:disabled){background:color-mix(in srgb,var(--accent-bright) 12%,transparent)}
+  .fontctl button:disabled{opacity:.35;cursor:default}
+  .fontctl button:focus-visible{outline:2px solid var(--accent-bright);outline-offset:1px}
+  .fontctl .dn{font-size:12px} .fontctl .up{font-size:16px}
+  .fontctl .lv{font-family:var(--mono);font-size:11.5px;font-weight:600;color:var(--muted);min-width:46px}
+  .viewseg{display:inline-flex;border:1px solid var(--line-strong);border-radius:999px;
            background:var(--surface);padding:2px;gap:2px}
   .viewseg button{appearance:none;border:0;background:transparent;color:var(--muted);font-family:var(--sans);
            font-size:12.5px;font-weight:650;border-radius:999px;padding:5px 11px;cursor:pointer;white-space:nowrap}
@@ -663,7 +677,9 @@ function render(){
   const tb=document.getElementById("toolbar");tb.innerHTML="";
   tb.appendChild(chip("all","전체",msgs.length,null));
   ["bot","user","unknown"].forEach(k=>{if(counts[k])tb.appendChild(chip(k,cat(k).label,counts[k],cat(k).color))});
-  tb.appendChild(viewSeg());                // 오른쪽 끝: 📝 글만 / 📰 글+지면
+  const right=document.createElement("div"); right.className="tb-right";
+  right.append(fontCtl(), viewSeg());        // 오른쪽 끝: 가− 100% 가+ · 📝 글만 / 📰 글+지면
+  tb.appendChild(right);
   syncChips();
   const feed=document.getElementById("feed");feed.innerHTML="";
   if(msgs.length){const bd=document.createElement("div");bd.className="daybreak";bd.textContent="오래된순";feed.appendChild(bd)}
@@ -1504,7 +1520,7 @@ window.addEventListener("resize",()=>{ if(!$("lb").hidden) measure(); });
      ⚠️ 형광펜 줄은 여전히 **어디에도 저장하지 않는다**(일회성 규칙 그대로).
      저장소가 막힌 브라우저(사생활 모드 등)에서도 이 창에서는 그대로 동작한다. */
 const VIEW_KEY="digest.view", LINK_KEY="digest.pageLinks";
-const mem={view:null, links:null};             // 저장소가 막혔을 때의 대체 기억 장소
+const mem={view:null, links:null, font:null};             // 저장소가 막혔을 때의 대체 기억 장소
 function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
 function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
 function viewMode(){ return mem.view || (lsGet(VIEW_KEY)==="paper"?"paper":"text"); }
@@ -1526,6 +1542,45 @@ function setLink(key,name){
   if(name){ (L[state.date] ||= {})[key]=name; }
   else if(L[state.date]){ delete L[state.date][key]; }
   saveLinks(); decorate(true);
+}
+
+/* ── 글자 크기 (2026-09-23) ─────────────────────────────────────────────
+   요약 글자 크기를 6단계로 고른다. CSS 변수 --fs(배율) 하나만 바꾸면 제목·본문·라벨이
+   같은 비율로 커진다(각 글자 크기가 'px × --fs' 로 적혀 있음).
+   고른 크기는 이 브라우저에 기억(digest.fontScale) — 폰과 PC 가 각자 편한 크기를 가진다.
+   ⚠️ 브라우저 자체 확대(Ctrl +)와 달리 사진 뷰어·버튼 크기는 그대로다 → 글만 커진다. */
+const FONT_KEY="digest.fontScale";
+const FONT_STEPS=[0.9,1,1.12,1.25,1.4,1.6];
+function fontScale(){
+  const v=parseFloat(mem.font||lsGet(FONT_KEY)||"1");
+  return FONT_STEPS.includes(v)?v:1;
+}
+function applyFont(){
+  document.documentElement.style.setProperty("--fs", String(fontScale()));
+  const i=FONT_STEPS.indexOf(fontScale());
+  document.querySelectorAll(".fontctl").forEach(g=>{
+    g.querySelector(".dn").disabled = i<=0;
+    g.querySelector(".up").disabled = i>=FONT_STEPS.length-1;
+    g.querySelector(".lv").textContent = Math.round(fontScale()*100)+"%";
+  });
+  if(typeof drawSideMarks==="function") requestAnimationFrame(drawSideMarks);   // 글+지면: 사진 칸 폭이 바뀌면 형광펜 다시
+}
+function stepFont(d){
+  const i=FONT_STEPS.indexOf(fontScale());
+  const v=FONT_STEPS[Math.max(0,Math.min(FONT_STEPS.length-1,i+d))];
+  mem.font=String(v); lsSet(FONT_KEY,String(v)); applyFont();
+}
+function fontCtl(){
+  const g=document.createElement("div");
+  g.className="fontctl"; g.setAttribute("role","group"); g.setAttribute("aria-label","글자 크기");
+  g.innerHTML='<button class="dn" title="글자 작게" aria-label="글자 작게">가−</button>'+
+              '<button class="lv" title="기본 크기로 (100%)" aria-label="글자 크기 기본으로"></button>'+
+              '<button class="up" title="글자 크게" aria-label="글자 크게">가+</button>';
+  g.querySelector(".dn").onclick=()=>stepFont(-1);
+  g.querySelector(".up").onclick=()=>stepFont(1);
+  g.querySelector(".lv").onclick=()=>{ mem.font="1"; lsSet(FONT_KEY,"1"); applyFont(); };
+  setTimeout(applyFont);
+  return g;
 }
 
 function viewSeg(){
@@ -1677,6 +1732,7 @@ document.getElementById("news-refresh").addEventListener("click",async(e)=>{
 document.getElementById("datepick").addEventListener("change",e=>{state.date=e.target.value;load();loadNews()});
 document.getElementById("today").addEventListener("click",()=>{state.date=todayKST();load();loadNews()});
 
+applyFont();                                   // 첫 화면부터 고른 크기로(깜빡임 없이)
 load(); loadNews();
 setInterval(()=>{ if(state.date===todayKST()){ load(); loadNews(); } },20000); // 오늘 볼 때만 자동 갱신
 document.addEventListener("visibilitychange",()=>{ if(!document.hidden) load(); });
