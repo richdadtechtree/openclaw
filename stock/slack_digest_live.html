@@ -95,6 +95,16 @@
   .brf-kv .k{flex:none;width:calc(50px*var(--fs));font-family:var(--mono);font-size:calc(10.5px*var(--fs));font-weight:700;letter-spacing:.07em;color:var(--faint);padding-top:.45em}
   .brf-kv .v{flex:1;min-width:0}
   .brf-line{margin:.45em 0;font-size:calc(15px*var(--fs));line-height:1.75}
+  /* "🔍 …반드시 연결해서 봐야 할 5가지" 같은 묶음 머리말 + 그 아래 번호 목록 (2026-09-23)
+     머리말은 기사 제목과 다른 '섹션 제목' 모양, 번호는 동그라미 배지 + 내어쓰기(둘째 줄도 글 첫머리에 맞춤) */
+  .brf-sec{font-size:calc(18px*var(--fs));font-weight:800;letter-spacing:-.015em;line-height:1.4;margin:30px 0 12px;
+           padding-bottom:8px;border-bottom:1px solid var(--line-strong)}
+  .brf-sec:first-child{margin-top:2px}
+  .brf-num{display:flex;gap:10px;align-items:flex-start;margin:.55em 0;font-size:calc(15.5px*var(--fs));line-height:1.75}
+  .brf-num .n{flex:none;min-width:1.65em;height:1.65em;margin-top:.08em;border-radius:999px;display:inline-flex;
+              align-items:center;justify-content:center;font-family:var(--mono);font-size:.8em;font-weight:800;
+              color:var(--accent);background:color-mix(in srgb,var(--accent-bright) 14%,transparent)}
+  .brf-num .v{flex:1;min-width:0}
   .brf-src{display:inline-flex;align-items:center;gap:6px;margin-top:11px;font-family:var(--mono);font-size:11.5px;color:var(--faint);border:1px dashed var(--line-strong);border-radius:6px;padding:3px 9px}
   .brf-src.fail{color:var(--c-side);border-color:color-mix(in srgb,var(--c-side) 35%,transparent)}
   /* (2026-09-17 원문 링크 표시 중단으로 현재 미사용 — 되살릴 때 그대로 쓸 수 있게 남겨 둠) */
@@ -461,6 +471,9 @@ const PAGE_TAIL_RE=new RegExp("\\s*[(\\[]\\s*(?:사진|지면)\\s*[:：]?\\s*"+P
 // 브리핑 형식인지 판별(짧은 사용자 질문 "신문 브리핑 해줘" 등은 제외)
 function isBriefing(t){
   if(/•\s*(?:WHAT|What|WHY|Why|HOW|How)\s*[:：]/.test(t)) return true;
+  // "…5가지 1. …" 묶음만 따로 온 메시지도 같은 서식(머리말 줄바꿈 + 번호 목록)으로
+  const L=String(t).split("\n").map(l=>l.replace(/\*/g,"").trim()).filter(Boolean);
+  if(L.some((l,i)=>{ const h=splitListHead(l); return h && (h[1] || /^1[.)]\s/.test(L[i+1]||"")); })) return true;
   return /신문\s*브리핑/.test(t) && /•/.test(t) && t.length>200;
 }
 
@@ -531,6 +544,41 @@ function isNoteOnly(raw){
   return !!t && !dropNotes(t) && /(?:검증\s*[:：]|[※＊]|⚠)/u.test(t);
 }
 
+/* ── 묶음 머리말 + 번호 목록 (2026-09-23) ─────────────────────────────────
+   GPT 요약 끝에 자주 오는
+     🔍 오늘 신문에서 반드시 연결해서 봐야 할 5가지 1. 서울 매매 … 2. …
+   가 한 줄로 붙어 와 '기사 제목' 처럼 크게 뭉쳐 보이던 문제. 머리말 뒤에서 **항상 줄을 바꾸고**,
+   1. 2. 3. … 은 한 항목씩 따로 그린다.
+   ⚠️ 본문 속 숫자("3.5%", "1. 5배")를 목록으로 오인하지 않게:
+      · 머리말은 'N가지 / 포인트 / 체크포인트 / 키워드 / 정리' 로 끝나야 하고, 바로 뒤에 "1." 이 와야 한다
+      · 목록을 자를 때는 **1 → 2 → 3 순서대로 이어지는 번호**에서만 자른다 */
+const LIST_HEAD_END=/(?:\d+\s*가지|포인트|체크\s*포인트|키워드|이슈|정리|요약)\s*[:：]?$/;
+const NUM_ITEM_RE=/^(\d{1,2})[.)]\s+([\s\S]+)$/;
+function splitListHead(line){
+  const m=line.match(/^(.+?)\s*[:：]?\s+(1[.)]\s+\S[\s\S]*)$/);
+  if(m && LIST_HEAD_END.test(m[1].replace(/[*_]/g,"").trim())) return [m[1], m[2]];
+  if(LIST_HEAD_END.test(line.replace(/[*_]/g,"").trim()) && line.length<=80) return [line, ""];   // 머리말만 한 줄
+  return null;
+}
+// "1. 가 2. 나 3. 다" → ["1. 가","2. 나","3. 다"] (번호가 순서대로 이어질 때만 자른다)
+function splitNumbered(s){
+  const first=s.match(/^(\d{1,2})[.)]\s/); if(!first) return [s];
+  let k=+first[1]+1, start=0; const out=[]; const re=/\s+(\d{1,2})[.)]\s+/g; let m;
+  while((m=re.exec(s))){
+    if(+m[1]!==k) continue;
+    out.push(s.slice(start,m.index).trim());
+    start=m.index+(m[0].length-m[0].trimStart().length);
+    k++;
+  }
+  out.push(s.slice(start).trim());
+  return out.filter(Boolean);
+}
+function numItem(t){
+  const m=t.match(NUM_ITEM_RE);
+  return m ? '<div class="brf-num"><span class="n">'+m[1]+'</span><span class="v">'+inline(m[2])+"</span></div>"
+           : '<div class="brf-line">'+inline(t)+"</div>";
+}
+
 // 기사 제목 한 줄 → 머리표(🔴 반드시 체크) + 큰 제목 + 작은 부제(중요한 이유)
 function briefTitle(t){
   let flag="";
@@ -581,6 +629,7 @@ function briefing(raw){
   const body=lines.join("\n").replace(/\s*•\s*/g,"\n• ");
 
   const out=[];
+  let inList=false;                               // "…5가지" 머리말 아래 번호 목록을 그리는 중인가
   let art=null;                                   // 현재 기사 블록(HTML 조각)
   let pageHint=0;                                 // 이 기사가 실린 사진 번호(본문에 적혀 있을 때만)
   const open=()=>{ if(art===null) art=""; };
@@ -621,6 +670,22 @@ function briefing(raw){
       open(); art+='<div class="brf-line">• '+inline(m[1])+"</div>";
       continue;
     }
+
+    // "🔍 …봐야 할 5가지 1. …" → 머리말은 따로, 번호는 한 줄씩
+    const lh=splitListHead(line.replace(/\*/g,"").trim());
+    if(lh){
+      flush();
+      out.push('<div class="brf-sec">'+inline(lh[0])+"</div>");
+      if(lh[1]) splitNumbered(lh[1]).forEach(t=>out.push(numItem(t)));
+      inList=true;
+      continue;
+    }
+    // 머리말 아래 이어지는 "2. …" "3. …" 줄들
+    if(inList && NUM_ITEM_RE.test(line)){
+      splitNumbered(line.replace(/\*/g,"").trim()).forEach(t=>out.push(numItem(t)));
+      continue;
+    }
+    inList=false;
 
     // 불릿이 아니면 카테고리 머리말 또는 기사 제목
     let rest=line.replace(/\*/g,"").trim();        // 제목은 어차피 크게 쓰므로 볼드 기호는 제거
