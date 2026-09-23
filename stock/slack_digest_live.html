@@ -254,6 +254,54 @@
     .lb-nav{width:38px;height:54px;font-size:22px;background:#161a2399}
     .lb-nav.prev{left:4px} .lb-nav.next{right:4px}
   }
+  /* ── 보기 방식 전환: 📝 글만(기존) / 📰 글+지면 (2026-09-23) ─────────────────
+     '글+지면' 에선 브리핑의 기사마다 오른쪽에 그 기사가 실린 신문 사진을 붙인다.
+     사진을 누르면 넘겨 보기 뷰어가 **형광펜이 켜진 채로** 그 장에서 열린다.
+     '글만' 으로 돌아가면 사진 칸을 통째로 걷어내 기존 화면과 완전히 같아진다. */
+  .viewseg{margin-left:auto;display:inline-flex;border:1px solid var(--line-strong);border-radius:999px;
+           background:var(--surface);padding:2px;gap:2px}
+  .viewseg button{appearance:none;border:0;background:transparent;color:var(--muted);font-family:var(--sans);
+           font-size:12.5px;font-weight:650;border-radius:999px;padding:5px 11px;cursor:pointer;white-space:nowrap}
+  .viewseg button[aria-pressed="true"]{background:var(--accent);color:var(--surface)}
+  .viewseg button:focus-visible{outline:2px solid var(--accent-bright);outline-offset:1px}
+  body.paper .wrap{max-width:1120px}
+  .paper-note{margin:0 0 18px 78px;font-size:13px;color:var(--muted);border:1px dashed var(--line-strong);
+              border-radius:10px;padding:9px 12px}
+  .brf-art.has-side{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:22px;align-items:start;
+                    padding-top:14px;border-top:1px solid var(--line)}
+  .brf-cat + .brf-art.has-side,.brf-head + .brf-art.has-side{border-top:0;padding-top:0}
+  .brf-side{display:flex;flex-direction:column;gap:7px;min-width:0}
+  .side-fig{appearance:none;display:block;position:relative;width:100%;padding:0;border:1px solid var(--line-strong);
+            border-radius:8px;overflow:hidden;background:#fff;cursor:pointer;line-height:0}
+  .side-fig:hover{border-color:var(--accent-bright)}
+  .side-fig:focus-visible{outline:2px solid var(--accent-bright);outline-offset:2px}
+  .side-fig img{display:block;width:100%;height:auto;min-height:60px}
+  .side-fig canvas{position:absolute;left:0;top:0;pointer-events:none;mix-blend-mode:multiply;opacity:.62}
+  .side-no{position:absolute;left:0;top:0;font-family:var(--mono);font-size:10.5px;font-weight:700;line-height:1.5;
+           color:#fff;background:rgba(15,20,32,.66);padding:2px 7px;border-bottom-right-radius:7px}
+  .side-acts{display:flex;gap:6px;flex-wrap:wrap}
+  .side-acts button{appearance:none;font-family:var(--sans);font-size:12.5px;font-weight:650;color:var(--ink);
+           background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;padding:5px 9px;cursor:pointer}
+  .side-acts button:hover{border-color:var(--accent-bright)}
+  .side-acts button.primary{background:color-mix(in srgb,var(--accent-bright) 12%,var(--surface));
+           border-color:var(--accent-bright);color:var(--accent)}
+  .side-acts button.quiet{color:var(--muted);border-style:dashed}
+  .side-src{font-family:var(--mono);font-size:11px;color:var(--faint)}
+  .side-empty{font-size:12.5px;color:var(--muted);border:1px dashed var(--line-strong);border-radius:8px;
+              padding:14px 10px;text-align:center;line-height:1.5}
+  /* 좁은 화면: 사진을 기사 '아래'에 작게(가로 한 줄) — 세로로 긴 지면이 화면을 다 먹지 않게 */
+  @media (max-width:760px){
+    .brf-art.has-side{grid-template-columns:minmax(0,1fr);gap:10px}
+    .brf-side{display:grid;grid-template-columns:92px minmax(0,1fr);gap:4px 10px;align-items:start}
+    .brf-side .side-fig{grid-row:span 2}
+    .brf-side.nolink{display:flex}
+    .paper-note{margin-left:66px}
+  }
+  @media (max-width:520px){ .viewseg button{padding:5px 9px;font-size:12px} }
+  /* 뷰어 상단 '📌 이 장 연결' — 지면 고르기 중에만 보인다 */
+  .lb-btn[hidden]{display:none}
+  @media (max-width:520px){ .lb-btn.pick .lg{display:none} }
+  .lb-btn.pick{background:#2f4272;border-color:#7f9bf5;color:#fff;font-size:13px;font-weight:700;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -294,6 +342,7 @@
 <div class="lb" id="lb" hidden role="dialog" aria-modal="true" aria-label="신문 사진 보기">
   <div class="lb-bar">
     <span class="lb-count" id="lb-count"></span><span class="lb-native" id="lb-native"></span>
+    <button class="lb-btn pick" id="lb-pick" hidden title="지금 보는 장을 이 기사의 지면으로 연결">📌 <span class="lg">이 장 </span>연결</button>
     <button class="lb-btn" id="lb-pen" title="형광펜 (H)" aria-label="형광펜" aria-pressed="false">🖍</button>
     <button class="lb-btn" id="lb-out" title="축소" aria-label="축소">−</button>
     <button class="lb-btn" id="lb-in" title="확대" aria-label="확대">＋</button>
@@ -384,6 +433,14 @@ const CAT_RE=new RegExp("^\\[?\\s*("+CAT_TOKEN+"(?:\\s*[·>,/]\\s*"+CAT_TOKEN+")
 const CAT_GUARD=/^(?:[🔴🟠🟡🟢🔵🟣🟤⚪⚫]|반드시|체크|주목|참고|[|｜])/u;
 // "🔴 반드시 체크 | 제목" 형태의 머리표
 const FLAG_RE=/^\s*([🔴🟠🟡🟢🔵🟣🟤⚪⚫]?)\s*([^|｜\n]{0,14}?)\s*[|｜]\s*(.+)$/u;
+
+/* 기사가 '몇 번째 신문 사진'에 실렸는지 알려주는 표기 (2026-09-23)
+   요약문에 이런 줄이 있으면 '글+지면' 보기에서 그 사진을 자동으로 옆에 붙인다.
+     • 사진: 07      • 지면: 7      • 사진 07번      📰 사진 7/30
+     제목 끝에 붙은 경우:  목동 9·13단지 최고 49층 재건축 (사진 07)
+   ⚠️ 줄 '전체'가 이 모양일 때만 인정한다. "• 사진 3장 공개" 같은 진짜 본문을 번호로 오인하지 않게. */
+const PAGE_LINE_RE=/^•?\s*(?:📄|📰|🗞️?)?\s*(?:사진|지면|스크랩)\s*(?:번호)?\s*[:：]?\s*(\d{1,2})\s*(?:번|장|쪽|면)?\s*(?:\/\s*\d{1,3}\s*(?:장|쪽|면)?)?\s*$/u;
+const PAGE_TAIL_RE=/\s*[(\[]\s*(?:사진|지면)\s*[:：]?\s*(\d{1,2})\s*(?:번|장|쪽|면)?\s*[)\]]\s*$/;
 
 // 브리핑 형식인지 판별(짧은 사용자 질문 "신문 브리핑 해줘" 등은 제외)
 function isBriefing(t){
@@ -500,8 +557,17 @@ function briefing(raw){
 
   const out=[];
   let art=null;                                   // 현재 기사 블록(HTML 조각)
+  let pageHint=0;                                 // 이 기사가 실린 사진 번호(본문에 적혀 있을 때만)
   const open=()=>{ if(art===null) art=""; };
-  const flush=()=>{ if(art!==null){ out.push('<div class="brf-art">'+art+"</div>"); art=null; } };
+  // 기사 본문은 .brf-main 으로 한 번 감싼다 — '글+지면' 보기에서 그 옆에 사진 칸(.brf-side)을
+  // 나란히 붙이기 위한 자리. '글만' 보기에선 평범한 div 라 화면이 달라지지 않는다.
+  const flush=()=>{
+    if(art!==null){
+      out.push('<div class="brf-art"'+(pageHint?' data-page="'+pageHint+'"':'')+'><div class="brf-main">'+art+"</div></div>");
+      art=null;
+    }
+    pageHint=0;
+  };
 
   for(const rawLine of body.split("\n")){
     const line=rawLine.trim();
@@ -519,6 +585,11 @@ function briefing(raw){
     //    (다시 켜려면 아래 주석 처리된 예전 렌더를 되살리면 된다)
     if(/^•?\s*원문\s*확인/.test(line)){
       flush();                                     // ← 기사 끝. 다음 기사는 여백 두고 새 블록
+      continue;
+    }
+    // "• 사진: 07" 같은 '지면 번호' 줄 — 화면엔 안 그리고, 기사에 사진 번호로만 붙여 둔다
+    if(m=line.match(PAGE_LINE_RE)){
+      open(); pageHint=+m[1];
       continue;
     }
     if(m=line.match(/^•\s*([\s\S]*)$/)){           // 그 밖의 불릿
@@ -539,7 +610,11 @@ function briefing(raw){
       }
     }
     flush();
+    // 제목 끝에 "(사진 07)" 처럼 붙어 온 지면 번호도 떼어서 기억한다
+    const tp=rest.match(PAGE_TAIL_RE);
+    if(tp){ rest=rest.slice(0,tp.index).trim(); }
     art=briefTitle(rest);                          // (3) 기사 제목 = 다른 크기로 한눈에
+    if(tp) pageHint=+tp[1];                        // flush() 가 0 으로 되돌린 뒤에 넣어야 한다
   }
   flush();
 
@@ -586,6 +661,7 @@ function render(){
   const tb=document.getElementById("toolbar");tb.innerHTML="";
   tb.appendChild(chip("all","전체",msgs.length,null));
   ["bot","user","unknown"].forEach(k=>{if(counts[k])tb.appendChild(chip(k,cat(k).label,counts[k],cat(k).color))});
+  tb.appendChild(viewSeg());                // 오른쪽 끝: 📝 글만 / 📰 글+지면
   syncChips();
   const feed=document.getElementById("feed");feed.innerHTML="";
   if(msgs.length){const bd=document.createElement("div");bd.className="daybreak";bd.textContent="오래된순";feed.appendChild(bd)}
@@ -612,6 +688,7 @@ function render(){
   });
   document.getElementById("foot-count").textContent=`메시지 ${msgs.length} · 표시 ${shown.length}`;
   seenKeys=new Set(msgs.map(msgKey));   // 다음 렌더 때 '새 것'을 가려내기 위한 기준
+  feedVer++; decorate();                // 피드를 새로 그렸으면 '글+지면' 사진 칸도 다시 붙인다
 }
 // 메시지 한 건을 구별하는 열쇠. ts 는 슬랙에서 메시지마다 고유하다.
 function msgKey(m){ return (m.ts||"")+"|"+(m.kind||""); }
@@ -641,6 +718,7 @@ async function loadNews(){
     d=await r.json();
   }catch(e){ box.hidden=true; return; }
   renderNews(d);
+  decorate();                           // 사진 목록이 새로 왔으면 기사 옆 사진 칸도 맞춘다(바뀐 게 없으면 그대로)
 }
 
 let lastNewsSnapshot=null;   // 신문 패널도 똑같이: 목록이 그대로면 버튼을 다시 만들지 않는다
@@ -661,7 +739,7 @@ function renderNews(d){
 
   // 날짜가 바뀌면 펼침 상태와 그려둔 썸네일을 초기화한다.
   if(newsState.date!==d.date){ newsState.date=d.date; newsState.open=false; grid.innerHTML=""; }
-  newsState.images=d.images||[];   // 뷰어가 쓸 목록
+  newsState.images=d.ready?(d.images||[]):[];   // 뷰어가 쓸 목록(아직 없으면 빈 목록)
 
   if(!d.ready){
     // 아직 안 올라왔거나(오늘 새벽) 캐시에 없는 지난 날짜.
@@ -896,6 +974,24 @@ function toImgXY(cx,cy){
   return [clamp((cx-r.left)/r.width), clamp((cy-r.top)/r.height)];
 }
 
+/* 표시 하나를 그림판에 그린다. 뷰어(큰 사진)와 기사 옆 작은 사진이 **같은 함수**를 쓴다
+   → 좌표·굵기가 둘 다 '사진 대비 비율'이라 크기가 달라도 같은 글자 위에 같은 모양으로 얹힌다. */
+function strokeOne(ctx, st, pw, ph, minW){
+  ctx.strokeStyle=st.c; ctx.lineWidth=Math.max(minW, st.w*ph);
+  ctx.beginPath();
+  if(st.t==="oval"){
+    // 끌어서 만든 네모 칸에 딱 들어가는 타원 — 기사를 둥글게 둘러싸는 표시
+    const [a,b]=st.pts;
+    const cx=(a[0]+b[0])/2*pw, cy=(a[1]+b[1])/2*ph;
+    const rx=Math.abs(b[0]-a[0])/2*pw, ry=Math.abs(b[1]-a[1])/2*ph;
+    ctx.ellipse(cx,cy,Math.max(rx,1),Math.max(ry,1),0,0,Math.PI*2);
+  }else{
+    st.pts.forEach(([x,y],k)=>{ const px=x*pw, py=y*ph; k?ctx.lineTo(px,py):ctx.moveTo(px,py); });
+    if(st.pts.length===1){ const [x,y]=st.pts[0]; ctx.lineTo(x*pw+0.1, y*ph); }  // 점 하나도 보이게
+  }
+  ctx.stroke();
+}
+
 /* 형광펜 그림판을 사진과 똑같은 위치·크기로 맞추고 다시 그린다.
    캔버스 픽셀 수는 화면 점 밀도(devicePixelRatio)만큼 키워야 선이 안 뭉갠다. */
 function drawMarks(){
@@ -912,21 +1008,8 @@ function drawMarks(){
   ctx.clearRect(0,0,pw,ph);
   ctx.lineCap="round"; ctx.lineJoin="round";
   const all=(M.marks[markName()]||[]).concat(M.cur?[M.cur]:[]);
-  for(const st of all){
-    ctx.strokeStyle=st.c; ctx.lineWidth=Math.max(1.5, st.w*ph);   // 가는 선도 가늘게 나오도록
-    ctx.beginPath();
-    if(st.t==="oval"){
-      // 끌어서 만든 네모 칸에 딱 들어가는 타원 — 기사를 둥글게 둘러싸는 표시
-      const [a,b]=st.pts;
-      const cx=(a[0]+b[0])/2*pw, cy=(a[1]+b[1])/2*ph;
-      const rx=Math.abs(b[0]-a[0])/2*pw, ry=Math.abs(b[1]-a[1])/2*ph;
-      ctx.ellipse(cx,cy,Math.max(rx,1),Math.max(ry,1),0,0,Math.PI*2);
-    }else{
-      st.pts.forEach(([x,y],k)=>{ const px=x*pw, py=y*ph; k?ctx.lineTo(px,py):ctx.moveTo(px,py); });
-      if(st.pts.length===1){ const [x,y]=st.pts[0]; ctx.lineTo(x*pw+0.1, y*ph); }  // 점 하나도 보이게
-    }
-    ctx.stroke();
-  }
+  for(const st of all) strokeOne(ctx, st, pw, ph, 1.5);    // 가는 선도 가늘게 나오도록 최소 1.5
+
   /* 고른 동그라미에는 점선 네모를 덧그린다 — '여기를 끌면 옮길 수 있어요' 표시.
      점선은 표시가 아니라 안내라서, 옮기기가 끝나 고른 상태가 풀리면 같이 사라진다. */
   const sel=selStroke();
@@ -970,16 +1053,27 @@ function setPen(on){
   if(on){ showNav(); setSaved("이 창에서만 유지 · 새로고침하면 사라짐"); }
 }
 
-function openViewer(i){
+/* opts (2026-09-23, '글+지면' 보기에서 쓰는 선택 사항 — 안 주면 예전과 똑같이 열린다)
+     pen  : true 면 형광펜을 켠 채로 연다(기사 옆 사진을 누르면 바로 줄을 그을 수 있게)
+     pick : {key,title} 면 '지면 고르기' — 상단에 📌 이 장 연결 버튼이 나온다 */
+const HINT_DEFAULT=document.getElementById("lb-hint").textContent;
+function openViewer(i,opts={}){
   if(!newsState.images||!newsState.images.length) return;
-  V.list=newsState.images; V.i=i;
+  V.list=newsState.images; V.i=Math.max(0,Math.min(i,V.list.length-1));
+  V.pick=opts.pick||null;
+  $("lb-pick").hidden=!V.pick;
   $("lb").hidden=false;
   document.body.style.overflow="hidden";     // 뒤쪽 페이지가 같이 스크롤되지 않게
   showPage();
+  // 지면 고르기면 '무엇을 하면 되는지'를 더 오래 보여준다
+  $("lb-hint").textContent = V.pick
+    ? `「${V.pick.title.slice(0,24)}${V.pick.title.length>24?"…":""}」 실린 장을 찾아 📌 연결`
+    : HINT_DEFAULT;
   $("lb-hint").classList.remove("gone");
-  clearTimeout(V.hintT); V.hintT=setTimeout(()=>$("lb-hint").classList.add("gone"),2600);
+  clearTimeout(V.hintT); V.hintT=setTimeout(()=>$("lb-hint").classList.add("gone"), V.pick?6000:2600);
   V.navPos=null; showNav();                    // 열자마자 한 번 보여주고 1초 뒤 감춘다
   resetMarksIfNewDate();                       // 날짜가 바뀌었으면 비운다
+  if(opts.pen && !M.on) setPen(true);
   drawMarks();
 }
 function closeViewer(){
@@ -987,7 +1081,9 @@ function closeViewer(){
   document.body.style.overflow="";
   clearTimeout(V.navT);                        // 닫은 뒤 타이머가 남아 돌지 않게
   if(M.on) setPen(false);                      // 형광펜 모드였다면 꺼 둔다
+  V.pick=null; $("lb-pick").hidden=true;
   // 그은 줄은 메모리에 그대로 남는다 → 다시 열면 보인다(새로고침하면 사라짐)
+  drawSideMarks();                             // 기사 옆 작은 사진에도 방금 그은 줄을 반영
 }
 function showPage(){
   const im=V.list[V.i]; if(!im) return;
@@ -1390,6 +1486,181 @@ stage.addEventListener("pointercancel",e=>{
   }
 });
 window.addEventListener("resize",()=>{ if(!$("lb").hidden) measure(); });
+
+/* ══ 보기 방식: 📝 글만 / 📰 글+지면 (2026-09-23) ═══════════════════════════
+   '글+지면' 에선 브리핑 기사마다 옆에 그 기사가 실린 신문 사진을 붙인다.
+
+   어느 사진인지 어떻게 아나? (믿을 수 있는 순서대로)
+     ① 사용자가 직접 연결한 장 — 📌 지면 찾아 연결 로 고른 것. 이 브라우저에 기억한다.
+     ② 요약문에 적힌 사진 번호 — "• 사진: 07" / 제목 끝 "(사진 07)" (PAGE_LINE_RE)
+     ③ 둘 다 없으면 **짐작하지 않는다** — "어느 지면인지 아직 몰라요 + 📌 지면 찾아 연결".
+        (순서로 대충 맞히면 엉뚱한 지면을 자신 있게 보여주게 된다 → 차라리 비워 둔다)
+
+   무엇을 브라우저에 남기나 (localStorage — 이 브라우저에서만, 서버로 안 보냄)
+     · 고른 보기 방식            digest.view
+     · 직접 연결한 기사→사진     digest.pageLinks  { "2026-09-23": { "<기사 제목>": "07.jpg" } }
+     ⚠️ 형광펜 줄은 여전히 **어디에도 저장하지 않는다**(일회성 규칙 그대로).
+     저장소가 막힌 브라우저(사생활 모드 등)에서도 이 창에서는 그대로 동작한다. */
+const VIEW_KEY="digest.view", LINK_KEY="digest.pageLinks";
+const mem={view:null, links:null};             // 저장소가 막혔을 때의 대체 기억 장소
+function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+function viewMode(){ return mem.view || (lsGet(VIEW_KEY)==="paper"?"paper":"text"); }
+function setViewMode(v){ mem.view=v; lsSet(VIEW_KEY,v); syncViewSeg(); decorate(); }
+function allLinks(){
+  if(mem.links) return mem.links;
+  try{ mem.links=JSON.parse(lsGet(LINK_KEY)||"{}")||{}; }catch(e){ mem.links={}; }
+  return mem.links;
+}
+function saveLinks(){
+  // 오래된 날짜는 30일치만 남긴다(사진 보관은 14일이라 그 이상은 어차피 못 연다)
+  const L=allLinks(), keep=Object.keys(L).sort().slice(-30);
+  Object.keys(L).forEach(d=>{ if(!keep.includes(d)) delete L[d]; });
+  lsSet(LINK_KEY, JSON.stringify(L));
+}
+function getLink(key){ return (allLinks()[state.date]||{})[key]||""; }
+function setLink(key,name){
+  const L=allLinks();
+  if(name){ (L[state.date] ||= {})[key]=name; }
+  else if(L[state.date]){ delete L[state.date][key]; }
+  saveLinks(); decorate(true);
+}
+
+function viewSeg(){
+  const g=document.createElement("div");
+  g.className="viewseg"; g.setAttribute("role","group"); g.setAttribute("aria-label","보기 방식");
+  g.innerHTML='<button data-view="text" title="지금까지처럼 요약 글만">📝 글만</button>'+
+              '<button data-view="paper" title="기사마다 옆에 실린 신문 사진을 함께 — 눌러서 형광펜">📰 글+지면</button>';
+  g.querySelectorAll("button").forEach(b=>b.onclick=()=>setViewMode(b.dataset.view));
+  setTimeout(syncViewSeg);
+  return g;
+}
+function syncViewSeg(){
+  const v=viewMode();
+  document.querySelectorAll(".viewseg button").forEach(b=>b.setAttribute("aria-pressed", b.dataset.view===v?"true":"false"));
+}
+
+// 기사 하나를 구별하는 열쇠 = 제목(머리표·공백·기호 빼고). 제목이 없으면 본문 앞부분.
+function artTitle(art){
+  const t=art.querySelector(".brf-title");
+  let s="";
+  if(t){ const c=t.cloneNode(true); c.querySelectorAll(".brf-flag").forEach(n=>n.remove()); s=c.textContent; }
+  else s=(art.querySelector(".brf-main")||art).textContent;
+  return s.replace(/\s+/g," ").trim();
+}
+const artKey=title=>title.replace(/[^0-9A-Za-z가-힣]/g,"").slice(0,60);
+
+/* 사진 칸을 붙이거나(글+지면) 걷어낸다(글만). 여러 번 불러도 안전하다.
+   20초마다 목록을 다시 받아도 바뀐 게 없으면 손대지 않는다 → 사진이 깜빡이지 않는다. */
+let feedVer=0, lastDecor="";
+function decorate(force){
+  const feed=document.getElementById("feed"); if(!feed) return;
+  const paper=viewMode()==="paper";
+  const imgs=(newsState.date===state.date && newsState.images)||[];
+  const sig=[paper,feedVer,state.date,imgs.map(i=>i.name).join(","),JSON.stringify(allLinks()[state.date]||{})].join("|");
+  if(!force && sig===lastDecor) return;
+  lastDecor=sig;
+
+  document.body.classList.toggle("paper", paper);
+  feed.querySelectorAll(".brf-side,.paper-note").forEach(n=>n.remove());
+  feed.querySelectorAll(".brf-art.has-side").forEach(a=>a.classList.remove("has-side"));
+  if(!paper) return;                                   // 글만 = 기존 화면 그대로
+
+  const arts=[...feed.querySelectorAll(".brf-art")].filter(a=>a.querySelector(".brf-main"));
+  if(!arts.length){
+    feed.insertAdjacentHTML("afterbegin",'<div class="paper-note">📰 이 날짜엔 지면을 붙일 신문 브리핑이 없어요. 브리핑이 올라오면 기사마다 옆에 신문 사진이 붙습니다.</div>');
+    return;
+  }
+  if(!imgs.length){
+    feed.insertAdjacentHTML("afterbegin",'<div class="paper-note">📰 이 날짜의 신문 사진이 아직 서버에 없어요 — 사진이 준비되면 기사 옆에 자동으로 붙습니다.</div>');
+    return;
+  }
+  const byName=new Map(imgs.map((im,i)=>[im.name,i]));
+  arts.forEach(art=>{
+    const title=artTitle(art), key=artKey(title);
+    if(!key) return;
+    // ① 직접 연결 → ② 요약문의 사진 번호 → ③ 모름
+    let idx=-1, how="";
+    const linked=getLink(key);
+    if(linked && byName.has(linked)){ idx=byName.get(linked); how="직접 연결"; }
+    else{
+      const n=+art.dataset.page||0;
+      if(n>=1 && n<=imgs.length){ idx=n-1; how="요약문 표기"; }
+    }
+    const side=document.createElement("aside");
+    side.className="brf-side"+(idx<0?" nolink":"");
+    side.dataset.key=key; side.dataset.title=title;
+    if(idx>=0){
+      const im=imgs[idx], no=String(idx+1).padStart(2,"0");
+      side.dataset.i=idx;
+      side.innerHTML=
+        `<button class="side-fig" data-act="pen" title="눌러서 줄 긋기(형광펜) — ${no}번째 장">`+
+          `<img loading="lazy" decoding="async" src="${im.thumb||im.url}" alt="${no}번째 신문 사진"><canvas></canvas>`+
+          `<span class="side-no">${no}</span></button>`+
+        `<div class="side-acts">`+
+          `<button class="primary" data-act="pen" title="형광펜을 켠 채로 크게 열기">🖍 줄 긋기</button>`+
+          `<button data-act="view" title="크게 보기(확대·넘기기)">🔍 크게</button>`+
+          `<button class="quiet" data-act="pick" title="다른 장으로 바꾸기">바꾸기</button>`+
+        `</div>`+
+        `<div class="side-src">사진 ${no} · ${how}</div>`;
+      const img=side.querySelector("img");
+      img.addEventListener("load",()=>drawSideMark(side));
+    }else{
+      side.innerHTML=
+        `<div class="side-empty">어느 지면에 실렸는지<br>아직 몰라요</div>`+
+        `<div class="side-acts"><button class="primary" data-act="pick" title="넘겨 보며 이 기사가 실린 장을 골라 연결">📌 지면 찾아 연결</button></div>`;
+    }
+    art.classList.add("has-side");
+    art.appendChild(side);
+  });
+}
+
+/* 기사 옆 작은 사진 위에 형광펜 줄을 겹쳐 그린다 — 뷰어에서 그은 줄이 여기서도 보이게.
+   (그은 줄은 여전히 이 창 메모리에만 있다. 새로고침하면 둘 다 사라진다.) */
+function drawSideMark(side){
+  const img=side.querySelector(".side-fig img"), cv=side.querySelector(".side-fig canvas");
+  if(!img||!cv) return;
+  const w=img.clientWidth, h=img.clientHeight;
+  if(!(w>0&&h>0)) return;
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  cv.style.width=w+"px"; cv.style.height=h+"px";
+  const pw=Math.round(w*dpr), ph=Math.round(h*dpr);
+  if(cv.width!==pw||cv.height!==ph){ cv.width=pw; cv.height=ph; }
+  const ctx=cv.getContext("2d");
+  ctx.clearRect(0,0,pw,ph);
+  ctx.lineCap="round"; ctx.lineJoin="round";
+  const name=(newsState.images[+side.dataset.i]||{}).name;
+  const list=(M.date===state.date && name && M.marks[name])||[];
+  for(const st of list) strokeOne(ctx, st, pw, ph, 1);
+}
+function drawSideMarks(){ document.querySelectorAll(".brf-side[data-i]").forEach(drawSideMark); }
+
+// 사진 칸의 버튼들 — 하나의 리스너로 처리(피드가 다시 그려져도 다시 달 필요 없음)
+document.getElementById("feed").addEventListener("click",e=>{
+  const b=e.target.closest("[data-act]"); if(!b) return;
+  const side=b.closest(".brf-side"); if(!side) return;
+  e.preventDefault();
+  const act=b.dataset.act;
+  if(act==="pen"||act==="view"){ openViewer(+side.dataset.i,{pen:act==="pen"}); return; }
+  if(act==="pick"){
+    // 이미 연결된 장이 있으면 그 장에서, 없으면 마지막으로 고른 장(비슷한 면일 확률이 높다)에서 시작
+    const start = side.dataset.i!==undefined ? +side.dataset.i : (V.lastPick||0);
+    openViewer(start,{pick:{key:side.dataset.key, title:side.dataset.title}});
+  }
+});
+$("lb-pick").onclick=()=>{
+  if(!V.pick) return;
+  const im=V.list[V.i]; if(!im) return;
+  const key=V.pick.key;
+  V.lastPick=V.i;
+  closeViewer();
+  setLink(key, im.name);
+  // 방금 연결한 기사가 화면에서 사라지지 않게 그 자리로 살짝 스크롤
+  const side=[...document.querySelectorAll(".brf-side")].find(s=>s.dataset.key===key);
+  if(side) side.scrollIntoView({block:"nearest"});
+};
+let sideT=null;
+window.addEventListener("resize",()=>{ clearTimeout(sideT); sideT=setTimeout(drawSideMarks,150); });
 
 // ↻ 받아오기: 서버에게 드라이브에서 다시 가져오라고 시키고, 잠시 뒤 목록을 새로고침.
 document.getElementById("news-refresh").addEventListener("click",async(e)=>{
