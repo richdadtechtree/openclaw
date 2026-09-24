@@ -991,7 +991,14 @@ function briefing(raw){
     // 제목 끝에 "(사진 07)" 처럼 붙어 온 지면 번호도 떼어서 기억한다
     const tp=rest.match(PAGE_TAIL_RE);
     if(tp){ rest=rest.slice(0,tp.index).trim(); }
+    /* 제목 **중간**에 🔴 같은 중요 표시가 붙어 온 경우(2026-09-24 사용자 요청)
+         "01. “3억대 서울 분양도 나와” 추석후 청약 큰장 🔴 오늘 신문에서 …가장 중요한 기사 중 하나임."
+       → 🔴 부터는 줄을 바꿔 제목 아래 설명으로. (줄 **맨 앞**의 "🔴 반드시 체크 | 제목" 머리표는 briefTitle 이 따로 처리) */
+    let flagTail="";
+    const fi=rest.search(/\s(?:[🔴🟠🟡🟢🔵🟣⭐❗]|‼️?)/u);
+    if(fi>0 && !/[|｜]/.test(rest.slice(fi))){ flagTail=rest.slice(fi).trim(); rest=rest.slice(0,fi).trim(); }
     art=briefTitle(rest);                          // (3) 기사 제목 = 다른 크기로 한눈에
+    if(flagTail) art+='<div class="brf-sub brf-flagnote">'+inline(flagTail)+"</div>";
     if(tp) pageHint=+tp[1];                        // flush() 가 0 으로 되돌린 뒤에 넣어야 한다
   }
   if(keyWait!==null) out.push('<div class="brf-sec">'+inline(keyWait)+"</div>");   // 문장 없이 끝났으면 머리말만

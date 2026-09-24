@@ -93,6 +93,12 @@ OECD 성장률 상향과 물가 전망 상향이 동시 발생함. 성장 개선
 \`\`\`{"date":"2026-09-24","articles":[]}\`\`\`
 *다음을 사용하여 보냄* <@U0BUG6LJXL0|ChatGPT>
 `;
+// 제목과 🔴 표시가 **한 줄**에 이어져 온 경우(2026-09-24 실제 화면)
+const MSG8 = `02. 재건축·재개발로 공공임대 8.3만가구 공급 :red_circle: 공급계획과 실제 착공을 구분해서 봐야 할 핵심 기사임.
+• WHAT: 서울 정비사업 496곳에서 51만5817가구 공급 계획임.
+• WHY: 초기 단계가 많음.
+🔴 반드시 체크 | 머리표 형식 제목은 그대로
+• WHAT: 예전 형식.`;
 const MSG2 = `참고로 비교표야\n| 항목 | 값 |\n|---|---|\n| 금리 | 3.5% |\n| 환율 | 1,380 |`;
 const MSG3 = `:white_check_mark: 반드시 체크할 핵심 주제\n• 고덕강일3단지 토지임대부 구조와 실제 청약 조건.\n• 정비사업의 착공 전환.`;
 
@@ -104,7 +110,8 @@ const srv = http.createServer((req, res) => {
     { ts: D + 'T11:05:39', source: 'user', kind: 'text', text: MSG1 },
     { ts: D + 'T11:06:00', source: 'user', kind: 'text', text: MSG2 },
     { ts: D + 'T11:06:30', source: 'user', kind: 'text', text: MSG3 },
-    { ts: D + 'T11:07:00', source: 'user', kind: 'text', text: MSG7 }] }));
+    { ts: D + 'T11:07:00', source: 'user', kind: 'text', text: MSG7 },
+    { ts: D + 'T11:07:30', source: 'user', kind: 'text', text: MSG8 }] }));
   if (u === '/api/news/today') return send('application/json', JSON.stringify({ ok: true, ready: true, date: D, count: 3,
     images: ['01.jpg', '02.jpg', '03.jpg'].map(n => ({ name: n, url: '/x.png', thumb: '/x.png', download_url: '/x.png' })) }));
   if (u === '/api/news/pagetext') return send('application/json', '{"ok":false}');
@@ -186,6 +193,17 @@ const srv = http.createServer((req, res) => {
     const cr = contrast(t7.noteCol, t7.bg);
     check(cr >= 7, '설명 줄 글씨가 배경과 충분히 대비된다(7:1 이상 — 잘 보임)', `${cr.toFixed(1)}:1`);
     check(t7.key && !t7.key.startsWith('>'), '핵심 한 줄의 인용 표시 ">" 는 떼고 보인다', t7.key);
+    const f8 = await page.evaluate(() => {
+      const c = document.querySelectorAll('.entry .body')[4];
+      return [...c.querySelectorAll('.brf-art')].map(a => ({
+        t: ((a.querySelector('.brf-title') || {}).textContent || '').trim(),
+        flag: ((a.querySelector('.brf-flagnote') || {}).textContent || '').trim(),
+        badge: !!a.querySelector('.brf-flag') }));
+    });
+    check(f8[0] && f8[0].t === '02. 재건축·재개발로 공공임대 8.3만가구 공급' && /^🔴 공급계획과/.test(f8[0].flag),
+          '제목 옆에 붙어 온 🔴 부터는 줄을 바꿔 제목 아래 설명으로', f8[0] && `${f8[0].t.slice(0, 12)} / ${f8[0].flag.slice(0, 10)}`);
+    check(f8[1] && f8[1].badge && /머리표 형식 제목은 그대로/.test(f8[1].t) && !f8[1].flag,
+          '"🔴 반드시 체크 | 제목" 머리표 형식은 예전처럼(배지 + 제목)');
     check(r.over <= 0, '화면이 옆으로 넘치지 않는다', `${r.over}px`);
     await page.close();
   }
