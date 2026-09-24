@@ -265,6 +265,15 @@ def news_thumb(name: str, date: str = ""):
     return FileResponse(path, media_type=mt)
 
 
+@app.get("/api/news/pagetext")
+def news_pagetext(date: str = ""):
+    """신문 사진마다 읽어 둔 글자 조각 — 웹 '글+지면' 이 요약 기사와 사진을 자동으로 잇는 데 쓴다."""
+    if _news is None:
+        return JSONResponse(status_code=503, content={"ok": False})
+    date = date or _news.today_kst()
+    return JSONResponse(_news.page_tokens(date))
+
+
 @app.get("/api/news/zip")
 def news_zip(date: str = "", what: str = "photos"):
     """그날 사진을 한 번에 받는 ZIP. what=all 이면 PDF 도 함께."""

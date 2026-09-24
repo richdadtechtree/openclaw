@@ -1771,6 +1771,52 @@ function artTitle(art){
 }
 const artKey=title=>title.replace(/[^0-9A-Za-z가-힣]/g,"").slice(0,60);
 
+/* ══ 지면 글자 대조로 자동 연결 (2026-09-24) ══════════════════════════════
+   요약(ChatGPT)에 "• 사진: 07" 이 빠지는 날이 많아서, 서버가 신문 사진 속 글자를 읽어 둔 것
+   (scripts/news_page_text.py → /api/news/pagetext)과 요약 기사를 **직접 대조**한다.
+     · 조각 뽑는 규칙은 서버 tokens() 와 **똑같아야** 한다(숫자 3자리↑·소수 / 한글 낱말 앞 2·3글자 / 영문 약어)
+     · 점수 = 겹친 조각마다 '드문 정도'(여러 장에 나오는 말일수록 낮게) × 가중치(숫자는 2.5배 — 1305가구·8만2793가구
+       같은 숫자는 거의 그 기사에만 나온다)
+     · 1등 점수가 충분히 높고(MATCH_MIN) 2등보다 확실히 앞설 때(MATCH_GAP)만 붙인다 — 애매하면 짐작하지 않는다 */
+const PT_STOP=new Set(["있다","있는","있어","하는","했다","한다","것으","것이","이번","지난","올해","기자","그러","하지","또한",
+  "등의","등을","위해","대한","대해","통해","따라","이후","이상","WHAT","WHY","HOW"]);
+function pageTokens(text){
+  const out=new Set(); text=String(text||"");
+  for(const n0 of text.match(/\d[\d,]*(?:\.\d+)?/g)||[]){ const n=n0.replace(/,/g,""); if(n.includes(".")||n.length>=3) out.add("#"+n); }
+  for(const w of text.match(/[가-힣]{2,}/g)||[]){ out.add(w.slice(0,2)); if(w.length>=3) out.add(w.slice(0,3)); }
+  for(const w of text.match(/[A-Za-z]{2,}/g)||[]) out.add(w.toUpperCase());
+  return new Set([...out].filter(t=>!PT_STOP.has(t)&&!PT_STOP.has(t.replace(/^#/,""))));
+}
+const MATCH_MIN=4, MATCH_GAP=1.35;
+const PT={date:"", data:null, busy:false, at:0};   // 날짜별로 한 번만 받아 둔다
+function loadPageText(date){
+  // 받았으면 끝. 서버가 아직 글자를 다 못 읽어 비어 있었으면 5분 뒤 다시 물어본다(새벽에 사진이 막 올라온 경우)
+  if(PT.busy||(PT.date===date&&(PT.data||Date.now()-PT.at<300000))) return;
+  PT.busy=true; PT.at=Date.now();
+  fetch(`/api/news/pagetext?date=${date}`,{cache:"no-store"}).then(r=>r.ok?r.json():null).catch(()=>null)
+    .then(d=>{ PT.busy=false; PT.date=date;
+      PT.data=(d&&d.ok)?{n:d.n, df:d.df||{}, pages:Object.fromEntries(Object.entries(d.pages||{}).map(([k,v])=>[k,new Set(v)]))}:null;
+      if(PT.data) decorate(true); });
+}
+// 기사 글 → 가장 잘 맞는 사진 이름 (확실하지 않으면 null)
+function matchPage(text, names){
+  const D=PT.data; if(!D) return null;
+  const A=pageTokens(text), N=D.n||names.length;
+  const sc=names.map(n=>{
+    const P=D.pages[n]; if(!P) return 0;
+    let s=0;
+    for(const t of A){ if(!P.has(t)) continue;
+      const w=Math.log(1+N/(D.df[t]||1)) * (t[0]==="#"?2.5:(t.length>=3?1.2:1));
+      s+=w; }
+    return s;
+  });
+  let b=-1, b2=-1;
+  sc.forEach((v,i)=>{ if(b<0||v>sc[b]){ b2=b; b=i; } else if(b2<0||v>sc[b2]) b2=i; });
+  if(b<0||sc[b]<MATCH_MIN) return null;
+  if(b2>=0 && sc[b2]>0 && sc[b]<sc[b2]*MATCH_GAP) return null;
+  return {name:names[b], score:sc[b], second:b2>=0?sc[b2]:0};
+}
+
 /* 사진 칸을 붙이거나(글+지면) 걷어낸다(글만). 여러 번 불러도 안전하다.
    20초마다 목록을 다시 받아도 바뀐 게 없으면 손대지 않는다 → 사진이 깜빡이지 않는다. */
 let feedVer=0, lastDecor="";
@@ -1778,7 +1824,7 @@ function decorate(force){
   const feed=document.getElementById("feed"); if(!feed) return;
   const paper=viewMode()==="paper";
   const imgs=(newsState.date===state.date && newsState.images)||[];
-  const sig=[paper,feedVer,state.date,imgs.map(i=>i.name).join(","),JSON.stringify(allLinks()[state.date]||{})].join("|");
+  const sig=[paper,feedVer,state.date,!!(PT.data&&PT.date===state.date),imgs.map(i=>i.name).join(","),JSON.stringify(allLinks()[state.date]||{})].join("|");
   if(!force && sig===lastDecor) return;
   lastDecor=sig;
 
@@ -1797,6 +1843,7 @@ function decorate(force){
     return;
   }
   const byName=new Map(imgs.map((im,i)=>[im.name,i]));
+  loadPageText(state.date);                          // 지면 글자(한 번만 받음) — 오면 다시 그린다
   arts.forEach(art=>{
     const title=artTitle(art), key=artKey(title);
     if(!key) return;
@@ -1807,6 +1854,11 @@ function decorate(force){
     else{
       const n=+art.dataset.page||0;
       if(n>=1 && n<=imgs.length){ idx=n-1; how="요약문 표기"; }
+      else{
+        // ③ 지면 글자 대조 — 요약 기사 글(제목·WHAT·WHY·HOW)과 사진 속 글자를 맞춰 본다
+        const mt=matchPage((art.querySelector(".brf-main")||art).textContent, imgs.map(i=>i.name));
+        if(mt && byName.has(mt.name)){ idx=byName.get(mt.name); how="지면 글자 대조(자동)"; }
+      }
     }
     const side=document.createElement("aside");
     side.className="brf-side"+(idx<0?" nolink":"");
