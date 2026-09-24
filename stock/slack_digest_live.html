@@ -108,7 +108,11 @@
               color:var(--accent);background:color-mix(in srgb,var(--accent-bright) 14%,transparent)}
   .brf-num .v{flex:1;min-width:0}
   /* 항목 아래 딸린 설명 — 항목 글 첫머리에 맞춰 흐리게(요점과 설명이 한눈에 구분되게) */
-  .brf-num .note{display:block;margin-top:.25em;color:var(--muted);font-size:.94em;line-height:1.7}
+  /* 설명 줄: 예전엔 흐린 회색(--muted)이라 어두운 화면에서 잘 안 보였다 → 본문색에 가깝게(2026-09-24) */
+  .brf-num .note{display:block;margin-top:.3em;color:color-mix(in srgb,var(--ink) 84%,var(--surface));font-size:.96em;line-height:1.75}
+  .brf-num .v{font-weight:650}                 /* 요점 문장은 굵게 */
+  .brf-num .v .note{font-weight:400}           /* 설명은 보통 굵기 */
+  .brf-num .v strong{font-weight:750}
   .brf-num + .brf-num{margin-top:.9em}
   /* ── 핵심 요약 블록 (2026-09-24) ─────────────────────────────────────
      GPT 요약 끝의 "📌 오늘 신문 핵심 한 줄 …" 과 "✅ 오늘 반드시 체크할 핵심 주제" 아래 줄들이
@@ -548,6 +552,8 @@ const PAGE_TAIL_RE=new RegExp("\\s*[(\\[]\\s*(?:사진|지면)\\s*[:：]?\\s*"+P
       이미 "• WHAT:" 인 것은 앞의 • 를 보고 건너뛴다(lookbehind) — 빈 불릿이 생기지 않게. */
 function normalizeKV(t){
   return String(t||"")
+    // "① …" "② …" (동그라미 숫자) → "1. …" "2. …" — 번호 목록으로 알아보게(2026-09-24 실제 요약이 이 표기)
+    .replace(/^[ \t]*([\u2460-\u2473])[ \t]*/gm, (m,c)=>(c.charCodeAt(0)-0x2460+1)+". ")
     .replace(/(?<!•)[ \t]+(WHAT|WHY|HOW)[ \t]*[:：]?[ \t]+(?=\S)/g, "\n• $1: ")   // 줄 중간(제목 뒤)에 붙은 것 → 새 줄
     .replace(/^[ \t]*(WHAT|WHY|HOW)[ \t]*[:：]?[ \t]+(?=\S)/gm, "• $1: ")          // 줄 맨 앞, 불릿 없음
     .replace(/^[ \t]*(What|Why|How)[ \t]*[:：][ \t]*/gm, "• $1: ");                // "What:" 처럼 콜론 있는 것
@@ -575,7 +581,7 @@ function isBriefing(t){
   // "…5가지 1. …" 묶음만 따로 온 메시지도 같은 서식(머리말 줄바꿈 + 번호 목록)으로
   // ⚠️ 슬랙 원문은 ✅ 가 아니라 ":white_check_mark:" 글자로 온다 → 그림문자로 바꾼 뒤에 판별(2026-09-24 실제 누락)
   const L=emojify(String(t)).split("\n").map(l=>l.replace(/\*/g,"").trim()).filter(Boolean);
-  if(L.some((l,i)=>{ const h=splitListHead(l); return h && (h[1] || /^1[.)]\s/.test(L[i+1]||"")); })) return true;
+  if(L.some((l,i)=>{ const h=splitListHead(l); return h && (h[1] || /^(?:1[.)]\s|①)/.test(L[i+1]||"")); })) return true;
   // "📌 …핵심 한 줄" 이나 "✅ …체크할 핵심 주제" 아래 항목이 있는 메시지도 같은 서식으로
   if(L.some((l,i)=>KEYLINE_RE.test(l) || (isSecHead(l) && L[i+1]))) return true;
   return /신문\s*브리핑/.test(t) && /•/.test(t) && t.length>200;
@@ -594,11 +600,18 @@ const NOTE_WORD=/(대조(?:함|했|한)|재?확인함|확정\s*사실이?\s*아�
 const NOTE_MARK=/^(?:검증\s*[:：]|[※＊]|⚠️?)/u;           // 안내문 머리 기호
 const NOTE_LEAD=/^[\s*_~>·\-]+/;                          // 앞에 붙은 공백·볼드기호(*·_)
 
+/* 요약 GPT 가 앞머리에 붙이는 '작업 설명' 줄 (2026-09-24 사용자 요청으로 숨김)
+     "30쪽 전체를 이미지로 확인함. 기사 본문이 있는 43건을 정리함. …"
+     "page는 PDF 순서(1부터), bbox는 [왼쪽, 위, 너비, 높이] 비율임. …"
+     "기존 요약의 단지·기업명 … 원문 기준으로 수정함. 기사 밖 전망은 개별 요약에 추가하지 않음."
+   ⚠️ 기사 본문을 지우면 안 되므로 이런 작업 설명에만 나오는 말이 있을 때만 숨긴다. */
+const META_NOTE=/(bbox|page\s*는|PDF\s*순서|전체를\s*이미지로\s*확인|건을\s*정리함|원문\s*기준으로\s*수정|개별\s*요약에\s*추가하지|이미지\s*연결도|잘림\s*방지를\s*위해)/;
 // 이 한 줄이 통째로 안내문인가?
 function isNote(s){
   const t=String(s||"").replace(NOTE_LEAD,"").trim();
   if(!t) return false;
   if(/^검증\s*[:：]/.test(t)) return true;                  // "검증: …" 은 무조건 안내문
+  if(META_NOTE.test(t) && !/^•/.test(t)) return true;       // 요약 작업 설명 줄
   return NOTE_MARK.test(t) && NOTE_WORD.test(t);            // "※ …대조함/확인함…"
 }
 
@@ -919,7 +932,7 @@ function briefing(raw){
 
     const plain0=line.replace(/[*_]/g,"").trim();
     // "📌 오늘 신문 핵심 한 줄" 뒤 문장이 다음 줄에 따로 온 경우
-    if(keyWait!==null){ out.push(keyBox(keyWait,plain0)); keyWait=null; continue; }
+    if(keyWait!==null){ out.push(keyBox(keyWait,plain0.replace(/^(?:>|&gt;)\s*/,""))); keyWait=null; continue; }   // 인용 표시 '>' 는 뗀다
     // "📌 오늘 신문 핵심 한 줄 서울 주택은 …" → 강조 상자
     const km=plain0.match(KEYLINE_RE);
     if(km){
