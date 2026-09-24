@@ -5,6 +5,8 @@
  *   · 줄이 나뉘어 온 경우도 같은 모양, 머리말은 '기사 제목'처럼 크게 뭉치지 않는다
  *   · 본문 속 숫자("3.5%", "1. 5배", 순서가 안 맞는 번호)는 목록으로 오인하지 않는다
  *   · 이 묶음만 따로 온 메시지도 같은 서식
+ *   · "📌 오늘 신문 핵심 한 줄" → 강조 상자, "✅ …체크할 핵심 주제" 아래 줄 → ✓ 체크 칸(PC 2열·폰 1열)
+ *     "🔴 반드시 체크 | 제목" 기사·평범한 대화는 오인 안 함
  *
  * 실행: npm i playwright && node scripts/test_viewer_list.js
  */
@@ -54,17 +56,36 @@ const SPLIT = [
   '금융 🔴 반드시 체크 | 목록 뒤에 오는 새 기사',
   '• WHAT: 이 줄은 기사로 보여야 한다.',
 ].join('\n');
+const KEY = [
+  '📌 오늘 신문 핵심 한 줄 서울 주택은 공급 시차와 대출한도 소진으로 ‘기존주택·현금여력’ 중심 양극화가 커지고, 산업은 AI가 반도체를 넘어 로봇·전력망·냉각·양자칩까지 투자 지형을 넓히는 흐름임.',
+  '✅ 오늘 반드시 체크할 핵심 주제',
+  '5대 은행 신규 주담대·집단대출 심사 변화',
+  '공적주택 119만가구 중 실제 신축 입주 물량과 시점',
+  '목동 9·13단지 분담금·인허가 일정',
+  '원전 출력제한 보상과 송전망·ESS 투자',
+  '현대차 RMAC 확대와 휴머노이드 공장 투입 일정',
+  '한미 원전 8기 구상의 계약·로열티 구조',
+  '원유 레버리지·인버스 ETP 변동성',
+  '',
+  '금융 🔴 반드시 체크 | 체크 묶음 뒤 새 기사',
+  '• WHAT: 기사로 보여야 한다.',
+].join('\n');
+const CHAT = '✅ 확인했어요';   // 평범한 대화 — 서식 없이 그대로
 const PLAIN = '오늘 회의는 3. 5시에 합니다. 2. 준비물 없음';   // 목록 아님 — 그대로 둬야 한다
 
 const srv = http.createServer((req, res) => {
   const u = req.url.split('?')[0];
+  // 화면이 달라는 날짜를 그대로 돌려준다 — 테스트를 도는 날이 바뀌어도(자정 넘김) 결과가 같게
+  const D = new URL(req.url, 'http://x').searchParams.get('date') || '2026-09-23';
   const send = (t, b) => { res.writeHead(200, { 'Content-Type': t }); res.end(b); };
   if (u === '/' || u === '/slack') return send('text/html; charset=utf-8', fs.readFileSync(HTML));
-  if (u === '/slack/data') return send('application/json', JSON.stringify({ date: '2026-09-23', messages: [
+  if (u === '/slack/data') return send('application/json', JSON.stringify({ date: D, messages: [
     { ts: '2026-09-23T06:29:00', source: 'user', kind: 'text', text: JOINED },
     { ts: '2026-09-23T06:30:00', source: 'user', kind: 'text', text: SPLIT },
-    { ts: '2026-09-23T06:31:00', source: 'user', kind: 'text', text: PLAIN }] }));
-  if (u === '/api/news/today') return send('application/json', JSON.stringify({ ok: true, ready: false, date: '2026-09-23' }));
+    { ts: '2026-09-23T06:31:00', source: 'user', kind: 'text', text: PLAIN },
+    { ts: '2026-09-23T06:32:00', source: 'user', kind: 'text', text: KEY },
+    { ts: '2026-09-23T06:33:00', source: 'user', kind: 'text', text: CHAT }] }));
+  if (u === '/api/news/today') return send('application/json', JSON.stringify({ ok: true, ready: false, date: D }));
   res.writeHead(404); res.end();
 });
 
@@ -118,6 +139,31 @@ const srv = http.createServer((req, res) => {
           '목록 뒤에 오는 새 기사(카테고리 + WHAT)는 다시 기사로 그려진다');
     check(r.c.sec.length === 0 && r.c.nums.length === 0 && /3\. 5시에 합니다\. 2\. 준비물/.test(r.c.text),
           '평범한 대화의 숫자는 목록으로 바꾸지 않는다');
+    const k = await page.evaluate(() => {
+      const cards = [...document.querySelectorAll('.entry .body')];
+      const c = cards[3], chat = cards[4];
+      const items = [...c.querySelectorAll('.brf-chk')];
+      const tops = items.slice(0, 2).map(e => Math.round(e.getBoundingClientRect().top));
+      const key = c.querySelector('.brf-key');
+      return { lbl: key && key.querySelector('.lbl').textContent, txt: key && key.querySelector('.txt').textContent,
+               keyFs: key && parseFloat(getComputedStyle(key.querySelector('.txt')).fontSize),
+               bodyFs: parseFloat(getComputedStyle(c).fontSize),
+               sec: [...c.querySelectorAll('.brf-sec')].map(e => e.textContent),
+               items: items.map(e => e.querySelector('.v').textContent), sameRow: tops[0] === tops[1],
+               titles: [...c.querySelectorAll('.brf-title')].map(e => e.textContent),
+               flags: [...c.querySelectorAll('.brf-flag')].length,
+               chatPlain: !chat.querySelector('.brf-sec,.brf-key,.brf-chk') && /✅ 확인했어요/.test(chat.innerText) };
+    });
+    check(/핵심 한 줄$/.test(k.lbl || '') && /^서울 주택은/.test(k.txt || '') && /흐름임\.$/.test(k.txt || ''),
+          '"📌 핵심 한 줄" → 머리표와 문장이 나뉜 강조 상자', `${k.lbl} | ${(k.txt || '').slice(0, 12)}…`);
+    check(k.keyFs > k.bodyFs, '핵심 문장은 본문보다 크게', `${k.keyFs}px > ${k.bodyFs}px`);
+    check(k.sec.length === 1 && /체크할 핵심 주제/.test(k.sec[0]), '"✅ …체크할 핵심 주제" 는 섹션 머리말');
+    check(k.items.length === 7 && k.items[0].startsWith('5대 은행') && k.items[6].startsWith('원유'),
+          '아래 7줄이 ✓ 체크 항목 7칸', `${k.items.length}칸`);
+    check(w >= 900 ? k.sameRow : !k.sameRow, w >= 900 ? 'PC: 2열로 나란히(한눈에 훑기)' : '폰: 1열');
+    check(k.titles.some(t => /체크 묶음 뒤 새 기사/.test(t)) && k.flags === 1 && !k.items.some(t => /새 기사/.test(t)),
+          '"🔴 반드시 체크 | 제목" 기사는 섹션으로 오인하지 않고 기사로 그린다');
+    check(k.chatPlain, '"✅ 확인했어요" 같은 평범한 대화는 그대로');
     check(r.over <= 0, '가로로 넘치지 않는다');
     await page.close();
   }

@@ -108,6 +108,23 @@
   /* 항목 아래 딸린 설명 — 항목 글 첫머리에 맞춰 흐리게(요점과 설명이 한눈에 구분되게) */
   .brf-num .note{display:block;margin-top:.25em;color:var(--muted);font-size:.94em;line-height:1.7}
   .brf-num + .brf-num{margin-top:.9em}
+  /* ── 핵심 요약 블록 (2026-09-24) ─────────────────────────────────────
+     GPT 요약 끝의 "📌 오늘 신문 핵심 한 줄 …" 과 "✅ 오늘 반드시 체크할 핵심 주제" 아래 줄들이
+     서식 없이 평범한 글줄로 늘어서 눈에 안 들어오던 문제.
+       · 핵심 한 줄 → 강조 상자(작은 머리표 + 크고 굵은 한 문장)
+       · 체크 주제  → ✓ 표시가 붙은 칸들. 넓은 화면은 2열 격자, 폰은 1열 */
+  .brf-key{margin:22px 0 18px;padding:14px 16px 15px;border-radius:12px;border-left:5px solid var(--accent-bright);
+           background:color-mix(in srgb,var(--accent-bright) 9%,var(--surface))}
+  .brf-key:first-child{margin-top:2px}
+  .brf-key .lbl{display:block;font-size:calc(12.5px*var(--fs));font-weight:800;letter-spacing:.02em;color:var(--accent);margin-bottom:6px}
+  .brf-key .txt{display:block;font-size:calc(17px*var(--fs));font-weight:650;line-height:1.65;letter-spacing:-.01em}
+  .brf-chks{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr));gap:8px;margin:4px 0 16px}
+  .brf-chk{display:flex;gap:9px;align-items:flex-start;padding:9px 12px;border:1px solid var(--line);border-radius:10px;
+           background:var(--surface);font-size:calc(15px*var(--fs));line-height:1.55}
+  .brf-chk .ic{flex:none;width:1.35em;height:1.35em;margin-top:.1em;border-radius:999px;display:inline-flex;align-items:center;
+               justify-content:center;font-size:.78em;font-weight:900;color:var(--c-brief);
+               background:color-mix(in srgb,var(--c-brief) 15%,transparent)}
+  .brf-chk .v{flex:1;min-width:0}
   .brf-src{display:inline-flex;align-items:center;gap:6px;margin-top:11px;font-family:var(--mono);font-size:11.5px;color:var(--faint);border:1px dashed var(--line-strong);border-radius:6px;padding:3px 9px}
   .brf-src.fail{color:var(--c-side);border-color:color-mix(in srgb,var(--c-side) 35%,transparent)}
   /* (2026-09-17 원문 링크 표시 중단으로 현재 미사용 — 되살릴 때 그대로 쓸 수 있게 남겨 둠) */
@@ -472,11 +489,26 @@ const PAGE_LINE_RE=new RegExp("^•?\\s*(?:📄|📰|🗞️?|📷)?\\s*\\**\\s*
 const PAGE_TAIL_RE=new RegExp("\\s*[(\\[]\\s*(?:사진|지면)\\s*[:：]?\\s*"+PAGE_NUM+"\\s*(?:[,·~\\-]\\s*\\d{1,2}[^)\\]]*)?[)\\]]\\s*$");
 
 // 브리핑 형식인지 판별(짧은 사용자 질문 "신문 브리핑 해줘" 등은 제외)
+/* 핵심 요약 블록 판별 (2026-09-24)
+   · 핵심 한 줄 : "📌 오늘 신문 핵심 한 줄 <문장>" (문장이 다음 줄에 와도 됨)
+   · 섹션 머리말: 그림문자(✅📌💡🎯…)로 시작 + 40자 이하 + 요약 성격 낱말(핵심·체크·요약·포인트·판세…)
+     → 평범한 대화("✅ 확인했어요")는 낱말 조건에 걸리지 않아 그대로 둔다 */
+const EMOJI_LEAD=/^\p{Extended_Pictographic}️?\s*/u;
+const KEYLINE_RE=/^((?:\p{Extended_Pictographic}️?\s*)?[^.。\n]{0,24}?핵심\s*한\s*줄)\s*[:：]?\s*([\s\S]*)$/u;
+const SEC_WORDS=/(핵심|체크|요약|포인트|판세|테마|결론|키워드|주목|관전|일정|정리)/;
+function isSecHead(l){
+  const p=String(l||"").replace(/[*_]/g,"").trim();
+  // "🔴 반드시 체크 | 기사 제목" 은 기사 머리표라 제외(| 가 있으면 섹션 머리말이 아니다)
+  return EMOJI_LEAD.test(p) && p.length<=40 && SEC_WORDS.test(p) && !/[.。]$/.test(p) && !/[→|｜]/.test(p);
+}
+
 function isBriefing(t){
   if(/•\s*(?:WHAT|What|WHY|Why|HOW|How)\s*[:：]/.test(t)) return true;
   // "…5가지 1. …" 묶음만 따로 온 메시지도 같은 서식(머리말 줄바꿈 + 번호 목록)으로
   const L=String(t).split("\n").map(l=>l.replace(/\*/g,"").trim()).filter(Boolean);
   if(L.some((l,i)=>{ const h=splitListHead(l); return h && (h[1] || /^1[.)]\s/.test(L[i+1]||"")); })) return true;
+  // "📌 …핵심 한 줄" 이나 "✅ …체크할 핵심 주제" 아래 항목이 있는 메시지도 같은 서식으로
+  if(L.some((l,i)=>KEYLINE_RE.test(l) || (isSecHead(l) && L[i+1]))) return true;
   return /신문\s*브리핑/.test(t) && /•/.test(t) && t.length>200;
 }
 
@@ -634,6 +666,14 @@ function briefing(raw){
   const out=[];
   let inList=false;                               // "…5가지" 머리말 아래 번호 목록을 그리는 중인가
   let lastItem=-1;                                // 방금 그린 번호 항목의 out 위치(설명 줄을 붙일 곳)
+  let chk=null;                                   // "✅ …핵심 주제" 아래 체크 항목들(그리는 중이면 배열)
+  let keyWait=null;                               // "📌 핵심 한 줄" 머리표만 오고 문장은 다음 줄에 올 때
+  const flushChk=()=>{ if(chk&&chk.length) out.push('<div class="brf-chks">'+chk.join("")+"</div>"); chk=null; };
+  const chkItem=(t)=>'<div class="brf-chk"><span class="ic">✓</span><span class="v">'+inline(t)+"</span></div>";
+  const keyBox=(lbl,txt)=>'<div class="brf-key"><span class="lbl">'+inline(lbl)+'</span><span class="txt">'+inline(txt)+"</span></div>";
+  // 목록·체크 묶음이 끝나는 곳: 카테고리 머리말, 또는 다음 줄이 "• WHAT:" 인 새 기사 제목
+  const endsBlock=(plain,li)=>{ const c=plain.match(CAT_RE);
+    return (c && (!plain.slice(c[0].length).trim() || CAT_GUARD.test(plain.slice(c[0].length).trim()))) || KV_RE.test(nextLine(li)); };
   const pushItems=(txt)=>splitNumbered(txt).forEach(t=>{ out.push(numItem(t)); lastItem=out.length-1; });
   // 번호 항목 아래 딸린 설명 줄 → 그 항목 안에 흐린 글씨로 붙인다(2026-09-23: 1번만 특별해 보이던 문제)
   const addNote=(txt)=>{ out[lastItem]=out[lastItem].replace(/<\/span><\/div>$/,
@@ -678,6 +718,8 @@ function briefing(raw){
       open(); pageHint=+m[1];
       continue;
     }
+    // 체크 묶음 안의 불릿(• …)은 체크 항목 하나
+    if(chk && !KV_RE.test(line) && (m=line.match(/^•\s*([\s\S]+)$/))){ chk.push(chkItem(m[1])); continue; }
     // 번호 목록 안의 불릿(• …)은 방금 항목의 설명으로 붙인다
     if(inList && lastItem>=0 && (m=line.match(/^•\s*([\s\S]+)$/))){ addNote(m[1]); continue; }
     if(m=line.match(/^•\s*([\s\S]*)$/)){           // 그 밖의 불릿
@@ -685,10 +727,33 @@ function briefing(raw){
       continue;
     }
 
+    const plain0=line.replace(/[*_]/g,"").trim();
+    // "📌 오늘 신문 핵심 한 줄" 뒤 문장이 다음 줄에 따로 온 경우
+    if(keyWait!==null){ out.push(keyBox(keyWait,plain0)); keyWait=null; continue; }
+    // "📌 오늘 신문 핵심 한 줄 서울 주택은 …" → 강조 상자
+    const km=plain0.match(KEYLINE_RE);
+    if(km){
+      flush(); flushChk(); inList=false; lastItem=-1;
+      if(km[2].trim()) out.push(keyBox(km[1],km[2].trim())); else keyWait=km[1];
+      continue;
+    }
+    // "✅ 오늘 반드시 체크할 핵심 주제" → 섹션 머리말 + 아래 줄들을 체크 항목으로
+    if(isSecHead(plain0) && !splitListHead(plain0)){
+      flush(); flushChk(); inList=false; lastItem=-1;
+      out.push('<div class="brf-sec">'+inline(plain0)+"</div>");
+      chk=[];
+      continue;
+    }
+    if(chk){
+      if(NUM_ITEM_RE.test(plain0)){ flushChk(); inList=true; lastItem=-1; pushItems(plain0); continue; }  // 번호가 오면 번호 목록으로
+      if(!endsBlock(plain0,li)){ chk.push(chkItem(plain0)); continue; }
+      flushChk();
+    }
+
     // "🔍 …봐야 할 5가지 1. …" → 머리말은 따로, 번호는 한 줄씩
     const lh=splitListHead(line.replace(/\*/g,"").trim());
     if(lh){
-      flush();
+      flush(); flushChk();
       out.push('<div class="brf-sec">'+inline(lh[0])+"</div>");
       lastItem=-1;
       if(lh[1]) pushItems(lh[1]);
@@ -728,6 +793,8 @@ function briefing(raw){
     art=briefTitle(rest);                          // (3) 기사 제목 = 다른 크기로 한눈에
     if(tp) pageHint=+tp[1];                        // flush() 가 0 으로 되돌린 뒤에 넣어야 한다
   }
+  if(keyWait!==null) out.push('<div class="brf-sec">'+inline(keyWait)+"</div>");   // 문장 없이 끝났으면 머리말만
+  flushChk();
   flush();
 
   const html=(head?'<div class="brf-head">'+inline(head)+"</div>":"")+out.join("");

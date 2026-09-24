@@ -67,18 +67,20 @@ const BRIEF = [
 let newsReady = true;
 const srv = http.createServer((req, res) => {
   const u = req.url.split('?')[0];
+  // 화면이 달라는 날짜를 그대로 돌려준다 — 테스트를 도는 날이 바뀌어도(자정 넘김) 결과가 같게
+  const D = new URL(req.url, 'http://x').searchParams.get('date') || '2026-09-23';
   const send = (t, b) => { res.writeHead(200, { 'Content-Type': t }); res.end(b); };
   if (u === '/' || u === '/slack') return send('text/html; charset=utf-8', fs.readFileSync(HTML));
-  if (u === '/slack/data') return send('application/json', JSON.stringify({ date: '2026-09-23',
+  if (u === '/slack/data') return send('application/json', JSON.stringify({ date: D,
     messages: [{ ts: '2026-09-23T06:29:00', source: 'user', kind: 'text', text: BRIEF },
                { ts: '2026-09-23T06:30:00', source: 'user', kind: 'text', text: '_다음을 사용하여 보냄_ <@U0BUG6LJXL0|ChatGPT>' }] }));
   if (u === '/api/news/today') {
-    if (!newsReady) return send('application/json', JSON.stringify({ ok: true, ready: false, date: '2026-09-23' }));
+    if (!newsReady) return send('application/json', JSON.stringify({ ok: true, ready: false, date: D }));
     const images = Array.from({ length: 6 }, (_, i) => {
       const n = String(i + 1).padStart(2, '0') + '.jpg';
       return { name: n, url: '/page.png?n=' + n, thumb: '/page.png?t=' + n, download_url: '/page.png' };
     });
-    return send('application/json', JSON.stringify({ ok: true, ready: true, date: '2026-09-23', count: 6, images }));
+    return send('application/json', JSON.stringify({ ok: true, ready: true, date: D, count: 6, images }));
   }
   if (u === '/page.png') return send('image/png', PNG);
   res.writeHead(404); res.end();
