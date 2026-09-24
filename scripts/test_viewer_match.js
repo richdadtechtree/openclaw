@@ -125,7 +125,6 @@ const BRIEF = [
   check(JSON.stringify(py) === JSON.stringify(js), 'Python tokens() 와 JS pageTokens() 결과가 똑같다', `${py.length}개`);
 
   console.log('\n[④ 자동 연결]');
-  await page.click('.viewseg [data-view="paper"]');
   await page.waitForFunction(() => PT.data && document.querySelectorAll('.brf-side').length === 4);
   const sides = () => page.evaluate(() => [...document.querySelectorAll('.brf-art')].map(a => {
     const s = a.querySelector('.brf-side');

@@ -5,7 +5,7 @@
  * 기존 '📝 글만' 보기는 그대로 유지돼야 한다.
  *
  * 확인하는 것
- *   ① 처음엔 '글만'(기존 화면 그대로) — 사진 칸 없음 · 폭 720px
+ *   ① 처음부터 '글+지면'(2026-09-24 '글만' 보기와 전환 버튼 없앰) — 사진 칸 · 폭 1120px
  *   ② "• 사진: 03" 줄은 화면에 안 보이고, 기사 번호로만 쓰인다 / 제목 끝 "(사진 04)" 도 인식
  *      (07.jpg · *사진* · "07, 08" 같은 변형도 인식, "사진 3장 공개" 같은 본문은 오인 안 함)
  *   ③ '글+지면' 을 누르면 기사마다 사진 칸이 붙는다 (번호 있는 기사 = 그 사진, 없는 기사 = 연결 버튼)
@@ -13,9 +13,8 @@
  *   ⑤ 뷰어에서 그은 줄이 닫은 뒤 기사 옆 작은 사진에도 보인다
  *   ⑥ 번호 없는 기사: 📌 지면 찾아 연결 → 넘겨서 고르고 📌 → 그 사진이 붙는다
  *   ⑦ 새로고침: 보기 방식·직접 연결은 기억, **형광펜은 사라짐**(일회성 규칙 유지)
- *      저장소엔 digest.view / digest.pageLinks 만 — 형광펜 흔적 0
+ *      저장소엔 digest.pageLinks 만 — 형광펜 흔적 0
  *   ⑧ 20초 자동 갱신 때 사진 칸을 다시 만들지 않는다(깜빡임 없음)
- *   ⑨ 다시 '글만' → 사진 칸이 사라지고 기존 화면과 같아진다
  *   ⑩ 사진이 아직 없는 날 → 안내문 · 휴대폰(390px)에서 가로 넘침 없음
  *
  * 실행: npm i playwright && node scripts/test_viewer_paper.js
@@ -129,16 +128,16 @@ const sideInk = (page, k) => page.evaluate((k) => {
   await page.waitForSelector('.brf-art');
   await page.waitForFunction(() => newsState.images.length === 6);
 
-  console.log('\n[① 기본은 글만 — 기존 화면 그대로]');
-  check((await sides(page)).length === 0, '처음엔 기사 옆에 사진 칸이 없다');
-  check(await page.evaluate(() => document.querySelector('.viewseg [data-view="text"]').getAttribute('aria-pressed') === 'true'),
-        '보기 버튼은 "📝 글만" 이 눌린 상태');
-  const w0 = await page.evaluate(() => getComputedStyle(document.querySelector('.wrap')).maxWidth);
-  check(w0 === '720px', '화면 폭도 예전 그대로(720px)', w0);
+  console.log('\n[① 처음부터 글+지면 (2026-09-24: 글만 보기 없앰)]');
+  check(await page.evaluate(() => !document.querySelector('.viewseg')), '"📝 글만 / 📰 글+지면" 전환 버튼이 없다');
+  await page.waitForFunction(() => document.querySelectorAll('.brf-side').length === 3);
+  check((await sides(page)).length === 3, '누르지 않아도 처음부터 기사 옆에 사진 칸');
+  check(await page.evaluate(() => getComputedStyle(document.querySelector('.wrap')).maxWidth) === '1120px', '화면은 넓은 폭(1120px)');
   check(await page.evaluate(() => document.querySelectorAll('.brf-art').length) === 3, '기사 3개가 그려진다');
 
   console.log('\n[② 사진 번호 표기]');
-  const text = await page.evaluate(() => document.getElementById('feed').innerText);
+  // 사진 칸의 '사진 04 · …' 글씨는 빼고 기사 본문·안내 글자만 본다(글+지면이 기본이라 사진 칸이 늘 있다)
+  const text = await page.evaluate(() => [...document.querySelectorAll('.entry .body')].map(b => { const c = b.cloneNode(true); c.querySelectorAll('.brf-side').forEach(n => n.remove()); return c.innerText; }).join('\n'));
   check(!/사진\s*:\s*03/.test(text), '"• 사진: 03" 줄은 화면에 안 보인다');
   check(!/사진 04/.test(text) && /K의료관광/.test(text), '제목 끝 "(사진 04)" 도 떼어내고 제목은 남는다');
   check(!/사용하여 보냄|U0BUG6LJXL0/.test(text), '슬랙 꼬리표 "다음을 사용하여 보냄 @앱" 이 안 보인다');
@@ -158,7 +157,6 @@ const sideInk = (page, k) => page.evaluate((k) => {
         'GPT 표기가 조금 달라도 번호를 읽고, 본문 문장("사진 3장 공개")은 번호로 착각 안 함', variants);
 
   console.log('\n[③ 글+지면]');
-  await page.click('.viewseg [data-view="paper"]');
   let s = await sides(page);
   check(s.length === 3, '기사마다 사진 칸이 붙는다', `${s.length}개`);
   check(s[0].no === '03' && /요약문 표기/.test(s[0].src), '번호 있는 기사 → 03번 사진', s[0].src);
@@ -215,20 +213,13 @@ const sideInk = (page, k) => page.evaluate((k) => {
   await page.waitForSelector('.brf-side');
   await page.waitForFunction(() => document.querySelectorAll('.brf-side').length === 3);
   s = await sides(page);
-  check(await page.evaluate(() => document.body.classList.contains('paper')), '보기 방식(글+지면)을 기억한다');
+  check(await page.evaluate(() => document.body.classList.contains('paper')), '새로고침해도 글+지면');
   check(s[1].no === '05', '직접 연결한 사진도 기억한다');
   await page.waitForFunction(() => { const im = document.querySelector('.brf-side img'); return im.complete && im.naturalWidth; });
   check(await sideInk(page, 0) === 0, '형광펜 줄은 사라진다(일회성 규칙 그대로)');
   const keys = await page.evaluate(() => { const k = []; for (let i = 0; i < localStorage.length; i++) k.push(localStorage.key(i));
     for (let i = 0; i < sessionStorage.length; i++) k.push('session:' + sessionStorage.key(i)); return k.sort(); });
-  check(keys.join(',') === 'digest.pageLinks,digest.view', '저장소엔 보기 방식·연결 정보뿐 — 형광펜 흔적 0', keys.join(', '));
-
-  console.log('\n[⑨ 다시 글만]');
-  await page.click('.viewseg [data-view="text"]');
-  check((await sides(page)).length === 0, '사진 칸이 모두 사라진다');
-  check(await page.evaluate(() => !document.body.classList.contains('paper') &&
-        getComputedStyle(document.querySelector('.wrap')).maxWidth === '720px' &&
-        !document.querySelector('.has-side')), '화면이 기존과 똑같이 돌아온다');
+  check(keys.join(',') === 'digest.pageLinks', '저장소엔 직접 연결 정보뿐 — 형광펜 흔적 0', keys.join(', '));
   await page.close();
 
   console.log('\n[⑩ 사진 없는 날 · 휴대폰]');
@@ -236,7 +227,6 @@ const sideInk = (page, k) => page.evaluate((k) => {
   page = await ctx.newPage();
   await page.goto(base + '/slack');
   await page.waitForSelector('.brf-art');
-  await page.click('.viewseg [data-view="paper"]');
   await page.waitForTimeout(300);
   check(await page.isVisible('.paper-note') && (await sides(page)).length === 0,
         '사진이 아직 없으면 안내문만(빈 칸을 억지로 만들지 않음)');
@@ -247,8 +237,7 @@ const sideInk = (page, k) => page.evaluate((k) => {
   page = await phone.newPage();
   await page.goto(base + '/slack');
   await page.waitForSelector('.brf-art');
-  await page.waitForFunction(() => newsState.images.length === 6);
-  await page.click('.viewseg [data-view="paper"]');
+  await page.waitForFunction(() => document.querySelectorAll('.brf-side').length === 3);
   const ph = await page.evaluate(() => {
     const f = document.querySelector('.brf-side .side-fig').getBoundingClientRect();
     const m = document.querySelector('.brf-art.has-side .brf-main').getBoundingClientRect();
