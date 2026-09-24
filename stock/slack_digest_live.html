@@ -320,6 +320,7 @@
   .side-fig:hover{border-color:var(--accent-bright)}
   .side-fig:focus-visible{outline:2px solid var(--accent-bright);outline-offset:2px}
   .side-fig img{display:block;width:100%;height:auto;min-height:60px}
+  .side-fig.crop{height:auto;max-height:420px}
   .side-fig canvas{position:absolute;left:0;top:0;pointer-events:none;mix-blend-mode:multiply;opacity:.62}
   .side-no{position:absolute;left:0;top:0;font-family:var(--mono);font-size:10.5px;font-weight:700;line-height:1.5;
            color:#fff;background:rgba(15,20,32,.66);padding:2px 7px;border-bottom-right-radius:7px}
@@ -572,6 +573,68 @@ function dropNotes(raw){
 const SENT_USING_RE=/[ \t]*[_*~]*(?:다음을\s*사용하여\s*보냄|다음을\s*통해\s*보냄|Sent\s+using)[_*~]*[ \t]*[:：]?[ \t]*(?:<@[A-Z0-9]+(?:\|[^>]*)?>|@[\w.\-]+)?[_*~]*[ \t]*$/gimu;
 function cleanSent(t){ return String(t||"").replace(SENT_USING_RE,"").replace(/\n{3,}/g,"\n\n").trim(); }
 
+/* ── 요약 GPT 가 붙여 주는 '기사↔지면' JSON 묶음 (2026-09-24) ─────────────
+   요약을 만드는 ChatGPT 에게, 사람이 읽는 요약 **끝에** 아래 같은 JSON 을 붙여 달라고 한다.
+     ```json
+     {"date":"2026-09-24","articles":[
+       {"article_id":"20260924-001","title":"3억대 서울 분양도 나와","page":3,"bbox":[0.05,0.12,0.9,0.35]}
+     ]}
+     ```
+   · page = 신문 PDF 쪽 번호 = 사진 번호(PDF 는 사진을 순서대로 묶은 것) → 03 사진에 연결
+   · bbox = 그 쪽 안에서 기사가 차지하는 네모 [왼쪽, 위, 너비, 높이] (0~1 비율, 없어도 됨)
+            → 있으면 기사 옆에 **그 부분만 잘라** 보여주고, 누르면 그 기사로 확대된 채 열린다
+   이 묶음은 화면에 그리지 않는다(사람이 읽을 글이 아니다). 슬랙이 ``` 를 떼어 버린 경우도 대비해
+   '{ … "articles" … }' 모양이면 괄호 짝을 맞춰 찾아낸다. 깨진 JSON 은 조용히 무시하고 그 부분만 숨긴다. */
+function extractSummaryJson(text){
+  let t=String(text||""); const arts=[];
+  const take=(src)=>{ try{ const o=JSON.parse(src); (o&&o.articles||[]).forEach(a=>{ if(a&&a.title) arts.push(a); }); }catch(e){} };
+  // ① ```json … ``` 로 감싼 것
+  t=t.replace(/```[a-zA-Z-]*\s*([\s\S]*?)```/g,(m,body)=>{
+    if(!/"articles"\s*:/.test(body)) return m;       // 다른 코드 블록은 그대로
+    take(body.trim()); return "";
+  });
+  // ② 감싸지 않은 { … "articles": [ … ] … } — 괄호 짝을 맞춰 끝을 찾는다(문자열 안의 괄호는 무시)
+  let k;
+  while((k=t.search(/\{\s*"(?:date|articles)"\s*:/))>=0){
+    let depth=0, inStr=false, esc=false, end=-1;
+    for(let i=k;i<t.length;i++){
+      const c=t[i];
+      if(inStr){ if(esc) esc=false; else if(c==="\\") esc=true; else if(c==='"') inStr=false; continue; }
+      if(c==='"') inStr=true; else if(c==="{") depth++; else if(c==="}"){ if(--depth===0){ end=i; break; } }
+    }
+    const chunk=t.slice(k, end<0?t.length:end+1);
+    if(!/"articles"\s*:/.test(chunk)) break;
+    take(chunk); t=t.slice(0,k)+t.slice(end<0?t.length:end+1);
+  }
+  return {text:t.replace(/\n{3,}/g,"\n\n").trim(), articles:arts};
+}
+// 날짜별로 모아 둔 JSON 기사 정보 — render() 가 매번 다시 채운다
+let SUMMARY_META=[];
+const bigrams=s=>{ const t=String(s||"").replace(/[^0-9A-Za-z가-힣]/g,""); const o=new Set(); for(let i=0;i<t.length-1;i++) o.add(t.slice(i,i+2)); return o; };
+/* 요약 기사 제목 → JSON 의 같은 기사. GPT 가 제목을 살짝 바꿔 쓰기도 해서
+   ①글자만 남겨 완전히 같으면 바로, ②한쪽이 다른 쪽을 품으면, ③두 글자 조각이 60% 이상 겹치면 같은 기사로 본다 */
+function findMeta(title){
+  const k=artKey(title); if(!k||!SUMMARY_META.length) return null;
+  let best=null, bs=0;
+  for(const a of SUMMARY_META){
+    const ak=artKey(a.title); if(!ak) continue;
+    if(ak===k) return a;
+    if(ak.length>=6 && (k.includes(ak)||ak.includes(k))){ if(0.95>bs){ bs=0.95; best=a; } continue; }
+    const A=bigrams(k), B=bigrams(ak); let n=0; A.forEach(x=>{ if(B.has(x)) n++; });
+    const d=2*n/((A.size+B.size)||1);
+    if(d>bs){ bs=d; best=a; }
+  }
+  return bs>=0.6?best:null;
+}
+function validBox(b){
+  if(!Array.isArray(b)||b.length!==4) return null;
+  const v=b.map(Number); if(v.some(x=>!isFinite(x))) return null;
+  let [x,y,w,h]=v;
+  if(x>1||y>1||w>1||h>1) return null;                 // 비율(0~1)만 받는다 — 픽셀이면 무시
+  x=Math.max(0,x); y=Math.max(0,y); w=Math.min(1-x,w); h=Math.min(1-y,h);
+  return (w>0.03&&h>0.03)?[x,y,w,h]:null;
+}
+
 // 메시지 전체가 안내문뿐이면 카드 자체를 만들지 않는다(빈 카드 방지).
 function isNoteOnly(raw){
   const t=String(raw||"").trim();
@@ -820,7 +883,7 @@ async function load(){
 /* 화면에 영향을 주는 값들을 문자열 하나로 묶은 '지문'.
    20초마다 새로 받아와도 이 지문이 같으면 = 바뀐 게 없다 → 다시 그리지 않는다.
    (예전엔 무조건 feed 를 비우고 다시 만들어서 화면이 20초마다 깜빡였다.) */
-function snapshot(){ return JSON.stringify([state.data,[...state.active].sort()]); }
+function snapshot(){ return JSON.stringify([state.data,[...state.active].sort()]); }   // JSON 묶음도 메시지 안에 있어 함께 바뀐다
 let lastSnapshot=null;      // 마지막으로 그린 지문
 let seenKeys=new Set();     // 이미 화면에 있던 메시지들 → 이번에 처음 보이는 것만 애니메이션
 
@@ -830,8 +893,15 @@ function render(){
   lastSnapshot=snap;
 
   // 검증·면책 안내문만 담긴 메시지는 아예 목록에서 뺀다(카운트·필터도 함께 맞춰짐)
+  // 요약 끝의 '기사↔지면' JSON 묶음은 떼어서 모아 두고(SUMMARY_META), 화면엔 사람이 읽는 글만 그린다
+  SUMMARY_META=[];
+  const bodyOf=new Map();
+  (state.data.messages||[]).forEach(m=>{
+    const sj=extractSummaryJson(cleanSent(m.text));
+    SUMMARY_META.push(...sj.articles); bodyOf.set(m, sj.text);
+  });
   const msgs=[...(state.data.messages||[])]
-    .filter(m=>!isNoteOnly(cleanSent(m.text)) && (m.kind==="image" || cleanSent(m.text)))   // 꼬리표만 있던 메시지도 뺀다
+    .filter(m=>!isNoteOnly(bodyOf.get(m)) && (m.kind==="image" || bodyOf.get(m)))   // 꼬리표·JSON 만 있던 메시지도 뺀다
     .sort((a,b)=>(a.ts||"").localeCompare(b.ts||""));
   document.getElementById("date").textContent=krDate(state.data.date||state.date);
   document.getElementById("datepick").value=state.data.date||state.date;
@@ -855,7 +925,7 @@ function render(){
     // 이번에 처음 등장하는 메시지에만 'is-new' → 그 카드만 스윽 나타난다
     el.className="entry"+(seenKeys.has(msgKey(m))?"":" is-new");
     el.style.setProperty("--dot",c.color);
-    const raw=cleanSent(m.text);                    // 슬랙 "다음을 사용하여 보냄 @앱" 꼬리표 제거
+    const raw=bodyOf.get(m)||"";                    // 꼬리표·JSON 묶음을 뗀 사람이 읽는 글
     const txt=dropNotes(raw)||raw;                  // 안내문 줄을 걷어낸 본문(다 지워지면 원문 유지)
     // 신문 브리핑이면 전용 서식, 아니면 기존 그대로
     const brf=isBriefing(txt)?briefing(txt):null;
@@ -1243,6 +1313,7 @@ function openViewer(i,opts={}){
   if(!newsState.images||!newsState.images.length) return;
   V.list=newsState.images; V.i=Math.max(0,Math.min(i,V.list.length-1));
   V.pick=opts.pick||null;
+  V.box=opts.box||null;                        // 열자마자 이 기사 영역으로 확대(요약 JSON 의 bbox)
   $("lb-pick").hidden=!V.pick;
   $("lb").hidden=false;
   document.body.style.overflow="hidden";     // 뒤쪽 페이지가 같이 스크롤되지 않게
@@ -1278,7 +1349,13 @@ function showPage(){
   $("lb-prev").disabled=V.i<=0;
   $("lb-next").disabled=V.i>=V.list.length-1;
   V.zoom=1;
-  img.onload=()=>{ V.zoom=1; measure(); img.style.visibility="visible"; };
+  // 같은 사진을 다시 열면 브라우저가 load 를 다시 안 보낼 수 있다 → 이미 다 받았으면 직접 부른다.
+  // 두 번 불려도 한 번만 처리되게 '이번 장 번호표(tok)'로 막는다(두 번째에 확대가 풀리는 것 방지).
+  const tok=V.loadTok=(V.loadTok||0)+1;
+  const done=()=>{ if(V.loadTok!==tok||V.loadedTok===tok) return; V.loadedTok=tok;
+    V.zoom=1; measure(); if(V.box){ zoomToBox(V.box); V.box=null; } img.style.visibility="visible"; };
+  img.onload=done;
+  if(img.complete&&img.naturalWidth) requestAnimationFrame(done);
   // 다음·이전 장을 미리 받아둔다 → 넘길 때 하얗게 안 뜬다
   [V.i+1,V.i-1].forEach(k=>{ if(V.list[k]) new Image().src=V.list[k].url; });
 }
@@ -1357,10 +1434,20 @@ function panStep(){
 }
 
 function applyTransform(){ paint(); }   // 옛 이름 호환
+/* 사진 속 네모 영역 [x,y,w,h](0~1)이 화면에 꽉 차게 확대하고 그 가운데로 옮긴다 */
+function zoomToBox(b){
+  if(!V.stage||!V.fitW) return;
+  const [x,y,w,h]=b;
+  const z=Math.max(1,Math.min(maxZoom(), 0.94*Math.min(V.stage.w/(w*V.fitW), V.stage.h/(h*V.fitH))));
+  V.zoom=z;
+  V.tx=V.stage.w/2-(x+w/2)*V.fitW*z;
+  V.ty=V.stage.h/2-(y+h/2)*V.fitH*z;
+  paint();
+}
 function go(step){
   const n=V.i+step;
   if(n<0||n>=V.list.length) return;
-  V.i=n; showPage();
+  V.i=n; V.box=null; showPage();
   showNav();                                   // 넘길 땐 화살표를 다시 보여준다
   M.sel=null;                                  // 다른 장으로 갔으니 '방금 그린 것'도 없다
   drawMarks();                                 // 장마다 형광펜이 따로 있다
@@ -1848,9 +1935,15 @@ function decorate(force){
     const title=artTitle(art), key=artKey(title);
     if(!key) return;
     // ① 직접 연결 → ② 요약문의 사진 번호 → ③ 모름
-    let idx=-1, how="";
+    let idx=-1, how="", box=null;
     const linked=getLink(key);
+    const meta=findMeta(title);                      // 요약 GPT 가 붙여 준 JSON(쪽 번호·기사 영역)
+    const mp=meta?parseInt(meta.page,10):0;
     if(linked && byName.has(linked)){ idx=byName.get(linked); how="직접 연결"; }
+    else if(mp>=1 && mp<=imgs.length){
+      idx=mp-1; box=validBox(meta.bbox);
+      how="요약 JSON · "+mp+"쪽"+(box?" · 기사 영역":"");
+    }
     else{
       const n=+art.dataset.page||0;
       if(n>=1 && n<=imgs.length){ idx=n-1; how="요약문 표기"; }
@@ -1866,9 +1959,11 @@ function decorate(force){
     if(idx>=0){
       const im=imgs[idx], no=String(idx+1).padStart(2,"0");
       side.dataset.i=idx;
+      if(box) side.dataset.box=box.join(",");
+      // 기사 영역(box)이 있으면 그 부분만 잘라 보여준다 — 잘라 보이려면 선명해야 해서 썸네일 대신 원본을 쓴다
       side.innerHTML=
-        `<button class="side-fig" data-act="pen" title="눌러서 줄 긋기(형광펜) — ${no}번째 장">`+
-          `<img loading="lazy" decoding="async" src="${im.thumb||im.url}" alt="${no}번째 신문 사진"><canvas></canvas>`+
+        `<button class="side-fig${box?" crop":""}" data-act="pen" title="눌러서 줄 긋기(형광펜) — ${no}번째 장${box?"의 이 기사":""}">`+
+          `<img loading="lazy" decoding="async" src="${box?im.url:(im.thumb||im.url)}" alt="${no}번째 신문 사진"><canvas></canvas>`+
           `<span class="side-no">${no}</span></button>`+
         `<div class="side-acts">`+
           `<button class="primary" data-act="pen" title="형광펜을 켠 채로 크게 열기">🖍 줄 긋기</button>`+
@@ -1877,7 +1972,7 @@ function decorate(force){
         `</div>`+
         `<div class="side-src">사진 ${no} · ${how}</div>`;
       const img=side.querySelector("img");
-      img.addEventListener("load",()=>drawSideMark(side));
+      img.addEventListener("load",()=>{ if(box) cropFig(side.querySelector(".side-fig"),img,box); drawSideMark(side); });
     }else{
       side.innerHTML=
         `<div class="side-empty">어느 지면에 실렸는지<br>아직 몰라요</div>`+
@@ -1892,7 +1987,7 @@ function decorate(force){
    (그은 줄은 여전히 이 창 메모리에만 있다. 새로고침하면 둘 다 사라진다.) */
 function drawSideMark(side){
   const img=side.querySelector(".side-fig img"), cv=side.querySelector(".side-fig canvas");
-  if(!img||!cv) return;
+  if(!img||!cv||side.dataset.box) return;          // 잘라 보인 칸은 줄을 겹치지 않는다(뷰어에선 그대로 보인다)
   const w=img.clientWidth, h=img.clientHeight;
   if(!(w>0&&h>0)) return;
   const dpr=Math.min(window.devicePixelRatio||1,2);
@@ -1906,6 +2001,13 @@ function drawSideMark(side){
   const list=(M.date===state.date && name && M.marks[name])||[];
   for(const st of list) strokeOne(ctx, st, pw, ph, 1);
 }
+/* 기사 영역만 잘라 보이기: 칸의 가로세로 비율을 '영역' 비율로 맞추고, 사진을 그만큼 키워 영역이 칸에 딱 차게 민다.
+   (CSS 의 %: left·width 는 칸 너비 기준, top 은 칸 높이 기준이라 비율 계산만으로 정확히 맞는다) */
+function cropFig(fig,img,box){
+  const [x,y,w,h]=box, nw=img.naturalWidth||1, nh=img.naturalHeight||1;
+  fig.style.aspectRatio=String((w*nw)/(h*nh));
+  Object.assign(img.style,{position:"absolute",width:(100/w)+"%",height:"auto",left:(-x/w*100)+"%",top:(-y/h*100)+"%",maxWidth:"none"});
+}
 function drawSideMarks(){ document.querySelectorAll(".brf-side[data-i]").forEach(drawSideMark); }
 
 // 사진 칸의 버튼들 — 하나의 리스너로 처리(피드가 다시 그려져도 다시 달 필요 없음)
@@ -1914,7 +2016,11 @@ document.getElementById("feed").addEventListener("click",e=>{
   const side=b.closest(".brf-side"); if(!side) return;
   e.preventDefault();
   const act=b.dataset.act;
-  if(act==="pen"||act==="view"){ openViewer(+side.dataset.i,{pen:act==="pen"}); return; }
+  if(act==="pen"||act==="view"){
+    // 기사 영역이 있으면 '줄 긋기'는 그 기사로 확대해서 열고, '크게'는 지면 전체로 연다
+    const box=(act==="pen"&&side.dataset.box)?side.dataset.box.split(",").map(Number):null;
+    openViewer(+side.dataset.i,{pen:act==="pen", box}); return;
+  }
   if(act==="pick"){
     // 이미 연결된 장이 있으면 그 장에서, 없으면 마지막으로 고른 장(비슷한 면일 확률이 높다)에서 시작
     const start = side.dataset.i!==undefined ? +side.dataset.i : (V.lastPick||0);
