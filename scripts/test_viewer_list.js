@@ -70,6 +70,15 @@ const KEY = [
   '금융 🔴 반드시 체크 | 체크 묶음 뒤 새 기사',
   '• WHAT: 기사로 보여야 한다.',
 ].join('\n');
+// 2026-09-24 GPT 가 바꿔 보낸 새 형식 — 불릿·콜론 없이, 제목 줄에 WHAT 이 붙어 옴 (한 기사가 셋으로 쪼개지던 문제)
+const NEWFMT = [
+  '43. 연휴에 고양이 밥줄 시터 모집 WHAT 추석을 앞두고 반려동물 방문 돌봄과 단기 아르바이트 구인이 늘었음.',
+  'WHY 연휴에 집을 비우는 가구와 근처에서 일하려는 사람의 수요가 맞물림.',
+  'HOW 당근의 9월16~22일 반려동물 돌봄 공고는 전월 동기보다 30%, 지원자는 40% 증가함.',
+  '',
+  '44. How to 투자 설명회 성황 WHAT 개인투자자 대상 설명회에 2000명이 몰렸음.',
+  'WHY 금리 인하 기대가 커짐.',
+].join('\n');
 const CHAT = '✅ 확인했어요';   // 평범한 대화 — 서식 없이 그대로
 const PLAIN = '오늘 회의는 3. 5시에 합니다. 2. 준비물 없음';   // 목록 아님 — 그대로 둬야 한다
 
@@ -84,7 +93,8 @@ const srv = http.createServer((req, res) => {
     { ts: '2026-09-23T06:30:00', source: 'user', kind: 'text', text: SPLIT },
     { ts: '2026-09-23T06:31:00', source: 'user', kind: 'text', text: PLAIN },
     { ts: '2026-09-23T06:32:00', source: 'user', kind: 'text', text: KEY },
-    { ts: '2026-09-23T06:33:00', source: 'user', kind: 'text', text: CHAT }] }));
+    { ts: '2026-09-23T06:33:00', source: 'user', kind: 'text', text: CHAT },
+    { ts: '2026-09-23T06:34:00', source: 'user', kind: 'text', text: NEWFMT }] }));
   if (u === '/api/news/today') return send('application/json', JSON.stringify({ ok: true, ready: false, date: D }));
   res.writeHead(404); res.end();
 });
@@ -164,6 +174,17 @@ const srv = http.createServer((req, res) => {
     check(k.titles.some(t => /체크 묶음 뒤 새 기사/.test(t)) && k.flags === 1 && !k.items.some(t => /새 기사/.test(t)),
           '"🔴 반드시 체크 | 제목" 기사는 섹션으로 오인하지 않고 기사로 그린다');
     check(k.chatPlain, '"✅ 확인했어요" 같은 평범한 대화는 그대로');
+    const nf = await page.evaluate(() => {
+      const c = [...document.querySelectorAll('.entry .body')][5];
+      return [...c.querySelectorAll('.brf-art')].map(a => ({
+        t: (a.querySelector('.brf-title') || {}).textContent || '',
+        kv: [...a.querySelectorAll('.brf-kv .k')].map(e => e.textContent).join(','),
+        first: ((a.querySelector('.brf-kv .v') || {}).textContent || '').slice(0, 6) }));
+    });
+    check(nf.length === 2, '새 형식(불릿·콜론 없음): 기사 2개로 묶인다(WHY·HOW 가 새 기사로 쪼개지지 않음)', `${nf.length}개`);
+    check(nf[0] && /연휴에 고양이 밥줄 시터 모집$/.test(nf[0].t.trim()) && nf[0].kv === 'WHAT,WHY,HOW' && nf[0].first.startsWith('추석을'),
+          '제목 줄에 붙은 WHAT 을 떼어 제목 + WHAT·WHY·HOW 한 기사로', nf[0] && `${nf[0].t.slice(0, 16)} | ${nf[0].kv}`);
+    check(nf[1] && /How to 투자 설명회/.test(nf[1].t) && nf[1].kv === 'WHAT,WHY', '제목 속 영어 "How to" 는 HOW 로 오인하지 않는다', nf[1] && nf[1].t);
     check(r.over <= 0, '가로로 넘치지 않는다');
     await page.close();
   }
