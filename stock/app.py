@@ -172,13 +172,72 @@ def slack_view():
         return HTMLResponse("<h1>slack 뷰어 로드 실패</h1><pre>%s</pre>" % e, status_code=500)
 
 
+# ── '지금까지 것 숨기기' (2026-09-24) ─────────────────────────────────────
+# GPT 에게 요약을 다시 받을 때, 그날 먼저 올라온 요약을 웹 화면에서 한 번에 치운다.
+# 슬랙 원본은 지우지 않는다(남이 올린 글이라 봇 토큰으로 못 지우고, 지우면 되돌릴 수도 없다).
+# 날짜별 '이 시각까지 올라온 것은 숨김' 기준 하나만 파일에 적는다 → 폰·PC 모두 같게, 되돌리기 가능.
+#   ~/.openclaw/slack_hidden.json   {"2026-09-24": "2026-09-24T10:31:05"}
+_SLACK_HIDE_FILE = os.path.expanduser(os.getenv("SLACK_HIDE_FILE", "~/.openclaw/slack_hidden.json"))
+
+
+def _load_hidden():
+    try:
+        with open(_SLACK_HIDE_FILE, encoding="utf-8") as f:
+            d = _json.load(f)
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_hidden(d):
+    tmp = _SLACK_HIDE_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        _json.dump(d, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, _SLACK_HIDE_FILE)
+
+
+def _valid_date(date):
+    import re as _r
+    return bool(_r.fullmatch(r"\d{4}-\d{2}-\d{2}", date or ""))
+
+
 @app.get("/slack/data")
-def slack_data(date: str = ""):
-    """그날 슬랙 발신 로그 JSON. date 미지정 시 오늘(KST)."""
+def slack_data(date: str = "", all: int = 0):
+    """그날 슬랙 발신 로그 JSON. date 미지정 시 오늘(KST).
+    '숨기기' 기준 시각이 있으면 그 시각까지 올라온 메시지는 빼고 보낸다(all=1 이면 전부)."""
     if not date:
         now = _dt_now()
         date = now.strftime("%Y-%m-%d")
-    return JSONResponse({"date": date, "messages": _read_slack_log(date)})
+    msgs = _read_slack_log(date)
+    cut = _load_hidden().get(date, "")
+    hidden = 0
+    if cut and not all:
+        keep = [m for m in msgs if (m.get("ts") or "")[:19] > cut]   # 둘 다 KST 'YYYY-MM-DDTHH:MM:SS'
+        hidden = len(msgs) - len(keep)
+        msgs = keep
+    return JSONResponse({"date": date, "messages": msgs, "hidden": hidden, "hidden_before": cut})
+
+
+@app.post("/slack/hide")
+def slack_hide(date: str = ""):
+    """그 날짜에서 '지금까지' 올라온 메시지를 화면에서 숨긴다(슬랙 원본은 그대로)."""
+    date = date or _dt_now().strftime("%Y-%m-%d")
+    if not _valid_date(date):
+        return JSONResponse(status_code=400, content={"ok": False})
+    d = _load_hidden()
+    d[date] = _dt_now().strftime("%Y-%m-%dT%H:%M:%S")
+    _save_hidden(d)
+    return JSONResponse({"ok": True, "date": date, "hidden_before": d[date]})
+
+
+@app.post("/slack/unhide")
+def slack_unhide(date: str = ""):
+    """숨긴 것을 다시 보이게(되돌리기)."""
+    date = date or _dt_now().strftime("%Y-%m-%d")
+    d = _load_hidden()
+    d.pop(date, None)
+    _save_hidden(d)
+    return JSONResponse({"ok": True, "date": date})
 
 
 def _dt_now():
