@@ -41,7 +41,10 @@ const JSON_BLOCK = JSON.stringify({ date: '2026-09-24', articles: [
   { article_id: '20260924-002', title: '재건축·재개발로 공공임대 8.3만가구', page: 5 },
 ] }, null, 1);
 const MSG1 = [
-  '*[신문요약 1/6] 📰 2026년 9월 24일 신문 브리핑*',
+  '상호작용 요소가 있는 [신문요약 수정본 1/7]',
+  '*📰 2026년 9월 24일 신문 브리핑*',
+  '원본: <https://example.com/2026-09-24.pdf|2026-09-24.pdf>',
+  '30쪽 전체를 이미지로 확인함. 기사 본문이 있는 43건을 정리함.',
   '🔴 “3억대 서울 분양도 나와”…추석 후 청약 큰장',
   '• WHAT: 10월 수도권에서 1만8000여 가구가 공급될 예정임.',
   '• WHY: 3억~5억원대 분양 단지가 등장함.',
@@ -112,6 +115,12 @@ const srv = http.createServer((req, res) => {
   check(s[2].empty, 'JSON 에 없는 "일본은행" 기사는 짐작하지 않는다');
   check(s[3].no === '02' && s[3].crop, '다른 메시지의 JSON(감싸지 않은 것)도 "목동" 기사에 적용 → 2쪽', s[3].src);
 
+  const intro = await page.evaluate(() => ({
+    n: document.querySelectorAll('.brf-intro').length,
+    side: [...document.querySelectorAll('.brf-intro')].some(e => e.querySelector('.brf-side') || e.closest('.brf-art')),
+    txt: [...document.querySelectorAll('.brf-intro')].map(e => e.textContent.slice(0, 8)).join(' / ') }));
+  check(intro.n >= 2 && !intro.side, '앞머리 안내문("수정본 1/7"·"원본: …pdf"·"30쪽 전체를…")엔 사진 칸이 없다', intro.txt);
+  check(await page.evaluate(() => document.querySelectorAll('.brf-art').length) === 4, '기사(WHAT 있는 것)만 4개 — 안내문은 기사로 안 셈');
   console.log('\n[④ 기사 영역만 잘라 보이기 · 확대해서 열기]');
   await page.waitForFunction(() => { const f = document.querySelector('.side-fig.crop'); return f && f.style.aspectRatio; });
   const crop = await page.evaluate(() => {

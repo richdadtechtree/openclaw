@@ -52,6 +52,132 @@ _SENT_USING_RE = _re.compile(
     _re.IGNORECASE | _re.MULTILINE)
 
 
+# ── 슬랙 '표' 살리기 (2026-09-24) ──────────────────────────────────────────
+# ChatGPT 가 슬랙에 올리는 표는 메시지 text 에 **전혀 없고** blocks 안의 table 블록에만 있다.
+# (text 는 표를 뺀 '글자 요약본') → 표를 꺼내 "| 칸 | 칸 |" 줄로 바꿔 text 의 **제자리**에 끼워 넣는다.
+# 제자리 찾기: 표 바로 **앞** 블록의 마지막 줄(예: "WHAT: 10월 수도권 …")을 글자만 남겨 text 에서 찾고 그 줄 뒤에.
+#   못 찾으면 표 바로 **뒤** 블록의 첫 줄 앞에, 그래도 못 찾으면 JSON 묶음·꼬리표 앞(맨 끝)에.
+# 뷰어(slack_digest_live.html)가 "|" 로 시작하는 줄 묶음을 표로 그린다.
+def _slack_plain(el):
+    """리치텍스트 요소(여러 겹) → 글자만. 링크는 보이는 글자, 이모지는 뺀다."""
+    if el is None:
+        return ""
+    if isinstance(el, str):
+        return el
+    if isinstance(el, list):
+        return "".join(_slack_plain(e) for e in el)
+    if not isinstance(el, dict):
+        return ""
+    t = el.get("type")
+    if t in ("text", "raw_text", "plain_text", "mrkdwn"):
+        return el.get("text") or ""
+    if t == "link":
+        return el.get("text") or el.get("url") or ""
+    if t in ("emoji", "user", "usergroup", "channel", "broadcast"):
+        return ""
+    if "elements" in el:
+        sep = "\n" if t in ("rich_text", "rich_text_list") else ""
+        return sep.join(_slack_plain(e) for e in el.get("elements") or [])
+    if isinstance(el.get("text"), (str, dict)):
+        return _slack_plain(el.get("text"))
+    return ""
+
+
+def _table_rows(b):
+    rows = b.get("rows") or (b.get("table") or {}).get("rows") or []
+    out = []
+    for row in rows:
+        if isinstance(row, dict):                   # {"cells":[…]} 모양도 대비
+            row = row.get("cells") or []
+        if isinstance(row, list):
+            out.append([_slack_plain(c).replace("\n", " ").replace("|", "｜").strip() for c in row])
+    return [r for r in out if any(r)]
+
+
+def _md_tables(md):
+    """markdown 블록 안의 파이프 표 → [(앞줄, 행들)]"""
+    res, lines, i = [], (md or "").split("\n"), 0
+    while i < len(lines):
+        if lines[i].strip().startswith("|"):
+            j = i
+            while j < len(lines) and lines[j].strip().startswith("|"):
+                j += 1
+            rows = []
+            for ln in lines[i:j]:
+                cells = [c.strip() for c in ln.strip().strip("|").split("|")]
+                if all(_re.fullmatch(r":?-{2,}:?", c or "-") for c in cells):
+                    continue                          # |---|---| 구분줄
+                rows.append(cells)
+            prev = next((lines[k] for k in range(i - 1, -1, -1) if lines[k].strip()), "")
+            if len(rows) >= 2:
+                res.append((prev, rows))
+            i = j
+        else:
+            i += 1
+    return res
+
+
+def _norm(s):
+    return _re.sub(r"[^0-9A-Za-z가-힣]", "", s or "")
+
+
+def _merge_tables(text, blocks):
+    """blocks 의 표를 text 의 제자리에 '| … |' 줄로 끼워 넣는다. 표가 없으면 text 그대로."""
+    if not blocks or not isinstance(blocks, list):
+        return text
+    found = []                                        # (앞 블록 마지막 줄, 뒤 블록 첫 줄, 행들)
+    for i, b in enumerate(blocks):
+        if not isinstance(b, dict):
+            continue
+        if b.get("type") == "table":
+            rows = _table_rows(b)
+            prev = next((_slack_plain(blocks[k]) for k in range(i - 1, -1, -1)
+                         if isinstance(blocks[k], dict) and blocks[k].get("type") != "table"), "")
+            nxt = next((_slack_plain(blocks[k]) for k in range(i + 1, len(blocks))
+                        if isinstance(blocks[k], dict) and blocks[k].get("type") != "table"), "")
+            prev_line = next((l for l in reversed(prev.split("\n")) if l.strip()), "")
+            next_line = next((l for l in nxt.split("\n") if l.strip()), "")
+            if rows:
+                found.append((prev_line, next_line, rows))
+        elif b.get("type") == "markdown" and "|" in (b.get("text") or ""):
+            for prev_line, rows in _md_tables(b.get("text")):
+                found.append((prev_line, "", rows))
+    if not found:
+        return text
+    lines = (text or "").split("\n")
+    start = 0
+    for prev_line, next_line, rows in found:
+        tbl = ["| " + " | ".join(r) + " |" for r in rows]
+        pos = None
+        a = _norm(prev_line)[-40:]
+        if len(a) >= 6:
+            pos = next((k + 1 for k in range(start, len(lines)) if a in _norm(lines[k])), None)
+        if pos is None:
+            z = _norm(next_line)[:40]
+            if len(z) >= 6:
+                pos = next((k for k in range(start, len(lines)) if z in _norm(lines[k])), None)
+        if pos is None:                               # 맨 끝(JSON 묶음·꼬리표 앞)
+            pos = next((k for k in range(len(lines)) if lines[k].lstrip().startswith("```")
+                        or "사용하여 보냄" in lines[k]), len(lines))
+        lines[pos:pos] = [""] + tbl + [""]
+        start = pos + len(tbl) + 2
+    return "\n".join(lines)
+
+
+def _sample_blocks(msg):
+    """표 같은 특수 블록이 온 메시지 하나를 견본으로 남긴다(표가 웹에 안 보일 때 원인 확인용, 덮어쓰기).
+    ~/.openclaw/slack_logs/_blocks_sample.json — 실패해도 무시."""
+    try:
+        bl = msg.get("blocks") or []
+        if any(isinstance(b, dict) and b.get("type") not in ("rich_text", "section", "context", "divider") for b in bl):
+            os.makedirs(_SLACK_LOG_DIR, exist_ok=True)
+            with open(os.path.join(_SLACK_LOG_DIR, "_blocks_sample.json"), "w", encoding="utf-8") as f:
+                _json.dump({"ts": msg.get("ts"), "types": [b.get("type") for b in bl if isinstance(b, dict)],
+                            "blocks": bl}, f, ensure_ascii=False, indent=1)
+    except Exception:
+        pass
+
+
 def _clean_slack_text(text):
     """슬랙 앱 발신 꼬리표를 지우고, 그 때문에 남은 빈 줄을 정리한다."""
     if not text:
@@ -95,7 +221,8 @@ def _fetch_slack_history_api(date_str):
                 ts_val = float(msg.get("ts", 0))
                 dt = datetime.fromtimestamp(ts_val, kst_tz)
                 ts_iso = dt.isoformat(timespec="seconds")
-                text = _clean_slack_text(msg.get("text", ""))
+                _sample_blocks(msg)
+                text = _clean_slack_text(_merge_tables(msg.get("text", ""), msg.get("blocks")))
                 if not text:
                     continue                  # 꼬리표만 있던 메시지는 버린다
 
