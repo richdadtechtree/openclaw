@@ -125,7 +125,6 @@ const srv = http.createServer((req, res) => {
     await page.evaluate(() => { state.date = '2026-09-24'; lastSnapshot = null; return load(); });
     await page.waitForSelector('.brf-art');
     await page.waitForFunction(() => newsState.images.length === 3);
-    await page.click('.viewseg [data-view="paper"]');
     console.log(`\n[${label} ${w}px]`);
     const r = await page.evaluate(() => {
       const c = document.querySelectorAll('.entry .body')[0];

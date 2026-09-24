@@ -324,12 +324,6 @@
   .fontctl button:focus-visible{outline:2px solid var(--accent-bright);outline-offset:1px}
   .fontctl .dn{font-size:12px} .fontctl .up{font-size:16px}
   .fontctl .lv{font-family:var(--mono);font-size:11.5px;font-weight:600;color:var(--muted);min-width:46px}
-  .viewseg{display:inline-flex;border:1px solid var(--line-strong);border-radius:999px;
-           background:var(--surface);padding:2px;gap:2px}
-  .viewseg button{appearance:none;border:0;background:transparent;color:var(--muted);font-family:var(--sans);
-           font-size:12.5px;font-weight:650;border-radius:999px;padding:5px 11px;cursor:pointer;white-space:nowrap}
-  .viewseg button[aria-pressed="true"]{background:var(--accent);color:var(--surface)}
-  .viewseg button:focus-visible{outline:2px solid var(--accent-bright);outline-offset:1px}
   body.paper .wrap{max-width:1120px}
   .paper-note{margin:0 0 18px 78px;font-size:13px;color:var(--muted);border:1px dashed var(--line-strong);
               border-radius:10px;padding:9px 12px}
@@ -364,14 +358,13 @@
     .brf-side.nolink{display:flex}
     .paper-note{margin-left:66px}
   }
-  @media (max-width:520px){ .viewseg button{padding:5px 9px;font-size:12px} }
   /* 뷰어 상단 '📌 이 장 연결' — 지면 고르기 중에만 보인다 */
   .lb-btn[hidden]{display:none}
   @media (max-width:520px){ .lb-btn.pick .lg{display:none} }
   .lb-btn.pick{background:#2f4272;border-color:#7f9bf5;color:#fff;font-size:13px;font-weight:700;white-space:nowrap}
 </style>
 </head>
-<body>
+<body class="paper">
 <div class="wrap">
   <header class="mast">
     <div class="eyebrow"><span class="label">오늘 신문 요약</span><span class="live"><span class="pulse"></span>LIVE</span></div>
@@ -1057,7 +1050,7 @@ function render(){
   tb.appendChild(chip("all","전체",msgs.length,null));
   ["bot","user","unknown"].forEach(k=>{if(counts[k])tb.appendChild(chip(k,cat(k).label,counts[k],cat(k).color))});
   const right=document.createElement("div"); right.className="tb-right";
-  right.append(fontCtl(), viewSeg());        // 오른쪽 끝: 가− 100% 가+ · 📝 글만 / 📰 글+지면
+  right.append(fontCtl());                   // 오른쪽 끝: 가− 100% 가+  (보기 방식은 '글+지면' 하나뿐 — 2026-09-24)
   tb.appendChild(right);
   syncChips();
   const feed=document.getElementById("feed");feed.innerHTML="";
@@ -1916,12 +1909,13 @@ window.addEventListener("resize",()=>{ if(!$("lb").hidden) measure(); });
      · 직접 연결한 기사→사진     digest.pageLinks  { "2026-09-23": { "<기사 제목>": "07.jpg" } }
      ⚠️ 형광펜 줄은 여전히 **어디에도 저장하지 않는다**(일회성 규칙 그대로).
      저장소가 막힌 브라우저(사생활 모드 등)에서도 이 창에서는 그대로 동작한다. */
-const VIEW_KEY="digest.view", LINK_KEY="digest.pageLinks";
+const LINK_KEY="digest.pageLinks";
 const mem={view:null, links:null, font:null};             // 저장소가 막혔을 때의 대체 기억 장소
 function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
 function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
-function viewMode(){ return mem.view || (lsGet(VIEW_KEY)==="paper"?"paper":"text"); }
-function setViewMode(v){ mem.view=v; lsSet(VIEW_KEY,v); syncViewSeg(); decorate(); }
+/* 보기 방식은 '글+지면' 하나로 고정 (2026-09-24 사용자 요청 — "글만 보이는 기능은 없애죠").
+   예전 '📝 글만 / 📰 글+지면' 전환 버튼과 그 기억값(digest.view)은 더 이상 쓰지 않는다. */
+function viewMode(){ return "paper"; }
 function allLinks(){
   if(mem.links) return mem.links;
   try{ mem.links=JSON.parse(lsGet(LINK_KEY)||"{}")||{}; }catch(e){ mem.links={}; }
@@ -1978,20 +1972,6 @@ function fontCtl(){
   g.querySelector(".lv").onclick=()=>{ mem.font="1"; lsSet(FONT_KEY,"1"); applyFont(); };
   setTimeout(applyFont);
   return g;
-}
-
-function viewSeg(){
-  const g=document.createElement("div");
-  g.className="viewseg"; g.setAttribute("role","group"); g.setAttribute("aria-label","보기 방식");
-  g.innerHTML='<button data-view="text" title="지금까지처럼 요약 글만">📝 글만</button>'+
-              '<button data-view="paper" title="기사마다 옆에 실린 신문 사진을 함께 — 눌러서 형광펜">📰 글+지면</button>';
-  g.querySelectorAll("button").forEach(b=>b.onclick=()=>setViewMode(b.dataset.view));
-  setTimeout(syncViewSeg);
-  return g;
-}
-function syncViewSeg(){
-  const v=viewMode();
-  document.querySelectorAll(".viewseg button").forEach(b=>b.setAttribute("aria-pressed", b.dataset.view===v?"true":"false"));
 }
 
 // 기사 하나를 구별하는 열쇠 = 제목(머리표·공백·기호 빼고). 제목이 없으면 본문 앞부분.
@@ -2067,10 +2047,7 @@ function decorate(force){
   if(!paper) return;                                   // 글만 = 기존 화면 그대로
 
   const arts=[...feed.querySelectorAll(".brf-art")].filter(a=>a.querySelector(".brf-main"));
-  if(!arts.length){
-    feed.insertAdjacentHTML("afterbegin",'<div class="paper-note">📰 이 날짜엔 지면을 붙일 신문 브리핑이 없어요. 브리핑이 올라오면 기사마다 옆에 신문 사진이 붙습니다.</div>');
-    return;
-  }
+  if(!arts.length) return;                             // 기사가 없으면 붙일 것도 없다(안내문 없이 조용히)
   if(!imgs.length){
     feed.insertAdjacentHTML("afterbegin",'<div class="paper-note">📰 이 날짜의 신문 사진이 아직 서버에 없어요 — 사진이 준비되면 기사 옆에 자동으로 붙습니다.</div>');
     return;

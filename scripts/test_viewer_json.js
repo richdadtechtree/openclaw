@@ -102,7 +102,6 @@ const srv = http.createServer((req, res) => {
   check(await page.evaluate(() => SUMMARY_META.length) === 3, 'JSON 기사 정보 3건을 모았다(두 메시지에서)');
 
   console.log('\n[② ③ 글+지면 연결]');
-  await page.click('.viewseg [data-view="paper"]');
   const sides = () => page.evaluate(() => [...document.querySelectorAll('.brf-art')].map(a => {
     const s = a.querySelector('.brf-side');
     return { t: (a.querySelector('.brf-title') || {}).textContent.slice(0, 10), no: (s.querySelector('.side-no') || {}).textContent || '',
@@ -159,11 +158,6 @@ const srv = http.createServer((req, res) => {
   await page.click('#lb-pick');
   s = await sides();
   check(s[0].no === '04' && /직접 연결/.test(s[0].src), '직접 연결(📌)이 JSON 보다 우선', s[0].src);
-
-  console.log('\n[글만 보기]');
-  await page.click('.viewseg [data-view="text"]');
-  check(!/article_id|"articles"/.test(await page.evaluate(() => document.getElementById('feed').innerText)) &&
-        await page.evaluate(() => !document.querySelector('.brf-side')), '글만 보기에서도 JSON 은 안 보이고 사진 칸도 없다');
 
   await browser.close(); srv.close();
   console.log('\n총평: ' + (pass ? '✅ 전부 통과' : '❌ 실패 있음'));

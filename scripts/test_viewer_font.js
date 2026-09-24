@@ -95,7 +95,7 @@ const near = (a, b) => Math.abs(a - b) < 0.3;
   check(await label(page) === '100%', '처음엔 100%');
   check(near(await px(page, '.brf-title'), 17.5) && near(await px(page, '.brf-kv'), 15),
         '제목 17.5px · 본문 15px (예전 그대로)');
-  check(await px(page, '.wrap', 'maxWidth') === 720, '화면 폭 720px 그대로');
+  check(await px(page, '.wrap', 'maxWidth') === 1120, '화면 폭 1120px(글+지면)');
   check(await page.evaluate(() => getComputedStyle(document.querySelector('.body')).wordBreak) === 'keep-all',
         '한국어 낱말 중간에서 줄을 끊지 않는다(keep-all)');
 
@@ -106,8 +106,7 @@ const near = (a, b) => Math.abs(a - b) < 0.3;
   check(near(t, 17.5 * 1.25) && near(k, 15 * 1.25) && near(c, 22 * 1.25),
         '제목·본문·카테고리가 같은 비율로 커진다', `${t}/${k}/${c}px`);
   check(near(await px(page, '.brf-kv .k', 'width'), 50 * 1.25), 'WHAT/WHY/HOW 라벨 칸도 같이 넓어져 본문과 안 겹친다');
-  check(await px(page, '.wrap', 'maxWidth') > 720, '글이 커지면 화면 폭도 조금 넓혀 한 줄 길이를 지킨다',
-        `${await px(page, '.wrap', 'maxWidth')}px`);
+  check(await px(page, '.wrap', 'maxWidth') === 1120, '글이 커져도 화면 폭은 그대로(글+지면은 이미 넓다)');
   check(near(await px(page, '.chip', 'fontSize'), 13) && near(await px(page, '.entry .time'), 13),
         '버튼·시간 표시는 그대로(요약 글만 커진다)');
   for (let i = 0; i < 5; i++) await page.evaluate(s => document.querySelector(s).click(), '.fontctl .up');
@@ -127,7 +126,6 @@ const near = (a, b) => Math.abs(a - b) < 0.3;
   await page.click('.fontctl .lv');
   for (let i = 0; i < 4; i++) await page.click('.fontctl .up');
   await page.waitForFunction(() => newsState.images.length === 6);
-  await page.click('.viewseg [data-view="paper"]');
   const lay = await page.evaluate(() => {
     const a = document.querySelector('.brf-art.has-side');
     const m = a.querySelector('.brf-main').getBoundingClientRect(), d = a.querySelector('.brf-side').getBoundingClientRect();
