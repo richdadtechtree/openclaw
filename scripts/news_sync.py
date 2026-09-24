@@ -802,6 +802,26 @@ def probe():
     return 0
 
 
+def after_sync(date, rc, quiet):
+    """
+    사진이 준비됐으면 지면 글자 읽기(news_page_text.py)를 이어서 돌린다 (2026-09-24).
+    웹 '📰 글+지면' 이 요약 기사와 신문 사진을 자동으로 잇는 데 쓴다.
+    이미 읽은 장은 건너뛰므로 30분마다 불려도 처음 한 번만 시간이 든다.
+    실패해도 동기화 결과(rc)는 그대로 돌려준다 — 부가 기능이 본업을 막지 않게.
+    끄기: .env 에 NEWS_PAGE_OCR=0
+    """
+    if rc != 0 or os.getenv("NEWS_PAGE_OCR", "1") == "0":
+        return rc
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import news_page_text
+        news_page_text.build(date, verbose=not quiet)
+    except Exception as e:
+        if not quiet:
+            print("  ⚠️ 지면 글자 읽기 건너뜀: %r" % e)
+    return rc
+
+
 def main():
     ap = argparse.ArgumentParser(description="구글 드라이브의 그날 신문(사진·PDF)을 로컬 캐시로 내려받는다.")
     ap.add_argument("date", nargs="?", default="", help="YYYY-MM-DD (기본: 오늘, KST)")
@@ -827,13 +847,13 @@ def main():
         if args.source in ("auto", "local"):
             rc = sync_from_local(date, verbose=not args.quiet)
             if rc is not None:
-                return rc
+                return after_sync(date, rc, args.quiet)
             if args.source == "local":
                 if not args.quiet:
                     print("[%s] 서버 로컬(%s)에 신문 파일이 없습니다." % (date, local_day_dir(date)))
                 return 2
         # 2순위: 구글 드라이브 (gog CLI)
-        return sync(date, force=args.force, verbose=not args.quiet)
+        return after_sync(date, sync(date, force=args.force, verbose=not args.quiet), args.quiet)
     except GogError as e:
         print("[news_sync] %s" % e, file=sys.stderr)
         return 1

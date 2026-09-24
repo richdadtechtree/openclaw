@@ -125,6 +125,28 @@
     페이지를 **두 번** 받은 것(검증 1회 + 본문 1회). → `verify(..., keep_html=True)` 로 검증 때 받은
     HTML 을 본문 추출에 **재활용**(요청 절반), 타임아웃 12→8초, 후보 8→6건, sleep 0.5→0.2초.
     진행 상황을 `flush=True` 로 실시간 출력 + 총 소요 시간 표시(멈춘 줄 알고 끊는 일 방지).
+  - 🔗 **2026-09-24: 요약 기사 ↔ 신문 사진 자동 연결 (지면 글자 대조)** — "오늘도 지면과 내용이 연결되지 않았어".
+    - **원인**: 요약을 만드는 ChatGPT 가 `• 사진: NN` 을 붙이지 않는다(ChatGPT 는 사진 파일 이름을 모를 수 있고,
+      지시를 넣어도 빠질 수 있다) → 요약 쪽에 기대는 방식은 불안정.
+    - **방법**: 서버가 사진 속 글자를 **직접 읽어** 두고 웹이 요약과 대조한다.
+      ①`scripts/news_page_text.py` — tesseract(무료 OCR, AI 아님)로 사진마다 읽어 대조용 조각을
+        `news_cache/<날짜>/page_text.json` 에 저장(읽은 장은 건너뜀, CPU 2개 제한). `news_sync.py` 의 `after_sync()` 가
+        사진 준비 직후 자동 호출 → cron(30분) 그대로 쓰면 됨. ②`stock/news_files.py` `page_tokens()` + `stock/app.py`
+        `/api/news/pagetext` — 절반 넘는 장에 나오는 흔한 조각은 빼고 보냄. ③뷰어 `pageTokens()`/`matchPage()` —
+        요약 기사 글(제목·WHAT·WHY·HOW)과 점수 대조, 1등 ≥ 4 이고 2등의 1.35배 이상일 때만 연결, 표시는 "지면 글자 대조(자동)".
+        틀리면 `바꾸기` 로 고치면 그게 우선(직접 연결 > 사진 번호 > 자동).
+    - **시험 결과**(가짜 지면 4장, 실제 tesseract): 3개 기사 모두 맞는 장, 점수 1등/2등 = 50/8 · 71/2 · 30/3.5,
+      지면에 없는 기사는 연결 안 함. OCR 은 단(段)이 섞여 읽히지만 **숫자(496곳·51만5817·8만2793가구)가 살아 있어** 대조에 충분.
+      ⚠️ 실제 신문 사진(작은 글씨·기울어짐)에서는 점수가 낮을 수 있음 → 첫날 `--show` 와 화면으로 확인하고 필요하면
+      `MATCH_MIN`/`MATCH_GAP` 조정.
+    - **서버에서 할 일(한 번)**:
+      ```bash
+      sudo apt-get install -y tesseract-ocr tesseract-ocr-kor      # 글자 인식 프로그램 + 한국어
+      python3 ~/.openclaw/scripts/news_page_text.py --all          # 캐시에 있는 날짜 전부 읽기(처음 한 번)
+      python3 ~/.openclaw/scripts/news_page_text.py --show         # 결과 확인
+      ```
+      stock 쪽(`news_files.py`·`app.py`)은 auto-pull → `sync-stock.sh` 로 반영되고 8000 포트가 재시작돼야 `/api/news/pagetext` 가 생긴다.
+    - 검증: `scripts/test_viewer_match.js`(실제 OCR) + paper·font·list·nav·zoom·pan·mark 전부 통과.
   - 📌 **2026-09-24: 핵심 요약 블록 가독성** (사용자 요청 — "핵심 요약이니 가독성을 높여줘").
     - **문제**: GPT 요약 끝의 `📌 오늘 신문 핵심 한 줄 <문장>` 과 `✅ 오늘 반드시 체크할 핵심 주제` + 아래 7줄이
       서식 없는 평범한 글줄로 늘어서 눈에 안 들어왔다.

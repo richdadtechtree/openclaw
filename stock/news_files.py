@@ -178,6 +178,34 @@ def ensure_zip(date, what="photos"):
         return None
 
 
+def page_tokens(date):
+    """
+    지면 글자 조각(scripts/news_page_text.py 가 만든 page_text.json) → 웹이 쓸 모양 (2026-09-24).
+    여러 장에 두루 나오는 조각(절반 넘는 장에 있는 것)은 기사를 가려내는 데 쓸모가 없어 빼고 보낸다
+    → 보내는 양이 줄고, 웹의 점수 계산도 흐려지지 않는다.
+    반환: {"ok":True, "pages":{"01.jpg":[조각…]}, "df":{조각: 나온 장 수}} / 없으면 {"ok":False}
+    """
+    if not valid_date(date):
+        return {"ok": False}
+    try:
+        with open(os.path.join(day_dir(date), "page_text.json"), encoding="utf-8") as f:
+            store = json.load(f) or {}
+    except Exception:
+        return {"ok": False}
+    pages = {n: p.get("tokens") or [] for n, p in (store.get("pages") or {}).items() if p.get("ok")}
+    if not pages:
+        return {"ok": False}
+    df = {}
+    for toks in pages.values():
+        for t in set(toks):
+            df[t] = df.get(t, 0) + 1
+    cap = max(2, len(pages) // 2)
+    keep = {t for t, c in df.items() if c <= cap}
+    return {"ok": True, "n": len(pages),
+            "pages": {n: [t for t in toks if t in keep] for n, toks in pages.items()},
+            "df": {t: c for t, c in df.items() if t in keep}}
+
+
 def summary(date):
     """
     화면이 그대로 쓸 수 있는 형태로 정리해서 준다.
