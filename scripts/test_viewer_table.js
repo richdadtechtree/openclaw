@@ -99,6 +99,13 @@ const MSG8 = `02. 재건축·재개발로 공공임대 8.3만가구 공급 :red_
 • WHY: 초기 단계가 많음.
 🔴 반드시 체크 | 머리표 형식 제목은 그대로
 • WHAT: 예전 형식.`;
+// 머리말과 ① 이 **한 줄**에 붙어 온 실제 형식(2026-09-24 화면) + 번호 없이 뭔가 붙어 온 경우
+const MSG9 = `[신문요약 수정본 7/7]
+:mag_right: 오늘 신문에서 반드시 연결해서 봐야 할 5가지 ① *주택 공급의 핵심은 발표 물량에서 실제 착공으로 옮겨감.*
+정비사업 51.6만가구 계획 → 초기 단계 물량 55.3%.
+② *분양 기회와 전세 공급은 지역·상품별로 다르게 나타남.*
+고덕강일 토지임대부 본청약 → 낮은 건물 분양가에 관심.
+:mag_right: 내일 봐야 할 3가지 아래 순서로 정리함.`;
 const MSG2 = `참고로 비교표야\n| 항목 | 값 |\n|---|---|\n| 금리 | 3.5% |\n| 환율 | 1,380 |`;
 const MSG3 = `:white_check_mark: 반드시 체크할 핵심 주제\n• 고덕강일3단지 토지임대부 구조와 실제 청약 조건.\n• 정비사업의 착공 전환.`;
 
@@ -111,7 +118,8 @@ const srv = http.createServer((req, res) => {
     { ts: D + 'T11:06:00', source: 'user', kind: 'text', text: MSG2 },
     { ts: D + 'T11:06:30', source: 'user', kind: 'text', text: MSG3 },
     { ts: D + 'T11:07:00', source: 'user', kind: 'text', text: MSG7 },
-    { ts: D + 'T11:07:30', source: 'user', kind: 'text', text: MSG8 }] }));
+    { ts: D + 'T11:07:30', source: 'user', kind: 'text', text: MSG8 },
+    { ts: D + 'T11:08:00', source: 'user', kind: 'text', text: MSG9 }] }));
   if (u === '/api/news/today') return send('application/json', JSON.stringify({ ok: true, ready: true, date: D, count: 3,
     images: ['01.jpg', '02.jpg', '03.jpg'].map(n => ({ name: n, url: '/x.png', thumb: '/x.png', download_url: '/x.png' })) }));
   if (u === '/api/news/pagetext') return send('application/json', '{"ok":false}');
@@ -204,6 +212,23 @@ const srv = http.createServer((req, res) => {
           '제목 옆에 붙어 온 🔴 부터는 줄을 바꿔 제목 아래 설명으로', f8[0] && `${f8[0].t.slice(0, 12)} / ${f8[0].flag.slice(0, 10)}`);
     check(f8[1] && f8[1].badge && /머리표 형식 제목은 그대로/.test(f8[1].t) && !f8[1].flag,
           '"🔴 반드시 체크 | 제목" 머리표 형식은 예전처럼(배지 + 제목)');
+    const g9 = await page.evaluate(() => {
+      const c = document.querySelectorAll('.entry .body')[5];
+      const n = [...c.querySelectorAll('.brf-num')];
+      const col = e => getComputedStyle(e).color;
+      return { secs: [...c.querySelectorAll('.brf-sec')].map(e => e.textContent.trim()),
+               nums: n.map(e => e.querySelector('.n').textContent).join(','),
+               first: n[0] && n[0].querySelector('.v').firstChild.textContent.trim(),
+               lead: ((c.querySelector('.brf-listlead') || {}).textContent || '').trim(),
+               introCol: c.querySelector('.brf-intro') && col(c.querySelector('.brf-intro')),
+               bg: getComputedStyle(document.querySelector('.card')).backgroundColor };
+    });
+    check(g9.secs[0] && /봐야 할 5가지$/.test(g9.secs[0]) && g9.nums === '1,2' && /^주택 공급의 핵심은/.test(g9.first || ''),
+          '머리말에 ① 이 붙어 와도 "…5가지" 뒤에서 줄바꿈 → ①부터 번호 목록', `${g9.nums} · ${(g9.first || '').slice(0, 8)}`);
+    check(g9.secs[1] && /봐야 할 3가지$/.test(g9.secs[1]) && /^아래 순서로/.test(g9.lead),
+          '번호 없이 뭔가 붙어 와도 "…N가지" 뒤는 무조건 줄바꿈', g9.lead);
+    const cr9 = contrast(g9.introCol, g9.bg);
+    check(cr9 >= 7, '안내문 글씨도 잘 보인다(대비 7:1 이상)', `${cr9.toFixed(1)}:1`);
     check(r.over <= 0, '화면이 옆으로 넘치지 않는다', `${r.over}px`);
     await page.close();
   }
