@@ -79,6 +79,21 @@ const NEWFMT = [
   '44. How to 투자 설명회 성황 WHAT 개인투자자 대상 설명회에 2000명이 몰렸음.',
   'WHY 금리 인하 기대가 커짐.',
 ].join('\n');
+// 2026-09-24 GPT 새 형식 ② — 기사 안에 불릿 없는 보충 설명 줄 + 끝에 "원문 · PDF 21쪽" 출처 줄
+const NEWFMT2 = [
+  '*29. 가격 낮추고 안전성 높이고 中 오픈소스 AI와 본격 경쟁*',
+  '• WHAT: 기사에 따르면 오픈AI와 앤트로픽이 새 모델의 이용료를 낮추고 안전성 개선을 강조함.',
+  '기사 속 테스트: 20만줄 코드 점검·수정에 오퍼스5는 20시간 이상, 오퍼스5.5는 3시간 이내.',
+  '• WHY: 중국의 저렴한 개방형 AI 모델 추격으로 가격 경쟁이 커졌다는 내용임.',
+  '• HOW: 코딩·복잡한 업무와 요약·대량 처리 등 용도를 나눔.',
+  '<https://example.com/a|원문> · PDF 21쪽',
+  '',
+  '*30. 반도체 수출 사상 최대*',
+  '• WHAT: 9월 반도체 수출이 사상 최대를 기록함.',
+  '• WHY: AI 서버 수요가 이어짐.',
+  '추가 메모: HBM 비중이 커짐.',
+  '<https://example.com/b|원문> · PDF 7쪽',
+].join('\n');
 const CHAT = '✅ 확인했어요';   // 평범한 대화 — 서식 없이 그대로
 const PLAIN = '오늘 회의는 3. 5시에 합니다. 2. 준비물 없음';   // 목록 아님 — 그대로 둬야 한다
 
@@ -94,7 +109,8 @@ const srv = http.createServer((req, res) => {
     { ts: '2026-09-23T06:31:00', source: 'user', kind: 'text', text: PLAIN },
     { ts: '2026-09-23T06:32:00', source: 'user', kind: 'text', text: KEY },
     { ts: '2026-09-23T06:33:00', source: 'user', kind: 'text', text: CHAT },
-    { ts: '2026-09-23T06:34:00', source: 'user', kind: 'text', text: NEWFMT }] }));
+    { ts: '2026-09-23T06:34:00', source: 'user', kind: 'text', text: NEWFMT },
+    { ts: D + 'T06:35:00', source: 'user', kind: 'text', text: NEWFMT2 }] }));
   if (u === '/api/news/today') return send('application/json', JSON.stringify({ ok: true, ready: false, date: D }));
   res.writeHead(404); res.end();
 });
@@ -185,6 +201,22 @@ const srv = http.createServer((req, res) => {
     check(nf[0] && /연휴에 고양이 밥줄 시터 모집$/.test(nf[0].t.trim()) && nf[0].kv === 'WHAT,WHY,HOW' && nf[0].first.startsWith('추석을'),
           '제목 줄에 붙은 WHAT 을 떼어 제목 + WHAT·WHY·HOW 한 기사로', nf[0] && `${nf[0].t.slice(0, 16)} | ${nf[0].kv}`);
     check(nf[1] && /How to 투자 설명회/.test(nf[1].t) && nf[1].kv === 'WHAT,WHY', '제목 속 영어 "How to" 는 HOW 로 오인하지 않는다', nf[1] && nf[1].t);
+    const n2 = await page.evaluate(() => {
+      const c = [...document.querySelectorAll('.entry .body')][6];
+      return [...c.querySelectorAll('.brf-art')].map(a => ({
+        t: ((a.querySelector('.brf-title') || {}).textContent || '').trim(),
+        kv: [...a.querySelectorAll('.brf-kv .k')].map(e => e.textContent).join(','),
+        det: [...a.querySelectorAll('.brf-detail')].map(e => e.textContent.slice(0, 8)),
+        src: ((a.querySelector('.brf-src') || {}).textContent || '').trim(),
+        link: !!(a.querySelector('.brf-src a')), page: a.dataset.page || '' }));
+    });
+    check(n2.length === 2, '보충 설명 줄·출처 줄이 있어도 기사 2개(쪼개지지 않음)', `${n2.length}개: ${n2.map(x => x.t.slice(0, 8)).join(' / ')}`);
+    check(n2[0] && n2[0].kv === 'WHAT,WHY,HOW' && n2[0].det[0] === '기사 속 테스트',
+          '"기사 속 테스트: …" 는 그 기사 안의 보충 설명으로', n2[0] && n2[0].det.join(','));
+    check(n2[0] && /원문 · PDF 21쪽/.test(n2[0].src) && n2[0].link && n2[0].page === '21',
+          '"원문 · PDF 21쪽" 은 그 기사 끝의 출처 줄(링크 유지) + 21번 사진 단서', n2[0] && `${n2[0].src} · page=${n2[0].page}`);
+    check(n2[1] && /30\. 반도체/.test(n2[1].t) && (n2[1].det[0] || '').startsWith('추가 메모') && n2[1].page === '7',
+          'HOW 없이 WHY 뒤에 온 보충 줄도 같은 기사 · 다음 기사는 제대로 새 기사', n2[1] && `${n2[1].t.slice(0, 10)} · ${n2[1].det.join(',')}`);
     check(r.over <= 0, '가로로 넘치지 않는다');
     await page.close();
   }
