@@ -127,7 +127,10 @@
                justify-content:center;font-size:.78em;font-weight:900;color:var(--c-brief);
                background:color-mix(in srgb,var(--c-brief) 15%,transparent)}
   .brf-chk .v{flex:1;min-width:0}
-  .brf-src{display:inline-flex;align-items:center;gap:6px;margin-top:11px;font-family:var(--mono);font-size:11.5px;color:var(--faint);border:1px dashed var(--line-strong);border-radius:6px;padding:3px 9px}
+  .brf-detail{color:var(--muted);margin-left:calc(50px*var(--fs) + 10px)}   /* WHAT·WHY 본문 첫머리에 맞춤 */
+  @media (max-width:520px){ .brf-detail{margin-left:0} }
+  .brf-detail .dl{font-weight:700;color:var(--ink)}
+  .brf-src{display:inline-flex;align-items:center;gap:6px;margin-top:11px;font-family:var(--mono);font-size:calc(12px*var(--fs));color:var(--faint);border:1px dashed var(--line-strong);border-radius:6px;padding:3px 9px}
   .brf-src.fail{color:var(--c-side);border-color:color-mix(in srgb,var(--c-side) 35%,transparent)}
   /* (2026-09-17 원문 링크 표시 중단으로 현재 미사용 — 되살릴 때 그대로 쓸 수 있게 남겨 둠) */
   .brf-src .brf-host{font-weight:700;color:var(--muted)}
@@ -768,13 +771,37 @@ function briefing(raw){
   const open=()=>{ if(art===null) art=""; };
   // 기사 본문은 .brf-main 으로 한 번 감싼다 — '글+지면' 보기에서 그 옆에 사진 칸(.brf-side)을
   // 나란히 붙이기 위한 자리. '글만' 보기에선 평범한 div 라 화면이 달라지지 않는다.
+  let artKV=new Set();                            // 지금 기사에 이미 나온 WHAT/WHY/HOW
+  let lastArt=-1;                                 // 마지막으로 닫은 기사의 out 위치(뒤늦게 온 출처 줄을 붙일 곳)
   const flush=()=>{
     if(art!==null){
       out.push('<div class="brf-art"'+(pageHint?' data-page="'+pageHint+'"':'')+'><div class="brf-main">'+art+"</div></div>");
+      lastArt=out.length-1;
       art=null;
     }
-    pageHint=0;
+    pageHint=0; artKV=new Set();
   };
+  /* ── 기사 안에 딸린 줄들 (2026-09-24) ───────────────────────────────────
+     GPT 요약이 기사마다 이런 줄을 덧붙이기 시작했다:
+       · 보충 설명  "기사 속 테스트: 20만줄 코드 …"   (WHAT 과 WHY 사이, 불릿 없음)
+       · 출처       "<링크|원문> · PDF 21쪽"          (기사 맨 끝)
+     예전엔 '불릿이 아닌 줄 = 새 기사 제목' 이라 한 기사가 여러 개로 쪼개지고 출처 줄도 따로 카드가 됐다.
+     → 출처 줄은 그 기사 끝에 작은 글씨로 붙이고(PDF 쪽 번호는 사진 번호 단서로도 쓴다),
+       보충 설명은 '다음에 오는 표지가 WHY/HOW(아직 안 나온 것)거나 출처 줄'이면 같은 기사 안에 둔다.
+       다음 표지가 WHAT 이면 그 줄은 진짜 새 기사 제목이다. */
+  const srcPlain=(t)=>String(t||"").replace(/<[^|>]+\|([^>]+)>/g,"$1").replace(/<https?:[^>]+>/g,"링크").replace(/[*_•]/g,"").trim();
+  const isSrcLine=(t)=>{ const p=srcPlain(t);
+    return p.length<=70 && (/^(?:원문|출처)(?=[\s·:：|,(]|$)/.test(p) || /^PDF\s*\d{1,3}\s*(?:쪽|p|페이지)/i.test(p)); };
+  const nextMark=(i)=>{                          // 다음에 오는 표지: "WHAT"/"WHY"/"HOW"/"SRC"/null
+    for(let j=i+1, seen=0; j<LINES.length && seen<6; j++){
+      const t=LINES[j].trim(); if(!t) continue; seen++;
+      const k=t.match(/^•\s*(WHAT|WHY|HOW)\s*[:：]/i); if(k) return k[1].toUpperCase();
+      if(isSrcLine(t)) return "SRC";
+    }
+    return null;
+  };
+  const detailHtml=(t)=>{ const d=t.match(/^([^:：<]{2,16})[:：]\s*([\s\S]+)$/);
+    return '<div class="brf-line brf-detail">'+(d?'<span class="dl">'+inline(d[1].replace(/[*_]/g,""))+'</span> '+inline(d[2]):inline(t))+"</div>"; };
 
   const LINES=body.split("\n");
   // i 번째 줄 다음의 '내용 있는 줄' — 목록이 끝나고 새 기사가 시작되는지 미리 보려고 쓴다
@@ -788,6 +815,7 @@ function briefing(raw){
     let m;
     if(m=line.match(/^•\s*(WHAT|WHY|HOW|What|Why|How)\s*[:：]\s*([\s\S]*)$/)){
       open(); art+='<div class="brf-kv"><span class="k">'+m[1].toUpperCase()+'</span><span class="v">'+inline(m[2])+"</span></div>";
+      artKV.add(m[1].toUpperCase());
       continue;
     }
     // ── 원문 링크 표시 중단 (2026-09-17, 사용자 요청) ─────────────────
@@ -796,6 +824,17 @@ function briefing(raw){
     //    (다시 켜려면 아래 주석 처리된 예전 렌더를 되살리면 된다)
     if(/^•?\s*원문\s*확인/.test(line)){
       flush();                                     // ← 기사 끝. 다음 기사는 여백 두고 새 블록
+      continue;
+    }
+    // "<링크|원문> · PDF 21쪽" → 그 기사 끝에 작은 출처 줄로(따로 카드 만들지 않음). PDF 쪽 = 사진 번호 단서
+    if(isSrcLine(line)){
+      const pm=srcPlain(line).match(/PDF\s*(\d{1,3})\s*(?:쪽|p|페이지)/i);
+      const html='<div class="brf-src">'+inline(line.replace(/^•\s*/,""))+"</div>";
+      if(art!==null){ art+=html; if(pm&&!pageHint) pageHint=+pm[1]; flush(); }
+      else if(lastArt>=0){
+        out[lastArt]=out[lastArt].replace(/<\/div><\/div>$/, html+"</div></div>");
+        if(pm && !/data-page=/.test(out[lastArt])) out[lastArt]=out[lastArt].replace('<div class="brf-art"','<div class="brf-art" data-page="'+(+pm[1])+'"');
+      }
       continue;
     }
     // "• 사진: 07" 같은 '지면 번호' 줄 — 화면엔 안 그리고, 기사에 사진 번호로만 붙여 둔다
@@ -870,6 +909,11 @@ function briefing(raw){
         rest=after;
         if(!rest) continue;
       }
+    }
+    // 기사 안의 보충 설명 줄 — 다음 표지가 아직 안 나온 WHY/HOW 이거나 출처 줄이면 새 제목이 아니다
+    if(art!==null && artKV.size){
+      const nm=nextMark(li);
+      if(nm==="SRC" || (nm && nm!=="WHAT" && !artKV.has(nm))){ art+=detailHtml(line); continue; }
     }
     flush();
     // 제목 끝에 "(사진 07)" 처럼 붙어 온 지면 번호도 떼어서 기억한다
