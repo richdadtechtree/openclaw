@@ -132,8 +132,8 @@
                background:color-mix(in srgb,var(--c-brief) 15%,transparent)}
   .brf-chk .v{flex:1;min-width:0}
   /* 기사가 아닌 앞머리 안내문 — 작고 흐리게, 사진 칸 없음 */
-  .brf-intro{margin:0 0 10px;color:var(--muted)}
-  .brf-intro .brf-title{font-size:calc(14.5px*var(--fs));font-weight:500;color:var(--muted);margin:0}
+  .brf-intro{margin:0 0 10px;color:color-mix(in srgb,var(--ink) 80%,var(--surface))}   /* 흐린 회색은 잘 안 보였다 */
+  .brf-intro .brf-title{font-size:calc(14.5px*var(--fs));font-weight:500;color:inherit;margin:0}
   .brf-intro .brf-sub,.brf-intro .brf-line{font-size:calc(14px*var(--fs))}
   .brf-tblwrap{overflow-x:auto;margin:.55em 0 .8em calc(50px*var(--fs) + 10px);-webkit-overflow-scrolling:touch}
   .brf-tbl{border-collapse:collapse;font-size:calc(14px*var(--fs));line-height:1.5;min-width:60%}
@@ -547,6 +547,8 @@ function normalizeKV(t){
   return String(t||"")
     // "① …" "② …" (동그라미 숫자) → "1. …" "2. …" — 번호 목록으로 알아보게(2026-09-24 실제 요약이 이 표기)
     .replace(/^[ \t]*([\u2460-\u2473])[ \t]*/gm, (m,c)=>(c.charCodeAt(0)-0x2460+1)+". ")
+    // 머리말 뒤에 붙어 온 경우("…5가지 ① 주택 공급…")도 — 앞이 공백일 때만(2026-09-24 실제 형식)
+    .replace(/[ \t]+([\u2460-\u2473])[ \t]*/g, (m,c)=>" "+(c.charCodeAt(0)-0x2460+1)+". ")
     .replace(/(?<!•)[ \t]+(WHAT|WHY|HOW)[ \t]*[:：]?[ \t]+(?=\S)/g, "\n• $1: ")   // 줄 중간(제목 뒤)에 붙은 것 → 새 줄
     .replace(/^[ \t]*(WHAT|WHY|HOW)[ \t]*[:：]?[ \t]+(?=\S)/gm, "• $1: ")          // 줄 맨 앞, 불릿 없음
     .replace(/^[ \t]*(What|Why|How)[ \t]*[:：][ \t]*/gm, "• $1: ");                // "What:" 처럼 콜론 있는 것
@@ -729,6 +731,9 @@ const NUM_ITEM_RE=/^(\d{1,2})[.)]\s+([\s\S]+)$/;
 function splitListHead(line){
   const m=line.match(/^(.+?)\s*[:：]?\s+(1[.)]\s+\S[\s\S]*)$/);
   if(m && LIST_HEAD_END.test(m[1].replace(/[*_]/g,"").trim())) return [m[1], m[2]];
+  // "…봐야 할 5가지 <무엇이든>" → 머리말 뒤에서 **무조건** 줄을 바꾼다(번호가 안 붙어 와도) — 2026-09-24 사용자 요청
+  const g=line.match(/^(.{2,60}?\d+\s*가지)\s*[:：]?\s+(\S[\s\S]*)$/);
+  if(g && EMOJI_LEAD.test(g[1].replace(/[*_]/g,"").trim())) return [g[1], g[2]];
   if(LIST_HEAD_END.test(line.replace(/[*_]/g,"").trim()) && line.length<=80) return [line, ""];   // 머리말만 한 줄
   return null;
 }
@@ -952,7 +957,7 @@ function briefing(raw){
       flush(); flushChk();
       out.push('<div class="brf-sec">'+inline(lh[0])+"</div>");
       lastItem=-1;
-      if(lh[1]) pushItems(lh[1]);
+      if(lh[1]){ if(NUM_ITEM_RE.test(lh[1])) pushItems(lh[1]); else out.push('<div class="brf-line brf-listlead">'+inline(lh[1])+"</div>"); }
       inList=true;
       continue;
     }
