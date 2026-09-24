@@ -127,6 +127,19 @@
                justify-content:center;font-size:.78em;font-weight:900;color:var(--c-brief);
                background:color-mix(in srgb,var(--c-brief) 15%,transparent)}
   .brf-chk .v{flex:1;min-width:0}
+  /* 기사가 아닌 앞머리 안내문 — 작고 흐리게, 사진 칸 없음 */
+  .brf-intro{margin:0 0 10px;color:var(--muted)}
+  .brf-intro .brf-title{font-size:calc(14.5px*var(--fs));font-weight:500;color:var(--muted);margin:0}
+  .brf-intro .brf-sub,.brf-intro .brf-line{font-size:calc(14px*var(--fs))}
+  .brf-tblwrap{overflow-x:auto;margin:.55em 0 .8em calc(50px*var(--fs) + 10px);-webkit-overflow-scrolling:touch}
+  .brf-tbl{border-collapse:collapse;font-size:calc(14px*var(--fs));line-height:1.5;min-width:60%}
+  .brf-tbl th,.brf-tbl td{border:1px solid var(--line-strong);padding:.38em .75em;text-align:left;vertical-align:top;word-break:keep-all}
+  .brf-tbl th{background:color-mix(in srgb,var(--accent-bright) 10%,var(--surface));font-weight:700;white-space:nowrap}
+  .brf-tbl td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .brf-tbl tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--muted) 5%,transparent)}
+  .body > .brf-tblwrap,.brf-intro .brf-tblwrap{margin-left:0}
+  @media (max-width:520px){ .brf-tblwrap{margin-left:0} }
+  .brf-flagnote{margin:2px 0 10px}
   .brf-detail{color:var(--muted);margin-left:calc(50px*var(--fs) + 10px)}   /* WHAT·WHY 본문 첫머리에 맞춤 */
   @media (max-width:520px){ .brf-detail{margin-left:0} }
   .brf-detail .dl{font-weight:700;color:var(--ink)}
@@ -469,7 +482,35 @@ function inline(raw){
   return o;
 }
 // 일반 메시지용(줄바꿈 → <br>)
-function mrkdwn(raw){ return inline(raw).replace(/\n/g,"<br>"); }
+/* ── 표 (2026-09-24) ─────────────────────────────────────────────────
+   슬랙에 표로 보이던 자료를 서버(stock/app.py _merge_tables)가 "| 칸 | 칸 |" 줄로 바꿔 글 속 제자리에 넣어 준다.
+   여기서 그 줄 묶음을 진짜 표로 그린다. 첫 줄 = 머리칸, "|---|" 구분줄은 건너뜀,
+   숫자 칸(1305(1305)·4.92%·160 등)은 오른쪽 정렬 + 자릿수 맞춤. 폭이 좁으면 표만 옆으로 밀어 볼 수 있게 감싼다. */
+const TBL_LINE=/^\|.*\|\s*$/;
+function tableHtml(lines){
+  const rows=lines.map(l=>l.trim().replace(/^\||\|$/g,"").split("|").map(c=>c.trim()))
+                  .filter(r=>!r.every(c=>/^:?-{2,}:?$/.test(c)||!c));
+  if(!rows.length) return "";
+  const num=c=>/^[\d.,()%~+\-→/\s]+$/.test(c)&&/\d/.test(c);
+  const td=(c,tag)=>`<${tag}${tag==="td"&&num(c)?' class="n"':""}>${inline(c)}</${tag}>`;
+  return '<div class="brf-tblwrap"><table class="brf-tbl"><thead><tr>'+rows[0].map(c=>td(c,"th")).join("")+"</tr></thead><tbody>"+
+         rows.slice(1).map(r=>"<tr>"+r.map(c=>td(c,"td")).join("")+"</tr>").join("")+"</tbody></table></div>";
+}
+// 일반 메시지용(줄바꿈 → <br>) — "| … |" 줄 묶음은 표로
+function mrkdwn(raw){
+  const L=String(raw||"").split("\n"), out=[];
+  for(let i=0;i<L.length;i++){
+    if(TBL_LINE.test(L[i].trim())&&TBL_LINE.test((L[i+1]||"").trim())){
+      const run=[]; while(i<L.length&&TBL_LINE.test(L[i].trim())) run.push(L[i++]);
+      i--; out.push({t:tableHtml(run)}); continue;
+    }
+    out.push({s:L[i]});
+  }
+  let html="", buf=[];
+  const fl=()=>{ if(buf.length){ html+=inline(buf.join("\n")).replace(/\n/g,"<br>"); buf=[]; } };
+  out.forEach(o=>{ if(o.t!==undefined){ fl(); html+=o.t; } else buf.push(o.s); });
+  fl(); return html;
+}
 
 /* ══ 신문 브리핑 전용 서식기 ══════════════════════════════════
    슬랙으로 온 브리핑은 "카테고리 + 제목 + • WHAT/WHY/HOW + • 원문 확인"
@@ -519,7 +560,8 @@ function normalizeKV(t){
      → 평범한 대화("✅ 확인했어요")는 낱말 조건에 걸리지 않아 그대로 둔다 */
 const EMOJI_LEAD=/^\p{Extended_Pictographic}️?\s*/u;
 const KEYLINE_RE=/^((?:\p{Extended_Pictographic}️?\s*)?[^.。\n]{0,24}?핵심\s*한\s*줄)\s*[:：]?\s*([\s\S]*)$/u;
-const SEC_WORDS=/(핵심|체크|요약|포인트|판세|테마|결론|키워드|주목|관전|일정|정리)/;
+// ⚠️ '요약'·'정리' 는 뺐다 — "📰 2026년 9월 24일 신문 재요약" 같은 머리 줄이 체크 목록 머리말로 잡혀 아래 기사까지 삼켰다(2026-09-24)
+const SEC_WORDS=/(핵심|체크|포인트|판세|테마|결론|키워드|주목|관전|일정)/;
 function isSecHead(l){
   const p=String(l||"").replace(/[*_]/g,"").trim();
   // "🔴 반드시 체크 | 기사 제목" 은 기사 머리표라 제외(| 가 있으면 섹션 머리말이 아니다)
@@ -531,7 +573,8 @@ function isBriefing(t){
   // 불릿·콜론 없이 "WHAT …" / "제목 WHAT …" 으로 오는 새 형식(2026-09-24)도 브리핑
   if(/(?:^|\s)WHAT\s*[:：]?\s+\S/.test(t) && /(?:^|\s)(?:WHY|HOW)\s*[:：]?\s+\S/.test(t)) return true;
   // "…5가지 1. …" 묶음만 따로 온 메시지도 같은 서식(머리말 줄바꿈 + 번호 목록)으로
-  const L=String(t).split("\n").map(l=>l.replace(/\*/g,"").trim()).filter(Boolean);
+  // ⚠️ 슬랙 원문은 ✅ 가 아니라 ":white_check_mark:" 글자로 온다 → 그림문자로 바꾼 뒤에 판별(2026-09-24 실제 누락)
+  const L=emojify(String(t)).split("\n").map(l=>l.replace(/\*/g,"").trim()).filter(Boolean);
   if(L.some((l,i)=>{ const h=splitListHead(l); return h && (h[1] || /^1[.)]\s/.test(L[i+1]||"")); })) return true;
   // "📌 …핵심 한 줄" 이나 "✅ …체크할 핵심 주제" 아래 항목이 있는 메시지도 같은 서식으로
   if(L.some((l,i)=>KEYLINE_RE.test(l) || (isSecHead(l) && L[i+1]))) return true;
@@ -775,8 +818,14 @@ function briefing(raw){
   let lastArt=-1;                                 // 마지막으로 닫은 기사의 out 위치(뒤늦게 온 출처 줄을 붙일 곳)
   const flush=()=>{
     if(art!==null){
-      out.push('<div class="brf-art"'+(pageHint?' data-page="'+pageHint+'"':'')+'><div class="brf-main">'+art+"</div></div>");
-      lastArt=out.length-1;
+      /* WHAT·WHY·HOW 가 하나도 없고 사진 번호도 없는 덩어리는 기사가 아니라 **앞머리 안내문**이다
+         (예: "상호작용 요소가 있는 [신문요약 수정본 1/7]", "원본: 2026-09-24.pdf", "30쪽 전체를 이미지로 확인함 …").
+         → 기사 제목처럼 크게 그리지 않고, '글+지면' 사진 칸도 붙이지 않는다(.brf-art 가 아니면 사진 칸 대상이 아님). 2026-09-24 */
+      if(!artKV.size && !pageHint) out.push('<div class="brf-intro">'+art+"</div>");
+      else{
+        out.push('<div class="brf-art"'+(pageHint?' data-page="'+pageHint+'"':'')+'><div class="brf-main">'+art+"</div></div>");
+        lastArt=out.length-1;
+      }
       art=null;
     }
     pageHint=0; artKV=new Set();
@@ -813,6 +862,23 @@ function briefing(raw){
     if(isNote(line)) continue;                   // 남아 있는 검증·면책 안내문 줄 제거
 
     let m;
+    // "| … |" 줄 묶음 = 표 → 지금 기사 안에(기사가 없으면 그 자리에) 그린다
+    if(TBL_LINE.test(line)){
+      const run=[]; while(li<LINES.length && TBL_LINE.test(LINES[li].trim())) run.push(LINES[li++]);
+      li--;
+      const t=tableHtml(run);
+      if(chk){ flushChk(); } inList=false; lastItem=-1;
+      if(art!==null) art+=t; else out.push(t);
+      continue;
+    }
+    // 제목 바로 아래 "🔴 오늘 신문에서 …가장 중요한 기사임." 같은 표시 줄 → 제목에 딸린 설명(새 제목 아님)
+    // ⚠️ 예전 요약은 "🔴 “3억대 서울 분양도 나와”…청약 큰장" 처럼 🔴 로 **제목**을 시작했다 → 구분:
+    //    설명은 마침표로 끝나는 문장, 제목은 마침표로 안 끝난다.
+    if(art!==null && !artKV.size && /^(?:[🔴🟠🟡🟢🔵🟣⭐❗]|‼️?)/u.test(line) && !/[|｜]/.test(line)
+       && /[.。](?:\*|_)*\s*$/.test(line)){
+      art+='<div class="brf-sub brf-flagnote">'+inline(line)+"</div>";
+      continue;
+    }
     if(m=line.match(/^•\s*(WHAT|WHY|HOW|What|Why|How)\s*[:：]\s*([\s\S]*)$/)){
       open(); art+='<div class="brf-kv"><span class="k">'+m[1].toUpperCase()+'</span><span class="v">'+inline(m[2])+"</span></div>";
       artKV.add(m[1].toUpperCase());
@@ -870,7 +936,7 @@ function briefing(raw){
     }
     if(chk){
       if(NUM_ITEM_RE.test(plain0)){ flushChk(); inList=true; lastItem=-1; pushItems(plain0); continue; }  // 번호가 오면 번호 목록으로
-      if(!endsBlock(plain0,li)){ chk.push(chkItem(plain0)); continue; }
+      if(!endsBlock(plain0,li) && !(/^\d{1,3}[.)]\s/.test(plain0) && nextMark(li)==="WHAT")){ chk.push(chkItem(plain0)); continue; }
       flushChk();
     }
 
