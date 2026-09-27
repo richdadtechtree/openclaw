@@ -19,15 +19,20 @@
 1. 촬영: 일정이 빽빽한 캘린더와 운동복이 함께 있는 컷
    포인트: 바쁠 때는 다 채우기보다 끊지 않기. 기준은 '두 번 연속 빠지지 않기' 하나
    캡션: "줄이되 끊지 않습니다"
+   프롬프트: No person in frame: a crowded paper planner on a desk with folded training clothes beside it, evening lamp light.
 2. 촬영: 한 주에 한 번만 표시된 달력, 위에서
    포인트: 두 번 가려다 부담스러워 아예 안 오는 것보다 한 번이 낫다
    캡션: "이번 주는 한 번만 오셔도 됩니다"
+   프롬프트: No person in frame: a wall calendar with a single check mark in one week, shot straight on, soft light.
 3. 촬영: 오랜만에 수업에 돌아와 감을 잡는 장면
    포인트: 두 달 쉬면 처음 몇 주는 다시 감을 잡는 데 쓴다. 주 1회를 유지하면 바로 이어진다
    캡션: "잠시 줄이는 것과 끊는 것은 다릅니다"
+   프롬프트: Seen from the side, she works carefully through a basic exercise after time away, full body in frame.
 4. 촬영: 집에서 브릿지를 하는 짧은 홈 루틴 컷
    포인트: 호흡 열 번, 브릿지 열다섯 번, 등 늘리기 30초 — 10분이면 된다
    캡션: "몸에 '아직 하고 있다'고 알려주는 정도"
+   프롬프트: Seen from the side, she lifts her hips into a bridge on a mat at home, living room floor, evening lamp light.
 5. 촬영: 컨디션을 적어둔 다이어리와 펜
    포인트: 잠이 줄고 회복이 안 되면 오히려 다친다. 흔들리는 주에는 줄이는 판단이 낫다
    캡션: "그달 사정에 맞춰 조정합니다"
+   프롬프트: No person in frame: a small diary and a pen open on a bedside table, low warm light, no readable text.

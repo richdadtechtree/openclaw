@@ -19,15 +19,20 @@
 1. 촬영: 운동복 상하의와 그립 양말을 나란히 놓은 플랫레이
    포인트: 적당히 붙고 신축성 있는 소재. 너무 조이면 호흡을 방해한다
    캡션: "붙되 조이지 않는 옷이면 충분합니다"
+   프롬프트: No person in frame: fitted training top, leggings and a pair of grip socks laid flat on a wooden floor, shot from directly above.
 2. 촬영: 기구 위에서 적합한 복장을 입은 전신 컷, 측면
    포인트: 밑단이 짧은 상의나 안에 받쳐 입는 구성이면 뒤집는 동작에서 편하다
    캡션: "누웠을 때 옷이 흘러내리지 않아야 합니다"
+   프롬프트: Seen from the side, she sits on a reformer in fitted training clothes with no zippers or drawstrings, full body in frame.
 3. 촬영: 그립 양말 밑창 클로즈업
    포인트: 발바닥 미끄럼 방지 처리. 발가락이 갈라진 형태는 발을 더 정확히 쓰게 돕는다
    캡션: "미끄러지면 자세가 무너집니다"
+   프롬프트: Close on the sole of a grip sock showing the rubber dots, foot resting on a reformer footbar.
 4. 촬영: 긴 머리를 낮게 묶는 장면, 뒷모습
    포인트: 누웠을 때 배기지 않게 낮게. 액세서리는 빼두는 편이 안전하다
    캡션: "한 시간 내내 신경 쓰이면 집중이 안 됩니다"
+   프롬프트: Seen from behind, her hands tie her long hair into a low bun before class, shoulders visible, soft window light.
 5. 촬영: 피해야 할 복장 예시 — 지퍼·긴 끈·후드가 있는 옷
    포인트: 리포머 레일과 스프링에 걸리거나 긁힐 수 있다. 후드 모자는 누우면 목에 배긴다
    캡션: "기구 수업이면 걸릴 것부터 없앱니다"
+   프롬프트: No person in frame: a hoodie with a long drawstring and a zippered jacket folded on a bench, shown as unsuitable clothing, cooler light.

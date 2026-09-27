@@ -41,7 +41,10 @@ pilates_blog.py — 미리 써둔 마이비필라테스 블로그 글을 **하�
     ===본문===
     (본문 1000~1200자, 소제목은 **굵게**, [사진1]~[사진5] 배치)
     ===사진===
-    1. 사진1 컨셉
+    1. 촬영: 무엇을 어떤 각도로 (직접 찍을 때)
+       포인트: 그 사진에 담겨야 할 운동 정보
+       캡션: "사진 위에 나중에 얹을 한 줄"   ← 사진 안에 글자를 넣지 않는다
+       프롬프트: 이미지 생성용 영문 장면 한 줄 (공통 조건 A/B 는 따로 붙는다)
     ... 5번까지
 
 사용법
@@ -89,6 +92,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 BASE = os.path.dirname(HERE)                                   # ~/.openclaw
 POSTS_DIR = os.getenv("PILATES_POSTS_DIR") or os.path.join(BASE, "workspace", "pilates_posts")
 STATE_DIR = os.path.join(BASE, "workspace", "pilates_blog")    # 보냄 기록(.gitignore 대상)
+# 이미지 생성 공통 조건(A/B 블록). 사진 프롬프트 줄 앞뒤에 붙여 쓴다.
+PHOTO_STYLE = os.getenv("PILATES_PHOTO_STYLE") or os.path.join(BASE, "workspace", "pilates_photo_style.md")
 SENT_FILE = os.path.join(STATE_DIR, "sent.jsonl")
 
 KST = timezone(timedelta(hours=9))                             # 서버 시간대와 무관하게 '한국 날짜'
@@ -201,6 +206,32 @@ def read_post(path):
     if post:
         post["file"] = path
     return post, err
+
+
+def read_photo_style(path=None):
+    """이미지 생성 공통 조건(A/B) 을 읽어 온다. 파일이 없으면 None.
+
+    사진 프롬프트를 '장면 설명'과 '공통 조건'으로 나눠 두는 이유:
+    같은 카메라·조명·피부 묘사를 사진 5장마다 반복하면 메시지가 너무 길어지고,
+    한 곳만 고쳐도 전체에 반영되게 하려면 따로 두는 편이 낫다.
+    """
+    p = path or PHOTO_STYLE
+    if not os.path.isfile(p):
+        return None
+    try:
+        with open(p, encoding="utf-8") as f:
+            text = re.sub(r"<!--.*?-->", "", f.read(), flags=re.S)
+    except OSError:
+        return None
+    out = {}
+    for key, head in (("A", "A."), ("B", "B.")):
+        m = re.search(r"^##\s*" + re.escape(head) + r"[^\n]*\n(.*?)(?=^##\s|\Z)",
+                      text, flags=re.S | re.M)
+        if m:
+            body = " ".join(l.strip() for l in m.group(1).strip().splitlines() if l.strip())
+            if body:
+                out[key] = body
+    return out or None
 
 
 def list_post_files(posts_dir=None):
@@ -350,6 +381,11 @@ def validate(post):
     if thin:
         issues.append("사진 컨셉 " + ", ".join(f"{i}번" for i in thin) + " 설명이 너무 짧음")
 
+    # 사진마다 '프롬프트:'(이미지 생성용 영문 장면) 줄이 있어야 한다
+    noprompt = [i for i, p in enumerate(post["photos"], 1) if "프롬프트:" not in p]
+    if noprompt:
+        issues.append("사진 " + ", ".join(f"{i}번" for i in noprompt) + " 에 프롬프트 줄 없음")
+
     # (7) 검증되지 않은 의학적 단정
     hits = [p for p in BANNED_PHRASES if p in body]
     if hits:
@@ -381,7 +417,8 @@ def render_photos(photos):
     return "\n".join(out)
 
 
-def build_message(date_str, post, warnings=None, remaining=None, low_stock=5, round_no=1):
+def build_message(date_str, post, warnings=None, remaining=None, low_stock=5, round_no=1,
+                  photo_style=None):
     """규칙서의 '출력 형식' 그대로 최종 메시지를 만든다."""
     subs = ", ".join(post["subs"]) if post["subs"] else "-"
     photo_lines = render_photos(post["photos"])
@@ -397,13 +434,23 @@ def build_message(date_str, post, warnings=None, remaining=None, low_stock=5, ro
         f"{LINE}\n"
         f"✅ 발행 전 체크리스트:\n"
         f"- [ ] 본인 경험 한두 문장 추가\n"
-        f"- [ ] 직접 찍은 사진 5장 매칭\n"
+        f"- [ ] 사진 5장 준비 (직접 촬영 또는 아래 프롬프트로 생성)\n"
+        f"- [ ] 사진에 글자·화살표·근육 표시 없는지 확인 (캡션은 디자인에서 얹기)\n"
         f"- [ ] 제목 앞부분에 키워드 확인\n"
         f"- [ ] 발행 시 주제 카테고리 선택"
     )
     if warnings:
         msg += "\n\n⚠️ 자동 점검에서 걸린 부분 (발행 전 눈으로 확인):\n" + \
                "\n".join(f"- {w}" for w in warnings)
+    if photo_style:
+        msg += (f"\n\n{LINE}\n"
+                f"🎨 *이미지 생성 공통 조건* — 각 사진의 `프롬프트:` 줄 **앞에 A, 뒤에 B** 를 붙여 쓰세요.\n"
+                f"※ 사진에는 글자·화살표·근육 표시를 넣지 마세요. 캡션은 사진 위에 나중에 얹습니다.\n")
+        if photo_style.get("A"):
+            msg += f"\n*A (앞)*\n{photo_style['A']}\n"
+        if photo_style.get("B"):
+            msg += f"\n*B (뒤)*\n{photo_style['B']}\n"
+
     if round_no >= 2:
         # 한 바퀴를 다 돌아 **다시 보내는 글**이다. 그대로 올리면 네이버에서 중복 문서로 본다.
         msg += (f"\n\n🔁 *{round_no}회차 — 전에 한 번 보낸 글입니다.*\n"
@@ -602,7 +649,8 @@ def main(argv=None):
         return 2
 
     warnings = validate(post)
-    message = build_message(today, post, warnings, remaining, low_stock, round_no)
+    message = build_message(today, post, warnings, remaining, low_stock, round_no,
+                            read_photo_style())
 
     if args.dry_run:
         print(f"── 배달할 글: {os.path.basename(target)} (발송 안 함) " + "─" * 12)

@@ -19,15 +19,20 @@
 1. 촬영: 무릎을 짚고 계단을 내려오는 측면 컷
    포인트: 붓거나 열이 나거나 걸을 때마다 아프면 운동보다 진료가 먼저
    캡션: "멈추기보다 고르는 쪽이 낫습니다"
+   프롬프트: Seen from the side, she walks down a few stairs with one hand near her knee, ordinary clothes, full body in frame.
 2. 촬영: 누워서 엉덩이를 드는 브릿지 최고점, 측면
    포인트: 체중이 무릎에 실리지 않는 자세. 엉덩이가 살아나면 무릎 충격이 줄어든다
    캡션: "누워서 하는 동작부터 시작합니다"
+   프롬프트: Seen from the side, she lifts her hips into a bridge on a mat with knees bent and feet flat, glutes engaged.
 3. 촬영: 의자에 살짝 닿았다 일어나는 반쪽 스쿼트, 측면
    포인트: 아프지 않은 범위까지만. 무릎이 안쪽으로 모이지 않게
    캡션: "깊이보다 방향이 중요합니다"
+   프롬프트: Seen from the side, she lowers halfway onto a chair and stands again, shins near vertical, full body in frame.
 4. 촬영: 무릎 위 밴드를 걸고 벌린 상태로 앉는 장면, 정면
    포인트: 밴드가 안쪽으로 당길 때 버티면 무릎 방향이 잡힌다
    캡션: "밴드 하나로 방향이 잡힙니다"
+   프롬프트: Seen from the front, she sits with a fabric band above her knees, pressing outward against it, thighs working.
 5. 촬영: 리포머 레그 프레스, 다리와 발판이 함께
    포인트: 누운 상태라 체중이 무릎에 실리지 않고 미는 방향도 정해져 있다
    캡션: "무릎이 불편하면 먼저 권하는 동작입니다"
+   프롬프트: Seen from the side, she lies on a reformer pressing the footbar with both feet, legs and footbar both visible.

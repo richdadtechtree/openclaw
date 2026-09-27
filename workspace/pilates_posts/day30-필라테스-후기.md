@@ -19,15 +19,20 @@
 1. 촬영: 시작할 때와 한 달 뒤 옆모습을 같은 각도로 찍은 비교 두 컷
    포인트: 촬영 위치를 바닥에 표시하고 같은 옷·같은 조명에서. 어깨 높이와 턱 위치를 본다
    캡션: "한 달 변화는 옆모습에서 먼저 보입니다"
+   프롬프트: She stands sideways against a plain wall, arms relaxed, full body in frame, even daylight, a plain documentary record shot.
 2. 촬영: 출석 체크가 채워진 한 달치 달력, 위에서
    포인트: 한 달은 계속할지 말지를 판단하기에 충분한 시간
    캡션: "우선 한 달만 채워보세요"
+   프롬프트: No person in frame: a wall calendar filled with small handwritten check marks for one month, shot straight on.
 3. 촬영: 수업을 마치고 자신감 있는 표정의 상반신
    포인트: 가장 많이 듣는 말은 살 빠졌다가 아니라 자세가 좋아졌다
    캡션: "남이 먼저 알아채는 건 자세입니다"
+   프롬프트: Seen from the chest up after class, she stands with shoulders open and a calm confident expression, skin slightly flushed.
 4. 촬영: 둘레와 컨디션 기록의 한 달 변화를 보여주는 기록지
    포인트: 체중보다 허리둘레·수면·아침 컨디션을 적는다. 체중계에 안 나오는 결과가 많다
    캡션: "체중계에 안 나오는 변화가 더 많습니다"
+   프롬프트: Close on an open notebook page with a month of short handwritten measurements, on a wooden floor, no readable text.
 5. 촬영: 스튜디오 로고와 함께 찍은 감사 인사 컷
    포인트: 눈에 띄는 체형 변화는 대체로 두세 달째부터. 한 달은 그 출발선
    캡션: "한 달은 출발선입니다"
+   프롬프트: She stands near a plain studio wall with arms at her sides, a calm full-body portrait in soft window light.

@@ -19,15 +19,20 @@
 1. 촬영: 어두운 침실에서 누워 호흡하는 장면, 조명 최소
    포인트: 코로 4초 마시고 입으로 8초. 내쉬는 숨이 길어지면 몸이 쉬어도 된다고 받아들인다
    캡션: "숨이 길어지면 몸이 느슨해집니다"
+   프롬프트: Seen from above, she lies in bed with eyes closed and hands resting on her abdomen, breathing out, very low warm lamp light.
 2. 촬영: 무릎을 가슴으로 당긴 자세와 나비 자세, 두 컷
    포인트: 각 30초. 세게 늘리지 않고 숨을 쉴 수 있는 강도까지만
    캡션: "자기 전 순서는 늘 같게"
+   프롬프트: Two framings side by side in dim bedroom light: knees hugged to the chest, then the soles of the feet together with knees dropped open.
 3. 촬영: 팔다리를 펴고 가만히 누운 마무리, 위에서
    포인트: 발끝부터 머리까지 차례로 힘 빼기. 어깨와 턱에 힘이 남아 있는 경우가 많다
    캡션: "마지막은 힘 빼는 연습입니다"
+   프롬프트: Seen from above, she lies flat with arms and legs relaxed and slightly apart, eyes closed, very dim light.
 4. 촬영: 머리맡에 엎어둔 시계와 휴대폰
    포인트: 깼을 때 시계를 보면 계산이 시작되고 머리가 깨어난다. 화면은 가장 피할 것
    캡션: "시계를 보지 않습니다"
+   프롬프트: No person in frame: a bedside table at night with a clock turned face down and a phone placed screen down, very low light.
 5. 촬영: 낮에 걷는 실외 컷
    포인트: 낮에 거의 안 움직이면 밤에 깊게 자기 어렵다. 늦은 카페인과 술도 영향을 준다
    캡션: "낮의 움직임이 밤을 만듭니다"
+   프롬프트: Seen from behind, she walks on a quiet path in late afternoon in ordinary clothes, full body in frame.

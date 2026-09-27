@@ -19,15 +19,20 @@
 1. 촬영: 스쿼트 하단에서 허리가 말리는 순간, 측면
    포인트: 힘이 부족해서가 아니라 고관절이 덜 접혀서 생기는 경우가 많다
    캡션: "무게가 아니라 각도가 막고 있습니다"
+   프롬프트: Subject override: an adult East Asian man in his early 30s, short dark hair, plain fitted training clothes. Seen from the side, he holds the bottom of a squat with the lower back slightly rounding, full body in frame.
 2. 촬영: 고관절을 여는 런지 스트레칭, 측면 전신
    포인트: 가동 범위가 좁으면 몸이 다른 곳으로 보상하고 그 자리가 아파진다
    캡션: "범위가 넓어지면 무게가 안정됩니다"
+   프롬프트: Subject override: the same man. Seen from the side, he holds a long low lunge on a mat, the back hip opening, full body in frame.
 3. 촬영: 주간 운동표를 적은 노트 — 헬스3 + 필라테스1
    포인트: 같은 날 붙이지 않는다. 전날 쓴 부위와 겹치지 않게 구성
    캡션: "같은 날 붙이지 않습니다"
+   프롬프트: No person in frame: a paper weekly planner on a desk with four training days marked, a pen beside it, no readable text.
 4. 촬영: 리포머에서 몸통을 고정한 채 버티는 남성 회원, 전신
    포인트: 무게 대신 정렬과 몸통 안정성. 스프링을 천천히 버티는 힘은 종류가 다르다
    캡션: "다른 종류의 힘을 씁니다"
+   프롬프트: Subject override: the same man. Seen from the side, he lies on a reformer holding the torso steady while pressing the footbar, full body in frame.
 5. 촬영: 웨이트와 필라테스 기구가 함께 보이는 구도
    포인트: 같은 날 둘 다 한다면 웨이트를 먼저, 필라테스를 나중에
    캡션: "순서는 웨이트가 먼저입니다"
+   프롬프트: No person in frame: a pair of dumbbells on a rack and a reformer sharing one room, wooden floor, soft daylight.

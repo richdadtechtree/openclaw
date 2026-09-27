@@ -19,15 +19,20 @@
 1. 촬영: 매트에 무릎을 세우고 누워 아랫배에 손을 얹은 기본 자세, 위에서 내려다보는 구도
    포인트: 내쉬는 숨에 아랫배가 납작해지는 순간. 숨을 참고 배를 조이는 것과는 다르다
    캡션: "코어는 조이는 게 아니라 몸통을 붙잡아두는 일입니다"
+   프롬프트: Seen from above, she lies on a mat with knees bent and one hand resting flat on her lower abdomen, exhaling, the other arm relaxed on the floor.
 2. 촬영: 한 손으로 허리를 짚고 서 있는 일상 모습, 실루엣 위주 측면
    포인트: 몸통이 못 버티면 허리가 대신 일한다는 걸 보여주는 컷. 골반이 앞으로 밀린 자세가 드러나게
    캡션: "배가 아니라 허리가 먼저 신호를 보냅니다"
+   프롬프트: She stands in a hallway with one hand pressed against her lower back, weight shifted to one leg, a tired posture, seen from the side in soft backlight.
 3. 촬영: 누워서 한쪽 다리씩 드는 데드버그 동작, 두 컷 연속(시작·최대 지점)
    포인트: 허리가 매트에서 뜨면 다리를 덜 내린다. 10초만 버텨도 떨리는 게 정상
    캡션: "정확한 한 번이 빠른 열 번보다 낫습니다"
+   프롬프트: She lies on her back and lifts one knee toward the ceiling while the other foot stays down, arms reaching along the floor, visible effort in the abdomen.
 4. 촬영: 리포머에서 몸통을 고정한 채 캐리지를 미는 장면, 측면 전신
    포인트: 캐리지가 덜컹거리면 몸통이 흔들린다는 신호. 가볍게 걸고 천천히 미는 쪽이 더 어렵다
    캡션: "기구는 저항이면서 동시에 안내자입니다"
+   프롬프트: Seen from the side, she lies on a reformer and pushes the carriage away with both feet on the footbar, torso held still, the springs stretched.
 5. 촬영: 수업 후 강사가 노트에 피드백을 적어주는 손과 기록지
    포인트: 오늘 어느 동작에서 허리가 떴는지 적어두면 다음 수업이 달라진다
    캡션: "기록이 남으면 다음 시간이 빨라집니다"
+   프롬프트: Close on an instructor's hands writing a short note in a training log on a wooden bench, a rolled mat beside it, no readable text.

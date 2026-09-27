@@ -47,7 +47,9 @@ def make_post_text(main_kw="필라테스 초보",
     photo_lines = "\n".join(
         f"{i}. 촬영: 사진{i} 장면을 어떤 각도로 찍을지 적은 설명\n"
         f"   포인트: 사진에 담겨야 할 동작 정보\n"
-        f"   캡션: 사진 밑에 넣을 한 줄" for i in range(1, photos + 1))
+        f"   캡션: 사진 밑에 넣을 한 줄\n"
+        f"   프롬프트: She lies on a mat with knees bent, exhaling slowly."
+        for i in range(1, photos + 1))
     return (f"제목: {title}\n"
             f"메인: {main_kw}\n"
             f"서브: 필라테스 입문, 필라테스 준비물\n"
@@ -81,6 +83,11 @@ class 글파일읽기(unittest.TestCase):
         self.assertEqual(len(post["photos"]), 5)          # 줄이 3개여도 사진은 1개로 센다
         self.assertIn("포인트:", post["photos"][0])
         self.assertIn("캡션:", post["photos"][0])
+
+    def test_사진마다_프롬프트_줄을_읽는다(self):
+        post, err = pb.parse_post(make_post_text())
+        self.assertIsNone(err)
+        self.assertTrue(all("프롬프트:" in p for p in post["photos"]))
 
     def test_사진표시가_없어도_본문은_읽힌다(self):
         text = make_post_text().split(pb.PHOTO_MARK)[0]
@@ -183,6 +190,11 @@ class 규칙점검(unittest.TestCase):
         p["body"] = p["body"].replace("꾸준함이 전부였습니다", "허리디스크가 완치됩니다")
         self.assertTrue(any("완치" in i for i in pb.validate(p)))
 
+    def test_프롬프트_줄이_빠지면_걸린다(self):
+        p = self.post()
+        p["photos"][2] = p["photos"][2].split("\n프롬프트:")[0]
+        self.assertTrue(any("프롬프트" in i for i in pb.validate(p)))
+
     def test_사진컨셉이_5개가_아니면_걸린다(self):
         issues = pb.validate(self.post(photos=3))
         self.assertTrue(any("사진 컨셉" in i for i in issues))
@@ -225,6 +237,23 @@ class 최종메시지(unittest.TestCase):
     def test_점검경고가_붙는다(self):
         msg = pb.build_message("2026-09-21", self.post(), warnings=["본문 900자"])
         self.assertIn("⚠️ 자동 점검에서 걸린 부분", msg)
+
+    def test_공통_촬영조건이_맨_아래에_붙는다(self):
+        style = {"A": "A candid editorial fitness photograph.", "B": "Negative prompt: no text."}
+        msg = pb.build_message("2026-09-27", self.post(), photo_style=style)
+        self.assertIn("🎨 *이미지 생성 공통 조건*", msg)
+        self.assertIn("A candid editorial fitness photograph.", msg)
+        self.assertIn("Negative prompt: no text.", msg)
+        self.assertIn("사진에는 글자", msg)
+        # 공통 조건 파일이 없으면 그 블록만 빠지고 나머지는 그대로
+        self.assertNotIn("🎨", pb.build_message("2026-09-27", self.post()))
+
+    def test_공통조건_파일을_읽는다(self):
+        style = pb.read_photo_style()
+        self.assertIsNotNone(style, "workspace/pilates_photo_style.md 를 못 읽었습니다")
+        self.assertIn("candid editorial", style["A"])
+        self.assertIn("Negative prompt", style["B"])
+        self.assertIsNone(pb.read_photo_style("/없는/경로.md"))
 
     def test_긴글은_쪼갠다(self):
         parts = pb.chunk("가" * 4000 + "\n" + "나" * 4000)

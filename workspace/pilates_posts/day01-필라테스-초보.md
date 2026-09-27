@@ -19,15 +19,20 @@
 1. 촬영: 수업 전 빈 스튜디오를 창가 쪽에서 가로 구도로, 기구가 한 화면에 들어오게
    포인트: 리포머·캐딜락·체어가 각각 보이게 — 기구마다 도와주는 역할이 다르다는 걸 보여주는 컷
    캡션: "기구는 많을수록 좋은 게 아니라 내 몸에 맞는 게 있어야 합니다"
+   프롬프트: No person in frame: an empty Pilates studio just before class, a reformer, a cadillac and a wooden chair on a pale wooden floor, morning light from the side windows, no signage text.
 2. 촬영: 매트에 누워 갈비뼈 옆에 양손을 얹은 상태를 옆에서 클로즈업, 손 위치가 잘 보이게
    포인트: 숨을 마실 때 갈비뼈가 옆으로 벌어지고 어깨는 그대로. 어깨가 귀 쪽으로 들리면 잘못된 호흡
    캡션: "첫 수업의 앞 10분은 호흡에 씁니다"
+   프롬프트: She lies on a mat with knees bent, both palms resting on the sides of her lower ribs, exhaling slowly, shoulders staying down while the ribs draw inward.
 3. 촬영: 강사가 골반 옆을 짚어 위치를 잡아주는 손 위주로, 회원 얼굴은 반쯤만
    포인트: 골반이 앞뒤로 기울지 않은 중립 상태를 찾는 장면. 허리와 매트 사이 손바닥 하나가 기준
    캡션: "혼자서는 알기 어려운 게 골반 위치입니다"
+   프롬프트: An instructor kneels beside her and places both hands on her pelvis to guide its position; the instructor's hands and the client's torso are in focus, faces partly out of frame.
 4. 촬영: 벽에 기대 가슴을 여는 스트레칭, 측면 전신
    포인트: 팔꿈치는 어깨 높이, 가슴 앞쪽을 30초 늘린다. 허리가 꺾이지 않게 갈비뼈를 아래로 내린 상태
    캡션: "끝나고 30초가 다음 수업을 편하게 만듭니다"
+   프롬프트: She stands with her back against a wall, arms opened at shoulder height, chest gently opening, breathing out, eyes lowered.
 5. 촬영: 체험 수업 안내가 보이는 리셉션 데스크를 정면에서 밝게
    포인트: 상담 때 통증·수술 이력을 먼저 확인한다는 안내가 함께 보이면 좋음
    캡션: "첫 수업 전에 몸 상태부터 여쭤봅니다"
+   프롬프트: No person in frame: a small reception desk of a Pilates studio with a notebook, a pen and a glass of water, warm daylight, no signage text.

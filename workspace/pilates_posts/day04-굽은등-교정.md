@@ -19,15 +19,20 @@
 1. 촬영: 책상에 앉은 구부정한 옆모습, 측면 전신 — 비포 컷
    포인트: 턱이 앞으로 나가고 등이 말린 상태. 모니터가 눈높이보다 낮으면 이 자세가 굳는다
    캡션: "하루 여덟 시간이 만든 자세입니다"
+   프롬프트: She sits at a desk with a laptop, shoulders rounded forward and chin jutting out, seen from the side, full body in frame, ordinary office light from a window.
 2. 촬영: 폼롤러를 등 뒤에 가로로 두고 팔을 벌린 자세, 위에서
    포인트: 가슴 앞쪽을 30초씩 세 번 늘린다. 등이 아니라 가슴 앞이 늘어나는 느낌이 맞다
    캡션: "등을 펴기 전에 가슴 앞을 풀어야 합니다"
+   프롬프트: Seen from above, she lies with a foam roller placed crosswise under her upper back, both arms opened out to the sides, chest lifting.
 3. 촬영: 벽에 등을 대고 팔꿈치를 W 모양으로 만든 장면, 정면 전신
    포인트: 날개뼈를 주머니에 넣듯 아래로 모은다. 목에 힘이 들어가면 잘못된 것
    캡션: "어려운데 효과는 가장 빨리 느껴지는 동작입니다"
+   프롬프트: She stands with her back flat against a wall, elbows bent in a W shape at shoulder height, drawing the shoulder blades down, seen from the front.
 4. 촬영: 턱을 당기는 동작 클로즈업, 목선이 보이는 측면
    포인트: 고개를 숙이는 게 아니라 뒤통수를 위로 늘리는 느낌. 5초 유지 10회
    캡션: "거북목은 세게 당기는 게 아니라 자주 되돌리는 겁니다"
+   프롬프트: Close on her neck and jaw from the side as she gently draws her chin back while the back of her head stays against the wall.
 5. 촬영: 한 달 뒤 옆모습을 같은 각도·같은 위치에서 찍어 비교
    포인트: 촬영 위치를 바닥에 표시해두면 비교가 정확해진다
    캡션: "자세 변화는 사진이 가장 정직합니다"
+   프롬프트: She stands sideways against the same plain wall with a lengthened spine and relaxed shoulders, same camera position as the desk photo, full body in frame.

@@ -19,15 +19,20 @@
 1. 촬영: 수업 시작 전 매트에 앉아 준비하는 상반신, 자연광
    포인트: 첫 달은 근육을 키우는 시기가 아니라 순서를 익히는 시기
    캡션: "첫 달은 몸이 순서를 배우는 기간입니다"
+   프롬프트: Seen from the chest up, she sits on a mat before class tying her hair, looking down, quiet morning light from one window.
 2. 촬영: 같은 동작을 반복하는 두 컷(1주차·4주차)을 나란히
    포인트: 겉으로는 제자리 같아도 힘이 걸리는 자리가 달라진다
    캡션: "안 느는 게 아니라 속에서 바뀌는 중입니다"
+   프롬프트: Seen from the side, she repeats a basic mat exercise with visible concentration, full body in frame, plain studio floor.
 3. 촬영: 옆구리를 짚으며 근육통을 표현하는 상반신
    포인트: 지연성 근육통은 이틀째가 가장 심하고 사흘이면 가라앉는다. 한 지점만 콕 아프면 쉬고 확인
    캡션: "통증이 10점 중 3점을 넘으면 멈춥니다"
+   프롬프트: Seen from the side, she presses a hand against her side ribs the day after class, standing in ordinary clothes, upper body in frame.
 4. 촬영: 오늘의 목표를 적은 작은 메모와 매트
    포인트: 동작 개수 대신 '갈비뼈 내린 채 다섯 호흡'처럼 작은 과제 하나
    캡션: "목표를 바꾸면 지루함이 줄어듭니다"
+   프롬프트: No person in frame: a small paper note and a pen resting on a rolled mat, soft light, no readable text.
 5. 촬영: 한 달 출석이 채워진 달력, 위에서
    포인트: 첫 달 목표는 잘하기가 아니라 빠지지 않기
    캡션: "첫 달은 빠지지 않는 것만으로 충분합니다"
+   프롬프트: No person in frame: a wall calendar with one month of small check marks, shot straight on, daylight from the side.

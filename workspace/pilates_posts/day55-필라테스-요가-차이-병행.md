@@ -19,15 +19,20 @@
 1. 촬영: 필라테스 동작과 요가 동작을 나란히 배치한 두 컷
    포인트: 필라테스는 몸통 고정 + 정확한 반복, 요가는 머무르며 이완
    캡션: "서로 반대라서 보완이 됩니다"
+   프롬프트: Seen from the side, she holds a Pilates exercise on a mat with the torso braced and legs extended, full body in frame.
 2. 촬영: 갈비뼈에 손을 얹은 호흡과 배에 손을 얹은 호흡, 비교 컷
    포인트: 필라테스는 갈비뼈를 넓히고 배는 납작, 요가는 배를 부풀린다
    캡션: "호흡이 달라 처음엔 헷갈립니다"
+   프롬프트: Seen from the side, she holds a long seated yoga fold on the same mat, palms on the floor, calmer light.
 3. 촬영: 리포머 수업 장면, 전신
    포인트: 몸통을 잡아주는 힘을 먼저 만든다. 주 3회면 필라테스 2 + 요가 1
    캡션: "힘과 정렬은 필라테스 쪽"
+   프롬프트: Seen from the side, she works on a reformer with the springs stretched, full body in frame.
 4. 촬영: 매트에서 머무는 이완 자세, 조용한 분위기
    포인트: 스트레스가 큰 시기에는 이완 비중을 늘린다
    캡션: "이완과 유연성은 요가 쪽"
+   프롬프트: Seen from the front, she sits cross-legged with hands on her knees and eyes closed, quiet light from one window.
 5. 촬영: 주간 구성을 적은 메모와 매트
    포인트: 둘 다 어렵다면 지금 부족한 쪽부터 고른다
    캡션: "부족한 쪽부터 고르면 됩니다"
+   프롬프트: No person in frame: a paper planner on a desk with a simple weekly split written by hand, no readable text.

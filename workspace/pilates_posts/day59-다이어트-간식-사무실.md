@@ -19,15 +19,20 @@
 1. 촬영: 사무실 서랍을 열어 간식이 정리된 모습, 위에서
    포인트: 배고픔이 아니라 선택이 문제. 서랍에 고를 것이 있으면 탕비실까지 가지 않는다
    캡션: "두는 것만으로 절반은 해결됩니다"
+   프롬프트: No person in frame: an open office desk drawer with nuts, a soy milk carton and a protein bar inside, shot from above.
 2. 촬영: 소분된 견과류 봉지 여러 개
    포인트: 한 봉에 손바닥 절반 정도. 봉지째 두면 얼마나 먹었는지 모른다
    캡션: "소분이 큰 차이를 만듭니다"
+   프롬프트: No person in frame: several small portioned nut bags in a shallow bowl on a desk, daylight from the side.
 3. 촬영: 단백질바 뒷면 당류 함량을 확인하는 손
    포인트: 저칼로리 표시가 있어도 당류가 많은 제품이 있다
    캡션: "칼로리보다 당류를 봅니다"
+   프롬프트: Close on her hand turning a snack package to read the nutrition panel, printed text blurred and unreadable.
 4. 촬영: 두유와 생과일, 무가당 요거트를 함께 놓은 컷
    포인트: 말린 과일은 부피가 줄어 많이 먹게 된다. 생과일 쪽이 낫다
    캡션: "말린 과일보다 생과일"
+   프롬프트: No person in frame: soy milk, an apple and a small cup of plain yogurt on an office desk, plain daylight.
 5. 촬영: 오후 3시를 가리키는 시계와 간식
    포인트: 시간을 정해두면 끼니 사이에 계속 집어 먹는 일이 줄어든다
    캡션: "시간을 정해두면 줄어듭니다"
+   프롬프트: No person in frame: a wall clock reading mid-afternoon above a desk with a small snack, soft office light.

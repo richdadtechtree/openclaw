@@ -19,15 +19,20 @@
 1. 촬영: 팔을 옆으로 드는 동작을 거울 앞에서 확인하는 장면
    포인트: 팔이 올라갈 때 어깨도 따라 올라가면 말린 어깨 상태. 이대로면 팔 뒤쪽에 자극이 덜 간다
    캡션: "어깨가 따라 올라가면 순서를 바꿔야 합니다"
+   프롬프트: Seen from the front, she stands facing a studio mirror raising both arms to the side, shoulders visibly lifting with them.
 2. 촬영: 폼롤러를 등 뒤에 가로로 두고 팔을 벌린 자세, 위에서
    포인트: 가슴 앞 30초씩 세 번. 짧아진 곳을 그대로 두면 팔 운동이 성립하지 않는다
    캡션: "먼저 등과 가슴 앞을 엽니다"
+   프롬프트: Seen from above, she lies with a foam roller crosswise under her upper back, arms opened wide, chest lifting.
 3. 촬영: 날개뼈를 아래로 모으는 동작, 정면 상반신
    포인트: 주머니에 넣듯 아래로. 목에 힘이 들어가면 잘못된 것
    캡션: "날개뼈를 잡고 시작합니다"
+   프롬프트: Seen from the front, she stands against a plain wall drawing both shoulder blades down, elbows bent, upper body in frame.
 4. 촬영: 벽에 손을 짚고 팔꿈치를 굽혔다 펴는 동작, 측면
    포인트: 팔꿈치를 몸 가까이. 열다섯 번씩 세 세트면 다음 날 팔 뒤가 뻐근
    캡션: "그다음에 팔을 씁니다"
+   프롬프트: Seen from the side, she places both hands on a wall and bends and straightens her elbows close to her body.
 5. 촬영: 밴드를 아래로 눌러 내리는 동작, 어깨 높이가 보이게
    포인트: 어깨가 올라가지 않게 유지. 가벼운 저항으로 천천히
    캡션: "어깨는 내린 채로 유지합니다"
+   프롬프트: Seen from the front, she presses a resistance band downward with both hands, shoulders staying low, upper body in frame.

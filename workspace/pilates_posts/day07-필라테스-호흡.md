@@ -19,15 +19,20 @@
 1. 촬영: 누워서 갈비뼈 옆에 양손을 얹은 호흡 연습, 위에서
    포인트: 마실 때 손이 옆으로 밀려나면 성공. 배가 앞으로 나오는 복식 호흡과는 다르다
    캡션: "필라테스 호흡은 옆과 뒤로 넓히는 호흡입니다"
+   프롬프트: Seen from above, she lies on a mat with both palms on the sides of her lower ribs, inhaling, the ribs widening sideways, shoulders staying flat.
 2. 촬영: 들숨과 날숨의 갈비뼈 움직임을 화살표로 표시한 설명 이미지
    포인트: 들숨 = 갈비뼈 좌우로, 날숨 = 제자리로 + 아랫배 납작. 마시기 4초 내쉬기 8초
    캡션: "내쉬는 숨을 두 배로 길게"
+   프롬프트: Seen from the front, she sits upright on a low bench with both hands on her waist, exhaling long and slow, shoulders relaxed downward.
 3. 촬영: 의자에 앉아 손을 옆구리에 대고 연습하는 장면, 상반신 정면
    포인트: 어깨가 올라가면 잘못된 신호. 거울로 어깨 높이를 한 번 확인
    캡션: "앉아서도 할 수 있는 연습입니다"
+   프롬프트: Seen from the front, she sits on a chair with fingertips on her ribs, torso tall, mouth slightly open as she exhales.
 4. 촬영: 수업 중 호흡에 맞춰 동작하는 회원, 전신
    포인트: 힘쓰는 순간에 내쉬고 돌아올 때 마신다. 숨을 참으면 목과 어깨가 먼저 뻐근해진다
    캡션: "얼굴이 빨개지면 숨을 참고 있는 겁니다"
+   프롬프트: Seen from the side, she performs a mat exercise while clearly breathing out, abdomen flattening, full body in frame.
 5. 촬영: 조명이 부드러운 스튜디오 내부, 매트만 깔린 조용한 컷
    포인트: 자기 전 침대에서 다섯 번만 반복해도 잠드는 데 도움이 된다
    캡션: "숨이 길어지면 몸이 쉬어도 된다고 받아들입니다"
+   프롬프트: No person in frame: a quiet studio interior with one rolled mat on a wooden floor, soft light from a single tall window, nothing else.

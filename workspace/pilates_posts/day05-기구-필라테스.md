@@ -19,15 +19,20 @@
 1. 촬영: 리포머 스프링 클로즈업, 색이 구분되게 사선 구도
    포인트: 스프링 색마다 저항이 다르다. 무거운 게 늘 어려운 것도 아니다 — 가벼울수록 몸이 더 일한다
    캡션: "스프링은 무게가 아니라 난이도 조절 장치입니다"
+   프롬프트: No person in frame: close on the springs of a reformer, the colored coils stretched slightly, metal and leather texture, diagonal framing, soft side light.
 2. 촬영: 매트에서 맨몸 동작을 하는 장면, 측면 전신
    포인트: 매트는 오직 몸무게로 버틴다. 약한 곳이 그대로 드러나는 것이 장점
    캡션: "매트는 정직합니다"
+   프롬프트: Seen from the side, she performs a mat exercise on the floor with no equipment, both arms reaching forward, torso curled slightly, full body in frame.
 3. 촬영: 리포머에서 다리를 밀어내는 동작(풋워크), 전신 측면
    포인트: 발판을 미는 방향이 정해져 있어 무릎이 안쪽으로 무너지는 걸 막아준다
    캡션: "기구는 움직임의 길을 잡아줍니다"
+   프롬프트: Seen from the side, she lies on a reformer pressing the footbar away with both legs, the carriage mid-travel, full body in frame.
 4. 촬영: 캐딜락 또는 체어를 사용하는 장면, 기구 전체가 보이게
    포인트: 캐딜락은 누운 채 척추를 늘리는 데 강하고, 체어는 균형과 하체에 쓰인다
    캡션: "기구마다 잘하는 일이 다릅니다"
+   프롬프트: No person in frame: a cadillac frame with hanging straps in a quiet studio corner, wooden floor, soft daylight from the left.
 5. 촬영: 강사가 기구 사용법을 설명하는 모습, 회원과 함께 상반신
    포인트: 첫 수업에서는 기구 이름보다 오늘 어디가 불편한지가 더 중요하다
    캡션: "이름은 몰라도 됩니다"
+   프롬프트: An instructor stands beside a reformer explaining its use with one hand on the frame while a client listens, both seen from the chest up.

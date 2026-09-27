@@ -19,15 +19,20 @@
 1. 촬영: 운전석에 앉은 옆모습, 등과 목 각도가 보이게
    포인트: 시트가 뒤로 누우면 목이 앞으로 더 나간다. 등받이를 세우고 엉덩이를 끝까지
    캡션: "핸들을 잡으면 어깨는 앞으로 말립니다"
+   프롬프트: She sits in a car's driver seat with hands on the wheel, shoulders rolled forward and chin jutting out, seen from the side through the open door.
 2. 촬영: 신호 대기 중 등받이에 등을 붙이고 날개뼈를 모으는 장면
    포인트: 5초씩 세 번. 목에 힘이 들어가면 잘못된 것
    캡션: "차 안에서도 3분이면 됩니다"
+   프롬프트: She sits in the driver seat pressing her upper back against the seat and drawing the shoulder blades down, seen from the side.
 3. 촬영: 아이를 한쪽에 걸쳐 안은 자세, 골반 기울기가 보이게
    포인트: 안는 쪽을 번갈아 바꾼다. 들어 올릴 때는 허리 대신 무릎을 굽힌다
    캡션: "안는 쪽을 바꾸는 것만으로 달라집니다"
+   프롬프트: No child in frame: she stands holding a folded blanket against one hip, weight shifted to that side, seen from the side, full body in frame.
 4. 촬영: 폼롤러를 등 뒤에 가로로 두고 팔을 벌린 자세, 위에서
    포인트: 앞으로 말린 시간만큼 반대로 열어준다. 30초씩
    캡션: "반대 방향으로 30초"
+   프롬프트: Seen from above, she lies with a foam roller crosswise under her upper back, arms opened to the sides, living room floor.
 5. 촬영: 하루를 마치며 폼롤러 위에 누운 컷, 따뜻한 조명
    포인트: 한 번 오래보다 자주 짧게 되돌리는 쪽이 빠르다
    캡션: "생활이 바뀌어야 자세가 남습니다"
+   프롬프트: Seen from the side, she lies on a foam roller in a dim living room at night, arms relaxed open, warm lamp light.

@@ -19,15 +19,20 @@
 1. 촬영: 퇴근길 가방과 운동복, 간식이 함께 있는 컷
    포인트: 수업까지 남은 시간으로 정한다 — 2시간 이상이면 한 끼, 1시간이면 가볍게
    캡션: "시간 간격으로 정하면 간단합니다"
+   프롬프트: No person in frame: a canvas gym bag, folded training clothes and a small snack on a desk at the end of a workday, evening light.
 2. 촬영: 소화가 느린 음식(튀김·크림)을 흐리게 배치한 대비 컷
    포인트: 누워서 하는 동작이 많아 속이 부담스러우면 집중이 안 된다
    캡션: "양보다 소화 속도로 고릅니다"
+   프롬프트: No person in frame: a plate of fried food and a creamy drink on a table, slightly out of focus, cooler evening light.
 3. 촬영: 사무실 서랍에 둔 두유·견과류·바나나
    포인트: 1시간 안팎이면 이 정도로 충분. 제대로 된 한 끼는 수업 뒤로
    캡션: "서랍에 두면 챙기기 쉽습니다"
+   프롬프트: No person in frame: a small carton of soy milk, a bag of nuts and a banana inside an open desk drawer, shot from above.
 4. 촬영: 물병을 들고 수업에 들어서는 장면
    포인트: 30분도 안 남았다면 물만. 저혈당 경험이 있으면 빈속 수업은 권하지 않는다
    캡션: "빈속이면 물이라도 챙깁니다"
+   프롬프트: Seen from the chest up, she walks into a studio holding a water bottle, evening light in the corridor behind her.
 5. 촬영: 수업 후 가벼운 단백질 한 접시, 늦은 저녁 분위기
    포인트: 늦은 시간이면 두부·달걀처럼 가벼운 쪽으로
    캡션: "끝나고 30분이 회복을 가릅니다"
+   프롬프트: No person in frame: a light late-evening plate of tofu and vegetables on a kitchen table, warm lamp light.

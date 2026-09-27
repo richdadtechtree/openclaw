@@ -19,15 +19,20 @@
 1. 촬영: 스쿼트 하단 자세를 측면에서, 정강이 각도가 보이게
    포인트: 엉덩이를 뒤로 빼면서 고관절부터 접는다. 정강이가 거의 수직이면 잘된 것
    캡션: "무릎이 먼저 나가면 앞벅지 운동이 됩니다"
+   프롬프트: Seen from the side, she holds the bottom of a squat with hips pushed back and shins nearly vertical, arms forward for balance, full body in frame.
 2. 촬영: 리포머 레그 프레스, 발판과 다리가 함께 보이는 각도
    포인트: 미는 방향이 정해져 있어 무릎이 안쪽으로 무너지는 걸 막아준다. 무릎이 불편한 분께 권함
    캡션: "기구가 방향을 잡아줍니다"
+   프롬프트: Seen from the side, she lies on a reformer pressing the footbar away with both feet, legs and footbar both visible, full body in frame.
 3. 촬영: 옆으로 누운 클램쉘 동작, 위에서
    포인트: 무릎만 벌리고 골반은 뒤로 넘어가지 않게. 엉덩이 옆이 뻐근하면 제대로 켜진 것
    캡션: "큰 동작 전에 스위치부터 켭니다"
+   프롬프트: Seen from above, she lies on her side with knees bent and the top knee opening upward, pelvis staying still.
 4. 촬영: 무릎 위에 밴드를 걸고 바깥으로 미는 동작, 클로즈업
    포인트: 밴드가 무릎을 안으로 당길 때 버티는 힘이 엉덩이 옆 근육
    캡션: "밴드 하나로 집에서도 됩니다"
+   프롬프트: Close on her knees with a fabric resistance band looped just above them, pressing outward against the band while seated.
 5. 촬영: 수업 후 허벅지 뒤를 늘리는 스트레칭, 전신 측면
    포인트: 무릎을 살짝 굽힌 채 골반부터 접어야 허리 대신 다리 뒤가 늘어난다
    캡션: "쓴 만큼 늘려주고 마칩니다"
+   프롬프트: Seen from the side, she sits on a mat with one leg extended, folding forward from the hips to lengthen the back of the thigh, full body in frame.

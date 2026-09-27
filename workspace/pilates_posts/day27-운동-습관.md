@@ -19,15 +19,20 @@
 1. 촬영: 달력에 출석 체크를 하는 손, 클로즈업
    포인트: 눈에 보이게 만들어두면 이어가고 싶어진다. 한 달이 채워진 달력이 동기가 된다
    캡션: "의지보다 눈에 보이는 기록이 셉니다"
+   프롬프트: Close on her hand marking a small check on a wall calendar with a pen, shallow depth of field, no readable text.
 2. 촬영: 전날 밤 꺼내둔 운동복과 가방, 플랫레이
    포인트: 나가기까지의 마찰을 줄이는 장치. 준비 단계가 짧을수록 실행이 쉽다
    캡션: "준비 단계를 줄이면 실행이 쉬워집니다"
+   프롬프트: No person in frame: training clothes, grip socks and a small bag laid out on a chair the night before, warm lamp light.
 3. 촬영: 같은 시간대 그룹 수업 장면, 전신
    포인트: 얼굴이 익으면 빠지기가 묘하게 어려워진다. 이 힘이 의지보다 세다
    캡션: "같은 시간대를 계속 나가보세요"
+   프롬프트: A group class in a studio, three adults working on mats seen at a distance from the side, full bodies in frame.
 4. 촬영: 수업을 마치고 웃는 표정의 상반신
    포인트: 두 번 연속 빠지지 않기만 지킨다. 한 번은 괜찮고, 다음 한 번만 나오면 흐름은 안 끊긴다
    캡션: "완벽함이 오히려 방해가 됩니다"
+   프롬프트: Seen from the chest up, she smiles slightly after class with damp hair at the temples, plain studio wall behind.
 5. 촬영: 현관에 놓인 운동 가방, 나가기 직전 컷
    포인트: 요일과 시간을 고정하면 매번 고민하지 않아도 된다. 첫 달은 주 2회 같은 요일로
    캡션: "할지 말지 고민하지 않는 구조를 만듭니다"
+   프롬프트: No person in frame: a gym bag standing by an apartment entrance with shoes beside it, morning light through the door.

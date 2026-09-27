@@ -19,15 +19,20 @@
 1. 촬영: 결제 화면 앞에서 망설이는 손, 상반신
    포인트: 가장 많이 그만두는 시점은 3주째와 재등록 앞. 이유가 서로 다르다
    캡션: "무너지는 자리가 정해져 있습니다"
+   프롬프트: Close on her hands holding a phone at a payment screen, hesitating, screen content blurred and unreadable.
 2. 촬영: 시작할 때 기록과 3개월 뒤 기록을 나란히 편 노트
    포인트: 허리둘레, 옆모습, 통증 정도를 적어두면 비교가 된다
    캡션: "기록이 없으면 좋아진 줄도 모릅니다"
+   프롬프트: No person in frame: two open notebook pages side by side with short handwritten records months apart, no readable text.
 3. 촬영: 오랜만에 돌아와 감을 잡는 수업 장면
    포인트: 근력은 빨리 돌아오지만 자세 감각은 더 오래 걸린다
    캡션: "끊기보다 줄이는 쪽이 낫습니다"
+   프롬프트: Seen from the side, she works carefully through a basic exercise after time away, full body in frame.
 4. 촬영: 그룹 수업 장면, 넓은 구도
    포인트: 비용이 부담이면 그룹 비중을 늘리거나 기간을 짧게. 연기·환불 규정은 미리 확인
    캡션: "조건은 미리 따져둡니다"
+   프롬프트: A group class in a studio, three adults working on mats seen at a distance from the side, full bodies in frame.
 5. 촬영: 달력에 돌아올 날짜를 표시한 컷
    포인트: 그만두더라도 돌아올 날짜를 정해두면 돌아오기 쉽다
    캡션: "날짜를 정해두면 돌아오기 쉽습니다"
+   프롬프트: No person in frame: a wall calendar with a single future date circled by hand, shot straight on.

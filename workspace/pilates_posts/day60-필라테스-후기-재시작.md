@@ -19,15 +19,20 @@
 1. 촬영: 오랜만에 스튜디오 문을 열고 들어서는 뒷모습
    포인트: 돌아오는 것만으로 충분하다. 그만둔 것을 실패로 볼 필요는 없다
    캡션: "돌아오신 것만으로 충분합니다"
+   프롬프트: Seen from behind, she opens a studio door and steps inside after a long absence, soft daylight in the corridor.
 2. 촬영: 매트에서 기본 자세를 다시 잡아보는 장면, 측면
    포인트: 근력보다 자세 감각이 먼저 사라진다. 보통 3~4주면 상당 부분 돌아온다
    캡션: "감각은 잠깐 흐려질 뿐입니다"
+   프롬프트: Seen from the side, she lies on a mat re-finding a basic position, brow slightly furrowed in concentration, full body in frame.
 3. 촬영: 강사와 함께 예전 기록을 보며 이야기하는 장면
    포인트: 쉬는 동안 불편했던 경험이 목표를 구체적으로 만든다
    캡션: "돌아온 분들이 더 오래 다니십니다"
+   프롬프트: An instructor and a client sit side by side looking at an old paper record together, both seen from the chest up, no readable text.
 4. 촬영: 가벼운 스프링으로 천천히 시작하는 장면
    포인트: 첫 2주는 절반 강도, 주 1~2회로. 예전 강도로 바로 들어가면 또 멀어진다
    캡션: "다시 시작할 때는 절반 강도로"
+   프롬프트: Close on an instructor's hands setting a reformer to its lightest spring, metal hooks visible.
 5. 촬영: 예전에 다니던 요일이 표시된 달력
    포인트: 예전에 하던 요일로 한 번만 나와보는 것으로 충분
    캡션: "같은 요일로 한 번만 나와보세요"
+   프롬프트: No person in frame: a wall calendar with one weekday circled by hand, shot straight on, soft daylight.

@@ -19,15 +19,20 @@
 1. 촬영: 허리둘레를 재는 줄자, 배꼽 높이 클로즈업
    포인트: 복부는 늦게 빠지는 부위. 체중보다 둘레로 확인한다
    캡션: "체중보다 둘레가 정직합니다"
+   프롬프트: Close on her own hands holding a soft tape measure around her waist over a fitted top, seen from the front.
 2. 촬영: 브릿지와 클램쉘 등 큰 근육을 쓰는 동작, 측면
    포인트: 근육이 줄면 가만히 있을 때 쓰는 에너지가 준다. 굶기보다 근육을 지키는 쪽이 먼저
    캡션: "굶으면 근육이 먼저 빠집니다"
+   프롬프트: Seen from the side, she lifts her hips into a bridge on a mat with the glutes clearly working, full body in frame.
 3. 촬영: 옆모습 사진에서 허리 꺾임과 갈비뼈 위치를 보여주는 컷
    포인트: 갈비뼈가 벌어지고 골반이 앞으로 기울면 실제보다 배가 나와 보인다
    캡션: "정렬만 잡아도 옆모습이 달라집니다"
+   프롬프트: She stands sideways against a plain wall, the lower back slightly over-arched, full body in frame, even daylight.
 4. 촬영: 늦은 밤 야식과 술잔을 흐리게 배치한 대비 컷
    포인트: 야식·술·부족한 잠은 복부에 특히 잘 반영된다
    캡션: "수업을 늘리기 전에 이 셋부터"
+   프롬프트: No person in frame: a late-night table with a glass and leftover snacks, slightly out of focus, low warm light.
 5. 촬영: 3개월 간격으로 찍은 옆모습 비교 두 컷
    포인트: 같은 각도·같은 옷. 3개월을 한 단위로 본다
    캡션: "한 달로 판단하지 않습니다"
+   프롬프트: She stands sideways against the same plain wall with a lengthened spine, same camera position, full body in frame.

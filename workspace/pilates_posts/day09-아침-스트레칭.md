@@ -19,15 +19,20 @@
 1. 촬영: 침대에서 팔과 발끝을 반대로 뻗는 기지개, 위에서
    포인트: 열을 세는 동안 숨을 참지 않는다. 밤새 굳은 몸을 길게 늘리는 첫 동작
    캡션: "눈 뜨자마자 이불 속에서 30초"
+   프롬프트: Seen from above, she lies in bed under a light duvet, arms stretched overhead and toes pointing away, a long full-body stretch, early morning light.
 2. 촬영: 무릎을 안고 좌우로 구르는 동작, 측면
    포인트: 허리 옆이 시원하면 제대로. 반동 없이 천천히 굴린다
    캡션: "허리는 비틀기보다 굴려서 깨웁니다"
+   프롬프트: Seen from the side, she lies on the bed hugging both knees to her chest and rolling gently to one side, hair loose.
 3. 촬영: 침대 끝에 앉아 등을 둥글게 마는 캣카우 자세, 측면
    포인트: 말 때 배꼽을 안으로, 펼 때 가슴을 앞으로. 열 번이면 척추 마디가 깨어난다
    캡션: "앉아서도 등은 풀 수 있습니다"
+   프롬프트: Seen from the side, she sits on the edge of a bed rounding her back, hands on knees, head dropping slightly forward.
 4. 촬영: 서서 목과 어깨를 늘리는 장면, 창가 빛을 받아 상반신
    포인트: 손으로 머리를 당길 때 통증이 아니라 시원한 정도까지만. 10초씩 양쪽 두 번
    캡션: "자고 일어난 근육은 아직 덜 깨어 있습니다"
+   프롬프트: She stands by a bedroom window stretching her neck to one side with one hand on her head, seen from the chest up, morning light on her face.
 5. 촬영: 아침 햇살이 드는 창가와 물 한 잔, 감성 컷
    포인트: 발뒤꿈치 들었다 내리기 열 번으로 마무리하면 어지러움도 줄어든다
    캡션: "5분이면 하루가 달라집니다"
+   프롬프트: No person in frame: a bedroom window with morning light, a glass of water on the sill, a folded blanket on the bed, nothing else.

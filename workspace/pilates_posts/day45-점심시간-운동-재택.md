@@ -19,15 +19,20 @@
 1. 촬영: 집 책상과 식탁만 오가는 동선을 보여주는 넓은 컷
    포인트: 출퇴근이 사라지면 하루 걸음 수가 절반 이하로 준다
    캡션: "사라진 건 운동이 아니라 이동입니다"
+   프롬프트: No person in frame: a home work desk, a dining table and a sofa in one wide living room view, midday light, nothing else.
 2. 촬영: 거실 매트에서 등과 고관절을 푸는 장면, 측면
    포인트: 앞 10분은 굳은 곳 풀기 — 등, 고관절, 목 옆 순서
    캡션: "앞 10분은 푸는 데 씁니다"
+   프롬프트: Seen from the side, she lies on a mat in her living room opening one hip, laptop closed on the desk behind, midday light.
 3. 촬영: 벽 스쿼트와 브릿지를 이어서 하는 두 컷
    포인트: 중간 15분은 몸통과 하체. 장비 없이 되는 동작으로 충분
    캡션: "매트 하나면 됩니다"
+   프롬프트: Seen from the front, she holds a wall squat against a plain living room wall, thighs working, full body in frame.
 4. 촬영: 점심 수업을 예약한 휴대폰 화면
    포인트: 재택은 감시자가 없다. 예약해두면 약속이 되어 지켜진다
    캡션: "예약이 곧 약속이 됩니다"
+   프롬프트: Close on her hands holding a phone with a class booking screen open, screen content blurred and unreadable.
 5. 촬영: 운동을 마치고 노트북 앞으로 돌아오는 장면
    포인트: 퇴근 후로 미루면 회의가 길어지는 날 그대로 날아간다
    캡션: "가장 방해받지 않는 시간대입니다"
+   프롬프트: Seen from behind, she sits back down at the home desk after moving, midday light from the window.

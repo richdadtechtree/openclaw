@@ -19,15 +19,20 @@
 1. 촬영: 남성 회원이 리포머에서 다리를 미는 장면, 측면 전신
    포인트: 창시자 조셉 필라테스도 남성. 원래 부상 회복과 체력 훈련에서 출발한 운동이다
    캡션: "원래는 재활과 훈련에서 출발했습니다"
+   프롬프트: Subject override: an adult East Asian man in his early 30s, short dark hair, plain fitted training clothes. Seen from the side, he lies on a reformer pressing the footbar away with both legs, full body in frame.
 2. 촬영: 앞으로 숙이는 유연성 테스트, 측면 전신
    포인트: 근력은 있는데 손끝이 무릎에서 멈추는 경우가 많다. 짧아진 상태로 힘만 키우면 어깨와 허리에 부담이 쌓인다
    캡션: "근력과 유연성은 따로 놉니다"
+   프롬프트: Subject override: the same man. Seen from the side, he sits on a mat with legs extended and folds forward, fingertips reaching toward his shins, visible limit in the hamstrings.
 3. 촬영: 몸통을 고정한 채 버티는 동작, 정면 전신
    포인트: 무게 대신 정렬과 몸통 안정성을 다룬다. 숨을 내쉬며 몸통을 고정하는 법을 배우는 것이 핵심
    캡션: "스쿼트와 데드리프트의 느낌부터 달라집니다"
+   프롬프트: Subject override: the same man. Seen from the front, he holds a plank-like position on a mat with the torso steady, forearms down, full body in frame.
 4. 촬영: 남녀가 함께하는 그룹 수업 분위기 컷, 넓은 구도
    포인트: 처음에는 1:1이나 소수 수업이 부담이 적다. 두세 번이면 분위기보다 동작에 집중하게 된다
    캡션: "세 번이면 어색함은 사라집니다"
+   프롬프트: A mixed group class in a studio, three adults on mats seen at a distance from the side, full bodies in frame, ordinary daylight.
 5. 촬영: 수업 후 땀을 닦는 상반신 컷
    포인트: 스프링을 천천히 버티는 동작은 무게를 드는 것과 다른 힘을 쓴다. 다음 날 옆구리가 뻐근한 반응이 흔하다
    캡션: "가볍게 보고 오셨다가 5분 만에 땀이 납니다"
+   프롬프트: Subject override: the same man, seen from the chest up after class, wiping sweat from his forehead with a small towel, skin flushed.

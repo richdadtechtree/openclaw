@@ -19,15 +19,20 @@
 1. 촬영: 매트와 아기 용품이 함께 있는 차분한 컷
    포인트: 시작 전에 병원에서 확인받는 것이 가장 정확하다. 스스로 판단하기 어려운 부분
    캡션: "시작 시점은 병원에서 확인받습니다"
+   프롬프트: No child in frame: a folded soft blanket and a rolled mat placed side by side on a wooden floor, warm quiet afternoon light.
 2. 촬영: 윗몸일으키기 자세에 '피하기' 표시를 한 안내 이미지
    포인트: 회복 전 상체를 세게 말아 올리면 배 가운데에 압력이 몰린다. 숨 참고 무거운 것 들기도 마찬가지
    캡션: "복근 운동부터 시작하면 반대로 갑니다"
+   프롬프트: No person in frame: a mat on a wooden floor with a small cushion beside it, a plain wall behind, soft daylight.
 3. 촬영: 누워서 무릎을 세우고 아랫배에 손을 얹은 자세, 위에서
    포인트: 내쉬며 아랫배를 가라앉히듯 납작하게 + 골반 바닥 살짝 조이기. 5초씩 열 번
    캡션: "안쪽부터 다시 켭니다"
+   프롬프트: Seen from above, she lies on a mat with knees bent and both hands resting on her lower abdomen, exhaling slowly.
 4. 촬영: 옆으로 누워 몸통을 살짝 들어 버티는 동작, 측면
    포인트: 가운데를 당겨 붙이는 힘은 옆구리 깊은 층에서 나온다. 처음엔 5초면 충분
    캡션: "옆구리부터 힘을 되찾습니다"
+   프롬프트: Seen from the side, she lies on her side and lifts her torso slightly to hold a short brace, forearm down, full body in frame.
 5. 촬영: 강사와 함께 회복 상태를 상담하는 장면
    포인트: 통증이 있거나 배가 더 볼록해지면 멈추고 확인
    캡션: "몇 달이 걸리는 경우도 흔합니다"
+   프롬프트: An instructor sits across a small table taking notes while a client speaks, both seen from the chest up, soft daylight.

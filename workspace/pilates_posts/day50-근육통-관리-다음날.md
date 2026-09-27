@@ -19,15 +19,20 @@
 1. 촬영: 아침에 몸을 일으키며 뻐근해하는 상반신
    포인트: 근육 전체가 뻐근하고 골고루 아프면 흔한 지연성 근육통. 이틀째가 가장 심하다
    캡션: "대개 가셔도 되지만 강도는 낮춥니다"
+   프롬프트: Seen from the chest up, she sits on the edge of a bed in the morning stretching stiffly, hair loose, early light.
 2. 촬영: 강사에게 아픈 부위를 설명하는 장면
    포인트: 어제 많이 쓴 부위는 쉬게 하고 다른 곳을 쓰도록 구성을 바꾼다
    캡션: "어디가 아픈지 말씀해주시면 바꿔 드립니다"
+   프롬프트: An instructor listens while a client points to her own side ribs to explain where it hurts, both seen from the chest up.
 3. 촬영: 무릎 관절이 부은 부위를 살피는 컷 — 쉬어야 하는 예시
    포인트: 한 지점만 콕 아프거나 붓거나 멍이 들면 근육통이 아니다 — 확인이 먼저
    캡션: "애매하면 확인하는 쪽이 낫습니다"
+   프롬프트: Close on one knee with slight swelling, the hand resting beside it, plain indoor light, shown as a case to check.
 4. 촬영: 스프링을 가볍게 바꿔 거는 손
    포인트: 스프링 한 단계 가볍게, 횟수 절반, 버티는 시간 짧게
    캡션: "가되 이렇게 조절합니다"
+   프롬프트: Close on an instructor's hands moving a reformer spring to a lighter setting, metal hooks visible.
 5. 촬영: 폼롤러와 따뜻한 차가 있는 회복 컷
    포인트: 폼롤러 30초씩 + 따뜻한 물 샤워 + 잠과 단백질. 회복은 쉬는 동안 일어난다
    캡션: "회복은 수업 중이 아니라 쉬는 동안 일어납니다"
+   프롬프트: No person in frame: a foam roller, a water bottle and a warm cup on a wooden floor, soft evening light.

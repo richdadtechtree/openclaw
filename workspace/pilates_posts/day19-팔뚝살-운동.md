@@ -19,15 +19,20 @@
 1. 촬영: 팔 뒤쪽(삼두)이 보이는 각도의 상반신 컷
    포인트: 일상에서 거의 쓰지 않는 부위. 부위별로 지방만 빼는 것은 불가능하므로 목표는 모양 만들기
    캡션: "빼는 게 아니라 모양을 만듭니다"
+   프롬프트: Seen from behind at a three-quarter angle, her upper arms and shoulders while she holds both arms slightly away from her body.
 2. 촬영: 벽에 손을 짚고 팔꿈치를 굽혔다 펴는 동작, 측면
    포인트: 팔꿈치가 옆으로 벌어지지 않게 몸 가까이. 열다섯 번씩 세 세트면 다음 날 뒤쪽이 뻐근
    캡션: "기구 없이도 삼두는 씁니다"
+   프롬프트: Seen from the side, she places both hands on a wall and bends and straightens her elbows close to her body, full body in frame.
 3. 촬영: 스프링 스트랩을 잡고 팔을 눌러 내리는 장면, 전신 측면
    포인트: 어깨가 올라가지 않게 유지하는 것이 핵심. 저항이 일정해 팔 뒤쪽을 끝까지 쓴다
    캡션: "가벼운 저항으로 천천히"
+   프롬프트: Seen from the side, she holds a spring strap and presses her arm down behind her, shoulder staying low, upper body in frame.
 4. 촬영: 밴드를 잡고 팔을 뒤로 펴는 동작, 정면 상반신
    포인트: 문고리에 걸고 하루 10분, 주 3회. 6주쯤이면 팔을 들었을 때 선이 보인다
    캡션: "밴드 하나면 집에서도 됩니다"
+   프롬프트: Seen from the front, she holds a resistance band with both hands and extends her arms behind her, upper body in frame.
 5. 촬영: 수업 후 팔을 머리 위로 늘리는 스트레칭, 상반신
    포인트: 어깨가 말린 분은 팔 운동 전에 등부터 펴야 한다
    캡션: "순서를 바꾸면 같은 시간에 더 달라집니다"
+   프롬프트: Seen from the side after class, she reaches one arm overhead and draws the elbow gently back with the other hand.

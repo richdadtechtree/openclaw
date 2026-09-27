@@ -19,15 +19,20 @@
 1. 촬영: 책상에서 마우스를 멀리 잡고 팔을 뻗은 자세, 위에서
    포인트: 팔을 앞으로 뻗어 고정하면 어깨가 말린 채 굳는다. 마우스를 몸 가까이
    캡션: "손목만 움직여도 어깨는 계속 긴장합니다"
+   프롬프트: Seen from above, she works at a desk with the mouse placed far forward and the arm extended, shoulder rolled forward.
 2. 촬영: 팔꿈치가 몸통 옆에 오도록 조정한 자세, 측면
    포인트: 팔걸이가 팔 무게를 받쳐주면 어깨 부담이 크게 준다
    캡션: "의자 높이 한 번이 스트레칭 열 번보다 낫습니다"
+   프롬프트: Seen from the side, the same desk with the elbow now resting close to the body on an armrest, shoulder lowered.
 3. 촬영: 고개를 숙여 휴대폰을 보는 모습과 눈높이로 든 모습, 두 컷 비교
    포인트: 고개를 숙이면 머리 무게가 목과 어깨에 실린다. 손을 번갈아 쓴다
    캡션: "화면을 올리면 부담이 줄어듭니다"
+   프롬프트: Two framings side by side: looking down at a phone with the chin dropped, then holding the phone at eye height, upper body only.
 4. 촬영: 벽에 손을 짚고 몸을 반대로 돌려 가슴을 여는 스트레칭
    포인트: 앞으로 말린 시간만큼 뒤로 30초. 하루 세 번
    캡션: "반대 방향으로 열어줍니다"
+   프롬프트: Seen from the side, she places one hand on a wall and turns her body away to open the front of the chest, full body in frame.
 5. 촬영: 팔을 들어 각도를 재는 장면, 측면
    포인트: 찌릿하거나 밤에 아파서 깬다면 스트레칭보다 진료가 먼저
    캡션: "각도를 재두면 변화가 보입니다"
+   프롬프트: Seen from the side, she raises one arm overhead beside a plain wall while an instructor observes the range, both partly in frame.

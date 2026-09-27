@@ -19,15 +19,20 @@
 1. 촬영: 싱크대 앞에서 한쪽 다리에 체중을 실은 짝다리, 측면
    포인트: 그쪽 골반이 올라가고 반대쪽 허리가 늘어난다. 매일 반복되면 기본값이 된다
    캡션: "짝다리는 5분이면 괜찮고 매일이면 문제입니다"
+   프롬프트: She stands at a kitchen sink with her weight clearly shifted onto one leg, seen from the side, full body in frame, afternoon light.
 2. 촬영: 양발에 무게를 반씩 싣고 선 자세, 발 위주 클로즈업
    포인트: 발가락과 뒤꿈치, 양발 네 지점에 고르게. 발판을 두고 한 발씩 올려도 좋다
    캡션: "네 지점에 고르게 싣습니다"
+   프롬프트: Close on both bare feet standing evenly on a wooden floor, weight spread across heels and toes, shallow depth of field.
 3. 촬영: 뒷주머니에 지갑을 넣고 앉은 모습, 골반 높이 차이가 보이게
    포인트: 한쪽 골반만 들린다. 잘 때 늘 같은 쪽으로 돌아눕는 것도 비슷하게 작용
    캡션: "덜 알려진 습관들이 더 오래 갑니다"
+   프롬프트: She sits on a chair with a phone in her back pocket, one hip visibly higher, seen from behind at a slight angle.
 4. 촬영: 걷는 뒷모습 — 발끝 방향과 어깨 흔들림이 보이게
    포인트: 걸음은 원인이 아니라 결과인 경우가 많다. 엉덩이가 살아나면 정리된다
    캡션: "걸음걸이는 마지막에 봅니다"
+   프롬프트: Seen from behind, she walks slowly across a wooden floor, feet and shoulder movement visible, full body in frame.
 5. 촬영: 좌우 차이를 확인하며 상담하는 장면
    포인트: 운동은 주 2회지만 습관은 매일이라 힘이 세다
    캡션: "수업을 늘리기 전에 생활을 봅니다"
+   프롬프트: An instructor stands behind a client comparing the height of her hips with both hands, both seen from the waist up.

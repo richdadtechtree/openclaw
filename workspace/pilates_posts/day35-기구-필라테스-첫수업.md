@@ -19,15 +19,20 @@
 1. 촬영: 리포머 전체가 보이는 구도, 스프링과 캐리지가 함께
    포인트: 판(캐리지)이 스프링에 연결돼 밀면 움직인다. 첫 수업 긴장의 대부분은 이 움직임
    캡션: "미끄러지는 게 정상입니다"
+   프롬프트: No person in frame: a full reformer seen from the side, carriage, springs and footbar all visible, quiet studio, soft daylight.
 2. 촬영: 발바닥 전체를 풋바에 붙인 상태의 클로즈업
    포인트: 놀라서 발에 힘을 꽉 주면 오히려 흔들린다. 천천히 미는 것이 요령
    캡션: "발바닥 전체를 붙이고 천천히"
+   프롬프트: Close on both feet placed flat on a reformer footbar, toes and heels evenly in contact, shallow depth of field.
 3. 촬영: 스프링을 바꿔 거는 강사의 손, 색이 보이게
    포인트: 가벼운 스프링이 더 어려운 동작도 많다. 소리가 크다고 무리하는 게 아니다
    캡션: "가벼울수록 몸이 더 일합니다"
+   프롬프트: Close on an instructor's hands changing a coloured spring on a reformer, metal hooks visible.
 4. 촬영: 스트랩을 잡는 손 위치를 알려주는 장면
    포인트: 동작마다 잡는 위치가 다르다. 첫 수업에서 가장 많이 나오는 질문
    캡션: "모르면 물어보면 됩니다"
+   프롬프트: An instructor's hands guide a client's grip on a reformer strap, only hands and forearms in frame.
 5. 촬영: 수업 전 기구를 한 바퀴 둘러보며 설명하는 장면
    포인트: 복장은 지퍼·긴 끈 없는 옷에 그립 양말
    캡션: "두세 번이면 몸이 먼저 익숙해집니다"
+   프롬프트: An instructor walks a first-time client around the equipment, both seen from the chest up at a distance, studio softly out of focus.

@@ -19,15 +19,20 @@
 1. 촬영: 운동 전 간식 세 가지(바나나 반 개·플레인 요거트·삶은 달걀)를 플랫레이로
    포인트: 수업 한 시간 전 가볍게. 양보다 소화 속도로 고르는 것이 기준
    캡션: "굶지 말고 가볍게"
+   프롬프트: No person in frame: half a banana, a small cup of plain yogurt and one boiled egg arranged on a wooden table, shot from directly above in daylight.
 2. 촬영: 피해야 할 음식(튀김·크림·탄산)을 흐리게 배치한 대비 컷
    포인트: 소화가 느린 음식은 누워서 하는 동작에서 속을 불편하게 만든다. 매운 음식도 같은 이유
    캡션: "누워서 하는 동작이 많습니다"
+   프롬프트: No person in frame: a plate of fried food and a can of soda on the same wooden table, slightly out of focus, cooler light.
 3. 촬영: 시간대별 식사 타이밍을 적은 메모 이미지
    포인트: 수업 1시간 전 가볍게 / 30분 전이면 양을 더 줄이고 물 / 끝나고 30분 안에 단백질
    캡션: "언제 먹느냐가 무엇을 먹느냐만큼 중요합니다"
+   프롬프트: No person in frame: a small paper note and a pen on a studio bench beside a water bottle, no readable text, soft light.
 4. 촬영: 가방에서 바나나를 꺼내는 손, 클로즈업
    포인트: 전날 밤 미리 꺼내두면 아침 수업 날 챙기기 쉽다
    캡션: "작은 준비가 그날 수업을 바꿉니다"
+   프롬프트: Close on her hand taking a banana out of a canvas gym bag, the bag opening toward the camera, shallow depth of field.
 5. 촬영: 수업 후 물과 단백질 음료를 든 장면, 상반신
    포인트: 끝나고 단백질을 챙기면 회복이 빠르다. 두부·달걀·닭가슴살 손바닥 크기면 충분
    캡션: "끝나고 30분이 회복을 가릅니다"
+   프롬프트: Seen from the chest up, she holds a water bottle and a small carton drink after class, hair slightly damp at the temples.

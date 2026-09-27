@@ -19,15 +19,20 @@
 1. 촬영: 어깨를 주무르는 일상 장면, 상반신 측면
    포인트: 등이 굽고 목이 앞으로 나가면 어깨는 늘 들린 상태로 버틴다
    캡션: "어깨가 뻣뻣한 이유는 어깨에만 있지 않습니다"
+   프롬프트: Seen from the side, she reaches one hand across to rub her opposite shoulder while seated at a desk, upper body in frame.
 2. 촬영: 앉아서 어깨를 올렸다 툭 떨어뜨리는 동작, 두 컷 연속
    포인트: 들이마시며 최대한 올렸다가 내쉬며 떨어뜨린다. 다섯 번이면 목이 길어진 느낌
    캡션: "긴장하면 어깨가 귀 쪽으로 올라갑니다"
+   프롬프트: Seen from the front, she sits upright and lifts both shoulders toward her ears, then the second frame shows them dropped and relaxed.
 3. 촬영: 숄더 서클 동작, 정면 상반신
    포인트: 팔꿈치를 어깨 높이로 들고 천천히 큰 원. 앞뒤 각 열 번. 찌릿하거나 밤에 아파 깬다면 진료가 먼저
    캡션: "무리하게 돌리는 것이 가장 위험합니다"
+   프롬프트: Seen from the front, she raises both elbows to shoulder height and draws a slow circle, upper body in frame, plain studio wall behind.
 4. 촬영: 스프링보드 스트랩을 잡고 팔을 움직이는 장면, 측면 전신
    포인트: 가장 가벼운 스프링부터. 무겁게 걸면 어깨가 다시 위로 도망간다
    캡션: "가벼운 저항으로 방향부터 익힙니다"
+   프롬프트: Seen from the side, she holds a spring strap attached to a wall unit and presses her arm downward, full body in frame.
 5. 촬영: 폼롤러를 등 뒤에 세로로 두고 누워 팔을 벌린 자세, 위에서
    포인트: 1분만 있어도 가슴 앞이 열리며 숨이 깊어진다. 굳은 방향의 반대로 오래 늘리는 것이 핵심
    캡션: "근육은 때려서 푸는 게 아닙니다"
+   프롬프트: Seen from above, she lies with a foam roller lengthwise along her spine and both arms opened to the sides, chest expanding.

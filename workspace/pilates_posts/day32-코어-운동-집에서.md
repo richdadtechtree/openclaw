@@ -19,15 +19,20 @@
 1. 촬영: 거실 매트에서 무릎을 세우고 누운 시작 자세, 위에서
    포인트: 발은 골반 너비, 허리와 매트 사이 손바닥 하나가 들어가는 중립
    캡션: "집에서도 시작 자세가 절반입니다"
+   프롬프트: Seen from above, she lies on a mat in a living room with knees bent and feet hip width apart, a sofa softly out of focus behind.
 2. 촬영: 아랫배에 손을 얹고 내쉬는 순간의 클로즈업
    포인트: 내쉴 때 아랫배가 납작해지는 감각. 숨을 참으면 오히려 기능이 꺼진다
    캡션: "숨을 참으면 코어는 꺼집니다"
+   프롬프트: Close on her hand resting flat on her lower abdomen as she exhales, lying on a mat, shallow depth of field.
 3. 촬영: 허리 밑에 손바닥을 넣고 다리를 드는 장면, 측면
    포인트: 손이 헐거워지면 허리가 뜬 것 — 다리를 덜 내린다
    캡션: "허리가 뜨면 허리가 일하는 중입니다"
+   프롬프트: Seen from the side, she lies with one hand slipped under her lower back while lifting one leg, checking whether the back stays down.
 4. 촬영: 느린 속도를 보여주는 연속 컷(올라가는 2단계)
    포인트: 하나 둘에 올라가고 셋 넷에 내려온다. 반동은 겉 근육만 쓴다
    캡션: "느리면 횟수가 줄어드는 게 정상입니다"
+   프롬프트: Seen from the side, she lowers one leg slowly on a mat in a living room, the movement clearly unhurried, full body in frame.
 5. 촬영: 자기 전 조용한 거실의 매트와 조명
    포인트: 하루 5분, 동작은 두세 개면 충분
    캡션: "많이보다 매일이 낫습니다"
+   프롬프트: No person in frame: a rolled mat and a small lamp in a quiet living room at night, warm low light, nothing else.

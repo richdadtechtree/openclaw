@@ -19,15 +19,20 @@
 1. 촬영: 사무실 의자에 앉아 등을 펴는 스트레칭, 측면
    포인트: 등을 둥글게 말았다 펴기 열 번. 앉은 자세를 끊어주는 것만으로 오후가 달라진다
    캡션: "3분이면 끝나는 동작입니다"
+   프롬프트: Seen from the side, she sits on an office chair and lengthens her spine with both hands on her knees, a laptop on the desk behind.
 2. 촬영: 점심 시간대 수업 장면, 밝은 조명에 전신
    포인트: 밥을 먹고 15분쯤 두고 시작. 30분 구성이면 앞 10분은 푸는 데 쓴다
    캡션: "따로 시간을 내지 않아도 되는 시간대입니다"
+   프롬프트: A daytime group class in a bright studio, two people on reformers seen from the side at a distance, full bodies in frame.
 3. 촬영: 시계와 운동복이 함께 보이는 감성 컷
    포인트: 30분 배분: 푸는 10분 / 몸통·하체 15분 / 호흡 정리 5분
    캡션: "짧을수록 순서가 중요합니다"
+   프롬프트: No person in frame: a wristwatch and a folded set of training clothes on a desk beside a closed laptop, midday light.
 4. 촬영: 벽 스쿼트를 하는 장면, 정면 전신
    포인트: 장비 없이 되는 동작. 무릎이 발끝을 넘지 않게, 허벅지 앞이 아니라 엉덩이에 힘
    캡션: "장비 없이도 몸통과 하체는 씁니다"
+   프롬프트: Seen from the front, she holds a wall squat with her back flat against a plain wall, thighs working, full body in frame.
 5. 촬영: 수업을 마치고 사무실로 돌아가는 뒷모습
    포인트: 야근이 생겨도 오늘 몫은 이미 했다는 것이 이 시간대의 장점
    캡션: "빠뜨릴 핑계가 적습니다"
+   프롬프트: Seen from behind, she walks out of the studio door with a small bag over her shoulder, midday light in the corridor.

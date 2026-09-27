@@ -19,15 +19,20 @@
 1. 촬영: 스튜디오 입구와 로비, 밝은 분위기의 정면
    포인트: 체험은 운동을 맛보는 시간이자 몇 달을 맡길 곳을 고르는 면접에 가깝다
    캡션: "무엇을 볼지 알고 가면 다릅니다"
+   프롬프트: No person in frame: the entrance and small lobby of a Pilates studio with a bench and a plant, bright daylight, no signage text.
 2. 촬영: 체험 수업 중 강사가 자세를 봐주는 장면, 손과 자세 위주
    포인트: 말로만 힘주세요가 아니라 어디에 어떻게 힘을 쓸지 알려주는지 본다
    캡션: "교정 방식이 그 스튜디오의 수준입니다"
+   프롬프트: An instructor places one hand on a client's shoulder blade to correct her position during a first trial lesson, both seen from the chest up.
 3. 촬영: 기구 상태를 보여주는 클로즈업 — 스프링과 가죽, 레일
    포인트: 스프링 녹, 가죽 갈라짐, 레일 소음은 관리 상태를 보여준다
    캡션: "기구 상태는 눈으로도 보입니다"
+   프롬프트: No person in frame: close on a reformer's spring hooks and leather strap, showing their condition, soft side light.
 4. 촬영: 상담 테이블에서 이야기 나누는 장면
    포인트: 수업 전에 통증·수술 이력·하는 일을 묻는지 확인. 가격은 총액이 아니라 회당 단가와 연기·환불 규정까지
    캡션: "내 몸을 먼저 묻는 곳인지 보세요"
+   프롬프트: An instructor and a visitor sit across a small table talking, a notebook between them, both seen from the chest up, no readable text.
 5. 촬영: 시간표가 보이는 게시판 또는 화면
    포인트: 내가 다닐 수 있는 시간대에 수업이 실제로 열리는지, 그룹 인원이 몇 명인지
    캡션: "시간표가 안 맞으면 아무리 좋아도 못 갑니다"
+   프롬프트: No person in frame: a blank timetable board on a studio wall, soft daylight, no readable text.

@@ -19,15 +19,20 @@
 1. 촬영: 물병과 컵을 나란히 둔 클로즈업, 자연광
    포인트: 눈에 보이는 자리에 두는 것만으로 절반은 해결된다. 500ml 병 세 번처럼 숫자로 세면 쉽다
    캡션: "습관 만들기 가장 쉬운 항목입니다"
+   프롬프트: No person in frame: a glass water bottle and a plain glass on a wooden table, condensation on the surface, soft side light.
 2. 촬영: 수업 중간에 물을 마시는 장면, 상반신
    포인트: 목이 마르기 전에 몇 모금씩. 누워서 하는 동작이 많아 한 번에 많이 마시면 속이 불편하다
    캡션: "한 번에 말고 나눠서"
+   프롬프트: Seen from the chest up, she drinks a few sips from a bottle during class, a little sweat at her temple, studio softly out of focus behind.
 3. 촬영: 하루 물 마시는 시간대를 적은 메모 이미지
    포인트: 기상 후 한 컵 / 식사 30분 전 한 컵 / 수업 전후 나눠서. 활동량과 체격에 따라 양은 달라진다
    캡션: "몰아 마시지 않는 것이 핵심입니다"
+   프롬프트: No person in frame: a small paper note and a pen beside a water bottle on a studio bench, no readable text.
 4. 촬영: 레몬이나 오이를 넣은 물, 감성 컷
    포인트: 단맛이 필요할 때 대안. 주스나 이온음료로 채우면 당분만 늘어난다
    캡션: "당으로 채우면 의미가 없습니다"
+   프롬프트: No person in frame: a clear jug of water with lemon and cucumber slices on a kitchen counter, morning light from the side.
 5. 촬영: 가방에 물병을 넣는 손, 클로즈업
    포인트: 부족하면 집중력이 먼저 떨어지고 쥐가 잘 난다. 소변 색이 진하면 부족하다는 신호
    캡션: "몸이 먼저 신호를 보냅니다"
+   프롬프트: Close on her hand placing a water bottle into a canvas gym bag, shallow depth of field.

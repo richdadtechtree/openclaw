@@ -19,15 +19,20 @@
 1. 촬영: 의자에 다리를 꼬고 앉은 일상 모습, 측면 전신
    포인트: 다리를 꼬면 한쪽 엉덩이가 들리고 골반이 비틀린 채 고정된다. 가방을 늘 같은 어깨에 메는 것도 같은 결과
    캡션: "몇 년이 쌓이면 그 상태가 기본값이 됩니다"
+   프롬프트: She sits on a chair with one leg crossed over the other, seen from the side, full body in frame, ordinary indoor daylight.
 2. 촬영: 누워서 양쪽 발끝 벌어진 각도를 비교하는 컷, 발 위주로 위에서
    포인트: 한쪽이 더 바깥으로 벌어져 있는지 확인. 다만 이것만으로 진단할 수는 없다
    캡션: "좌우를 비교하는 것에서 시작합니다"
+   프롬프트: Seen from above, she lies on her back with legs extended and relaxed, the camera framing mainly her feet and lower legs, one foot turned slightly more outward.
 3. 촬영: 옆으로 누운 클램쉘 동작, 위에서 양쪽을 각각
    포인트: 한쪽이 유독 힘들거나 덜 올라가면 그쪽이 쉬고 있던 근육. 약한 쪽만 한 세트 더
    캡션: "좌우를 똑같이 하면 차이가 그대로 남습니다"
+   프롬프트: Seen from above, she lies on her side with knees bent, opening the top knee while the pelvis stays still, pillow-free mat.
 4. 촬영: 리포머에서 양발을 각각 스프링에 걸고 미는 장면, 정면
    포인트: 한쪽이 먼저 밀리거나 골반이 돌아가면 눈으로 바로 보인다
    캡션: "기구는 거울보다 정직합니다"
+   프롬프트: Seen from the front, she lies on a reformer with both feet on the footbar pressing away, hips level, the carriage mid-travel.
 5. 촬영: 바르게 앉은 자세와 다리를 꼰 자세를 나란히 비교
    포인트: 양발을 바닥에 두고 앉으면 좌우 무게가 고르게 실린다
    캡션: "운동보다 어려운 게 앉는 습관입니다"
+   프롬프트: She stands relaxed with weight evenly on both feet in the studio, seen from the front, full body in frame, plain wall behind.

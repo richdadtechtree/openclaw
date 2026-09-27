@@ -19,15 +19,20 @@
 1. 촬영: 폼롤러로 허벅지를 푸는 장면, 측면 전신
    포인트: 30초씩 천천히. 아픈 곳을 세게 누르면 역효과이니 시원한 정도에서 멈춘다
    캡션: "세게 누르는 게 푸는 게 아닙니다"
+   프롬프트: Seen from the side, she sits on the floor rolling the front of her thigh over a foam roller, weight on her forearms.
 2. 촬영: 종아리를 부드럽게 주무르는 손, 클로즈업
    포인트: 지연성 근육통은 이틀째가 가장 심하고 사흘쯤 가라앉는다. 눌렀을 때 골고루 아픈 것이 특징
    캡션: "골고루 아프면 대개 괜찮습니다"
+   프롬프트: Close on her own hands kneading her calf while seated on a mat, shallow depth of field.
 3. 촬영: 가볍게 걷는 실외 컷, 전신 뒷모습
    포인트: 완전히 누워 있으면 더 굳는다. 20분 걷기로 혈액이 돌면 회복이 빨라진다
    캡션: "쉬는 것과 안 움직이는 것은 다릅니다"
+   프롬프트: Seen from behind, she walks slowly on a quiet tree-lined path in ordinary clothes, late afternoon light, full body in frame.
 4. 촬영: 수업 후 쿨다운 스트레칭, 전신
    포인트: 한 지점만 콕 집어 아프거나 붓고 멍이 들면 근육통이 아니다 — 진료가 먼저
    캡션: "구분이 되면 대처가 빨라집니다"
+   프롬프트: Seen from the side, she holds a slow cool-down stretch on a mat with one leg extended, breathing out, full body in frame.
 5. 촬영: 물과 단백질 간식이 놓인 휴식 컷, 위에서
    포인트: 근육은 쉬는 동안 회복한다. 단백질·수분·6시간 이상 수면이 어떤 마사지보다 확실하다
    캡션: "먹고 자는 게 절반입니다"
+   프롬프트: No person in frame: a water bottle, a small protein drink and a rolled towel on a wooden bench, soft evening light.

@@ -19,15 +19,20 @@
 1. 촬영: 허리에 손을 얹은 측면 컷, 표정보다 자세가 보이게
    포인트: 오래 앉았다 일어날 때 뻐근한 정도인지, 다리가 저린지 구분하는 것이 먼저
    캡션: "같은 허리 통증이라도 대처가 다릅니다"
+   프롬프트: She stands in a studio with one hand resting on her lower back, weight on one leg, seen from the side in soft backlight, full body in frame.
 2. 촬영: 매트에 누워 무릎을 세운 시작 자세, 위에서
    포인트: 발은 골반 너비, 허리와 매트 사이에 손바닥 하나가 들어가는 중립 상태
    캡션: "시작 자세가 절반입니다"
+   프롬프트: Seen from above, she lies on a mat with knees bent and feet hip width apart, arms relaxed along her sides, a neutral starting position.
 3. 촬영: 브릿지 동작의 최고점, 측면 전신
    포인트: 허리로 밀지 말고 엉덩이에 힘이 들어가야 한다. 무릎-골반-어깨가 한 줄이면 충분
    캡션: "허리를 쓰는 게 아니라 허리를 쉬게 하는 동작입니다"
+   프롬프트: Seen from the side, she lifts her hips into a bridge on a mat, knees bent, shoulders and feet down, glutes visibly engaged.
 4. 촬영: 리포머에 누워 다리를 스프링에 건 장면, 전신
    포인트: 누운 상태라 허리에 실리는 압박이 적다. 강도보다 속도를 줄이는 것이 핵심
    캡션: "누워서 하면 허리가 받는 부담이 줄어듭니다"
+   프롬프트: Seen from the side, she lies on a reformer with both feet in the straps, legs extended upward, the springs lightly stretched, full body in frame.
 5. 촬영: 폼롤러로 엉덩이 옆을 푸는 장면, 클로즈업
    포인트: 허벅지 옆과 엉덩이를 30초씩. 아픈 곳을 세게 누르기보다 시원한 정도에서 멈춘다
    캡션: "아프지 않을 때 해두는 게 예방입니다"
+   프롬프트: Close on a foam roller under the side of her hip as she leans her weight onto it on the floor, hands supporting behind her.

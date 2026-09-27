@@ -19,15 +19,20 @@
 1. 촬영: 가격표를 앞에 두고 상담하는 장면
    포인트: 총액이 여러 개면 회당 단가로 바꿔서 비교한다. 같은 종류끼리
    캡션: "총액 말고 회당 단가로 봅니다"
+   프롬프트: An instructor and a visitor sit across a small table with a price sheet between them, both seen from the chest up, no readable text.
 2. 촬영: 10회권과 20회권 단가를 계산한 메모
    포인트: 긴 기간은 단가가 내려가지만 위험도 같이 진다. 처음엔 짧은 것부터
    캡션: "처음이라면 짧게 시작합니다"
+   프롬프트: No person in frame: a paper note with simple hand-written arithmetic beside a pen on a table, no readable text.
 3. 촬영: 달력에 유효기간을 표시한 컷
    포인트: 20회를 주 2회로 쓰면 10주. 출장·병가 두 주면 빠듯해진다
    캡션: "유효기간과 연기 횟수를 물어보세요"
+   프롬프트: No person in frame: a wall calendar with a date range marked by hand, shot straight on, soft light.
 4. 촬영: 계약서의 환불 조항을 짚는 손
    포인트: 중도 환불 시 이미 쓴 횟수를 정가로 계산하는 곳이 많다
    캡션: "환불 조건은 결제 전에 확인합니다"
+   프롬프트: Close on a hand resting on a printed contract page, the text blurred and unreadable, plain daylight.
 5. 촬영: 스튜디오를 나서며 생각하는 뒷모습
    포인트: 그날 바로 결제하지 않아도 된다. 다음 날 몸의 반응까지 보고 정한다
    캡션: "하루 지나고 정해도 늦지 않습니다"
+   프롬프트: Seen from behind, she walks out of a studio entrance into daylight, bag over one shoulder, full body in frame.

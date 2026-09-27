@@ -19,15 +19,20 @@
 1. 촬영: 옆모습 자세 두 유형(상체가 말린 쪽 / 골반이 기운 쪽)을 나란히 비교
    포인트: 체형 분석에 장비가 꼭 필요한 건 아니다. 옆모습 사진 한 장과 걷는 모습이면 대체로 보인다
    캡션: "내 몸이 어느 쪽으로 기울었는지 아는 것에서 시작합니다"
+   프롬프트: She stands sideways against a plain wall, arms relaxed, full body in frame, even daylight, a plain documentary posture record.
 2. 촬영: 폼롤러로 가슴 앞을 여는 상체 동작, 위에서
    포인트: 상체가 무거운 편이면 팔 운동보다 등을 펴고 갈비뼈를 넣는 동작이 먼저
    캡션: "굳은 자세에서 팔부터 쓰면 더 굳습니다"
+   프롬프트: Seen from above, she lies with a foam roller crosswise under her upper back, arms opened to the sides, chest lifting.
 3. 촬영: 엉덩이를 쓰는 하체 동작(브릿지 또는 클램쉘), 측면 전신
    포인트: 하체가 무거운 편이면 엉덩이를 깨우고 다리 뒤를 늘리는 것이 먼저. 스쿼트 횟수보다 감각이 우선
    캡션: "엉덩이가 일을 안 하면 앞벅지가 대신 씁니다"
+   프롬프트: Seen from the side, she lifts her hips into a bridge on a mat with the glutes clearly working, full body in frame.
 4. 촬영: 벽에 다리를 올린 마무리 자세, 위에서
    포인트: 수업 끝에 3분이면 다리 부기에 도움이 된다
    캡션: "오래 앉아 있으면 순환이 느려집니다"
+   프롬프트: Seen from above, she lies on her back with both legs resting up against a wall, arms relaxed at her sides.
 5. 촬영: 상담하며 자세 사진을 함께 보는 장면
    포인트: 안 쓰는 곳을 채우되 상체·하체를 둘 다 넣는다. 비율만 조정
    캡션: "한쪽만 하면 균형이 깨집니다"
+   프롬프트: An instructor and a client sit side by side looking at a posture photograph on a tablet, both seen from the chest up, screen content blurred.

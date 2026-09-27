@@ -19,15 +19,20 @@
 1. 촬영: 옷을 입었을 때와 벗었을 때가 다른 체형을 설명하는 이미지
    포인트: 체중은 정상인데 체지방률이 높은 유형. 숫자 하나가 아니라 구성을 본다
    캡션: "체중이 정상이어도 구성은 다를 수 있습니다"
+   프롬프트: No person in frame: a plain fitted top and loose shirt laid side by side on a wooden floor, shot from above, even daylight.
 2. 촬영: 인바디 결과지에서 체지방률 항목을 짚는 손
    포인트: 체중 정상 + 체지방률 높음이면 근육이 적은 쪽일 가능성
    캡션: "숫자 하나만 보지 않습니다"
+   프롬프트: Close on her hands holding a paper body-composition printout, the numbers blurred and unreadable, soft window light.
 3. 촬영: 단백질이 충분한 한 끼 식사, 위에서
    포인트: 더 굶으면 남은 근육이 먼저 빠진다. 끼니를 거르지 않는 것이 먼저
    캡션: "덜 먹는 게 아니라 잘 먹는 방향"
+   프롬프트: No person in frame: a plate with tofu, egg and vegetables on a wooden table, shot from directly above in daylight.
 4. 촬영: 브릿지와 벽 스쿼트를 이어서 하는 두 컷
    포인트: 유산소를 길게 하기보다 몸통과 하체 근력부터. 복부만 조이는 동작은 뒤로
    캡션: "태우기보다 만드는 쪽으로"
+   프롬프트: Seen from the side, she lifts her hips into a bridge on a mat, then a second framing shows a wall squat, both full body.
 5. 촬영: 허리둘레를 재는 줄자와 치워둔 체중계
    포인트: 3개월 뒤 체중은 비슷한데 허리가 줄어 있는 경우가 많다
    캡션: "체중계는 잠시 치워두세요"
+   프롬프트: No person in frame: a soft tape measure on a wooden floor with a bathroom scale pushed aside in the background.

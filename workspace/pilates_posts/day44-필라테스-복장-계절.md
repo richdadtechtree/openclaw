@@ -19,15 +19,20 @@
 1. 촬영: 여름·겨울 운동복 조합을 나란히 놓은 플랫레이
    포인트: 여름은 통기와 미끄럼, 겨울은 벗기 쉬운 구성이 기준
    캡션: "한 벌로 사계절은 어렵습니다"
+   프롬프트: No person in frame: a summer set and a winter set of training clothes laid side by side on a wooden floor, shot from above.
 2. 촬영: 밝은 색 레깅스를 앉은 자세에서 확인하는 컷
    포인트: 너무 얇으면 앉는 동작에서 비칠 수 있다. 미리 한 번 확인
    캡션: "앉아서 한 번 확인해보세요"
+   프롬프트: Seen from behind at a slight angle, she sits on a mat in light-coloured leggings, fabric tension visible, plain studio floor.
 3. 촬영: 그립 양말을 신고 기구에 발을 올린 장면
    포인트: 땀이 나면 맨발이 더 미끄럽다. 여름일수록 그립 양말
    캡션: "여름엔 맨발이 더 미끄럽습니다"
+   프롬프트: Close on the rubber-dotted sole of a grip sock, the foot resting on a reformer footbar.
 4. 촬영: 얇은 긴팔을 걸치고 수업을 시작하는 장면, 겨울 분위기
    포인트: 처음 10분은 몸이 굳어 있다. 지퍼 없는 옷으로 걸쳤다 벗는다
    캡션: "겨울엔 벗기 쉬운 구성으로"
+   프롬프트: Seen from the side, she starts class wearing a thin long-sleeved layer with no zipper, cooler winter light from a window.
 5. 촬영: 세탁망에 담긴 운동복과 세제, 위에서
    포인트: 미지근한 물에 단독 세탁. 섬유유연제와 건조기는 신축 섬유를 상하게 한다
    캡션: "건조기는 피하는 편이 낫습니다"
+   프롬프트: No person in frame: a laundry mesh bag with training clothes and a bottle of detergent on a washing machine, plain daylight.

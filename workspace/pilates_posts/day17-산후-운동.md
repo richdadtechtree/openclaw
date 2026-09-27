@@ -19,15 +19,20 @@
 1. 촬영: 아기 용품과 매트가 함께 있는 따뜻한 분위기 컷
    포인트: 시작 시점은 반드시 출산한 병원에서 확인. 보통 6주 전후 검진에서 운동 가능 여부를 듣는다
    캡션: "빨리 시작하는 것보다 순서가 중요합니다"
+   프롬프트: No child in frame: a soft folded blanket and a rolled mat side by side on a wooden floor, warm afternoon light, quiet and plain.
 2. 촬영: 누워서 호흡하며 아랫배에 손을 얹은 장면, 위에서
    포인트: 회복 초기에는 깊은 근육을 깨우는 것부터. 이 시기에 복근 운동을 세게 하면 배가 더 벌어질 수 있다
    캡션: "눈에 안 보이지만 여기가 토대입니다"
+   프롬프트: Seen from above, she lies on a mat with knees bent and both hands resting on her lower abdomen, exhaling slowly.
 3. 촬영: 무릎을 세우고 골반 바닥을 조이는 준비 자세, 측면
    포인트: 소변을 참듯 5초 조이고 5초 쉬기를 열 번. 숨을 참지 않는 것이 중요
    캡션: "골반저근이 자리 잡기 전에 뛰지 않습니다"
+   프롬프트: Seen from the side, she lies with knees bent and pelvis neutral, one hand on the lower abdomen, the other on the hip bone.
 4. 촬영: 등을 펴는 스트레칭 — 수유 자세의 반대 방향, 상반신
    포인트: 고개를 숙이고 아기를 안는 시간이 길수록 등과 어깨가 굳는다. 손목이 아프면 팔로 체중 싣는 동작은 뒤로
    캡션: "수유 자세의 반대로 풀어줍니다"
+   프롬프트: Seen from the side, she sits on a bench and opens her chest with both hands behind her head, undoing a long-held forward posture.
 5. 촬영: 강사와 상담하는 장면, 노트와 함께
    포인트: 출산 방식과 검진 결과를 먼저 확인하고 동작을 정한다
    캡션: "지금 몸을 다시 배우는 과정입니다"
+   프롬프트: An instructor sits across a small table taking notes while a client speaks, both seen from the chest up, soft daylight.

@@ -19,15 +19,20 @@
 1. 촬영: 침대에서 무릎을 안고 있는 자세, 위에서 부드러운 조명
    포인트: 30초 유지. 하루 종일 앉아 짧아진 엉덩이 뒤가 풀린다
    캡션: "누운 채로 시작하는 5분"
+   프롬프트: Seen from above, she lies in bed hugging both knees loosely to her chest under a light duvet, very low warm lamp light.
 2. 촬영: 발바닥을 마주 붙인 나비 자세, 위에서
    포인트: 무릎을 억지로 누르지 않는다. 숨을 쉴 수 있는 강도까지만 30초
    캡션: "세게 늘리는 게 목적이 아닙니다"
+   프롬프트: Seen from above, she lies with the soles of her feet together and knees dropped open, hands resting on her abdomen, dim bedroom light.
 3. 촬영: 무릎을 한쪽으로 넘겨 허리를 비트는 동작, 측면
    포인트: 양쪽 각각 30초. 어깨는 바닥에 붙인 채 골반만 넘긴다
    캡션: "비틀기는 천천히, 반동 없이"
+   프롬프트: Seen from the side, she lies with knees bent and dropped to one side, shoulders staying down, a gentle spinal twist, dim light.
 4. 촬영: 팔다리를 펴고 편히 누운 마무리 자세, 조명 어둡게
    포인트: 발끝부터 머리까지 차례로 힘을 뺀다. 어깨와 턱에 힘이 남아 있는 경우가 많다
    캡션: "마지막 단계는 늘리는 게 아니라 힘 빼기입니다"
+   프롬프트: Seen from above, she lies flat with arms and legs relaxed and slightly apart, eyes closed, very dim bedroom light.
 5. 촬영: 간접 조명과 매트가 있는 침실 분위기 컷
    포인트: 코로 4초 마시고 입으로 8초 내쉬기 열 번. 휴대폰은 손이 닿지 않는 곳에
    캡션: "화면을 한 번 보면 방금 만든 상태가 풀립니다"
+   프롬프트: No person in frame: a bedside lamp casting warm low light, a rolled mat on the floor and a small glass of water, nothing else.

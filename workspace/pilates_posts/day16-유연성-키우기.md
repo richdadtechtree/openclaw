@@ -19,15 +19,20 @@
 1. 촬영: 앉아서 앞으로 숙이는 전굴 테스트, 측면 전신
    포인트: 손끝이 어디까지 가는지 기록. 무릎을 살짝 굽혀도 되고, 반동은 주지 않는다
    캡션: "지금 위치를 아는 것에서 시작합니다"
+   프롬프트: Seen from the side, she sits on a mat with legs extended, folding forward as far as she can, fingertips reaching past her shins, full body in frame.
 2. 촬영: 한 달 전후 전굴 비교 두 컷, 같은 각도·같은 거리
    포인트: 6주쯤이면 손끝이 발목까지 내려가는 경우가 많다
    캡션: "남이 아니라 지난달의 나와 비교합니다"
+   프롬프트: The same forward fold repeated from the same camera position and distance, a plain documentary comparison shot.
 3. 촬영: 매트에서 척추를 늘리는 스파인 스트레치, 측면
    포인트: 내쉬면서 한 마디씩 말아 내려간다. 10점 만점에 5~6점, 숨을 쉴 수 있는 강도까지만
    캡션: "아프면 다음 날 더 굳습니다"
+   프롬프트: Seen from the side, she sits tall on a mat and rounds forward one vertebra at a time, arms reaching along the floor.
 4. 촬영: 리포머 스트랩에 발을 걸고 다리를 든 장면, 측면 전신
    포인트: 스프링이 몸을 받쳐주니 허리가 뜨지 않는다. 뻣뻣한 분께 매트보다 먼저 권하는 이유
    캡션: "혼자 버티면 엉뚱한 곳에 힘이 들어갑니다"
+   프롬프트: Seen from the side, she lies on a reformer with both feet in the straps and legs lifted toward the ceiling, springs lightly stretched.
 5. 촬영: 수업 후 편안한 표정의 상반신
    포인트: 유연성 운동은 회복이 빨라 매일 해도 괜찮다. 대신 매일 해야 표가 난다
    캡션: "한 번에 오래보다 하루 두세 번 나눠서"
+   프롬프트: Seen from the chest up after class, her face calm and slightly flushed, a few strands of hair stuck to her temple.

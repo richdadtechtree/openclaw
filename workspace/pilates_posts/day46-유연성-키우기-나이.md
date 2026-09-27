@@ -19,15 +19,20 @@
 1. 촬영: 앉아서 앞으로 숙이는 전굴, 측면 전신
    포인트: 쓰지 않는 각도는 몸이 줄인다. 시작 위치를 재두면 비교가 된다
    캡션: "갑자기가 아니라 조금씩 줄어온 결과입니다"
+   프롬프트: Seen from the side, she sits on a mat with legs extended and folds forward, reaching only partway down her shins, full body in frame.
 2. 촬영: 의자에 앉아 양말을 신는 장면
    포인트: 고관절과 가슴 앞이 짧아지면 양말 신기부터 불편해진다
    캡션: "양말 신기가 첫 신호입니다"
+   프롬프트: Seen from the side, she sits on a chair and reaches down to put on a sock, the limit of the movement visible.
 3. 촬영: 고관절을 늘리는 런지 스트레칭, 측면
    포인트: 10점 중 5~6점 강도로 20~30초. 아프게 늘리면 다음 날 더 굳는다
    캡션: "세게가 아니라 자주"
+   프롬프트: Seen from the side, she holds a long low lunge on a mat, the back hip opening, full body in frame.
 4. 촬영: 리포머 스트랩에 발을 걸고 다리를 든 장면
    포인트: 스프링이 받쳐줘 허리가 뜨지 않는다. 관절이 불편한 분께 권함
    캡션: "혼자 버티면 엉뚱한 곳에 힘이 들어갑니다"
+   프롬프트: Seen from the side, she lies on a reformer with both feet in the straps and legs raised, springs lightly stretched.
 5. 촬영: 어깨 각도를 재는 장면, 팔을 들어 올린 측면
    포인트: 시작할 때 전굴과 어깨 각도를 재두고 6주 뒤 비교
    캡션: "6주면 양말 신는 자세가 편해집니다"
+   프롬프트: Seen from the side, she raises one arm overhead beside a plain wall while an instructor notes the range, both partly in frame.

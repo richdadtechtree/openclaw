@@ -19,15 +19,20 @@
 1. 촬영: 책상 위 손도 안 댄 물병과 커피잔, 겨울 분위기
    포인트: 갈증 신호가 여름보다 약해 부족한 줄 모르고 지나간다
    캡션: "겨울엔 갈증에 맡기면 안 됩니다"
+   프롬프트: No person in frame: an untouched water bottle beside a used coffee cup on a winter desk, cool daylight from a window.
 2. 촬영: 건조한 실내를 보여주는 난방기와 창가 컷
    포인트: 난방으로 공기가 건조해지면 호흡만으로도 수분이 빠져나간다
    캡션: "추워도 몸은 물을 잃습니다"
+   프롬프트: No person in frame: a radiator beneath a window with dry winter light outside, a plain room, nothing else.
 3. 촬영: 보온병에 따뜻한 물을 담는 손
    포인트: 따뜻한 물이나 연한 차로 바꾸면 겨울에도 양이 늘어난다
    캡션: "손 닿는 거리에 두는 게 절반입니다"
+   프롬프트: Close on her hands pouring hot water into a thermos on a kitchen counter, steam faintly visible.
 4. 촬영: 시간대별 물 마시는 규칙을 적은 메모
    포인트: 기상 후 / 점심 전 / 오후 / 수업 전후로 나눠서. 500ml 세 번처럼 숫자로 센다
    캡션: "갈증 대신 시간으로 정합니다"
+   프롬프트: No person in frame: a small paper note beside a thermos on a desk, no readable text, cool daylight.
 5. 촬영: 수업 중 몇 모금씩 마시는 장면
    포인트: 목마르기 전에 나눠서. 한 번에 많이 마시면 누운 동작에서 속이 불편하다
    캡션: "겨울에도 한 시간이면 땀은 납니다"
+   프롬프트: Seen from the chest up, she takes a few sips from a bottle during class, studio softly out of focus behind.

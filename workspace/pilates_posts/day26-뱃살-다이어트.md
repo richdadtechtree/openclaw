@@ -19,15 +19,20 @@
 1. 촬영: 헌드레드 동작, 위에서 또는 측면 전신
    포인트: 몸통을 고정한 채 버틴다. 숨을 내쉬며 아랫배를 납작하게 유지하는 감각이 핵심
    캡션: "감각 없이 횟수만 채우면 허리만 아픕니다"
+   프롬프트: Seen from above, she lies on a mat with legs extended low and arms hovering beside her hips, head and shoulders lifted, abdomen working hard.
 2. 촬영: 줄자로 허리둘레를 재는 클로즈업
    포인트: 복부는 늦게 빠지는 부위라 체중보다 둘레로 확인하는 편이 낫다
    캡션: "체중 대신 둘레로 확인합니다"
+   프롬프트: Close on her own hands holding a soft tape measure around her waist over a fitted top, seen from the front.
 3. 촬영: 리포머에서 복부를 쓰는 동작, 측면 전신
    포인트: 지방이 그대로여도 아래 근육이 자리 잡으면 배가 납작해 보인다
    캡션: "빠지는 순서는 내가 정할 수 없습니다"
+   프롬프트: Seen from the side, she lies on a reformer curling the torso while holding the straps, springs lightly stretched, full body in frame.
 4. 촬영: 건강한 식사와 운동복이 함께 있는 컷
    포인트: 늦은 밤 야식·잦은 술자리·부족한 잠은 복부에 특히 잘 반영된다
    캡션: "수업을 늘리기 전에 이 세 가지부터"
+   프롬프트: No person in frame: a plate of simple home food beside folded training clothes on a wooden table, daylight from the side.
 5. 촬영: 한 달 간격으로 찍은 허리 라인 비교 두 컷
    포인트: 3개월을 한 단위로 보면 마음이 편해진다. 한 달 만에 안 들어간다고 방법이 틀린 건 아니다
    캡션: "마지막 구간이라 티가 늦게 납니다"
+   프롬프트: She stands sideways against a plain wall with arms relaxed, full body in frame, same camera position as an earlier record shot.

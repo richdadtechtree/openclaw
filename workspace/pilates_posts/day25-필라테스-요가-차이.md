@@ -19,15 +19,20 @@
 1. 촬영: 필라테스 동작 — 몸통을 고정한 자세, 측면 전신
    포인트: 정해진 동작을 정확한 정렬로 반복하며 몸통 근력을 만든다. 어디에 힘이 들어가는지를 먼저 본다
    캡션: "필라테스는 정렬과 몸통 근력에 초점이 있습니다"
+   프롬프트: Seen from the side, she holds a Pilates exercise on a mat with the torso braced and both legs extended, full body in frame.
 2. 촬영: 요가 동작 — 한 자세에 머무는 장면, 측면 전신 (비교용)
    포인트: 호흡과 명상에서 출발해 유연성과 이완의 비중이 크다. 머무는 시간이 길다
    캡션: "요가는 이완과 유연성 쪽에 가깝습니다"
+   프롬프트: Seen from the side, she holds a long seated yoga stretch on the same mat, spine folding forward, palms on the floor, calmer light.
 3. 촬영: 리포머 기구를 사용하는 장면, 전신
    포인트: 필라테스에는 기구가 있다. 근력이 부족하거나 통증이 있을 때 시작하기 유리한 이유
    캡션: "기구의 유무가 큰 차이입니다"
+   프롬프트: Seen from the side, she works on a reformer with the springs stretched, full body in frame.
 4. 촬영: 매트 위에서 호흡을 고르는 장면, 조용한 분위기
    포인트: 요가는 배를 부풀리는 호흡, 필라테스는 갈비뼈를 넓히고 배는 납작하게. 거의 반대다
    캡션: "호흡법이 서로 반대에 가깝습니다"
+   프롬프트: Seen from the front, she sits cross-legged on a mat with hands on her knees, eyes closed, quiet daylight from one window.
 5. 촬영: 두 운동의 차이를 정리한 비교표 이미지
    포인트: 몸통 근력·자세 교정이면 필라테스, 이완·유연성·마음의 안정이면 요가
    캡션: "우열이 아니라 방향의 차이입니다"
+   프롬프트: No person in frame: a mat, a yoga block and a reformer sharing one studio corner, wooden floor, soft daylight.

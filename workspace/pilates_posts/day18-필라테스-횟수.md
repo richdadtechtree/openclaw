@@ -19,15 +19,20 @@
 1. 촬영: 주간 캘린더에 수업 요일을 표시한 장면, 위에서
    포인트: 요일과 시간을 고정하면 갈지 말지 고민하지 않아도 된다
    캡션: "고민하는 순간 반은 안 가게 됩니다"
+   프롬프트: No person in frame: a paper weekly planner on a desk with two days marked, a pen beside it, no readable text, daylight from the side.
 2. 촬영: 수업 예약 화면을 보는 휴대폰 클로즈업
    포인트: 주 2회라면 사흘 간격으로. 지난 수업 감각이 남아 있어 이어가기 좋다
    캡션: "간격을 띄우는 것도 계획입니다"
+   프롬프트: Close on her hands holding a phone showing a class booking screen, the screen content blurred and unreadable.
 3. 촬영: 출석 체크가 채워진 달력, 위에서
    포인트: 주 1회는 유지, 주 2회는 변화, 주 3회는 속도
    캡션: "목적에 따라 횟수가 달라집니다"
+   프롬프트: No person in frame: a wall calendar with small handwritten check marks, shot straight on, soft light.
 4. 촬영: 기구 수업 중 집중하는 전신 컷
    포인트: 주 3회는 하루씩 띄워서. 근육은 수업 중이 아니라 쉬는 동안 자란다
    캡션: "연달아 붙이지 않는 편이 낫습니다"
+   프롬프트: Seen from the side, she works through an exercise on a reformer with focused effort, full body in frame.
 5. 촬영: 운동 일지에 그날 컨디션을 적는 손
    포인트: 수면과 식사가 흔들리는 주에는 한 번 줄이는 판단이 더 중요하다
    캡션: "무리해서 세 번 나오고 2주 쉬면 결국 주 1회입니다"
+   프롬프트: Close on her hand writing one short line about how she felt in a small notebook on a studio bench.

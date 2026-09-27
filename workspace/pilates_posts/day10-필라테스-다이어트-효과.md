@@ -19,15 +19,20 @@
 1. 촬영: 인바디 결과지를 들고 있는 손, 개인 정보와 숫자는 가리거나 흐리게
    포인트: 체중보다 근육량과 체지방률의 방향을 본다. 3개월은 그 방향이 보이는 시간
    캡션: "숫자 하나가 아니라 방향을 봅니다"
+   프롬프트: Close on her hands holding a paper body-composition printout on a studio bench, the numbers blurred and unreadable, soft window light.
 2. 촬영: 같은 옷·같은 각도로 찍은 전후 체형 비교 두 컷
    포인트: 촬영 위치를 바닥에 표시해두고 같은 조명에서. 비교가 되어야 기록이 된다
    캡션: "한 달에 한 번, 같은 자리에서"
+   프롬프트: She stands sideways in the same fitted clothes against a plain wall, arms relaxed, full body in frame, even daylight, a documentary record shot.
 3. 촬영: 수업 중 집중한 표정의 상반신, 정면
    포인트: 3개월 차에 가장 많이 듣는 말은 살이 빠졌다가 아니라 자세가 좋아졌다
    캡션: "가장 먼저 달라지는 건 자세입니다"
+   프롬프트: Seen from the front, her upper body during an exercise, jaw relaxed and eyes focused ahead, a little sweat at the hairline.
 4. 촬영: 3개월치 기록이 채워진 운동 일지 페이지, 위에서
    포인트: 체중 대신 허리둘레·수업 후 컨디션·수면을 적는 방식
    캡션: "기록이 있어야 변화가 보입니다"
+   프롬프트: Close on an open exercise diary filled with three months of short handwritten entries on a wooden floor, no readable text.
 5. 촬영: 스튜디오 로고가 보이는 벽 앞 인증샷, 전신
    포인트: 시작할 때 찍어둔 사진과 나란히 놓고 보면 3개월의 답이 나온다
    캡션: "3개월은 답을 보여주기에 충분한 시간입니다"
+   프롬프트: She stands in the studio near a plain wall, arms at her sides, a calm full-body portrait in soft window light.

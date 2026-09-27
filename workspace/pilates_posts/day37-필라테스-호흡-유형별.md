@@ -19,15 +19,20 @@
 1. 촬영: 거울 앞에서 호흡을 확인하는 상반신, 어깨 높이가 보이게
    포인트: 마실 때 어깨가 들리는지, 배가 나오는지, 숨을 참는지로 유형을 나눈다
    캡션: "막히는 지점은 사람마다 다릅니다"
+   프롬프트: Seen from the front, she sits facing a studio mirror with both hands on her ribs, checking shoulder height while breathing in.
 2. 촬영: 어깨를 가볍게 눌러 고정하고 갈비뼈로 마시는 연습
    포인트: 어깨가 귀 쪽으로 들리면 가슴 위쪽으로만 마시는 것 — 목과 어깨가 먼저 뻐근해진다
    캡션: "손을 옆구리에 대면 빨리 잡힙니다"
+   프롬프트: An instructor's hands rest lightly on her shoulders to keep them down while she inhales, both seen from the chest up.
 3. 촬영: 배 위 손과 옆구리 손을 비교해 보여주는 두 컷
    포인트: 배로 부풀리는 복식 호흡과 달리, 갈비뼈를 옆·뒤로 넓히고 배는 납작하게
    캡션: "복식 호흡과는 반대에 가깝습니다"
+   프롬프트: Two framings side by side: one hand on the abdomen, one hand on the side ribs, upper body only, plain wall behind.
 4. 촬영: 내쉬며 '스' 소리를 내는 연습 장면, 상반신
    포인트: 소리를 내면 숨을 참을 수 없다. 동작 끝에 몰아쉬는 분에게 효과적
    캡션: "소리를 내면 참을 수 없습니다"
+   프롬프트: Seen from the chest up, she exhales with lips slightly parted making a quiet hissing breath, eyes lowered.
 5. 촬영: 신호 대기 중 차 안에서 호흡하는 장면 또는 사무실 자리
    포인트: 하루 다섯 번, 다섯 호흡. 따로 시간을 내면 오히려 안 하게 된다
    캡션: "짧은 틈을 씁니다"
+   프롬프트: No person in frame: the interior of a parked car in daylight with an empty driver seat and a water bottle in the holder.

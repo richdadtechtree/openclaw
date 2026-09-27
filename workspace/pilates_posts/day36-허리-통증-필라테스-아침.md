@@ -19,15 +19,20 @@
 1. 촬영: 아침 침대에서 허리를 짚고 일어나려는 측면 컷
    포인트: 밤새 굳은 상태. 다리 저림이나 밤중 통증이 있으면 운동보다 진료가 먼저
    캡션: "아침이 제일 아픈 데는 이유가 있습니다"
+   프롬프트: She sits on the edge of a bed in the morning with one hand on her lower back, hair loose, seen from the side, early light.
 2. 촬영: 세수하려 허리를 숙이는 장면 — 피해야 할 예시
    포인트: 기상 직후 30분은 허리를 크게 굽히지 않는다. 양말도 앉아서
    캡션: "일어나자마자 숙이지 않습니다"
+   프롬프트: She stands bending forward over a bathroom sink with a rounded lower back, seen from the side, shown as a posture to avoid.
 3. 촬영: 누워서 무릎을 좌우로 눕히는 동작, 위에서
    포인트: 반동 없이 열 번. 허리 옆이 시원해지는 정도까지만
    캡션: "침대에서 3분이면 됩니다"
+   프롬프트: Seen from above, she lies in bed with knees bent and dropped gently to one side, arms out, morning light.
 4. 촬영: 네 발 기기 자세에서 등을 말았다 펴는 동작, 측면
    포인트: 목부터 꼬리뼈까지 한 마디씩. 몸을 세우기 전 준비 단계
    캡션: "세우기 전에 먼저 풉니다"
+   프롬프트: Seen from the side, she kneels on all fours on a mat and rounds her back upward, head dropping slightly, full body in frame.
 5. 촬영: 사무실에서 30분마다 일어나 서는 장면
    포인트: 엉덩이와 허벅지 뒤가 짧아지면 아침 뻣뻣함이 심해진다
    캡션: "낮의 습관이 아침을 바꿉니다"
+   프롬프트: Seen from the side, she stands up from an office chair and lengthens her spine beside the desk, full body in frame.

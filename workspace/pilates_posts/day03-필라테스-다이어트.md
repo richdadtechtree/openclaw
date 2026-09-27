@@ -19,15 +19,20 @@
 1. 촬영: 단백질과 채소를 담은 한 끼 접시를 위에서 플랫레이로, 자연광
    포인트: 손바닥 크기 단백질 + 채소 한 줌 구성. 양을 줄이는 게 아니라 채우는 방식임을 보여주는 컷
    캡션: "굶는 대신 채우는 쪽을 택합니다"
+   프롬프트: No person in frame: a single plate of grilled chicken, tofu and green salad on a wooden table, shot straight from above in daylight.
 2. 촬영: 줄자로 허리둘레를 재는 손, 배꼽 높이 클로즈업
    포인트: 체중계보다 먼저 움직이는 숫자가 허리둘레. 같은 위치에서 재야 비교가 된다
    캡션: "저울보다 줄자가 정직할 때가 있습니다"
+   프롬프트: Close on her own hands holding a soft tape measure around her waist over a fitted top, seen from the front, shallow depth of field.
 3. 촬영: 운동 전 간식(바나나 반 개·요거트)과 물병을 함께 놓고 촬영
    포인트: 수업 한 시간 전, 가볍게. 공복으로 오면 30분쯤 지나 집중력부터 무너진다
    캡션: "빈속으로 버티는 한 시간보다 반 개가 낫습니다"
+   프롬프트: No person in frame: half a banana, a small cup of plain yogurt and a water bottle on a studio bench, soft window light.
 4. 촬영: 수업 중 동작하는 전신 컷, 몸의 라인이 보이는 측면
    포인트: 체중이 그대로여도 갈비뼈가 제자리로 들어가면 실루엣이 달라진다
    캡션: "같은 몸무게라도 서 있는 모습이 다릅니다"
+   프롬프트: She stands sideways in the studio in fitted training clothes, arms relaxed, spine long, a plain wall behind her, full body in frame.
 5. 촬영: 운동 일지에 날짜와 그날 느낌을 적는 장면, 펜과 손 위주
    포인트: 체중 대신 허리둘레·수업 후 컨디션을 적는 방식
    캡션: "기록하는 분이 오래 갑니다"
+   프롬프트: Close on her hand writing a date and a short line in a paper exercise diary on the floor beside a mat, no readable text.

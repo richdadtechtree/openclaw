@@ -19,15 +19,20 @@
 1. 촬영: 체중 기록 그래프가 흔들리며 이어지는 화면 또는 노트
    포인트: 하루 숫자가 아니라 일주일 평균으로 본다. 체중은 하루에도 1~2kg 출렁인다
    캡션: "하루 숫자에 흔들리지 않습니다"
+   프롬프트: No person in frame: a paper notebook page with a simple hand-drawn weight line that flattens out, pen beside it, no readable text.
 2. 촬영: 줄자로 허리를 재는 손과 체중계를 함께 배치
    포인트: 체중 그대로인데 둘레가 줄었다면 정체기가 아니라 가장 좋은 구간
    캡션: "체중과 둘레는 따로 움직입니다"
+   프롬프트: No person in frame: a bathroom scale and a soft tape measure side by side on a wooden floor, even daylight.
 3. 촬영: 사흘치 식사 사진을 모아 놓은 기록 화면
    포인트: 운동 후 늘어난 간식은 기억에 안 남는다. 사진으로 남기면 보인다
    캡션: "보이지 않던 것을 보이게 만듭니다"
+   프롬프트: No person in frame: three simple home meals photographed plainly side by side on a wooden table, daylight from the side.
 4. 촬영: 리포머 스프링을 한 단계 바꾸는 손, 클로즈업
    포인트: 같은 강도 두 달이면 몸이 익숙해진다. 6주마다 구성을 바꾼다
    캡션: "자극이 그대로면 변화도 그대로입니다"
+   프롬프트: Close on an instructor's hand changing a spring hook on a reformer to a different colour, shallow depth of field.
 5. 촬영: 물병과 수면 기록 앱 화면이 함께 있는 컷
    포인트: 잠이 부족하면 식욕 조절이 어려워진다. 정체기엔 수면과 물부터
    캡션: "굶기 전에 잠부터 챙깁니다"
+   프롬프트: No person in frame: a water bottle beside a phone on a bedside table at night, low warm light, screen off.
