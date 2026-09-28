@@ -119,12 +119,31 @@ const srv = http.createServer((req, res) => {
     { ts: D + 'T11:06:30', source: 'user', kind: 'text', text: MSG3 },
     { ts: D + 'T11:07:00', source: 'user', kind: 'text', text: MSG7 },
     { ts: D + 'T11:07:30', source: 'user', kind: 'text', text: MSG8 },
-    { ts: D + 'T11:08:00', source: 'user', kind: 'text', text: MSG9 }] }));
+    { ts: D + 'T11:08:00', source: 'user', kind: 'text', text: MSG9 },
+    { ts: D + 'T11:09:00', source: 'user', kind: 'text', text: MSG10 }] }));
   if (u === '/api/news/today') return send('application/json', JSON.stringify({ ok: true, ready: true, date: D, count: 3,
     images: ['01.jpg', '02.jpg', '03.jpg'].map(n => ({ name: n, url: '/x.png', thumb: '/x.png', download_url: '/x.png' })) }));
   if (u === '/api/news/pagetext') return send('application/json', '{"ok":false}');
   res.writeHead(404); res.end();
 });
+
+// 2026-09-28 실제 모양 — 번호 바로 뒤에 🔴 가 오면 제목이 통째로 설명 줄로 내려가던 버그
+const MSG10 = `[신문요약 1/6] :newspaper: 2026년 9월 28일 신문 브리핑
+
+1. :red_circle: ‘반도체 벨트’ 강세 지속…수원 영통 상승률 1위 중요한 이유: 기업 저금리 대출과 반도체 호황 자금이 경기 남부 집값을 빠르게 밀어 올리는 흐름임.
+• WHAT: 주간 아파트값 상승률은 수원 영통 1.09%, 권선 0.66%였음.
+• WHY: 삼성전자 사내 주택구입 대출과 반도체 업황 개선이 구매력을 높였음.
+• HOW: 기업 대출 조건과 금리 변화를 함께 봐야 함.
+
+2. 연 4.5% 청년드림청약통장, 가입 문턱 낮아진다
+• WHAT: 가입 소득 기준이 연 7000만원 이하로 완화됨.
+• WHY: 청년층의 청약통장 가입을 늘리려는 조치임.
+• HOW: 만 19~34세 무주택 청년이 대상임.
+
+3. 🔴 “수도권 전세, 연말까지 3% 이상 강세…집값도 밀어올릴 것” 🔴 전세 상승이 매매 수요로 옮겨갈 수 있음.
+• WHAT: 전문가 100명 설문 결과임.
+• WHY: 입주물량 감소가 원인으로 지목됨.
+• HOW: 전월세 대책을 봐야 함.`;
 
 (async () => {
   await new Promise(r => srv.listen(0, r));
@@ -229,6 +248,22 @@ const srv = http.createServer((req, res) => {
           '번호 없이 뭔가 붙어 와도 "…N가지" 뒤는 무조건 줄바꿈', g9.lead);
     const cr9 = contrast(g9.introCol, g9.bg);
     check(cr9 >= 7, '안내문 글씨도 잘 보인다(대비 7:1 이상)', `${cr9.toFixed(1)}:1`);
+    const h10 = await page.evaluate(() => {
+      const c = document.querySelectorAll('.entry .body')[6];
+      return [...c.querySelectorAll('.brf-art')].map(a => {
+        const t = a.querySelector('.brf-title'), cl = t.cloneNode(true);
+        cl.querySelectorAll('.brf-flag').forEach(n => n.remove());
+        return { t: cl.textContent.trim(), badge: ((t.querySelector('.brf-flag') || {}).textContent || '').trim(),
+                 sub: [...a.querySelectorAll('.brf-sub')].map(e => e.textContent.trim()) };
+      });
+    });
+    check(h10.length === 3 && h10[0].t === '1. ‘반도체 벨트’ 강세 지속…수원 영통 상승률 1위' && h10[0].badge === '🔴'
+          && /^기업 저금리 대출/.test(h10[0].sub[0] || ''),
+          '"1. 🔴 제목 중요한 이유: …" → 제목은 제목 줄에(🔴 는 작은 배지), 이유만 아래로', h10[0] && h10[0].t.slice(0, 14));
+    check(h10[1] && h10[1].t === '2. 연 4.5% 청년드림청약통장, 가입 문턱 낮아진다' && !h10[1].badge, '🔴 없는 제목은 그대로');
+    check(h10[2] && /^3\. “수도권 전세, 연말까지 3% 이상 강세…집값도 밀어올릴 것”$/.test(h10[2].t) && h10[2].badge === '🔴'
+          && /^🔴 전세 상승이/.test(h10[2].sub[0] || ''),
+          '앞 🔴 는 배지, 제목 뒤 🔴 설명은 여전히 아래 줄로', h10[2] && h10[2].sub[0]);
     check(r.over <= 0, '화면이 옆으로 넘치지 않는다', `${r.over}px`);
     await page.close();
   }

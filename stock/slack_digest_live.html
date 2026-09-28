@@ -756,6 +756,8 @@ function numItem(t){
            : '<div class="brf-line">'+inline(t)+"</div>";
 }
 
+// 제목 맨 앞(번호 뒤)에 붙은 중요 표시: "1. 🔴 제목" → [1]="1. ", [2]="🔴"
+const TITLE_LEAD_FLAG=/^(\d{1,3}[.)]\s*)?((?:[🔴🟠🟡🟢🔵🟣⭐❗]|‼️?))\s*/u;
 // 기사 제목 한 줄 → 머리표(🔴 반드시 체크) + 큰 제목 + 작은 부제(중요한 이유)
 function briefTitle(t){
   let flag="";
@@ -763,6 +765,10 @@ function briefTitle(t){
   if(m && (m[1] || /체크|주목|참고|중요|속보/.test(m[2]))){
     flag='<span class="brf-flag">'+inline((m[1]+" "+m[2]).trim())+"</span>";
     t=m[3];
+  }else{
+    // "1. 🔴 제목" / "🔴 제목" → 🔴 는 작은 머리표로, 번호와 제목은 제목 줄에 그대로
+    const lm=t.match(TITLE_LEAD_FLAG);
+    if(lm){ flag='<span class="brf-flag">'+inline(lm[2])+"</span>"; t=(lm[1]||"")+t.slice(lm[0].length); }
   }
   const s=t.split(/\s*중요한\s*이유\s*[:：]\s*/);
   const title=(s[0]||"").trim();
@@ -999,8 +1005,13 @@ function briefing(raw){
     /* 제목 **중간**에 🔴 같은 중요 표시가 붙어 온 경우(2026-09-24 사용자 요청)
          "01. “3억대 서울 분양도 나와” 추석후 청약 큰장 🔴 오늘 신문에서 …가장 중요한 기사 중 하나임."
        → 🔴 부터는 줄을 바꿔 제목 아래 설명으로. (줄 **맨 앞**의 "🔴 반드시 체크 | 제목" 머리표는 briefTitle 이 따로 처리) */
+    /* ⚠️ 2026-09-28: "1. 🔴 ‘반도체 벨트’ 강세 지속…수원 영통 상승률 1위 중요한 이유: …" 처럼
+         🔴 가 **번호 바로 뒤(제목 맨 앞)** 에 오면, 위 규칙이 번호 "1." 만 제목으로 남기고
+         진짜 제목을 설명 줄로 내려 버렸다 → 번호+🔴 머리는 건너뛰고 그 **뒤에서만** 찾는다. */
     let flagTail="";
-    const fi=rest.search(/\s(?:[🔴🟠🟡🟢🔵🟣⭐❗]|‼️?)/u);
+    const lead=(rest.match(TITLE_LEAD_FLAG)||[""])[0].length;
+    let fi=lead ? rest.slice(lead).search(/\s(?:[🔴🟠🟡🟢🔵🟣⭐❗]|‼️?)/u) : rest.search(/\s(?:[🔴🟠🟡🟢🔵🟣⭐❗]|‼️?)/u);
+    if(fi>=0 && lead) fi+=lead;
     if(fi>0 && !/[|｜]/.test(rest.slice(fi))){ flagTail=rest.slice(fi).trim(); rest=rest.slice(0,fi).trim(); }
     art=briefTitle(rest);                          // (3) 기사 제목 = 다른 크기로 한눈에
     if(flagTail) art+='<div class="brf-sub brf-flagnote">'+inline(flagTail)+"</div>";
