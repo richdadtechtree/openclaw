@@ -1474,6 +1474,7 @@ const HINT_DEFAULT=document.getElementById("lb-hint").textContent;
 function openViewer(i,opts={}){
   if(!newsState.images||!newsState.images.length) return;
   V.list=newsState.images; V.i=Math.max(0,Math.min(i,V.list.length-1));
+  resetPointers();                             // 이전에 꼬인 터치 상태를 새 기사로 가져오지 않게
   V.pick=opts.pick||null;
   V.box=opts.box||null;                        // 열자마자 이 기사 영역으로 확대(요약 JSON 의 bbox)
   $("lb-pick").hidden=!V.pick;
@@ -1495,6 +1496,7 @@ function closeViewer(){
   $("lb").hidden=true;
   document.body.style.overflow="";
   clearTimeout(V.navT);                        // 닫은 뒤 타이머가 남아 돌지 않게
+  resetPointers();                             // 닫는 순간 남은 손가락 기록도 비운다
   if(M.on) setPen(false);                      // 형광펜 모드였다면 꺼 둔다
   V.pick=null; $("lb-pick").hidden=true;
   // 그은 줄은 메모리에 그대로 남는다 → 다시 열면 보인다(새로고침하면 사라짐)
@@ -1789,6 +1791,12 @@ function maybeDoubleTap(x,y){
 stage.addEventListener("contextmenu",e=>e.preventDefault());
 
 stage.addEventListener("pointerdown",e=>{
+  /* ⚠️ 2026-09-29 폰 버그: '손가락 뗐다(pointerup/cancel)' 신호를 폰이 한 번 빼먹으면
+     V.pts 에 뗀 손가락이 남아, 이후 손가락 하나로 그어도 '두 손가락 확대'로 처리돼
+     **새로고침 전까지 어느 기사에서도 줄이 안 그어졌다.**
+     → isPrimary(=지금 화면에 다른 손가락이 하나도 없을 때의 첫 손가락)가 오면
+       남아 있는 기록은 전부 '유령'이므로 비우고 새로 시작한다. */
+  if(e.isPrimary && V.pts.size) resetPointers();
   stage.setPointerCapture(e.pointerId);
   V.pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
   // ★ 오른쪽 버튼 = 언제나 '화면 끌어 옮기기'.
@@ -1906,7 +1914,7 @@ function endPointer(e){
   V.drag=null;
 }
 stage.addEventListener("pointerup",endPointer);
-stage.addEventListener("pointercancel",e=>{
+function cancelPointer(e){
   V.pts.delete(e.pointerId); V.pinch=null; V.drag=null;
   stage.classList.remove("panning","moving");
   if(M.move){ M.move=null; return; }           // 옮기던 중 끊겼으면 그 자리에 둔다
@@ -1915,7 +1923,18 @@ stage.addEventListener("pointercancel",e=>{
     if(!(st.t!=="free" && strokeSpan(st)<0.012)) markList().push(st);
     drawMarks();
   }
-});
+}
+stage.addEventListener("pointercancel",cancelPointer);
+// 폰이 pointerup/cancel 없이 터치를 놓쳐 버린 경우의 마지막 신호 — 정상 pointerup 뒤에도 오지만
+// 그땐 이미 명단에서 지워졌으므로 아무 일도 안 한다.
+stage.addEventListener("lostpointercapture",e=>{ if(V.pts.has(e.pointerId)) cancelPointer(e); });
+/* 손가락·끌기·확대 중 상태를 전부 비운다(그리던 선은 살린다). 뷰어를 열고 닫을 때와
+   유령 손가락을 발견했을 때 부른다 → 한 기사에서 꼬인 상태가 다른 기사로 넘어가지 않는다. */
+function resetPointers(){
+  if(M.cur){ const st=M.cur; M.cur=null; if(!(st.t!=="free" && strokeSpan(st)<0.012)) markList().push(st); }
+  V.pts.clear(); V.pinch=null; V.drag=null; M.move=null;
+  stage.classList.remove("panning","moving");
+}
 window.addEventListener("resize",()=>{ if(!$("lb").hidden) measure(); });
 
 /* ══ 보기 방식: 📝 글만 / 📰 글+지면 (2026-09-23) ═══════════════════════════

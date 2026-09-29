@@ -16,6 +16,7 @@
  *      저장소엔 digest.pageLinks 만 — 형광펜 흔적 0
  *   ⑧ 20초 자동 갱신 때 사진 칸을 다시 만들지 않는다(깜빡임 없음)
  *   ⑩ 사진이 아직 없는 날 → 안내문 · 휴대폰(390px)에서 가로 넘침 없음
+ *   ⑪ 휴대폰 손가락: 기사 여러 개를 오가며 긋기 · '뗐다' 신호를 놓친 유령 손가락이 있어도 긋기 됨 · 핀치 확대 유지
  *
  * 실행: npm i playwright && node scripts/test_viewer_paper.js
  */
@@ -251,6 +252,76 @@ const sideInk = (page, k) => page.evaluate((k) => {
     const b = document.querySelector('.lb-bar'); return b.scrollWidth - b.clientWidth;
   });
   check(bar <= 0 && await page.isVisible('#lb-pick'), '휴대폰: 📌 버튼이 상단 바에 들어간다', `넘침 ${bar}px`);
+
+  /* ⑪ 휴대폰 손가락으로 여러 기사 번갈아 긋기 (2026-09-29 버그)
+     폰이 '손가락 뗐다' 신호를 한 번 빼먹으면 뗀 손가락이 기억에 남아, 그 뒤로는 손가락 하나로
+     그어도 '두 손가락 확대'로 처리돼 어느 기사에서도 줄이 안 그어졌다(새로고침 전까지). */
+  console.log('\n[⑪ 휴대폰: 기사 여러 개를 오가며 손가락으로 긋기]');
+  await page.evaluate(() => closeViewer());
+  const cdp = await phone.newCDPSession(page);
+  const touch = (type, pts) => cdp.send('Input.dispatchTouchEvent',
+    { type, touchPoints: pts.map(([x, y], id) => ({ x, y, id })) });
+  // 화면에 보이는 사진 영역(stage) 비율 좌표로 한 손가락 긋기
+  const fstroke = async (y) => {
+    const r = await page.evaluate(() => { const b = document.getElementById('lb-stage').getBoundingClientRect();
+      return { l: b.left, t: b.top, w: b.width, h: b.height }; });
+    const P = (k) => [r.l + r.w * (0.2 + 0.5 * k / 8), r.t + r.h * y];
+    await touch('touchStart', [P(0)]);
+    for (let k = 1; k <= 8; k++) await touch('touchMove', [P(k)]);
+    await touch('touchEnd', []);
+  };
+  const openPen = async (k) => {
+    await page.evaluate((k) => { const b = document.querySelectorAll('.brf-side')[k].querySelector('.side-fig');
+      b.scrollIntoView({ block: 'center' }); }, k);
+    const c = await page.evaluate((k) => { const r = document.querySelectorAll('.brf-side')[k].querySelector('.side-fig').getBoundingClientRect();
+      return [r.left + r.width / 2, r.top + r.height / 2]; }, k);
+    if (await page.evaluate(() => !document.getElementById('lb').hidden)) await page.evaluate(() => closeViewer());
+    await page.touchscreen.tap(c[0], c[1]);
+    await waitImg(page); await page.waitForTimeout(150);
+  };
+  const closeByTap = async () => {
+    await page.waitForTimeout(500);             // 긋자마자 톡 치면 '두 번 두드리기'로 묶일 수 있어 사람처럼 잠깐 쉰다
+    const c = await page.evaluate(() => { const r = document.getElementById('lb-close').getBoundingClientRect();
+      return [r.left + r.width / 2, r.top + r.height / 2]; });
+    await page.touchscreen.tap(c[0], c[1]); await page.waitForTimeout(200);
+  };
+  const cnt = () => page.evaluate(() => Object.fromEntries(Object.entries(M.marks).map(([k, v]) => [k, v.length])));
+  const seq = [];
+  for (const [k, y] of [[0, 0.3], [2, 0.4], [0, 0.5], [2, 0.6]]) {
+    await openPen(k);
+    const before = await cnt(), name = await page.evaluate(() => V.list[V.i].name);
+    await fstroke(y);
+    const after = await cnt();
+    seq.push(`${name}:${(after[name] || 0) - (before[name] || 0)}`);
+    await closeByTap();
+  }
+  check(seq.every(x => x.endsWith(':1')) && await page.evaluate(() => document.getElementById('lb').hidden),
+        '기사 A→B→A→B 를 오가며 손가락으로 그어도 매번 줄이 생긴다(✕ 로 닫힘)', seq.join(' '));
+
+  // 폰이 '뗐다' 신호를 빼먹은 상황을 일부러 만든다: 유령 손가락 1개를 남겨 둔다
+  await openPen(2);
+  await page.evaluate(() => V.pts.set(777, { x: 5, y: 5 }));
+  let b0 = (await cnt())['04.jpg'] || 0;
+  await fstroke(0.7);
+  const g1 = await page.evaluate(() => ({ z: V.zoom, n: (M.marks['04.jpg'] || []).length, pts: V.pts.size }));
+  check(g1.n === b0 + 1 && g1.z === 1 && g1.pts === 0,
+        '유령 손가락이 남아 있어도 새 손가락 하나로 긋기 → 확대가 아니라 줄이 그어진다', `줄 ${g1.n - b0}개 · 배율 ${g1.z}`);
+  await closeByTap();
+  await openPen(0);                              // 닫고 다른 기사에서 열 때도 깨끗
+  await page.evaluate(() => V.pts.set(778, { x: 5, y: 5 }));
+  await page.evaluate(() => closeViewer());
+  check(await page.evaluate(() => V.pts.size === 0 && !V.pinch && !V.drag && !M.move), '뷰어를 닫으면 손가락·확대·끌기 기억이 비워진다');
+  await openPen(2);
+  // 두 손가락 벌리기(핀치)는 형광펜 모드에서도 여전히 확대
+  const r = await page.evaluate(() => { const b = document.getElementById('lb-stage').getBoundingClientRect();
+    return { cx: b.left + b.width / 2, cy: b.top + b.height / 2 }; });
+  b0 = (await cnt())['04.jpg'] || 0;
+  await touch('touchStart', [[r.cx - 30, r.cy], [r.cx + 30, r.cy]]);
+  for (let k = 1; k <= 6; k++) await touch('touchMove', [[r.cx - 30 - k * 15, r.cy], [r.cx + 30 + k * 15, r.cy]]);
+  await touch('touchEnd', []);
+  await page.waitForTimeout(100);
+  const pz = await page.evaluate(() => ({ z: V.zoom, n: (M.marks['04.jpg'] || []).length, pts: V.pts.size }));
+  check(pz.z > 1.5 && pz.n === b0 && pz.pts === 0, '두 손가락 벌리기는 그대로 확대(줄은 안 생김)', `배율 ${pz.z.toFixed(2)}`);
 
   await browser.close(); srv.close();
   console.log('\n총평: ' + (pass ? '✅ 전부 통과' : '❌ 실패 있음'));
