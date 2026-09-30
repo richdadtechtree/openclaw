@@ -105,7 +105,9 @@ async function stroke(page, x1, y1, x2, y2) {
   await page.mouse.up();
 }
 const waitImg = (page) => page.waitForFunction(() => {
-  const im = document.getElementById('lb-img'); return im.complete && im.naturalWidth > 0 && V.fitW > 0;
+  const im = document.getElementById('lb-img');
+  // 크기 계산(V.fitW) 뒤 실제 화면 반영은 다음 프레임 → 사진이 그 크기로 그려질 때까지 기다린다
+  return im.complete && im.naturalWidth > 0 && V.fitW > 0 && Math.abs(im.getBoundingClientRect().width - V.fitW * V.zoom) < 2;
 });
 // 기사 옆 작은 사진 위 그림판에 '색칠된 점'이 몇 개인가 (0 이면 아무 줄도 없음)
 const sideInk = (page, k) => page.evaluate((k) => {

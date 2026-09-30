@@ -237,6 +237,28 @@
   .lb-btn:hover{border-color:#7f9bf5;color:#fff}
   .lb-btn:disabled{opacity:.35;cursor:default}
   .lb-stage{flex:1;position:relative;overflow:hidden}
+  /* ── 뷰어 옆 기사 요약 칸 (2026-09-30) ─────────────────────────────────
+     신문 사진을 크게 연 채로 요약(WHAT·WHY·HOW·표)의 **수치를 지면과 맞춰 보려고** 오른쪽에 붙인다.
+     사진 칸(.lb-stage)과 나란히 놓여 자리를 나눠 쓰므로 **지면을 가리지 않는다**
+     (사진은 남은 폭에 다시 맞춰진다). 넓은 화면(PC, 900px↑)에서만 — 폰은 좁아서 사진이 너무 작아진다.
+     뷰어는 늘 어두운 배경이라, 밝은 테마여도 이 칸 안의 색 변수는 어두운 값으로 덮어쓴다. */
+  .lb-body{flex:1;display:flex;min-height:0;position:relative}
+  .lb-note{flex:none;width:clamp(320px,30vw,460px);overflow-y:auto;overscroll-behavior:contain;
+           padding:14px 18px 40px;border-left:1px solid #242a36;background:#11151f;color:#e7eaf1;
+           touch-action:pan-y;user-select:text;line-height:1.65;
+           --surface:#161a23;--ink:#e7eaf1;--muted:#aab2c2;--faint:#7c8597;--line:#242a36;--line-strong:#313848;
+           --accent:#9fb2ef;--accent-bright:#7f9bf5;--c-side:#f0776d;--c-brief:#33c3af}
+  .lb-note[hidden]{display:none}
+  @media (max-width:899px){ .lb-note{display:none} #lb-note-btn{display:none} }
+  .lb-note .nt-head{font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:#8b93a4;margin:0 0 10px}
+  .lb-note .nt-art{padding:12px 0 14px;border-top:1px solid #242a36}
+  .lb-note .nt-art:first-of-type{border-top:0;padding-top:2px}
+  .lb-note .nt-art.cur{border-left:3px solid var(--accent-bright);padding-left:12px;margin-left:-15px}
+  .lb-note .nt-art:not(.cur){opacity:.8}
+  .lb-note .brf-kv .k{width:calc(42px*var(--fs))}
+  .lb-note .brf-tblwrap,.lb-note .brf-detail{margin-left:0}
+  .lb-note .brf-tbl{min-width:0;width:100%}
+  .lb-note .num{color:#ffd66b;font-weight:700;font-variant-numeric:tabular-nums}   /* 숫자만 눈에 띄게 → 지면과 대조 쉽게 */
   /* ⚠️ 확대를 transform:scale 로 하면 브라우저가 '작게 그려둔 그림을 늘려' 글씨가 뭉개진다
      (will-change:transform 이면 더 심하다). 그래서 실제 width/height 를 바꿔서
      그 크기로 '다시 그리게' 한다 → 원본 해상도까지는 글씨가 또렷하다.
@@ -405,6 +427,7 @@
   <div class="lb-bar">
     <span class="lb-count" id="lb-count"></span><span class="lb-native" id="lb-native"></span>
     <button class="lb-btn pick" id="lb-pick" hidden title="지금 보는 장을 이 기사의 지면으로 연결">📌 <span class="lg">이 장 </span>연결</button>
+    <button class="lb-btn" id="lb-note-btn" hidden title="기사 요약(WHAT·WHY·HOW) 옆에 보기 (N)" aria-label="기사 요약 보기" aria-pressed="true">📝</button>
     <button class="lb-btn" id="lb-pen" title="형광펜 (H)" aria-label="형광펜" aria-pressed="false">🖍</button>
     <button class="lb-btn" id="lb-out" title="축소" aria-label="축소">−</button>
     <button class="lb-btn" id="lb-in" title="확대" aria-label="확대">＋</button>
@@ -432,7 +455,10 @@
     <span class="lb-saved" id="lb-saved"></span>
     <button id="lb-pen-off" title="형광펜 끄기">✕ 끄기</button>
   </div>
-  <div class="lb-stage" id="lb-stage"><img id="lb-img" alt=""><canvas class="lb-mark" id="lb-mark"></canvas></div>
+  <div class="lb-body">
+    <div class="lb-stage" id="lb-stage"><img id="lb-img" alt=""><canvas class="lb-mark" id="lb-mark"></canvas></div>
+    <aside class="lb-note" id="lb-note" hidden aria-label="이 지면에 실린 기사 요약"></aside>
+  </div>
   <button class="lb-nav next" id="lb-next" aria-label="다음 장">›</button>
   <div class="lb-hint" id="lb-hint">좌우로 넘기기 · 휠/더블탭 확대 · 확대 후 방향키·우클릭 드래그로 이동 · 🖍 형광펜(H) · Esc 닫기</div>
 </div>
@@ -1252,6 +1278,66 @@ function hideNav(){
 }
 /* 사진 양옆 여백이 화살표가 들어갈 만큼 넓으면, 화살표를 '사진 바깥'으로 옮긴다.
    → 지면 위에 아예 안 올라간다. 좁으면(휴대폰 세로 등) 화면 가장자리에 붙인다. */
+/* ── 옆 요약 칸 채우기 ───────────────────────────────────────────────
+   지금 보는 장(V.i)에 연결된 기사를 피드에서 찾아(.brf-side[data-i]) 그 본문(.brf-main)을 복사해 넣는다.
+   → 요약 규칙(WHAT·WHY·HOW·표·보충 줄)을 다시 만들 필요 없이 화면과 **똑같은 내용**이 나온다.
+   연 기사는 맨 위 + 왼쪽 파란 줄, 같은 장의 다른 기사는 아래에 흐리게.
+   지면 고르기(📌) 중이거나 이 장에 연결된 기사가 없으면 칸을 숨겨 사진을 넓게 쓴다. */
+const NOTE_KEY="digest.lbNote";
+function noteWanted(){ try{ return localStorage.getItem(NOTE_KEY)!=="0"; }catch(e){ return true; } }
+const NUM_RE=/\d[\d,.]*(?:\s?%p?)?/g;
+function markNums(root){
+  // 글자 속 숫자만 <span class="num"> 으로 감싼다(표·제목 포함). 태그 속성은 건드리지 않는다.
+  const w=document.createTreeWalker(root, NodeFilter.SHOW_TEXT), nodes=[];
+  while(w.nextNode()) if(/\d/.test(w.currentNode.nodeValue)) nodes.push(w.currentNode);
+  for(const t of nodes){
+    const f=document.createDocumentFragment(); const v=t.nodeValue;
+    // 제목 맨 앞 기사 번호("2. ")는 수치가 아니므로 건너뛴다
+    let pv=t.previousSibling;                  // 앞에 ⭐ 같은 머리표(.brf-flag)만 있으면 '제목 첫 글자'
+    while(pv && pv.nodeType===1 && pv.classList.contains("brf-flag")) pv=pv.previousSibling;
+    const head=!pv && t.parentElement && t.parentElement.classList.contains("brf-title");
+    let last=(head && (v.match(/^\s*\d{1,3}[.)]\s/)||[""])[0].length)||0;
+    const off=last; if(last) f.append(v.slice(0,last));
+    v.slice(last).replace(NUM_RE,(m,i)=>{ i+=off; f.append(v.slice(last,i)); const sp=document.createElement("span"); sp.className="num"; sp.textContent=m; f.append(sp); last=i+m.length; return m; });
+    f.append(v.slice(last)); t.replaceWith(f);
+  }
+}
+function noteArts(){
+  const arts=[];
+  document.querySelectorAll('#feed .brf-side[data-i="'+V.i+'"]').forEach(sd=>{
+    const a=sd.closest(".brf-art"); if(a && !arts.includes(a)) arts.push(a);
+  });
+  if(V.fromArt && arts.includes(V.fromArt)){ arts.splice(arts.indexOf(V.fromArt),1); arts.unshift(V.fromArt); }
+  return arts;
+}
+function fillNote(){
+  const box=$("lb-note"), btn=$("lb-note-btn");
+  const arts=V.pick?[]:noteArts();
+  btn.hidden=!arts.length;
+  btn.setAttribute("aria-pressed", noteWanted()?"true":"false");
+  const show=arts.length>0 && noteWanted();
+  const was=!box.hidden;
+  box.hidden=!show;
+  if(show){
+    box.innerHTML='<div class="nt-head">'+String(V.i+1).padStart(2,"0")+'번째 장 · 기사 '+arts.length+'건 · 숫자 강조</div>';
+    for(const a of arts){
+      const m=a.querySelector(".brf-main"); if(!m) continue;
+      const c=document.createElement("section");
+      c.className="nt-art"+(a===V.fromArt?" cur":"");
+      c.innerHTML=m.innerHTML;
+      c.querySelectorAll("[id]").forEach(e=>e.removeAttribute("id"));
+      markNums(c);
+      box.append(c);
+    }
+    box.scrollTop=0;
+  }else box.textContent="";
+  return was!==show;                           // 폭이 바뀌었는지(사진 크기를 다시 맞춰야 하는지)
+}
+function toggleNote(){
+  const on=!noteWanted();
+  try{ localStorage.setItem(NOTE_KEY, on?"1":"0"); }catch(e){}
+  if(fillNote() && $("lb-img").naturalWidth){ V.zoom=1; V.navPos=null; measure(); }
+}
 function placeNav(){
   if(!V.stage) return;
   const btnW=window.innerWidth<=520?38:44;      // CSS 의 화살표 너비와 맞춘다
@@ -1262,7 +1348,8 @@ function placeNav(){
   if(pos===V.navPos) return;                   // 값이 그대로면 다시 쓰지 않는다(버벅임 방지)
   V.navPos=pos;
   $("lb-prev").style.left=pos+"px";
-  $("lb-next").style.right=pos+"px";
+  const nw=$("lb-note").offsetWidth||0;        // 요약 칸이 있으면 그 왼쪽(사진 쪽)에 둔다
+  $("lb-next").style.right=(pos+nw)+"px";
 }
 
 /* ══ 형광펜 ═══════════════════════════════════════════════════════════════
@@ -1477,6 +1564,7 @@ function openViewer(i,opts={}){
   resetPointers();                             // 이전에 꼬인 터치 상태를 새 기사로 가져오지 않게
   V.pick=opts.pick||null;
   V.box=opts.box||null;                        // 열자마자 이 기사 영역으로 확대(요약 JSON 의 bbox)
+  V.fromArt=opts.art||null;                    // 이 기사에서 열었다 → 옆 요약 칸에서 맨 위·강조
   $("lb-pick").hidden=!V.pick;
   $("lb").hidden=false;
   document.body.style.overflow="hidden";     // 뒤쪽 페이지가 같이 스크롤되지 않게
@@ -1499,11 +1587,13 @@ function closeViewer(){
   resetPointers();                             // 닫는 순간 남은 손가락 기록도 비운다
   if(M.on) setPen(false);                      // 형광펜 모드였다면 꺼 둔다
   V.pick=null; $("lb-pick").hidden=true;
+  V.fromArt=null;
   // 그은 줄은 메모리에 그대로 남는다 → 다시 열면 보인다(새로고침하면 사라짐)
   drawSideMarks();                             // 기사 옆 작은 사진에도 방금 그은 줄을 반영
 }
 function showPage(){
   const im=V.list[V.i]; if(!im) return;
+  fillNote();                                  // 장이 바뀌면 옆 요약 칸도 그 장의 기사로(사진 크기 계산 전에 폭을 정한다)
   const img=$("lb-img");
   img.style.visibility="hidden";
   img.src=im.url;                              // 뷰어는 썸네일이 아니라 원본을 쓴다
@@ -1619,6 +1709,7 @@ function go(step){
 
 // ── 입력: 버튼 ──────────────────────────────────────────────────────────
 $("lb-close").onclick=closeViewer;
+$("lb-note-btn").onclick=toggleNote;
 $("lb-prev").onclick=()=>go(-1);
 $("lb-next").onclick=()=>go(1);
 
@@ -1708,6 +1799,7 @@ document.addEventListener("keydown",e=>{
     M.on ? setPen(false) : closeViewer(); return;
   }
   if(e.key==="h"||e.key==="H"){ setPen(!M.on); return; }
+  if((e.key==="n"||e.key==="N")&&!e.ctrlKey&&!e.metaKey&&!$("lb-note-btn").hidden){ toggleNote(); return; }   // 옆 요약 칸 켜고 끄기
   if((e.key==="z"||e.key==="Z")&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); $("lb-undo").onclick(); return; }
   // 선 굵기 한 단계씩 — [ 가늘게 / ] 굵게
   if(M.on&&(e.key==="["||e.key==="]")){
@@ -2184,7 +2276,7 @@ document.getElementById("feed").addEventListener("click",e=>{
   if(act==="pen"||act==="view"){
     // 기사 영역이 있으면 '줄 긋기'는 그 기사로 확대해서 열고, '크게'는 지면 전체로 연다
     const box=(act==="pen"&&side.dataset.box)?side.dataset.box.split(",").map(Number):null;
-    openViewer(+side.dataset.i,{pen:act==="pen", box}); return;
+    openViewer(+side.dataset.i,{pen:act==="pen", box, art:side.closest(".brf-art")}); return;
   }
   if(act==="pick"){
     // 이미 연결된 장이 있으면 그 장에서, 없으면 마지막으로 고른 장(비슷한 면일 확률이 높다)에서 시작
