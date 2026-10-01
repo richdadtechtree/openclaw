@@ -61,7 +61,7 @@ const BRIEF = [
 
 const DUP = [
   '*[신문요약 고친본]*',
-  '5. 수색 · 상암 비행안전구역 19.8㎢ 해제',
+  '5. 수색·상암의 비행안전구역 19.8㎢ 해제된다',   // 2026-10-01 실제처럼 낱말까지 살짝 바뀐 재전송("기로 선"↔"…기로에 선")
   '• WHAT: (고친 요약) 안전구역 93% 해제.',
   '• 사진: 03',
 ].join('\n');
@@ -133,13 +133,13 @@ const openSide = async (page, k, act = 'pen') => {
   check(n.titles.length === 2 && /^2\. 수색/.test(n.titles[0]) && /1\. .*대구 미분양/.test(n.titles[1]),
         '연 기사가 맨 위, 같은 장(03)의 다른 기사는 아래', n.titles.map(t => t.slice(0, 8)).join(' / '));
   check(n.cur[0] === true && n.cur[1] === false, '연 기사만 파란 줄로 강조');
-  check(!n.titles.some(t => /수색 · 상암/.test(t)), '같은 기사를 GPT 가 다시 보냈어도 옆 칸엔 하나만(번호·빈칸 달라도)', `${n.titles.length}건`);
+  check(!n.titles.some(t => /수색·상암의/.test(t)), '같은 기사를 GPT 가 다시 보냈어도 옆 칸엔 하나만(번호·빈칸·낱말이 조금 달라도)', `${n.titles.length}건`);
   check(n.kv === 'WHAT,WHY,HOW', 'WHAT·WHY·HOW 가 그대로 보인다', n.kv);
 
   await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
   await openSide(page, 3);                        // 다시 보낸 쪽(고친 요약)에서 열면 → 그쪽이 남는다
   const nd = await note(page);
-  check(nd.titles.length === 2 && /수색 · 상암/.test(nd.titles[0]) && nd.cur[0] && !nd.titles.some(t => /^2\. 수색·상암/.test(t)),
+  check(nd.titles.length === 2 && /수색·상암의/.test(nd.titles[0]) && nd.cur[0] && !nd.titles.some(t => /^2\. 수색·상암/.test(t)),
         '고친 요약에서 열면 그 요약이 맨 위에, 원래 것은 빠진다', nd.titles.map(t => t.slice(0, 10)).join(' / '));
   await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
   await openSide(page, 1);
