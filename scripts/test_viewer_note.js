@@ -59,13 +59,22 @@ const BRIEF = [
   '• HOW: 공실 감소에 기여했다는 분석임.',
 ].join('\n');
 
+const DUP = [
+  '*[신문요약 고친본]*',
+  '5. 수색 · 상암 비행안전구역 19.8㎢ 해제',
+  '• WHAT: (고친 요약) 안전구역 93% 해제.',
+  '• 사진: 03',
+].join('\n');
+
 const srv = http.createServer((req, res) => {
   const u = req.url.split('?')[0];
   const D = new URL(req.url, 'http://x').searchParams.get('date') || '2026-09-30';
   const send = (t, b) => { res.writeHead(200, { 'Content-Type': t }); res.end(b); };
   if (u === '/' || u === '/slack') return send('text/html; charset=utf-8', fs.readFileSync(HTML));
   if (u === '/slack/data') return send('application/json', JSON.stringify({ date: D,
-    messages: [{ ts: D + 'T06:29:00', source: 'user', kind: 'text', text: BRIEF }] }));
+    messages: [{ ts: D + 'T06:29:00', source: 'user', kind: 'text', text: BRIEF },
+               // GPT 가 같은 기사를 다시 보낸 경우(2026-10-01 실제) — 번호·빈칸만 다른 같은 제목
+               { ts: D + 'T07:10:00', source: 'user', kind: 'text', text: DUP }] }));
   if (u === '/api/news/today') {
     const images = Array.from({ length: 6 }, (_, i) => {
       const n = String(i + 1).padStart(2, '0') + '.jpg';
@@ -115,7 +124,7 @@ const openSide = async (page, k, act = 'pen') => {
   const page = await ctx.newPage();
   page.on('pageerror', e => { pass = false; console.log('  ❌ 페이지 오류: ' + e.message); });
   await page.goto(base + '/slack');
-  await page.waitForFunction(() => document.querySelectorAll('.brf-side img').length === 3);
+  await page.waitForFunction(() => document.querySelectorAll('.brf-side img').length === 4);
 
   console.log('\n[① 기사 사진 누르면 → 옆에 그 기사 요약 (PC 1280px)]');
   await openSide(page, 1);                        // 2번 기사(03번 장)에서 연다
@@ -124,8 +133,17 @@ const openSide = async (page, k, act = 'pen') => {
   check(n.titles.length === 2 && /^2\. 수색/.test(n.titles[0]) && /1\. .*대구 미분양/.test(n.titles[1]),
         '연 기사가 맨 위, 같은 장(03)의 다른 기사는 아래', n.titles.map(t => t.slice(0, 8)).join(' / '));
   check(n.cur[0] === true && n.cur[1] === false, '연 기사만 파란 줄로 강조');
+  check(!n.titles.some(t => /수색 · 상암/.test(t)), '같은 기사를 GPT 가 다시 보냈어도 옆 칸엔 하나만(번호·빈칸 달라도)', `${n.titles.length}건`);
   check(n.kv === 'WHAT,WHY,HOW', 'WHAT·WHY·HOW 가 그대로 보인다', n.kv);
 
+  await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
+  await openSide(page, 3);                        // 다시 보낸 쪽(고친 요약)에서 열면 → 그쪽이 남는다
+  const nd = await note(page);
+  check(nd.titles.length === 2 && /수색 · 상암/.test(nd.titles[0]) && nd.cur[0] && !nd.titles.some(t => /^2\. 수색·상암/.test(t)),
+        '고친 요약에서 열면 그 요약이 맨 위에, 원래 것은 빠진다', nd.titles.map(t => t.slice(0, 10)).join(' / '));
+  await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
+  await openSide(page, 1);
+  n = await note(page);
   console.log('\n[② 숫자 강조 · 표]');
   check(n.nums.includes('8,807') && n.nums.includes('4,383') && n.nums.includes('93%') && n.nums.includes('1.5'),
         '숫자(8,807 · 93% · 1.5 등)가 노랗게 강조된다', n.nums.slice(0, 6).join(' '));
@@ -196,7 +214,7 @@ const openSide = async (page, k, act = 'pen') => {
   const ph = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
   const pp = await ph.newPage();
   await pp.goto(base + '/slack');
-  await pp.waitForFunction(() => document.querySelectorAll('.brf-side img').length === 3);
+  await pp.waitForFunction(() => document.querySelectorAll('.brf-side img').length === 4);
   await openSide(pp, 0);
   n = await note(pp);
   const over = await pp.evaluate(() => document.querySelector('.lb-bar').scrollWidth - document.querySelector('.lb-bar').clientWidth);

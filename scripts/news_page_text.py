@@ -99,7 +99,7 @@ def has_korean(tb):
         return False
 
 
-def ocr(tb, path, timeout=180):
+def ocr(tb, path, timeout=600):
     """
     사진 한 장 → (글자, 낱말 위치 표). 신문은 여러 단이라 psm 3(자동 배치 분석)이 가장 잘 읽는다.
     'tsv' 로 받으면 **한 번 읽기로** 글자와 낱말마다의 위치(왼쪽·위·너비·높이)를 함께 얻는다.
@@ -281,6 +281,15 @@ def build(date, force=False, verbose=True):
             "      설치: sudo apt-get install -y tesseract-ocr tesseract-ocr-kor" % date)
         return 2
 
+    # 한 번에 하나만 — 30분마다 도는 자동 실행과 손으로 한 실행이 겹치면 같은 장을 두 번 읽고 파일을 서로 덮어쓴다
+    import fcntl
+    lockf = open(os.path.join(ddir, ".page_text.lock"), "w")
+    try:
+        fcntl.flock(lockf, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        say("[%s] 이미 다른 곳에서 지면 글자를 읽는 중이에요(30분마다 도는 자동 실행일 수 있음). 그쪽이 끝나면 반영돼요." % date)
+        return 0
+
     opath = os.path.join(ddir, OUT_FILE)
     store = load_json(opath, {}) or {}
     if store.get("ver") != ENGINE_VER:
@@ -292,7 +301,14 @@ def build(date, force=False, verbose=True):
         wstore = {}
     wpages = wstore.get("pages") or {}
     done = kept = fail = 0
-    for im in index["images"]:
+    total = len(index["images"])
+    todo = sum(1 for im in index["images"]
+               if force or not ((pages.get(im["name"]) or {}).get("ok") and (wpages.get(im["name"]) or {}).get("size")))
+    if todo:
+        say("[%s] 신문 %d장 중 %d장을 읽어요. 한 장에 30초~1분쯤 걸려요 — 끝날 때까지 그대로 두세요.\n"
+            "      (중간에 꺼도 읽은 장은 남고, 30분마다 서버가 이어서 읽어요)" % (date, total, todo))
+    import time
+    for no, im in enumerate(index["images"], 1):
         name = im["name"]
         path = os.path.join(ddir, os.path.basename(name))
         size = os.path.getsize(path) if os.path.isfile(path) else 0
@@ -308,7 +324,12 @@ def build(date, force=False, verbose=True):
             fail += 1
             continue
         try:
+            if verbose:
+                print("  [%d/%d] %s 읽는 중…" % (no, total, name), end="", flush=True)
+            t0 = time.time()
             text, raw = ocr(tb, path)
+            if verbose:
+                print(" %.0f초" % (time.time() - t0), flush=True)
             tk = sorted(tokens(text))
             lay = layout(raw)
             lay["size"] = size
@@ -318,6 +339,8 @@ def build(date, force=False, verbose=True):
             say("  %s  ✓ 조각 %d개 · %s" % (name, len(tk), pages[name]["head"][:40]))
             done += 1
         except Exception as e:
+            if verbose:
+                print("", flush=True)              # '읽는 중…' 줄을 끝내고 오류는 새 줄에
             pages[name] = {"size": size, "ok": False, "tokens": [], "error": str(e)[:160]}
             say("  %s  ✗ %s" % (name, str(e)[:120]))
             fail += 1
