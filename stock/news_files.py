@@ -178,6 +178,27 @@ def ensure_zip(date, what="photos"):
         return None
 
 
+def page_words(date, name):
+    """
+    한 장의 낱말 위치(scripts/news_page_text.py 가 만든 page_words.json) → 웹 (2026-10-01).
+    웹은 요약의 근거 문장·숫자를 이 위치에서 찾아 지면 위에 형광펜을 긋는다.
+    한 장씩만 보낸다(한 장 ≈ 수십 KB — 30장을 한 번에 보내면 무겁다).
+    반환: {"ok":True,"W":픽셀,"H":픽셀,"segs":[[단, x, y, w, h, [[글자,x,y,w,h]…]]…]} (좌표 0~10000) / 없으면 {"ok":False}
+    """
+    if not valid_date(date):
+        return {"ok": False}
+    name = os.path.basename(name or "")
+    try:
+        with open(os.path.join(day_dir(date), "page_words.json"), encoding="utf-8") as f:
+            store = json.load(f) or {}
+    except Exception:
+        return {"ok": False}
+    p = (store.get("pages") or {}).get(name)
+    if not p or not p.get("segs"):
+        return {"ok": False}
+    return {"ok": True, "name": name, "W": p.get("W"), "H": p.get("H"), "segs": p["segs"]}
+
+
 def page_tokens(date):
     """
     지면 글자 조각(scripts/news_page_text.py 가 만든 page_text.json) → 웹이 쓸 모양 (2026-09-24).

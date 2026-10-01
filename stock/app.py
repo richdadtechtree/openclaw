@@ -460,6 +460,15 @@ def news_pagetext(date: str = ""):
     return JSONResponse(_news.page_tokens(date))
 
 
+@app.get("/api/news/pagewords")
+def news_pagewords(date: str = "", name: str = ""):
+    """신문 사진 한 장의 낱말 위치 — 웹이 요약의 근거 문장·숫자를 지면에 형광펜으로 긋는 데 쓴다(2026-10-01)."""
+    if _news is None or not hasattr(_news, "page_words"):
+        return JSONResponse(status_code=503, content={"ok": False})
+    date = date or _news.today_kst()
+    return JSONResponse(_news.page_words(date, name))
+
+
 @app.get("/api/news/zip")
 def news_zip(date: str = "", what: str = "photos"):
     """그날 사진을 한 번에 받는 ZIP. what=all 이면 PDF 도 함께."""
