@@ -302,8 +302,10 @@ def build(date, force=False, verbose=True):
     wpages = wstore.get("pages") or {}
     done = kept = fail = 0
     total = len(index["images"])
-    todo = sum(1 for im in index["images"]
-               if force or not ((pages.get(im["name"]) or {}).get("ok") and (wpages.get(im["name"]) or {}).get("size")))
+    def _done(n):
+        o = pages.get(n) or {}
+        return "tokens" in o and not o.get("error") and (wpages.get(n) or {}).get("size")
+    todo = sum(1 for im in index["images"] if force or not _done(im["name"]))
     if todo:
         say("[%s] 신문 %d장 중 %d장을 읽어요. 한 장에 30초~1분쯤 걸려요 — 끝날 때까지 그대로 두세요.\n"
             "      (중간에 꺼도 읽은 장은 남고, 30분마다 서버가 이어서 읽어요)" % (date, total, todo))
@@ -315,7 +317,8 @@ def build(date, force=False, verbose=True):
         old = pages.get(name) or {}
         # 글자 조각과 낱말 위치가 **둘 다** 있을 때만 건너뛴다
         # (2026-10-01 이전에 읽은 장은 위치가 없어 한 번 더 읽는다)
-        if not force and old.get("ok") and old.get("size") == size and size \
+        # 글자가 거의 없는 장(광고·큰 사진)은 조각이 0개라 ok=False 지만 오류는 아니다 → 다시 읽지 않는다
+        if not force and size and old.get("size") == size and not old.get("error") and "tokens" in old \
                 and (wpages.get(name) or {}).get("size") == size:
             kept += 1
             continue
