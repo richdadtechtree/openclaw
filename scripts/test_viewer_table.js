@@ -156,9 +156,13 @@ const MSG10 = `[신문요약 1/6] :newspaper: 2026년 9월 28일 신문 브리�
     const page = await browser.newPage({ viewport: { width: w, height: 900 } });
     page.on('pageerror', e => { pass = false; console.log('  ❌ 페이지 오류: ' + e.message); });
     await page.goto(base + '/slack');
-    await page.evaluate(() => { state.date = '2026-09-24'; lastSnapshot = null; return load(); });
+    // 날짜를 바꿀 땐 실제 화면의 날짜 선택(datepick)과 똑같이 요약(load)과 신문 사진(loadNews)을 **둘 다** 다시 받는다.
+    // ⚠️ 예전엔 load() 만 불러, 사진 목록은 '오늘' 날짜로 남았다 → 테스트를 2026-09-24 에 돌릴 때만
+    //    통과하고 그 뒤로는 "사진 칸 없음"으로 실패했다(화면 버그가 아니라 테스트의 날짜 의존).
+    await page.evaluate(() => { state.date = '2026-09-24'; lastSnapshot = null; return Promise.all([load(), loadNews()]); });
     await page.waitForSelector('.brf-art');
-    await page.waitForFunction(() => newsState.images.length === 3);
+    await page.waitForFunction(() => newsState.images.length === 3 && newsState.date === '2026-09-24');
+    await page.waitForFunction(() => document.querySelectorAll('.entry .body')[0].querySelectorAll('.brf-side').length === 2);
     console.log(`\n[${label} ${w}px]`);
     const r = await page.evaluate(() => {
       const c = document.querySelectorAll('.entry .body')[0];
