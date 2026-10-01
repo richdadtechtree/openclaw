@@ -131,8 +131,22 @@ const openSide = async (page, k, act = 'pen') => {
         '숫자(8,807 · 93% · 1.5 등)가 노랗게 강조된다', n.nums.slice(0, 6).join(' '));
   check(!n.nums.includes('1.') && !n.nums.includes('2.') && !n.nums.includes('2'), '제목 앞 기사 번호(1. 2.)는 강조 안 함');
   check(n.tblRows === 2, '표도 칸 안에 그대로(2줄)');
-  const col = await page.evaluate(() => getComputedStyle(document.querySelector('#lb-note .num')).color);
-  check(col === 'rgb(255, 214, 107)', '강조 숫자 색', col);
+  // 2026-10-01 가독성: 종이색 바탕 + 진한 글씨, 숫자는 노란 형광펜 바탕. 대비(WCAG) 7:1 이상이어야 '잘 읽힘'
+  const cs = await page.evaluate(() => {
+    const g = (sel, p) => getComputedStyle(document.querySelector('#lb-note ' + sel))[p];
+    return { bg: getComputedStyle(document.getElementById('lb-note')).backgroundColor,
+             v: g('.brf-kv .v', 'color'), t: g('.brf-title', 'color'), k: g('.brf-kv .k', 'color'),
+             nb: g('.num', 'backgroundColor'), nc: g('.num', 'color'), op: g('.nt-art:not(.cur)', 'opacity') };
+  });
+  const lum = c => { const [r, g, b] = c.match(/\d+/g).slice(0, 3).map(x => { x /= 255; return x <= .03928 ? x / 12.92 : ((x + .055) / 1.055) ** 2.4; });
+    return .2126 * r + .7152 * g + .0722 * b; };
+  const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return (x + .05) / (y + .05); };
+  const rv = ratio(cs.v, cs.bg), rt = ratio(cs.t, cs.bg), rk = ratio(cs.k, cs.bg), rn = ratio(cs.nc, cs.nb);
+  check(lum(cs.bg) > 0.9, '칸 바탕은 지면처럼 밝은 종이색', cs.bg);
+  check(rv >= 7 && rt >= 7, '본문·제목 글씨 대비 7:1 이상(잘 읽힘)', `본문 ${rv.toFixed(1)}:1 · 제목 ${rt.toFixed(1)}:1`);
+  check(rk >= 4.5, 'WHAT·WHY·HOW 라벨도 또렷(4.5:1 이상)', `${rk.toFixed(1)}:1`);
+  check(rn >= 7 && cs.nb !== 'rgba(0, 0, 0, 0)', '숫자는 노란 형광펜 바탕 + 진한 글씨', `${cs.nb} · ${rn.toFixed(1)}:1`);
+  check(cs.op === '1', '같은 장 다른 기사도 흐리게 하지 않는다(글씨 대비 유지)');
 
   console.log('\n[③ 사진을 가리지 않는다]');
   check(n.imgRight <= n.left + 1, '사진 오른쪽 끝이 요약 칸보다 왼쪽', `사진 ${n.imgRight} ≤ 칸 ${n.left}`);

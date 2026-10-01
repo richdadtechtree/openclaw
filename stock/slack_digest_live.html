@@ -243,22 +243,32 @@
      (사진은 남은 폭에 다시 맞춰진다). 넓은 화면(PC, 900px↑)에서만 — 폰은 좁아서 사진이 너무 작아진다.
      뷰어는 늘 어두운 배경이라, 밝은 테마여도 이 칸 안의 색 변수는 어두운 값으로 덮어쓴다. */
   .lb-body{flex:1;display:flex;min-height:0;position:relative}
-  .lb-note{flex:none;width:clamp(320px,30vw,460px);overflow-y:auto;overscroll-behavior:contain;
-           padding:14px 18px 40px;border-left:1px solid #242a36;background:#11151f;color:#e7eaf1;
-           touch-action:pan-y;user-select:text;line-height:1.65;
-           --surface:#161a23;--ink:#e7eaf1;--muted:#aab2c2;--faint:#7c8597;--line:#242a36;--line-strong:#313848;
-           --accent:#9fb2ef;--accent-bright:#7f9bf5;--c-side:#f0776d;--c-brief:#33c3af}
+  /* ⚠️ 2026-10-01: 처음엔 어두운 바탕(#11151f)에 밝은 글씨였는데 "가독성이 너무 떨어진다".
+     하얀 신문 바로 옆이라 눈이 밝은 지면 ↔ 어두운 칸을 오가며 계속 적응해야 하고, 가는 한글 획이
+     어두운 바탕에서 번져 보였다 → **종이색 바탕 + 진한 먹색 글씨**로(대비 약 17:1, 지면과 같은 밝기).
+     숫자는 노란 글씨 대신 **형광펜처럼 노란 바탕**에 진한 글씨로. 테마(밝음/어두움)와 상관없이 늘 이 색. */
+  .lb-note{flex:none;width:clamp(340px,31vw,480px);overflow-y:auto;overscroll-behavior:contain;
+           padding:16px 20px 40px;border-left:1px solid #2b3244;background:#fbfaf6;color:#14171d;
+           touch-action:pan-y;user-select:text;line-height:1.7;
+           --surface:#ffffff;--ink:#14171d;--muted:#353c48;--faint:#5d6574;--line:#e4e2da;--line-strong:#cfccc2;
+           --accent:#24366b;--accent-bright:#3a5bd0;--c-side:#b3261e;--c-brief:#0b6e63}
   .lb-note[hidden]{display:none}
   @media (max-width:899px){ .lb-note{display:none} #lb-note-btn{display:none} }
-  .lb-note .nt-head{font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:#8b93a4;margin:0 0 10px}
-  .lb-note .nt-art{padding:12px 0 14px;border-top:1px solid #242a36}
+  .lb-note .nt-head{font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:#5d6574;margin:0 0 12px}
+  .lb-note .nt-art{padding:14px 0 16px;border-top:1px solid #e4e2da}
   .lb-note .nt-art:first-of-type{border-top:0;padding-top:2px}
-  .lb-note .nt-art.cur{border-left:3px solid var(--accent-bright);padding-left:12px;margin-left:-15px}
-  .lb-note .nt-art:not(.cur){opacity:.8}
-  .lb-note .brf-kv .k{width:calc(42px*var(--fs))}
+  .lb-note .nt-art.cur{border-left:4px solid var(--accent-bright);padding-left:12px;margin-left:-16px}
+  .lb-note .brf-title{color:#0d1016;font-weight:800}
+  .lb-note .brf-kv .v,.lb-note .brf-line,.lb-note .brf-num .v{color:#14171d;font-weight:500}
+  .lb-note .brf-kv .k{width:calc(42px*var(--fs));color:#3a5bd0;font-weight:800}
+  .lb-note .brf-sub,.lb-note .brf-detail{color:#353c48}
   .lb-note .brf-tblwrap,.lb-note .brf-detail{margin-left:0}
-  .lb-note .brf-tbl{min-width:0;width:100%}
-  .lb-note .num{color:#ffd66b;font-weight:700;font-variant-numeric:tabular-nums}   /* 숫자만 눈에 띄게 → 지면과 대조 쉽게 */
+  .lb-note .brf-tbl{min-width:0;width:100%;background:#fff}
+  .lb-note .brf-tbl th{background:#eef1f8}
+  .lb-note .brf-src,.lb-note .brf-src a{color:#24366b}
+  /* 숫자 = 형광펜 칠한 것처럼 → 지면 숫자와 대조할 곳이 한눈에 */
+  .lb-note .num{background:#ffe45c;color:#0d1016;font-weight:800;font-variant-numeric:tabular-nums;
+                border-radius:3px;padding:0 2px;box-decoration-break:clone;-webkit-box-decoration-break:clone}
   /* ⚠️ 확대를 transform:scale 로 하면 브라우저가 '작게 그려둔 그림을 늘려' 글씨가 뭉개진다
      (will-change:transform 이면 더 심하다). 그래서 실제 width/height 를 바꿔서
      그 크기로 '다시 그리게' 한다 → 원본 해상도까지는 글씨가 또렷하다.
