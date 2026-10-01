@@ -106,6 +106,16 @@ const MSG9 = `[신문요약 수정본 7/7]
 ② *분양 기회와 전세 공급은 지역·상품별로 다르게 나타남.*
 고덕강일 토지임대부 본청약 → 낮은 건물 분양가에 관심.
 :mag_right: 내일 봐야 할 3가지 아래 순서로 정리함.`;
+// 슬랙이 보내는 그대로의 모양 — 글 속 & < > 는 &amp; &lt; &gt; 로 온다(2026-10-01 "&amp; 로 보인다" 제보)
+const MSG12 = `[신문요약 2/2]
+1. S&amp;P500 급등…R&amp;D 투자 확대
+• WHAT: 금리 &lt; 3% 이고 환율 &gt; 1,300 이면 M&amp;A 조건 충족. 글자 그대로 &amp;lt; 라고 쓴 것도 있음.
+• WHY: 시장 기대.
+• HOW: <https://example.com/a?x=1&amp;y=2|원문> 참고.
+• 사진: 02
+\`\`\`json
+{"articles":[{"title":"S&amp;P500 급등…R&amp;D 투자 확대","page":3}]}
+\`\`\``;
 const MSG2 = `참고로 비교표야\n| 항목 | 값 |\n|---|---|\n| 금리 | 3.5% |\n| 환율 | 1,380 |`;
 const MSG3 = `:white_check_mark: 반드시 체크할 핵심 주제\n• 고덕강일3단지 토지임대부 구조와 실제 청약 조건.\n• 정비사업의 착공 전환.`;
 
@@ -120,7 +130,8 @@ const srv = http.createServer((req, res) => {
     { ts: D + 'T11:07:00', source: 'user', kind: 'text', text: MSG7 },
     { ts: D + 'T11:07:30', source: 'user', kind: 'text', text: MSG8 },
     { ts: D + 'T11:08:00', source: 'user', kind: 'text', text: MSG9 },
-    { ts: D + 'T11:09:00', source: 'user', kind: 'text', text: MSG10 }] }));
+    { ts: D + 'T11:09:00', source: 'user', kind: 'text', text: MSG10 },
+    { ts: D + 'T11:10:00', source: 'user', kind: 'text', text: MSG12 }] }));
   if (u === '/api/news/today') return send('application/json', JSON.stringify({ ok: true, ready: true, date: D, count: 3,
     images: ['01.jpg', '02.jpg', '03.jpg'].map(n => ({ name: n, url: '/x.png', thumb: '/x.png', download_url: '/x.png' })) }));
   if (u === '/api/news/pagetext') return send('application/json', '{"ok":false}');
@@ -268,6 +279,19 @@ const MSG10 = `[신문요약 1/6] :newspaper: 2026년 9월 28일 신문 브리�
     check(h10[2] && /^3\. “수도권 전세, 연말까지 3% 이상 강세…집값도 밀어올릴 것”$/.test(h10[2].t) && h10[2].badge === '🔴'
           && /^🔴 전세 상승이/.test(h10[2].sub[0] || ''),
           '앞 🔴 는 배지, 제목 뒤 🔴 설명은 여전히 아래 줄로', h10[2] && h10[2].sub[0]);
+    const am = await page.evaluate(() => {
+      const c = [...document.querySelectorAll('.entry .body')].find(b => /S&P500/.test(b.textContent));
+      if (!c) return null;
+      const a = c.querySelector('.brf-art'), link = c.querySelector('a[href*="example.com"]');
+      return { title: (a.querySelector('.brf-title') || {}).textContent.trim(), text: c.querySelector('.brf-main').textContent,
+               href: link && link.getAttribute('href'), src: ((a.querySelector('.side-src') || {}).textContent || '') };
+    });
+    check(am && am.title === '1. S&P500 급등…R&D 투자 확대', '슬랙의 &amp; 가 제목에서 & 로 보인다', am && am.title);
+    check(am && /금리 < 3% 이고 환율 > 1,300 이면 M&A 조건/.test(am.text) && !/&amp;|&lt;|&gt;/.test(am.text.replace('&lt; 라고', '')),
+          '본문의 &lt; &gt; &amp; 도 < > & 로', am && am.text.slice(6, 46));
+    check(am && /그대로 &lt; 라고/.test(am.text), '사람이 글자 그대로 쓴 "&lt;" 는 그대로 보인다(두 번 풀지 않음)');
+    check(am && am.href === 'https://example.com/a?x=1&y=2', '링크 주소 속 & 도 바르게', am && am.href);
+    check(am && /요약 JSON · 3쪽/.test(am.src), 'JSON 제목의 &amp; 도 풀려서 기사와 짝이 맞는다', am && am.src);
     check(r.over <= 0, '화면이 옆으로 넘치지 않는다', `${r.over}px`);
     await page.close();
   }

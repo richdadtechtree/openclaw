@@ -486,6 +486,11 @@ const CATS={
 };
 const cat=s=>CATS[s]||CATS.unknown;
 function esc(s){return s.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]))}
+/* 슬랙은 글 속의 & < > 를 &amp; &lt; &gt; 로 바꿔서 보낸다(링크 <https://…|원문> 의 꺾쇠와 헷갈리지 않으려고).
+   그대로 화면에 넣으면 esc() 가 한 번 더 바꿔 "R&amp;D" 처럼 보였다(2026-10-01 사용자 제보).
+   → 메시지를 받자마자 한 번만 원래 글자로 되돌린다. &amp; 는 **맨 마지막**에 —
+     사람이 글자 그대로 "&lt;" 라고 쓴 것(슬랙에선 &amp;lt;)이 "<" 로 잘못 바뀌지 않게. */
+function slackDecode(t){ return String(t||"").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&amp;/g,"&"); }
 // 슬랙 전용 :emoji_code: 표기를 실제 이모지로 변환. 매핑에 없는 코드는 조용히 제거(영어 텍스트로 안 남게).
 const EMOJI_MAP={
   red_circle:"🔴",large_orange_circle:"🟠",large_yellow_circle:"🟡",large_green_circle:"🟢",
@@ -511,8 +516,10 @@ function emojify(s){
 function inline(raw){
   let o=esc(raw);
   o=emojify(o);
-  o=o.replace(/&lt;(https?:\/\/[^|&]+)\|([^&>]+)&gt;/g,'<a href="$1" target="_blank" rel="noopener noreferrer">$2</a>');
-  o=o.replace(/&lt;(https?:\/\/[^&>]+)&gt;/g,'<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+  // 링크 주소 안의 & 는 esc() 뒤 "&amp;" 가 된다 → 예전 [^|&] 규칙은 그 앞에서 끊겨 ?a=1&b=2 같은 주소가 링크가 안 됐다(2026-10-01)
+  //   "&amp;" 는 주소의 일부로 받아들이고, 끝 표시 "&gt;" 앞에서만 멈춘다. (href 속 &amp; 는 브라우저가 & 로 읽는다)
+  o=o.replace(/&lt;(https?:\/\/(?:[^|&\s]|&amp;)+)\|((?:[^&]|&amp;)+?)&gt;/g,'<a href="$1" target="_blank" rel="noopener noreferrer">$2</a>');
+  o=o.replace(/&lt;(https?:\/\/(?:[^&\s]|&amp;)+)&gt;/g,'<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
   o=o.replace(/`([^`]+)`/g,"<code>$1</code>");
   o=o.replace(/(^|[\s(])\*(?!\s)([^*\n]+?)\*(?=[\s).,!?]|$)/g,"$1<strong>$2</strong>");
   o=o.replace(/(^|[\s(])_(?!\s)([^_\n]+?)_(?=[\s).,!?]|$)/g,"$1<em>$2</em>");
@@ -1100,7 +1107,7 @@ function render(){
   SUMMARY_META=[];
   const bodyOf=new Map();
   (state.data.messages||[]).forEach(m=>{
-    const sj=extractSummaryJson(cleanSent(m.text));
+    const sj=extractSummaryJson(cleanSent(slackDecode(m.text)));
     SUMMARY_META.push(...sj.articles); bodyOf.set(m, sj.text);
   });
   const msgs=[...(state.data.messages||[])]
