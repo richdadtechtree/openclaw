@@ -285,6 +285,10 @@
      .marking 보다 클래스가 하나 더 많아 우선순위가 높다 → 십자 커서를 이긴다. */
   .lb-stage.marking.movable,.lb-stage.marking.movable img{cursor:move}
   .lb-stage.moving,.lb-stage.moving img{cursor:grabbing}
+  /* ✋ 손바닥 모드 — 형광펜이 켜져 있어도 왼쪽 버튼은 '옮기기'. 커서도 손 모양으로(십자 커서보다 우선) */
+  .lb-stage.hand,.lb-stage.hand img,.lb-stage.hand.marking,.lb-stage.hand.marking img{cursor:grab}
+  .lb-stage.hand.panning,.lb-stage.hand.panning img{cursor:grabbing}
+  #lb-hand[aria-pressed="true"]{background:#2f4272;border-color:#7f9bf5;color:#fff}
   /* 형광펜 모드일 때 아래쪽에 뜨는 작은 도구모음 */
   /* 도구모음은 **사진 위에 떠 있지 않고** 상단 바 바로 아래 '한 줄'을 차지한다.
      .lb 가 세로 flex 이고 .lb-stage 가 flex:1 이라, 이 줄이 생기면 사진 영역이 그만큼
@@ -438,6 +442,7 @@
     <span class="lb-count" id="lb-count"></span><span class="lb-native" id="lb-native"></span>
     <button class="lb-btn pick" id="lb-pick" hidden title="지금 보는 장을 이 기사의 지면으로 연결">📌 <span class="lg">이 장 </span>연결</button>
     <button class="lb-btn" id="lb-note-btn" hidden title="기사 요약(WHAT·WHY·HOW) 옆에 보기 (N)" aria-label="기사 요약 보기" aria-pressed="true">📝</button>
+    <button class="lb-btn" id="lb-hand" title="손바닥 — 왼쪽 버튼으로 끌어 신문 옮기기 (M)" aria-label="손바닥(옮기기)" aria-pressed="false">✋</button>
     <button class="lb-btn" id="lb-pen" title="형광펜 (H)" aria-label="형광펜" aria-pressed="false">🖍</button>
     <button class="lb-btn" id="lb-out" title="축소" aria-label="축소">−</button>
     <button class="lb-btn" id="lb-in" title="확대" aria-label="확대">＋</button>
@@ -1645,8 +1650,24 @@ function center(){
 }
 function clampPan(){
   const w=V.fitW*V.zoom, h=V.fitH*V.zoom;
+  if(V.hand){
+    /* ✋ 손바닥 모드(2026-10-01): 원래는 사진 가장자리가 화면 끝에 닿으면 더 못 옮겨서,
+       지면 구석의 기사를 화면 가운데로 끌어올 수 없었다("오른쪽 드래그는 한계가 있다").
+       → 손바닥 모드에선 화면의 40% 만큼 가장자리를 넘어 옮길 수 있게 한다(1배에서도). 사진이 통째로 사라지진 않는다. */
+    const mx=V.stage.w*0.4, my=V.stage.h*0.4;
+    V.tx=Math.max(Math.min(V.stage.w-w,0)-mx, Math.min(Math.max(0,V.stage.w-w)+mx, V.tx));
+    V.ty=Math.max(Math.min(V.stage.h-h,0)-my, Math.min(Math.max(0,V.stage.h-h)+my, V.ty));
+    return;
+  }
   V.tx = w<=V.stage.w ? (V.stage.w-w)/2 : Math.max(V.stage.w-w, Math.min(0, V.tx));
   V.ty = h<=V.stage.h ? (V.stage.h-h)/2 : Math.max(V.stage.h-h, Math.min(0, V.ty));
+}
+// ✋ 손바닥 모드 켜고 끄기 — 끄면 사진을 다시 정상 범위 안으로 돌려놓는다
+function setHand(on){
+  V.hand=!!on;
+  $("lb-hand").setAttribute("aria-pressed", V.hand?"true":"false");
+  $("lb-stage").classList.toggle("hand", V.hand);
+  if(V.stage) paint();
 }
 let paintQueued=false;
 function paint(){
@@ -1741,13 +1762,14 @@ $("lb-in").onclick=()=>zoomAt(1.6);
 $("lb-out").onclick=()=>zoomAt(1/1.6);
 
 // ── 형광펜 버튼들 ───────────────────────────────────────────────────────
-$("lb-pen").onclick=()=>setPen(!M.on);
+$("lb-pen").onclick=()=>{ setPen(!M.on); if(M.on) setHand(false); };   // 형광펜을 켜면 바로 그을 수 있게 손바닥은 끈다
+$("lb-hand").onclick=()=>setHand(!V.hand);
 $("lb-pen-off").onclick=()=>setPen(false);
 // 색 고르기 — 빨강 · 파랑 · 노랑
 const COLORS=[["lb-c1","#ff5b5b"],["lb-c2","#4da3ff"],["lb-c3","#ffd93b"]];
 COLORS.forEach(([id,col])=>{
   $(id).onclick=()=>{
-    M.color=col; setErase(false);
+    M.color=col; setErase(false); setHand(false);   // 색을 고르면 '그리려는 것' → 손바닥 끔
     COLORS.forEach(([k])=>$(k).setAttribute("aria-pressed", k===id?"true":"false"));
     const sel=selStroke();                     // 방금 그린 동그라미는 색도 바로 바뀐다
     if(sel){ sel.c=col; drawMarks(); }
@@ -1758,7 +1780,7 @@ $("lb-c1").setAttribute("aria-pressed","true");        // 기본은 빨강
 // 도구 고르기 — 직선(기본) · 동그라미 · 자유
 const TOOLS=[["lb-t-line","line"],["lb-t-oval","oval"],["lb-t-free","free"]];
 function setTool(t){
-  M.tool=t; setErase(false);
+  M.tool=t; setErase(false); setHand(false);
   M.sel=null;                                  // 도구를 바꾸면 '방금 그린 것' 고르기는 끝
   TOOLS.forEach(([id,k])=>$(id).setAttribute("aria-pressed", k===t?"true":"false"));
   drawMarks();                                 // 점선 안내를 지운다
@@ -1778,7 +1800,7 @@ WEIGHTS.forEach(([id,v])=>{ $(id).onclick=()=>setWeight(v); });
 
 function setErase(on){
   M.erase=on;
-  if(on){ M.sel=null; drawMarks(); }           // 지울 땐 옮기기 안내(점선)를 치운다
+  if(on){ M.sel=null; drawMarks(); setHand(false); }   // 지울 땐 옮기기 안내(점선)를 치우고, 손바닥도 끈다
   $("lb-erase").setAttribute("aria-pressed", on?"true":"false");
 }
 $("lb-erase").onclick=()=>setErase(!M.erase);
@@ -1814,7 +1836,8 @@ document.addEventListener("keydown",e=>{
     if(selStroke()){ M.sel=null; drawMarks(); return; }
     M.on ? setPen(false) : closeViewer(); return;
   }
-  if(e.key==="h"||e.key==="H"){ setPen(!M.on); return; }
+  if(e.key==="h"||e.key==="H"){ setPen(!M.on); if(M.on) setHand(false); return; }
+  if((e.key==="m"||e.key==="M")&&!e.ctrlKey&&!e.metaKey){ setHand(!V.hand); return; }   // ✋ 손바닥(옮기기)
   if((e.key==="n"||e.key==="N")&&!e.ctrlKey&&!e.metaKey&&!$("lb-note-btn").hidden){ toggleNote(); return; }   // 옆 요약 칸 켜고 끄기
   if((e.key==="z"||e.key==="Z")&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); $("lb-undo").onclick(); return; }
   // 선 굵기 한 단계씩 — [ 가늘게 / ] 굵게
@@ -1909,7 +1932,8 @@ stage.addEventListener("pointerdown",e=>{
   V.pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
   // ★ 오른쪽 버튼 = 언제나 '화면 끌어 옮기기'.
   //   형광펜 모드에서는 왼쪽 버튼이 그리기라, 옮기려면 이 길이 필요하다.
-  if(e.button===2){
+  // ✋ 손바닥 모드 = 왼쪽 버튼(손가락 하나)도 '옮기기' — 형광펜이 켜져 있어도 긋지 않는다
+  if(e.button===2 || (V.hand && e.button===0 && V.pts.size===1)){
     M.cur=null;
     V.drag={x:e.clientX,y:e.clientY,tx:V.tx,ty:V.ty,t:Date.now(),moved:0,pan:true};
     stage.classList.add("panning");
@@ -1973,7 +1997,7 @@ stage.addEventListener("pointermove",e=>{
   if(!V.drag) return;
   const dx=e.clientX-V.drag.x, dy=e.clientY-V.drag.y;
   V.drag.moved=Math.max(V.drag.moved,Math.hypot(dx,dy));
-  if(V.zoom>1.001){ V.tx=V.drag.tx+dx; V.ty=V.drag.ty+dy; paint(); }
+  if(V.zoom>1.001 || V.hand){ V.tx=V.drag.tx+dx; V.ty=V.drag.ty+dy; paint(); }   // 손바닥 모드는 1배에서도 옮긴다
 });
 /* 누르지 않고 지나가기만 할 때 — 고른 동그라미 위면 커서를 '옮기기' 모양으로.
    (손가락에는 커서가 없으니 마우스일 때만 본다) */

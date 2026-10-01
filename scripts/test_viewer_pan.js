@@ -9,6 +9,9 @@
  *   ⑤ 확대한 상태에서도 Shift+←/→ · PageUp/Down 으로 장을 넘길 수 있다
  *   ⑥ 사진 경계 밖으로는 안 나간다
  *   ⑦ 오른쪽 클릭 시 브라우저 메뉴가 안 뜬다(안 막으면 끌 수가 없다)
+ *   ⑧ ✋ 손바닥 버튼(2026-10-01): 켜면 **왼쪽 버튼**으로 끌어 옮긴다 — 형광펜이 켜져 있어도 줄 대신 이동,
+ *      1배에서도 옮겨지고 가장자리를 화면 40% 까지 넘어 구석 기사를 가운데로 · 장 넘김·닫기 안 함 ·
+ *      색·도구·🖍 를 고르면 손바닥이 꺼져 바로 긋기 · M 키 · 끄면 정상 범위로 돌아옴 · 폰 상단 바 안 넘침
  *
  * 실행: node scripts/test_viewer_pan.js
  */
@@ -145,6 +148,53 @@ const zoomIn = async (page, n = 5) => {
     r(prevented);
   }));
   check(menuShown, '사진 위에서 오른쪽 클릭 메뉴가 안 뜬다(끌 수 있게)');
+
+  console.log('\n[✋ 손바닥: 왼쪽 버튼으로 옮기기]');
+  await page.keyboard.press('Escape'); await page.keyboard.press('Escape');   // 닫았다가
+  await openViewer(page); await page.waitForTimeout(250);
+  const drag = async (dx, dy) => {
+    await page.mouse.move(600, 450); await page.mouse.down();
+    await page.mouse.move(600 + dx, 450 + dy, { steps: 8 }); await page.mouse.up(); await page.waitForTimeout(150);
+  };
+  check(await page.isVisible('#lb-hand'), '상단에 ✋ 버튼이 있다');
+  const h0 = await pos(page);
+  await page.click('#lb-hand');
+  check(await page.evaluate(() => V.hand && document.getElementById('lb-hand').getAttribute('aria-pressed') === 'true'
+        && getComputedStyle(document.getElementById('lb-img')).cursor === 'grab'), '켜면 버튼이 눌린 표시 · 커서가 손 모양');
+  await drag(-200, -120);
+  const h1 = await pos(page);
+  check(h1.tx < h0.tx - 150 && h1.ty < h0.ty - 80 && h1.z === 1, '1배에서도 왼쪽 버튼으로 끌면 옮겨진다', `(${h0.tx},${h0.ty}) → (${h1.tx},${h1.ty})`);
+  check(h1.i === h0.i && await page.evaluate(() => !document.getElementById('lb').hidden), '끌어도 장이 안 넘어가고 뷰어도 안 닫힌다');
+  await zoomIn(page);
+  for (let k = 0; k < 6; k++) await drag(400, 300);
+  const far = await page.evaluate(() => ({ tx: V.tx, ty: V.ty, sw: V.stage.w, sh: V.stage.h }));
+  check(far.tx > 50 && far.tx <= far.sw * 0.4 + 1 && far.ty <= far.sh * 0.4 + 1,
+        '확대해도 가장자리를 넘어(화면의 40%까지) 구석 기사를 가운데로 끌어올 수 있다', `tx=${Math.round(far.tx)} (한계 ${Math.round(far.sw * 0.4)})`);
+  await page.click('#lb-pen'); await page.waitForTimeout(150);
+  check(await page.evaluate(() => M.on && !V.hand), '🖍 를 켜면 손바닥은 꺼진다(바로 긋기)');
+  await page.click('#lb-hand');
+  const before = await pos(page);
+  await drag(-150, 0);
+  const lines = await page.evaluate(() => (M.marks[markName()] || []).length);
+  check(lines === 0 && (await pos(page)).tx < before.tx, '형광펜이 켜져 있어도 손바닥이면 줄 대신 옮긴다');
+  await page.click('#lb-c2');
+  check(await page.evaluate(() => !V.hand), '색을 고르면 손바닥이 꺼진다');
+  await drag(-150, 0);
+  check(await page.evaluate(() => (M.marks[markName()] || []).length) === 1, '그다음 왼쪽 드래그는 다시 줄 긋기');
+  await page.click('#lb-hand'); await page.click('#lb-erase');
+  check(await page.evaluate(() => !V.hand), '지우개를 고르면 손바닥이 꺼진다');
+  await page.click('#lb-pen-off');
+  await page.keyboard.press('m');
+  check(await page.evaluate(() => V.hand), 'M 키로 손바닥 켜기');
+  await page.keyboard.press('m');
+  const hb = await page.evaluate(() => ({ tx: V.tx, w: V.fitW * V.zoom, sw: V.stage.w }));
+  check(!await page.evaluate(() => V.hand) && hb.tx <= 0.5 && hb.tx >= hb.sw - hb.w - 0.5, '끄면 사진이 정상 범위 안으로 돌아온다');
+
+  const ph = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
+  await ph.goto(base + '/slack');
+  await openViewer(ph);
+  const over = await ph.evaluate(() => document.querySelector('.lb-bar').scrollWidth - document.querySelector('.lb-bar').clientWidth);
+  check(over <= 0 && await ph.isVisible('#lb-hand'), '폰(390px): ✋ 버튼이 상단 바에 들어간다', `넘침 ${over}px`);
 
   await browser.close(); srv.close();
   console.log('\n총평: ' + (pass ? '✅ 전부 통과' : '❌ 실패 있음'));
