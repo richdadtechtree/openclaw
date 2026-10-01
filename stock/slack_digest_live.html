@@ -266,13 +266,6 @@
   .lb-note .brf-tbl{min-width:0;width:100%;background:#fff}
   .lb-note .brf-tbl th{background:#eef1f8}
   .lb-note .brf-src,.lb-note .brf-src a{color:#24366b}
-  /* 근거 자동 형광펜과 연결된 숫자: 찾음 = 밑줄 + 손가락 커서, 못 찾음 = 빨간 점선 + ⚠ */
-  .lb-note .num.num-ok{cursor:pointer;box-shadow:inset 0 -2px 0 #b8860b}
-  .lb-note .num.num-miss{background:#ffe1de;box-shadow:inset 0 -2px 0 #d93025}
-  .lb-note .num.num-miss::after{content:" ⚠";font-size:.8em}
-  .lb-note .nt-auto{font-size:12.5px;color:#353c48;margin:-4px 0 12px;padding:6px 9px;border-radius:7px;background:#f1efe6}
-  .lb-note .nt-auto b{color:#b3261e}
-  .lb-note .nt-interp{display:inline-block;margin:2px 6px 0 -4px;padding:0 5px;border-radius:5px;font-size:11px;font-weight:700;color:#6b3fa0;background:#efe6fb;height:fit-content;white-space:nowrap}
   /* 숫자 = 형광펜 칠한 것처럼 → 지면 숫자와 대조할 곳이 한눈에 */
   .lb-note .num{background:#ffe45c;color:#0d1016;font-weight:800;font-variant-numeric:tabular-nums;
                 border-radius:3px;padding:0 2px;box-decoration-break:clone;-webkit-box-decoration-break:clone}
@@ -444,7 +437,6 @@
   <div class="lb-bar">
     <span class="lb-count" id="lb-count"></span><span class="lb-native" id="lb-native"></span>
     <button class="lb-btn pick" id="lb-pick" hidden title="지금 보는 장을 이 기사의 지면으로 연결">📌 <span class="lg">이 장 </span>연결</button>
-    <button class="lb-btn" id="lb-auto" hidden title="요약 근거·숫자를 지면에 자동 형광펜 (E)" aria-label="근거 자동 표시" aria-pressed="true">✨</button>
     <button class="lb-btn" id="lb-note-btn" hidden title="기사 요약(WHAT·WHY·HOW) 옆에 보기 (N)" aria-label="기사 요약 보기" aria-pressed="true">📝</button>
     <button class="lb-btn" id="lb-pen" title="형광펜 (H)" aria-label="형광펜" aria-pressed="false">🖍</button>
     <button class="lb-btn" id="lb-out" title="축소" aria-label="축소">−</button>
@@ -1354,7 +1346,6 @@ function fillNote(){
       box.append(c);
     }
     box.scrollTop=0;
-    autoAnnotate();
   }else box.textContent="";
   return was!==show;                           // 폭이 바뀌었는지(사진 크기를 다시 맞춰야 하는지)
 }
@@ -1362,242 +1353,6 @@ function toggleNote(){
   const on=!noteWanted();
   try{ localStorage.setItem(NOTE_KEY, on?"1":"0"); }catch(e){}
   if(fillNote() && $("lb-img").naturalWidth){ V.zoom=1; V.navPos=null; measure(); }
-}
-/* ══ 근거 자동 형광펜 (2026-10-01) ═══════════════════════════════════════════
-   요약(WHAT·WHY·HOW·표)에 쓴 **숫자**와 요약 GPT 가 JSON 에 적어 준 **근거 원문 문장(evidence.quote)**을
-   신문 사진 속 글자에서 찾아, 그 자리에 형광펜을 자동으로 칠한다 → 요약을 어디서 가져왔는지 한눈에.
-
-   글자 위치는 서버가 tesseract 로 읽어 둔 것(/api/news/pagewords, 단(세로 기둥)별로 정렬돼 옴).
-   ⚠ 이 표시는 **사용자가 그은 형광펜과 별개**다 — 지우개·되돌리기에 안 걸리고, 저장도 안 한다.
-   색: WHAT 노랑 · WHY 초록 · HOW 파랑.  숫자는 진하게, 근거 문장은 옅게.
-   못 찾은 숫자는 옆 요약 칸에서 ⚠ (인식 실수일 수도 있어 '틀림'이 아니라 '확인 필요'). */
-const AUTO={cache:new Map(), res:null, flash:null, flashT:null};
-const AUTO_KEY="digest.lbAuto";
-const AUTO_COLOR={WHAT:"#ffcc00", WHY:"#2fd36b", HOW:"#3aa0ff"};
-function autoWanted(){ try{ return localStorage.getItem(AUTO_KEY)!=="0"; }catch(e){ return true; } }
-// 비교용 글자 다듬기 — 빈칸·쉼표·따옴표·가운뎃점 등을 지운다(지면 글자와 요약 양쪽에 똑같이)
-const autoNorm=t=>String(t||"").replace(/[\s,·ㆍ'"“”‘’`()\[\]{}<>…~\-–—_|/\\:;!?]/g,"");
-function autoWords(name){
-  const k=state.date+"|"+name;
-  if(!AUTO.cache.has(k)){
-    AUTO.cache.set(k, fetch(`/api/news/pagewords?date=${state.date}&name=${encodeURIComponent(name)}`,{cache:"no-store"})
-      .then(r=>r.ok?r.json():null).then(d=>d&&d.ok?d:null).catch(()=>null));
-  }
-  return AUTO.cache.get(k);
-}
-/* 단별로 글자를 한 줄로 잇는다 — 글자 하나하나가 어느 낱말(위치)에서 왔는지도 같이 기억
-   box(0~1 비율)가 있으면 그 기사 영역 안의 낱말만 쓴다(같은 숫자가 다른 기사에도 있을 수 있으므로) */
-function autoStreams(pw, box){
-  const cols=new Map();
-  const inBox=w=>{ if(!box) return true;
-    const cx=(w[1]+w[3]/2)/1e4, cy=(w[2]+w[4]/2)/1e4, m=0.02;
-    return cx>=box[0]-m && cx<=box[0]+box[2]+m && cy>=box[1]-m && cy<=box[1]+box[3]+m; };
-  pw.segs.forEach((sg,si)=>{
-    let st=cols.get(sg[0]); if(!st){ st={s:"",refs:[]}; cols.set(sg[0],st); }
-    for(const w of sg[5]){
-      if(!inBox(w)) continue;
-      const t=autoNorm(w[0]);
-      for(let i=0;i<t.length;i++){ st.s+=t[i]; st.refs.push({w, si}); }
-    }
-  });
-  return [...cols.values()].filter(c=>c.s);
-}
-// 글자 범위 → 줄마다 하나의 네모(그 줄에서 걸친 낱말들을 합친 것)
-function autoRects(st, a, b){
-  const bySeg=new Map();
-  for(let i=a;i<b;i++){ const r=st.refs[i]; if(!r) continue;
-    const cur=bySeg.get(r.si), w=r.w;
-    if(!cur) bySeg.set(r.si,[w[1],w[2],w[1]+w[3],w[2]+w[4]]);
-    else{ cur[0]=Math.min(cur[0],w[1]); cur[1]=Math.min(cur[1],w[2]); cur[2]=Math.max(cur[2],w[1]+w[3]); cur[3]=Math.max(cur[3],w[2]+w[4]); }
-  }
-  return [...bySeg.values()].map(([l,t,r,bt])=>[l,t,r-l,bt-t]);
-}
-/* 숫자 하나 → 지면에 적혔을 법한 표기들.
-   요약은 "76,952가구"·"5,000가구" 로, 신문은 "7만6952가구"·"5천가구" 로 쓰는 일이 많다. */
-function numForms(raw){
-  const n=raw.replace(/,/g,"").replace(/\s+/g,"");
-  const out=new Set([n]);
-  const m=n.match(/^(\d+)(%p?)?$/);
-  if(m){
-    const v=+m[1], pc=m[2]||"";
-    if(v>=1e8){ const e=Math.floor(v/1e8), r=v%1e8, man=Math.floor(r/1e4), rest=r%1e4;
-      out.add(e+"억"+(man?man+"만":"")+(rest?rest:"")+pc); }
-    else if(v>=1e4){ const man=Math.floor(v/1e4), rest=v%1e4; out.add(man+"만"+(rest?rest:"")+pc); }
-    if(v<1e4 && v>=1000 && v%1000===0) out.add((v/1000)+"천"+pc);
-  }
-  return [...out];
-}
-// 너무 흔한 짧은 숫자(2·6 같은)는 엉뚱한 곳에 칠해지므로 뺀다 — 3자리↑ · 소수 · % · 만/억 단위만
-const autoNumOk=n=>/\d{3}|\d\.\d|%|[조억만천]/.test(n);
-function autoFindNum(streams, form){
-  const hits=[];
-  for(const st of streams){
-    let i=-1;
-    while((i=st.s.indexOf(form,i+1))>=0){
-      const pre=st.s[i-1]||"", post=st.s[i+form.length]||"";
-      if(/[\d.]/.test(pre) || /\d/.test(post) || (post==="." && /\d/.test(st.s[i+form.length+1]||""))) continue;
-      hits.push(autoRects(st,i,i+form.length));
-    }
-  }
-  return hits;
-}
-/* 근거 문장 찾기 — 글자 인식이 몇 글자 틀려도 찾도록 '두 글자 조각'이 얼마나 겹치는지로 비교한다.
-   창을 한 칸씩 밀며 겹침 수를 더하고 빼서 계산(빠름). 60% 이상 겹친 곳 중 가장 좋은 한 곳만. */
-function autoFindQuote(streams, quote){
-  const q=autoNorm(quote); const L=q.length;
-  if(L<6) return null;
-  const cq=new Map(); for(let i=0;i<L-1;i++){ const g=q.substr(i,2); cq.set(g,(cq.get(g)||0)+1); }
-  const need=L<12?0.72:0.6;
-  let best=null;
-  for(const st of streams){
-    const S=st.s; if(S.length<L) continue;
-    const cw=new Map(); let inter=0;
-    const add=g=>{ const c=cw.get(g)||0; if(c<(cq.get(g)||0)) inter++; cw.set(g,c+1); };
-    const del=g=>{ const c=cw.get(g)-1; cw.set(g,c); if(c<(cq.get(g)||0)) inter--; };
-    for(let i=0;i<L-1;i++) add(S.substr(i,2));
-    for(let a=0;;a++){
-      const d=inter/(L-1);
-      if(d>=need && (!best||d>best.d)) best={d, st, a};
-      if(a+L>=S.length) break;
-      del(S.substr(a,2)); add(S.substr(a+L-1,2));
-    }
-  }
-  return best?autoRects(best.st,best.a,best.a+L):null;
-}
-// 요약 기사에서 숫자를 뽑는다 — 어느 줄(WHAT·WHY·HOW)에 있었는지도 같이(색을 정하려고)
-const AUTO_NUM_RE=/\d[\d,]*(?:\.\d+)?(?:[조억만천](?:\d[\d,]*)?)*(?:%p?)?/g;
-function autoArtNums(art){
-  const out=[]; let k="WHAT";
-  const main=art.querySelector(".brf-main"); if(!main) return out;
-  for(const el of main.children){
-    if(el.classList.contains("brf-title")||el.classList.contains("brf-src")) continue;
-    // 표는 칸마다 따로 읽는다(textContent 로 이으면 "4,131"+"1,359" 가 "4,1311,359" 로 붙어 버린다)
-    const cells=el.querySelectorAll("td,th");
-    let txt=cells.length?[...cells].map(c=>c.textContent).join(" "):el.textContent;
-    if(el.classList.contains("brf-kv")){ k=(el.querySelector(".k")||{}).textContent||k; txt=(el.querySelector(".v")||{}).textContent||""; }
-    for(const m of txt.matchAll(AUTO_NUM_RE)){
-      const raw=m[0].replace(/,/g,""); if(!autoNumOk(raw)) continue;
-      out.push({k, raw});
-    }
-  }
-  return out;
-}
-function autoArtBox(art){
-  const sd=art.querySelector('.brf-side[data-i="'+V.i+'"]');
-  return sd&&sd.dataset.box ? sd.dataset.box.split(",").map(Number) : null;
-}
-/* 이 장에 실린 기사들의 근거를 찾아 AUTO.res 에 담는다.
-   res = {name, rects:[{r:[x,y,w,h](0~1만), k, kind:"n"|"q", key}], arts:Map(art→{nums:[{raw,k,found,key}], interp:Set(k)})} */
-function autoCompute(name, pw){
-  const res={name, rects:[], arts:new Map()};
-  for(const art of noteArts()){
-    const box=autoArtBox(art);
-    let streams=autoStreams(pw, box);
-    const meta=findMeta(artTitle(art));
-    const info={nums:[], interp:new Set(), quotes:0};
-    const ev=(meta&&Array.isArray(meta.evidence))?meta.evidence:[];
-    const seen=new Set();
-    const addNum=(raw,k,fromEv)=>{
-      const key=raw; if(seen.has(key)) return; seen.add(key);
-      let hits=[];
-      for(const f of numForms(raw)){ hits=autoFindNum(streams,f); if(hits.length) break; }
-      // 기사 영역 없이 지면 전체에서 찾을 땐, 너무 여러 군데 나오면(흔한 숫자) 칠하지 않는다
-      if(!box && hits.length>2) hits=[];
-      const found=hits.length>0;
-      // 연도(2026 등)는 요약이 "올해"를 숫자로 바꿔 쓰는 일이 잦다 → 찾으면 칠하되, 못 찾아도 ⚠ 는 안 한다
-      const soft=/^(?:19|20)\d{2}$/.test(raw);
-      info.nums.push({raw, k, found, key, fromEv, soft});
-      hits.forEach(h=>h.forEach(r=>res.rects.push({r, k, kind:"n", key})));
-    };
-    for(const e of ev){
-      const k=String(e&&e.k||"WHAT").toUpperCase();
-      if(e&&e.src==="해석"){ info.interp.add(k); continue; }
-      if(e&&e.quote){ const rr=autoFindQuote(streams, e.quote); if(rr){ info.quotes++; rr.forEach(r=>res.rects.push({r, k, kind:"q", key:"q:"+e.quote})); } }
-      if(e&&Array.isArray(e.nums)) e.nums.forEach(n=>{ const raw=String(n).replace(/,/g,"").match(AUTO_NUM_RE); if(raw&&autoNumOk(raw[0])) addNum(raw[0],k,true); });
-    }
-    for(const n of autoArtNums(art)) addNum(n.raw, n.k, false);
-    res.arts.set(art, info);
-  }
-  return res;
-}
-async function autoLoad(){
-  const im=V.list[V.i]; if(!im) return;
-  const name=im.name, date=state.date;
-  AUTO.res=null; autoButton(); drawMarks();
-  if(V.pick) return;                           // 지면 고르기 중엔 하지 않는다
-  if(!noteArts().length) return;               // 이 장에 연결된 기사가 없으면 찾을 것도 없다
-  const pw=await autoWords(name);
-  if(!pw || state.date!==date || (V.list[V.i]||{}).name!==name || $("lb").hidden) return;
-  AUTO.res=autoCompute(name, pw);
-  autoButton(); drawMarks(); autoAnnotate();
-}
-function autoButton(){
-  const b=$("lb-auto"); if(!b) return;
-  b.hidden=!AUTO.res;
-  b.setAttribute("aria-pressed", autoWanted()?"true":"false");
-}
-function toggleAuto(){
-  try{ localStorage.setItem(AUTO_KEY, autoWanted()?"0":"1"); }catch(e){}
-  autoButton(); drawMarks(); autoAnnotate();
-}
-// 형광펜 그림판에 자동 표시를 칠한다(drawMarks 가 사용자 형광펜보다 먼저 부른다)
-function autoPaint(ctx,pw,ph){
-  const R=AUTO.res; if(!R || R.name!==markName() || !autoWanted()) return;
-  const sx=pw/1e4, sy=ph/1e4;
-  ctx.save();
-  for(const it of R.rects){
-    const [x,y,w,h]=it.r, pad=h*0.12;
-    ctx.globalAlpha = it.kind==="n" ? 0.85 : 0.42;
-    ctx.fillStyle=AUTO_COLOR[it.k]||AUTO_COLOR.WHAT;
-    ctx.fillRect((x-pad)*sx,(y-pad)*sy,(w+2*pad)*sx,(h+2*pad)*sy);
-  }
-  if(AUTO.flash){                               // 옆 요약 칸의 숫자에 마우스를 올리면 그 자리를 빨간 테두리로
-    ctx.globalAlpha=1; ctx.strokeStyle="#e5222b"; ctx.lineWidth=Math.max(2.5,0.004*ph);
-    for(const it of R.rects) if(it.key===AUTO.flash){ const [x,y,w,h]=it.r, p=h*0.35;
-      ctx.strokeRect((x-p)*sx,(y-p)*sy,(w+2*p)*sx,(h+2*p)*sy); }
-  }
-  ctx.restore();
-}
-/* 옆 요약 칸의 노란 숫자에 '지면에서 찾았는지' 표시 + 마우스 올리면 지면 위치 반짝, 누르면 그곳으로 확대.
-   🧠 = 요약 GPT 가 "신문에 없는 해석"이라고 밝힌 줄 */
-function autoAnnotate(){
-  const box=$("lb-note"); if(!box||box.hidden) return;
-  box.querySelectorAll(".num").forEach(n=>{ n.classList.remove("num-ok","num-miss"); n.removeAttribute("title"); delete n.dataset.key; });
-  box.querySelectorAll(".nt-interp").forEach(n=>n.remove());
-  const hd=box.querySelector(".nt-auto"); if(hd) hd.remove();
-  const R=AUTO.res; if(!R || !autoWanted()) return;
-  const secs=[...box.querySelectorAll(".nt-art")], arts=noteArts();
-  let ok=0, miss=0;
-  secs.forEach((sec,i)=>{
-    const info=R.arts.get(arts[i]); if(!info) return;
-    sec.querySelectorAll(".brf-kv").forEach(kv=>{
-      const k=((kv.querySelector(".k")||{}).textContent||"").toUpperCase();
-      if(info.interp.has(k)) kv.querySelector(".k").insertAdjacentHTML("afterend",'<span class="nt-interp" title="요약 GPT 가 신문에 없는 해석이라고 표시한 줄">🧠 해석</span>');
-    });
-    sec.querySelectorAll(".num").forEach(n=>{
-      const core=n.textContent.replace(/[,\s]/g,"").replace(/%p?$/,"");
-      if(!core) return;
-      // 숫자 덩어리가 통째로 같아야 같은 숫자("6월"의 6 이 "2026" 에 붙지 않게). "8억5000만" 은 8·5000 둘 다 해당
-      const has=x=>(x.raw.match(/\d+(?:\.\d+)?/g)||[]).includes(core);
-      const c=info.nums.find(x=>x.found && has(x)) || info.nums.find(has);
-      if(!c) return;
-      if(c.found){ n.classList.add("num-ok"); n.dataset.key=c.key; n.title="지면에서 찾음 — 마우스를 올리면 위치, 누르면 그곳으로 확대"; ok++; }
-      else if(!c.soft){ n.classList.add("num-miss"); n.title="⚠ 지면에서 이 숫자를 찾지 못했어요 — 확인 필요(글자 인식 실수일 수도 있음)"; miss++; }
-    });
-  });
-  const head=box.querySelector(".nt-head");
-  if(head) head.insertAdjacentHTML("afterend",'<div class="nt-auto">✨ 지면 형광펜: 근거 '+R.rects.length+'곳 · 숫자 확인 '+ok+'개'+(miss?' · <b>⚠ 못 찾음 '+miss+'개</b>':'')+'</div>');
-}
-function autoFocus(key, zoom){
-  AUTO.flash=key; drawMarks();
-  clearTimeout(AUTO.flashT);
-  if(!zoom) return;
-  const R=AUTO.res; if(!R) return;
-  const rs=R.rects.filter(it=>it.key===key).map(it=>it.r); if(!rs.length) return;
-  const l=Math.min(...rs.map(r=>r[0])), t=Math.min(...rs.map(r=>r[1])), r=Math.max(...rs.map(r=>r[0]+r[2])), b=Math.max(...rs.map(r=>r[1]+r[3]));
-  const w=Math.max(r-l,600), h=Math.max(b-t,350);           // 너무 크게 확대하지 않게 최소 크기
-  zoomToBox([(l+(r-l)/2-w*2)/1e4, (t+(b-t)/2-h*2)/1e4, w*4/1e4, h*4/1e4]);
-  AUTO.flashT=setTimeout(()=>{ AUTO.flash=null; drawMarks(); }, 1800);
 }
 function placeNav(){
   if(!V.stage) return;
@@ -1770,7 +1525,6 @@ function drawMarks(){
   ctx.clearRect(0,0,pw,ph);
   ctx.lineCap="round"; ctx.lineJoin="round";
   const all=(M.marks[markName()]||[]).concat(M.cur?[M.cur]:[]);
-  autoPaint(ctx,pw,ph);                                       // 근거 자동 형광펜(사용자 형광펜 아래에 깔린다)
   for(const st of all) strokeOne(ctx, st, pw, ph, 1.5);    // 가는 선도 가늘게 나오도록 최소 1.5
 
   /* 고른 동그라미에는 점선 네모를 덧그린다 — '여기를 끌면 옮길 수 있어요' 표시.
@@ -1849,14 +1603,13 @@ function closeViewer(){
   resetPointers();                             // 닫는 순간 남은 손가락 기록도 비운다
   if(M.on) setPen(false);                      // 형광펜 모드였다면 꺼 둔다
   V.pick=null; $("lb-pick").hidden=true;
-  V.fromArt=null; AUTO.flash=null;
+  V.fromArt=null;
   // 그은 줄은 메모리에 그대로 남는다 → 다시 열면 보인다(새로고침하면 사라짐)
   drawSideMarks();                             // 기사 옆 작은 사진에도 방금 그은 줄을 반영
 }
 function showPage(){
   const im=V.list[V.i]; if(!im) return;
   fillNote();                                  // 장이 바뀌면 옆 요약 칸도 그 장의 기사로(사진 크기 계산 전에 폭을 정한다)
-  autoLoad();                                  // 그 장의 근거 자동 형광펜(글자 위치를 받아 와서)
   const img=$("lb-img");
   img.style.visibility="hidden";
   img.src=im.url;                              // 뷰어는 썸네일이 아니라 원본을 쓴다
@@ -1973,11 +1726,6 @@ function go(step){
 // ── 입력: 버튼 ──────────────────────────────────────────────────────────
 $("lb-close").onclick=closeViewer;
 $("lb-note-btn").onclick=toggleNote;
-$("lb-auto").onclick=toggleAuto;
-// 옆 요약 칸의 숫자 ↔ 지면 위치 잇기(마우스 올리면 반짝, 누르면 확대)
-$("lb-note").addEventListener("mouseover",e=>{ const n=e.target.closest(".num-ok"); if(n && AUTO.flash!==n.dataset.key){ AUTO.flash=n.dataset.key; drawMarks(); } });
-$("lb-note").addEventListener("mouseout",e=>{ const n=e.target.closest(".num-ok"); if(n && !n.contains(e.relatedTarget)){ AUTO.flash=null; drawMarks(); } });
-$("lb-note").addEventListener("click",e=>{ const n=e.target.closest(".num-ok"); if(n) autoFocus(n.dataset.key,true); });
 $("lb-prev").onclick=()=>go(-1);
 $("lb-next").onclick=()=>go(1);
 
@@ -2067,8 +1815,7 @@ document.addEventListener("keydown",e=>{
     M.on ? setPen(false) : closeViewer(); return;
   }
   if(e.key==="h"||e.key==="H"){ setPen(!M.on); return; }
-  if((e.key==="n"||e.key==="N")&&!e.ctrlKey&&!e.metaKey&&!$("lb-note-btn").hidden){ toggleNote(); return; }
-  if((e.key==="e"||e.key==="E")&&!e.ctrlKey&&!e.metaKey&&!$("lb-auto").hidden){ toggleAuto(); return; }   // 근거 자동 형광펜 켜고 끄기   // 옆 요약 칸 켜고 끄기
+  if((e.key==="n"||e.key==="N")&&!e.ctrlKey&&!e.metaKey&&!$("lb-note-btn").hidden){ toggleNote(); return; }   // 옆 요약 칸 켜고 끄기
   if((e.key==="z"||e.key==="Z")&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); $("lb-undo").onclick(); return; }
   // 선 굵기 한 단계씩 — [ 가늘게 / ] 굵게
   if(M.on&&(e.key==="["||e.key==="]")){
