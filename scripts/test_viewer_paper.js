@@ -94,6 +94,8 @@ const sides = (page) => page.evaluate(() => [...document.querySelectorAll('.brf-
 
 /** 사진 안의 비율 좌표(0~1)로 형광펜 긋기 */
 async function stroke(page, x1, y1, x2, y2) {
+  // 2026-10-01부터 뷰어는 ✋ 손바닥(왼쪽 버튼=옮기기)으로 열린다 → 사람처럼 펜 색을 골라 '긋기'로 바꾼 뒤 긋는다
+  if (await page.evaluate(() => V.hand)) await page.click('#lb-c1');
   const r = await page.evaluate(() => {
     const b = document.getElementById('lb-img').getBoundingClientRect();
     return { l: b.left, t: b.top, w: b.width, h: b.height };

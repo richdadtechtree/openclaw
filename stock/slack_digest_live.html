@@ -1599,6 +1599,7 @@ function openViewer(i,opts={}){
   V.navPos=null; showNav();                    // 열자마자 한 번 보여주고 1초 뒤 감춘다
   resetMarksIfNewDate();                       // 날짜가 바뀌었으면 비운다
   if(opts.pen && !M.on) setPen(true);
+  setHand(HAND_DEFAULT);                       // 열 때 기본은 ✋ 손바닥(PC) — 2026-10-01 사용자 요청
   drawMarks();
 }
 function closeViewer(){
@@ -1662,6 +1663,16 @@ function clampPan(){
   V.tx = w<=V.stage.w ? (V.stage.w-w)/2 : Math.max(V.stage.w-w, Math.min(0, V.tx));
   V.ty = h<=V.stage.h ? (V.stage.h-h)/2 : Math.max(V.stage.h-h, Math.min(0, V.ty));
 }
+/* 뷰어를 열 때 ✋ 손바닥을 켠 채로 시작할지 (2026-10-01 사용자 요청: "기본 값을 손바닥으로")
+   · PC(마우스) = 켬 → 왼쪽 버튼으로 바로 끌어 옮기기. 그리려면 색·도구를 고르면 손바닥이 저절로 꺼진다.
+   · 폰(손가락) = 끔 → 손가락으로 옆으로 쓸어 장을 넘기는 기존 동작을 지킨다(손바닥이면 쓸기가 '옮기기'가 된다).
+   · 주소 끝에 ?hand=0 / ?hand=1 을 붙이면 강제로 끄고 켤 수 있다(검사 프로그램이 쓴다). */
+const HAND_DEFAULT=(()=>{
+  const q=new URLSearchParams(location.search).get("hand");
+  if(q==="0") return false;
+  if(q==="1") return true;
+  try{ return matchMedia("(pointer: fine)").matches; }catch(e){ return false; }
+})();
 // ✋ 손바닥 모드 켜고 끄기 — 끄면 사진을 다시 정상 범위 안으로 돌려놓는다
 function setHand(on){
   V.hand=!!on;
@@ -2027,7 +2038,12 @@ function endPointer(e){
     drawMarks(); V.drag=null; return;
   }
   // 오른쪽 버튼으로 옮긴 것뿐이면 여기서 끝 — 장을 넘기거나 닫으면 안 된다
-  if(V.drag && V.drag.pan){ V.drag=null; stage.classList.remove("panning"); return; }
+  if(V.drag && V.drag.pan){
+    stage.classList.remove("panning");
+    // ✋ 손바닥 모드에서 끌지 않고 '톡' 누른 것은 옮기기가 아니라 클릭 → 아래의 두 번 눌러 확대·바깥 눌러 닫기로 넘긴다
+    const tap = V.hand && e.button===0 && V.drag.moved<6;
+    if(!tap){ V.drag=null; return; }
+  }
   if(M.on){ V.drag=null; return; }             // 형광펜 모드에선 넘기기·닫기 동작 안 함
   if(!V.drag) return;
   const dx=e.clientX-V.drag.x, dy=e.clientY-V.drag.y, dt=Date.now()-V.drag.t;
@@ -2035,7 +2051,9 @@ function endPointer(e){
   if(V.zoom<=1.001&&Math.abs(dx)>55&&Math.abs(dx)>Math.abs(dy)*1.6&&dt<700) go(dx<0?1:-1);
   else if(V.drag.moved<6){
     // 제자리 탭 — 두 번 두드리면 확대/원복
-    if(maybeDoubleTap(e.clientX,e.clientY)){ V.drag=null; return; }
+    // ⚠️ 마우스는 브라우저의 dblclick 이벤트가 따로 확대한다 → 여기서도 세면 '확대→원복'이 겹쳐 아무 일도 안 일어났다
+    //    (2026-10-01 발견: PC 에서 두 번 눌러 확대가 안 되던 문제). 손가락·펜만 여기서 센다.
+    if(e.pointerType!=="mouse" && maybeDoubleTap(e.clientX,e.clientY)){ V.drag=null; return; }
     // 사진 바깥의 '어두운 여백'을 톡 치면 닫기.
     // ⚠️ e.target 만 믿으면 사진 위를 눌러도 닫히는 일이 있었다(2026-09-16 발견)
     //    → 사진의 실제 화면 위치와 비교해 확실히 바깥일 때만 닫는다.

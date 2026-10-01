@@ -12,6 +12,7 @@
  *   ⑧ ✋ 손바닥 버튼(2026-10-01): 켜면 **왼쪽 버튼**으로 끌어 옮긴다 — 형광펜이 켜져 있어도 줄 대신 이동,
  *      1배에서도 옮겨지고 가장자리를 화면 40% 까지 넘어 구석 기사를 가운데로 · 장 넘김·닫기 안 함 ·
  *      색·도구·🖍 를 고르면 손바닥이 꺼져 바로 긋기 · M 키 · 끄면 정상 범위로 돌아옴 · 폰 상단 바 안 넘침
+ *   ⑨ **PC 에선 뷰어를 열면 ✋ 가 기본으로 켜져 있다**(폰은 꺼짐 — 쓸어서 장 넘기기) · 손바닥이어도 두 번 눌러 확대·바깥 눌러 닫기
  *
  * 실행: node scripts/test_viewer_pan.js
  */
@@ -158,9 +159,18 @@ const zoomIn = async (page, n = 5) => {
   };
   check(await page.isVisible('#lb-hand'), '상단에 ✋ 버튼이 있다');
   const h0 = await pos(page);
-  await page.click('#lb-hand');
+  // 2026-10-01: PC 에선 뷰어를 열면 처음부터 ✋ 손바닥(사용자 요청)
   check(await page.evaluate(() => V.hand && document.getElementById('lb-hand').getAttribute('aria-pressed') === 'true'
-        && getComputedStyle(document.getElementById('lb-img')).cursor === 'grab'), '켜면 버튼이 눌린 표시 · 커서가 손 모양');
+        && getComputedStyle(document.getElementById('lb-img')).cursor === 'grab'), 'PC: 열자마자 ✋ 손바닥이 켜져 있다(버튼 눌림 · 손 모양 커서)');
+  // 손바닥이어도 '톡' 누르기는 클릭: 두 번 누르면 확대, 사진 바깥을 누르면 닫기
+  await page.mouse.dblclick(600, 450); await page.waitForTimeout(250);
+  check((await pos(page)).z > 1.2, '손바닥이어도 두 번 누르면 확대된다', `배율 ${(await pos(page)).z}`);
+  await page.mouse.dblclick(600, 450); await page.waitForTimeout(250);
+  const gx = await page.evaluate(() => document.getElementById('lb-img').getBoundingClientRect().left / 2);
+  await page.mouse.click(gx, 450); await page.waitForTimeout(150);
+  check(await page.evaluate(() => document.getElementById('lb').hidden), '손바닥이어도 사진 바깥을 누르면 닫힌다');
+  await openViewer(page); await page.waitForTimeout(250);
+  check(await page.evaluate(() => V.hand), '다시 열어도 ✋ 로 시작');
   await drag(-200, -120);
   const h1 = await pos(page);
   check(h1.tx < h0.tx - 150 && h1.ty < h0.ty - 80 && h1.z === 1, '1배에서도 왼쪽 버튼으로 끌면 옮겨진다', `(${h0.tx},${h0.ty}) → (${h1.tx},${h1.ty})`);
@@ -195,6 +205,7 @@ const zoomIn = async (page, n = 5) => {
   await openViewer(ph);
   const over = await ph.evaluate(() => document.querySelector('.lb-bar').scrollWidth - document.querySelector('.lb-bar').clientWidth);
   check(over <= 0 && await ph.isVisible('#lb-hand'), '폰(390px): ✋ 버튼이 상단 바에 들어간다', `넘침 ${over}px`);
+  check(await ph.evaluate(() => !V.hand), '폰(손가락)에선 ✋ 가 꺼진 채로 열린다(쓸어서 장 넘기기 유지)');
 
   await browser.close(); srv.close();
   console.log('\n총평: ' + (pass ? '✅ 전부 통과' : '❌ 실패 있음'));

@@ -198,6 +198,7 @@ const openSide = async (page, k, act = 'pen') => {
   check(n.shown && /대구 미분양/.test(n.titles[0]), 'N 키로 다시 켜기 → 1번 기사가 맨 위', n.titles[0].slice(0, 14));
 
   console.log('\n[⑥ 형광펜 · 지면 고르기]');
+  await page.click('#lb-c1');                     // ✋ 손바닥으로 열리므로 펜 색을 골라 긋기로 바꾼다(사람과 같은 순서)
   const r = await page.evaluate(() => { const b = document.getElementById('lb-img').getBoundingClientRect(); return { l: b.left, t: b.top, w: b.width, h: b.height }; });
   await page.mouse.move(r.l + r.w * 0.2, r.t + r.h * 0.4); await page.mouse.down();
   for (let k = 1; k <= 8; k++) await page.mouse.move(r.l + r.w * (0.2 + 0.06 * k), r.t + r.h * 0.4);
