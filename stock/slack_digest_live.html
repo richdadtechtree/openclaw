@@ -484,7 +484,7 @@ function esc(s){return s.replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"
 // 슬랙 전용 :emoji_code: 표기를 실제 이모지로 변환. 매핑에 없는 코드는 조용히 제거(영어 텍스트로 안 남게).
 const EMOJI_MAP={
   red_circle:"🔴",large_orange_circle:"🟠",large_yellow_circle:"🟡",large_green_circle:"🟢",
-  large_blue_circle:"🔵",large_purple_circle:"🟣",large_brown_circle:"🟤",white_circle:"⚪",black_circle:"⚫",
+  double_vertical_bar:"⏸️",black_right_pointing_double_triangle_with_vertical_bar:"⏭️",large_blue_circle:"🔵",large_purple_circle:"🟣",large_brown_circle:"🟤",white_circle:"⚪",black_circle:"⚫",
   mag:"🔍",mag_right:"🔍",pushpin:"📌",round_pushpin:"📍",
   white_check_mark:"✅",heavy_check_mark:"✔️",x:"❌",warning:"⚠️",exclamation:"❗",question:"❓",
   newspaper:"📰",bulb:"💡",fire:"🔥",star:"⭐",sparkles:"✨",rocket:"🚀",
@@ -793,7 +793,7 @@ function numItem(t){
 }
 
 // 제목 맨 앞(번호 뒤)에 붙은 중요 표시: "1. 🔴 제목" → [1]="1. ", [2]="🔴"
-const TITLE_LEAD_FLAG=/^(\d{1,3}[.)]\s*)?((?:[🔴🟠🟡🟢🔵🟣⭐❗]|‼️?))\s*/u;
+const TITLE_LEAD_FLAG=/^(\d{1,3}[.)]\s*)?((?:[🔴🟠🟡🟢🔵🟣⭐❗]|‼️?|⏸️?))\s*/u;   // ⏸ = GPT 검수 보류 표시(2026-10-01)
 // 기사 제목 한 줄 → 머리표(🔴 반드시 체크) + 큰 제목 + 작은 부제(중요한 이유)
 function briefTitle(t){
   let flag="";
