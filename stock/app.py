@@ -588,6 +588,44 @@ def post_briefing_send(background_tasks: BackgroundTasks):
 
 
 # Version 2.6 - Stock Dashboard Modern UI with Country Flags & Slack Integration
+# ── 대시보드용 '오늘 신문 핵심 N가지' (2026-10-06) ──────────────────────────
+# 신문 요약 마지막의 "🔍 …반드시 연결해서 봐야 할 5가지" 묶음만 뽑아 대시보드 첫 화면에 보여준다.
+# 대시보드는 20초마다 새로 고치므로, 슬랙을 매번 부르지 않게 날짜별로 잠깐 기억해 둔다.
+#   오늘: 2분 / 지난 날짜: 1시간 (지난 날짜는 거의 안 바뀐다)
+from news_keypoints import latest_keypoints as _latest_keypoints
+from datetime import timedelta as _td
+
+_KP_CACHE = {}          # date → (저장 시각, 결과 or None)
+
+
+def _keypoints_for(date, today):
+    hit = _KP_CACHE.get(date)
+    ttl = 120 if date == today else 3600
+    if hit and time.time() - hit[0] < ttl:
+        return hit[1]
+    try:
+        kp = _latest_keypoints(_read_slack_log(date))
+    except Exception as e:
+        print(f"[news keypoints] {date} 읽기 실패: {e}")
+        kp = None
+    _KP_CACHE[date] = (time.time(), kp)
+    return kp
+
+
+@app.get("/api/news/keypoints")
+def news_keypoints(days: int = 4):
+    """오늘 요약에 'N가지' 묶음이 있으면 그것을, 없으면 최근 며칠(기본 4일) 중 가장 가까운 날 것을 준다.
+    (아침 요약이 올라오기 전이나 주말에도 빈 칸이 되지 않게)"""
+    now = _dt_now()
+    today = now.strftime("%Y-%m-%d")
+    for back in range(max(1, min(days, 7))):
+        d = (now - _td(days=back)).strftime("%Y-%m-%d")
+        kp = _keypoints_for(d, today)
+        if kp:
+            return {"status": "success", "date": d, "is_today": d == today, **kp}
+    return {"status": "empty", "date": today, "is_today": True, "title": "", "items": []}
+
+
 @app.get("/", response_class=HTMLResponse)
 def get_dashboard():
     """
