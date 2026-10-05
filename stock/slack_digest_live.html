@@ -1026,7 +1026,8 @@ function briefing(raw){
       continue;
     }
     // 머리말 아래 이어지는 "2. …" "3. …" 줄들
-    if(inList && NUM_ITEM_RE.test(line)){
+    //    슬랙 굵게 표시(*2. …*)로 감싸 와도 번호로 알아보도록 별표를 먼저 걷고 검사한다
+    if(inList && NUM_ITEM_RE.test(line.replace(/\*/g,"").trim())){
       pushItems(line.replace(/\*/g,"").trim());
       continue;
     }
