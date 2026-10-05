@@ -671,6 +671,52 @@
     }
 
     /* Market Summary / Briefing Box */
+    /* 오늘 신문 핵심 N가지 (2026-10-06) — 신문 요약 마지막 '…봐야 할 5가지' 묶음 */
+    .keypoints-section {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      margin-bottom: 32px;
+      box-shadow: var(--shadow-md);
+    }
+    .kp-title {                      /* 머리말: "🔍 …봐야 할 5가지" — 항목과 줄을 나눠 따로 */
+      font-size: 17px;
+      font-weight: 800;
+      line-height: 1.45;
+      color: var(--text-main);
+      margin: 0 0 14px;
+      padding-left: 12px;
+      border-left: 4px solid var(--accent-primary);
+      word-break: keep-all;
+    }
+    .kp-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+    .kp-item {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      background: var(--bg-card-subtle);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+    }
+    .kp-num {                        /* 번호 동그라미 */
+      flex: 0 0 26px;
+      height: 26px;
+      border-radius: var(--radius-full);
+      background: var(--accent-primary);
+      color: #fff;
+      font-weight: 800;
+      font-size: 13px;
+      display: flex; align-items: center; justify-content: center;
+      margin-top: 1px;
+    }
+    .kp-body { flex: 1; min-width: 0; }
+    .kp-text { font-size: 15px; font-weight: 650; line-height: 1.6; color: var(--text-main); word-break: keep-all; overflow-wrap: anywhere; }
+    .kp-note { font-size: 13.5px; line-height: 1.6; color: var(--text-muted); margin-top: 6px; word-break: keep-all; overflow-wrap: anywhere; }
+    .kp-empty { color: var(--text-muted); font-size: 14px; padding: 6px 2px; }
+    .kp-date { font-size: 12px; }
+
     .summary-section {
       background: var(--bg-surface);
       border: 1px solid var(--border-color);
@@ -797,6 +843,16 @@
     </section>
 
     </div> <!-- /#briefing-capture-area -->
+
+    <!-- Section 1-2: 오늘 신문 핵심 N가지 (신문 요약 마지막 묶음, /api/news/keypoints)
+         캡처 영역(#briefing-capture-area) 밖에 두어 슬랙 대시보드 캡처 모양은 그대로 둔다. -->
+    <section class="keypoints-section" id="keypoints-section">
+      <div class="section-title">
+        <h2>📰 오늘 신문 핵심</h2>
+        <span class="subtitle kp-date" id="kp-date"></span>
+      </div>
+      <div id="keypoints-content"><div class="kp-empty">신문 요약을 불러오는 중입니다…</div></div>
+    </section>
 
     <!-- Section 2: Investment Strategy & Drawdown Trigger Status -->
     <section class="strategy-section">
@@ -977,6 +1033,7 @@
 
     // ---------------------------------------------------- Fetch & Render Engine
     async function fetchDashboardData() {
+      fetchKeypoints();   // 신문 핵심 칸은 따로 불러온다(느리거나 실패해도 시세 칸을 막지 않게)
       try {
         const [resIndices, resAlerts, resCustom, resSummary] = await Promise.all([
           fetch('/api/indices').then(r => r.json()),
@@ -1213,6 +1270,39 @@
           </div>
         `;
       }).join('');
+    }
+
+    // 1-2. 오늘 신문 핵심 N가지 — 머리말은 한 줄, 번호 항목은 한 줄씩(설명은 그 아래 흐리게)
+    //   서버가 슬랙 요약에서 묶음만 뽑아 준다(stock/news_keypoints.py). 실패해도 다른 칸엔 영향 없음.
+    function kpEsc(s) {
+      return String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    }
+    async function fetchKeypoints() {
+      try {
+        const r = await fetch('/api/news/keypoints');
+        renderKeypoints(await r.json());
+      } catch (e) {
+        console.warn('[keypoints] 불러오기 실패', e);   // 디버깅: 브라우저 F12 → Console 에서 확인
+      }
+    }
+    function renderKeypoints(d) {
+      const box = document.getElementById('keypoints-content');
+      const dateEl = document.getElementById('kp-date');
+      if (!d || d.status !== 'success' || !(d.items || []).length) {
+        box.innerHTML = '<div class="kp-empty">아직 오늘 신문 요약에 \'핵심 N가지\' 묶음이 없습니다.</div>';
+        dateEl.textContent = '';
+        return;
+      }
+      const [y, m, dd] = d.date.split('-');
+      dateEl.textContent = (d.is_today ? '오늘' : `${Number(m)}월 ${Number(dd)}일`) + ' 신문 요약 기준';
+      box.innerHTML =
+        `<div class="kp-title">${kpEsc(d.title)}</div>` +
+        '<ol class="kp-list">' + d.items.map(it =>
+          `<li class="kp-item"><span class="kp-num">${it.n}</span><div class="kp-body">` +
+          `<div class="kp-text">${kpEsc(it.text)}</div>` +
+          (it.notes || []).map(n => `<div class="kp-note">${kpEsc(n)}</div>`).join('') +
+          '</div></li>').join('') +
+        '</ol>';
     }
 
     // 4. Render Executive Briefing Summary
