@@ -106,6 +106,47 @@ const MSG9 = `[신문요약 수정본 7/7]
 ② *분양 기회와 전세 공급은 지역·상품별로 다르게 나타남.*
 고덕강일 토지임대부 본청약 → 낮은 건물 분양가에 관심.
 :mag_right: 내일 봐야 할 3가지 아래 순서로 정리함.`;
+// 2026-10-06 실제 형식 — 원문 줄이 **제목 바로 아래**(WHAT 앞)에 온다. 예전엔 제목이 앞 기사로 당겨지고 WHAT 이 제목 없는 기사가 됐다
+const MSG13 = `[신문요약 1/4]
+2026-10-06 신문 브리핑
+2. :rotating_light: 이매촌1·시범단지1·파크타운 ‘특별정비구역’ 지정
+• 원문 확인 실패
+• WHAT: 성남시가 분당 이매촌1·시범1 등 5개 구역, 1만3429가구를 특별정비구역으로 지정하는 절차에 들어감.
+    ◦ 이매촌1 1734가구, 시범1 4200가구임.
+• WHY: 주민제안 방식으로 정비 속도를 높이려는 것임.
+• HOW: 12월 지정·고시가 목표임. *중요한 이유: 1기 신도시 사업 속도에 영향 줌.*
+
+
+
+
+
+3. 풀옵션 착한 임대…6년간 월세 5만원 올라
+• 원문: <https://www.mk.co.kr/news/realestate/12168487|매일경제>
+• WHAT: 서울 왕십리 ‘지웰홈스 왕십리’ 21.5㎡ 월세가 104만5000원으로 6년간 4만5000원 오름.
+    ◦ 총 299실, 전용 16~44㎡로 구성됐음.
+• WHY: 코레일 땅을 30년 장기 임차해 토지 매입비를 줄였음.
+• HOW: 장기 임대 모델로 임대료 상승을 억제했음.
+
+
+
+
+
+4. 신반포22차 ‘디에이치 신반포 에스테라’로
+• 원문: <https://www.mk.co.kr/news/realestate/12168484|매일경제>
+• WHAT: 신반포22차를 최고 35층 2개 동, 160가구로 재건축함.
+• WHY: 일반분양이 30가구 미만이라 분양가상한제 적용 대상에서 빠짐.
+• HOW: 일부 주택형 분양가가 40억원 안팎까지 거론됨.
+
+
+
+
+
+5. 경기광주역 롯데캐슬 시그니처 2단지 분양
+• 원문 확인 실패
+• WHAT: 경기 광주시 양벌동에 1249가구 규모로 공급됨.
+• WHY: 경기광주역 접근성을 내세운 분양임.
+• HOW: 수요층을 넓혔음.`;
+
 // 슬랙이 보내는 그대로의 모양 — 글 속 & < > 는 &amp; &lt; &gt; 로 온다(2026-10-01 "&amp; 로 보인다" 제보)
 const MSG12 = `[신문요약 2/2]
 1. S&amp;P500 급등…R&amp;D 투자 확대
@@ -131,7 +172,8 @@ const srv = http.createServer((req, res) => {
     { ts: D + 'T11:07:30', source: 'user', kind: 'text', text: MSG8 },
     { ts: D + 'T11:08:00', source: 'user', kind: 'text', text: MSG9 },
     { ts: D + 'T11:09:00', source: 'user', kind: 'text', text: MSG10 },
-    { ts: D + 'T11:10:00', source: 'user', kind: 'text', text: MSG12 }] }));
+    { ts: D + 'T11:10:00', source: 'user', kind: 'text', text: MSG12 },
+    { ts: D + 'T11:11:00', source: 'user', kind: 'text', text: MSG13 }] }));
   if (u === '/api/news/today') return send('application/json', JSON.stringify({ ok: true, ready: true, date: D, count: 3,
     images: ['01.jpg', '02.jpg', '03.jpg'].map(n => ({ name: n, url: '/x.png', thumb: '/x.png', download_url: '/x.png' })) }));
   if (u === '/api/news/pagetext') return send('application/json', '{"ok":false}');
@@ -292,6 +334,22 @@ const MSG10 = `[신문요약 1/6] :newspaper: 2026년 9월 28일 신문 브리�
     check(am && /그대로 &lt; 라고/.test(am.text), '사람이 글자 그대로 쓴 "&lt;" 는 그대로 보인다(두 번 풀지 않음)');
     check(am && am.href === 'https://example.com/a?x=1&y=2', '링크 주소 속 & 도 바르게', am && am.href);
     check(am && /요약 JSON · 3쪽/.test(am.src), 'JSON 제목의 &amp; 도 풀려서 기사와 짝이 맞는다', am && am.src);
+    const nf = await page.evaluate(() => {
+      const c = [...document.querySelectorAll('.entry .body')].find(b => /지웰홈스/.test(b.textContent));
+      return [...c.querySelectorAll('.brf-art')].map(a => {
+        const t = a.querySelector('.brf-title'), cl = t && t.cloneNode(true);
+        if (cl) cl.querySelectorAll('.brf-flag').forEach(n => n.remove());
+        return { t: cl ? cl.textContent.trim() : '(제목 없음)', what: ((a.querySelector('.brf-kv .v') || {}).textContent || '').slice(0, 12),
+                 src: ((a.querySelector('.brf-src') || {}).textContent || '').trim(), main: a.querySelector('.brf-main').textContent };
+      });
+    });
+    check(nf.length === 4 && nf.map(x => x.t.slice(0, 2)).join(',') === '2.,3.,4.,5.',
+          '원문 줄이 제목 바로 아래 와도 기사 4개 — 제목마다 자기 기사', nf.map(x => x.t.slice(0, 8)).join(' / '));
+    check(/^성남시/.test(nf[0].what) && /^서울 왕십리/.test(nf[1].what) && /^신반포22차/.test(nf[2].what) && /^경기 광주시/.test(nf[3].what),
+          '각 제목 아래에 자기 WHAT 이 붙는다(한 칸씩 당겨지지 않음)', nf.map(x => x.what.slice(0, 5)).join(' / '));
+    check(!/신반포22차 ‘디에이치/.test(nf[1].main) && !/경기광주역 롯데캐슬/.test(nf[2].main), '다음 기사 제목이 앞 기사 안으로 끌려가지 않는다');
+    check(/매일경제/.test(nf[1].src) && /매일경제/.test(nf[2].src) && !/원문 확인 실패/.test(nf.map(x => x.main).join('')),
+          '원문 링크는 그 기사 안에, "원문 확인 실패" 줄은 숨김');
     check(r.over <= 0, '화면이 옆으로 넘치지 않는다', `${r.over}px`);
     await page.close();
   }

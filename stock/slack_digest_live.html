@@ -805,7 +805,7 @@ function numItem(t){
 }
 
 // 제목 맨 앞(번호 뒤)에 붙은 중요 표시: "1. 🔴 제목" → [1]="1. ", [2]="🔴"
-const TITLE_LEAD_FLAG=/^(\d{1,3}[.)]\s*)?((?:[🔴🟠🟡🟢🔵🟣⭐❗]|‼️?|⏸️?))\s*/u;   // ⏸ = GPT 검수 보류 표시(2026-10-01)
+const TITLE_LEAD_FLAG=/^(\d{1,3}[.)]\s*)?((?:[🔴🟠🟡🟢🔵🟣⭐❗🚨]|‼️?|⏸️?))\s*/u;   // 🚨(:rotating_light:) 2026-10-06 형식   // ⏸ = GPT 검수 보류 표시(2026-10-01)
 // 기사 제목 한 줄 → 머리표(🔴 반드시 체크) + 큰 제목 + 작은 부제(중요한 이유)
 function briefTitle(t){
   let flag="";
@@ -914,6 +914,14 @@ function briefing(raw){
     }
     return null;
   };
+  /* 2026-10-06 GPT 새 형식: 원문 줄이 제목 **바로 아래**(WHAT 앞)에 온다.
+       "4. 제목" / "• 원문: <링크|매일경제>"(또는 "• 원문 확인 실패") / "• WHAT: …"
+     예전 규칙은 '다음 줄이 출처 줄이면 앞 기사의 보충 설명'이라 제목을 앞 기사에 붙이고, 출처 줄에서 기사를 닫아
+     WHAT 이 제목 없는 기사가 됐다(옆 칸 제목이 한 칸씩 당겨짐). → 다음 줄이 출처이고 그 다음 줄이 곧장 WHAT 이면 이 줄은 새 제목. */
+  const srcHeadsWhat=(i)=>{
+    const L=[]; for(let j=i+1;j<LINES.length && L.length<2;j++){ const t=LINES[j].trim(); if(t) L.push(t); }
+    return L.length===2 && (isSrcLine(L[0]) || /^•?\s*원문\s*확인/.test(L[0])) && /^•\s*WHAT\s*[:：]/i.test(L[1]);
+  };
   const detailHtml=(t)=>{ const d=t.match(/^([^:：<]{2,16})[:：]\s*([\s\S]+)$/);
     return '<div class="brf-line brf-detail">'+(d?'<span class="dl">'+inline(d[1].replace(/[*_]/g,""))+'</span> '+inline(d[2]):inline(t))+"</div>"; };
 
@@ -954,6 +962,7 @@ function briefing(raw){
     //    표시이기도 해서, flush() 는 그대로 호출해 기사 사이 여백은 유지한다.
     //    (다시 켜려면 아래 주석 처리된 예전 렌더를 되살리면 된다)
     if(/^•?\s*원문\s*확인/.test(line)){
+      if(art!==null && !artKV.size) continue;     // 제목 바로 아래(새 형식, "원문 확인 실패" 등) → 기사를 닫지 않고 그냥 숨김
       flush();                                     // ← 기사 끝. 다음 기사는 여백 두고 새 블록
       continue;
     }
@@ -961,6 +970,7 @@ function briefing(raw){
     if(isSrcLine(line)){
       const pm=srcPlain(line).match(/PDF\s*(\d{1,3})\s*(?:쪽|p|페이지)/i);
       const html='<div class="brf-src">'+inline(line.replace(/^•\s*/,""))+"</div>";
+      if(art!==null && !artKV.size){ art+=html; if(pm&&!pageHint) pageHint=+pm[1]; continue; }   // 제목 바로 아래 출처(새 형식) → 기사는 계속
       if(art!==null){ art+=html; if(pm&&!pageHint) pageHint=+pm[1]; flush(); }
       else if(lastArt>=0){
         out[lastArt]=out[lastArt].replace(/<\/div><\/div>$/, html+"</div></div>");
@@ -1044,7 +1054,7 @@ function briefing(raw){
     // 기사 안의 보충 설명 줄 — 다음 표지가 아직 안 나온 WHY/HOW 이거나 출처 줄이면 새 제목이 아니다
     if(art!==null && artKV.size){
       const nm=nextMark(li);
-      if(nm==="SRC" || (nm && nm!=="WHAT" && !artKV.has(nm))){ art+=detailHtml(line); continue; }
+      if(!srcHeadsWhat(li) && (nm==="SRC" || (nm && nm!=="WHAT" && !artKV.has(nm)))){ art+=detailHtml(line); continue; }
     }
     flush();
     // 제목 끝에 "(사진 07)" 처럼 붙어 온 지면 번호도 떼어서 기억한다
