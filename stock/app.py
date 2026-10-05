@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
 from market_data import get_snapshot, load_ath_from_history, get_custom_stocks_snapshot
+from crypto_data import get_btc
 from trigger_engine import TriggerEngine
 from summary import build_summary_text
 from capture import capture_dashboard, capture_and_send
@@ -518,6 +519,22 @@ def get_indices():
         "status": "success",
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "data": data,
+    }
+
+
+@app.get("/api/crypto")
+def get_crypto():
+    """
+    비트코인 시세(원화·달러·김치 프리미엄·30일 추이). 지수(/api/indices)와 분리해
+    거래소 장애가 지수·알람에 번지지 않게 한다. 전부 실패하면 status=error.
+    """
+    btc = get_btc()
+    if not btc:
+        return {"status": "error", "data": None}
+    return {
+        "status": "success",
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "data": {"BTC": btc},
     }
 
 

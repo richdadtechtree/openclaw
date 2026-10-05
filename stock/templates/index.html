@@ -263,10 +263,12 @@
     }
 
     /* Top Grid: Major Stock Indices */
+    /* 4칸 × 2줄: 1줄 = 지수 4개(코스피·코스닥·S&P·나스닥), 2줄 = QLD·TQQQ + 비트코인(2칸 너비).
+       7장이 8칸에 빈칸 없이 딱 맞는다. 캡처(capture.py) 화면폭 1320px → 카드 1장 ≈ 300px. */
     .indices-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 18px;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
       margin-bottom: 32px;
     }
 
@@ -291,8 +293,11 @@
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
+      gap: 8px;
       margin-bottom: 12px;
     }
+    .card-head .index-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card-head .source-tag { flex-shrink: 0; white-space: nowrap; }
 
     .index-name {
       font-family: var(--font-display);
@@ -422,6 +427,30 @@
     .progress-bar-fill.warning {
       background: linear-gradient(90deg, #f59e0b, #ef4444);
     }
+
+    /* ₿ 비트코인 카드 — 2칸 너비. 왼쪽=가격(원화 크게·달러/김프 작게), 오른쪽=52주 최고가·30일 추이 */
+    .market-card.crypto-card { grid-column: span 2; }
+    .crypto-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 20px;
+      align-items: start;
+    }
+    .coin-icon {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 22px; height: 22px; border-radius: 50%;
+      background: #f7931a; color: #fff; font-size: 14px; font-weight: 800;
+    }
+    .crypto-basis { font-size: 11.5px; color: var(--text-faint); }
+    .crypto-sub {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 8px; font-size: 13px; color: var(--text-muted);
+      padding: 7px 0; border-top: 1px dashed var(--border-color);
+    }
+    .crypto-sub .v { font-family: var(--font-mono); font-weight: 600; color: var(--text-main); white-space: nowrap; }
+    .crypto-sub .up { color: var(--color-up); }
+    .crypto-sub .down { color: var(--color-down); }
+    .crypto-body .ath-box { margin-top: 0; }
 
     /* SVG Sparkline Container */
     .sparkline-box {
@@ -733,8 +762,8 @@
       to { transform: translateY(0); opacity: 1; }
     }
 
-    @media (max-width: 1024px) {
-      .indices-grid { grid-template-columns: repeat(2, 1fr); }
+    @media (max-width: 1180px) {
+      .indices-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
 
     @media (max-width: 768px) {
@@ -743,6 +772,9 @@
       .header-actions { width: 100%; justify-content: space-between; }
       .price-value { font-size: 22px; }
       .indices-grid { grid-template-columns: 1fr; }
+      /* 1칸일 때 span 2 를 그대로 두면 보이지 않는 2번째 칸이 생겨 화면이 옆으로 밀린다 → 1칸으로 */
+      .market-card.crypto-card { grid-column: auto; }
+      .crypto-body { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -868,8 +900,8 @@
       'KOSDAQ':  { name: '코스닥', country: 'kr' },
       'S&P 500': { name: 'S&P 500', country: 'us' },
       'NASDAQ':  { name: '나스닥', country: 'us' },
-      'QLD':     { name: 'QLD (ProShares 2x)', country: 'us' },
-      'TQQQ':    { name: 'TQQQ (ProShares 3x)', country: 'us' }
+      'QLD':     { name: 'QLD (2x)', country: 'us' },
+      'TQQQ':    { name: 'TQQQ (3x)', country: 'us' }
     };
 
     function getFlagIcon(countryCode) {
@@ -888,6 +920,7 @@
     // ---------------------------------------------------- Application State
     const AppState = {
       indices: null,
+      crypto: null,
       alerts: null,
       customStocks: null,
       summary: null,
@@ -978,12 +1011,15 @@
     // ---------------------------------------------------- Fetch & Render Engine
     async function fetchDashboardData() {
       try {
-        const [resIndices, resAlerts, resCustom, resSummary] = await Promise.all([
+        const [resIndices, resAlerts, resCustom, resSummary, resCrypto] = await Promise.all([
           fetch('/api/indices').then(r => r.json()),
           fetch('/api/alerts').then(r => r.json()),
           fetch('/api/custom-stocks').then(r => r.json()),
-          fetch('/api/summary').then(r => r.json())
+          fetch('/api/summary').then(r => r.json()),
+          // 비트코인은 거래소 장애가 나도 나머지 화면을 막지 않게 실패를 null 로 삼킨다
+          fetch('/api/crypto').then(r => r.json()).catch(() => null)
         ]);
+        AppState.crypto = (resCrypto && resCrypto.status === 'success') ? resCrypto.data.BTC : null;
 
         if (resIndices.status === 'success') AppState.indices = resIndices.data;
         if (resAlerts.status === 'success') AppState.alerts = resAlerts.data;
@@ -1055,7 +1091,77 @@
             </div>
           </div>
         `;
-      }).join('');
+      }).join('') + renderCryptoCard(AppState.crypto);
+    }
+
+    // 1-1. ₿ 비트코인 카드 (2칸 너비). 데이터가 없으면 '불러오는 중' 자리만 지켜 배치가 흔들리지 않게 한다.
+    function renderCryptoCard(btc) {
+      const head = (src) => `
+        <div class="card-head">
+          <span class="index-name"><span class="coin-icon">₿</span> 비트코인</span>
+          <span class="source-tag">${src}</span>
+        </div>`;
+      if (!btc) {
+        return `<div class="market-card crypto-card">${head('—')}
+          <p class="crypto-basis">비트코인 시세를 불러오는 중이거나 거래소 응답이 없습니다.</p></div>`;
+      }
+      const { krw, usd, kimchi } = btc;
+      const src = [krw && krw.source, usd && usd.source].filter(Boolean).join(' · ');
+
+      // 원화가 있으면 원화가 주인공, 없으면 달러가 주인공 (한쪽 거래소만 살아 있어도 칸은 채운다)
+      const main = krw
+        ? { price: `${formatNumber(krw.price, 0)}원`, rate: krw.change_rate, basis: krw.basis }
+        : { price: `$${formatNumber(usd.price, 0)}`, rate: usd.change_rate, basis: usd.basis };
+
+      const usdRow = (krw && usd) ? `
+        <div class="crypto-sub"><span>달러 (${usd.source})</span>
+          <span class="v">$${formatNumber(usd.price, 0)}
+            <span class="${usd.change_rate >= 0 ? 'up' : 'down'}" style="font-size:12px">${usd.change_rate >= 0 ? '+' : ''}${usd.change_rate.toFixed(2)}%</span></span>
+        </div>` : '';
+
+      const kimchiRow = kimchi ? `
+        <div class="crypto-sub" title="한국 원화가 ÷ (해외 달러가 × ${kimchi.basis === 'USDT' ? '업비트 USDT 가격' : '원/달러 환율'}) − 1">
+          <span>김치 프리미엄 <span class="crypto-basis">(${kimchi.basis} ${formatNumber(kimchi.fx, 1)}원)</span></span>
+          <span class="v ${kimchi.pct >= 0 ? 'up' : 'down'}">${kimchi.pct >= 0 ? '+' : ''}${kimchi.pct.toFixed(2)}%</span>
+        </div>` : '';
+
+      // 52주 최고가 대비 — 지수 칸의 'ATH 대비 낙폭'과 같은 막대 표현 (업비트일 때만 값이 있다)
+      let highBox = '';
+      if (krw && krw.high_52w) {
+        const dd = krw.dd_52w;
+        const severe = dd <= -20;
+        const width = Math.max(0, Math.min(100, 100 + dd * 1.5));
+        highBox = `
+          <div class="ath-box">
+            <div class="ath-header"><span>52주 최고가${krw.high_52w_date ? ` (${krw.high_52w_date.slice(2).replace(/-/g, '.')})` : ''}</span>
+              <span class="ath-val">${formatNumber(krw.high_52w, 0)}원</span></div>
+            <div class="ath-header"><span>최고가 대비</span>
+              <span class="ath-dd-pct ${severe ? 'alert-level' : ''}">${dd.toFixed(2)}%</span></div>
+            <div class="progress-bar-container">
+              <div class="progress-bar-fill ${severe ? 'warning' : ''}" style="width: ${width}%"></div>
+            </div>
+          </div>`;
+      }
+
+      return `
+        <div class="market-card crypto-card">
+          ${head(src)}
+          <div class="crypto-body">
+            <div>
+              <div class="price-value">${main.price}</div>
+              <div class="price-change-row">
+                ${formatChangePill(main.rate)}
+                <span class="crypto-basis">${main.basis} · 24시간 거래</span>
+              </div>
+              ${usdRow}
+              ${kimchiRow}
+            </div>
+            <div>
+              ${highBox}
+              <div class="sparkline-box">${renderSparklineSVG(btc.sparkline)}</div>
+            </div>
+          </div>
+        </div>`;
     }
 
     // 2. Render Strategy & Drawdown Timing
