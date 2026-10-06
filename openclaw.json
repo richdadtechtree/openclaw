@@ -61,7 +61,13 @@
         "id": "keepgoing",
         "name": "keepgoing",
         "workspace": "/home/ubuntu/.openclaw/workspace/keepgoing",
-        "agentDir": "/home/ubuntu/.openclaw/agents/keepgoing/agent"
+        "agentDir": "/home/ubuntu/.openclaw/agents/keepgoing/agent",
+        "model": {
+          "primary": "google/gemini-flash-lite-latest",
+          "fallbacks": [
+            "google/gemini-flash-latest"
+          ]
+        }
       },
       {
         "id": "bookman",

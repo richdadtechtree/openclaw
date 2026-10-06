@@ -17,6 +17,7 @@ pt_briefing.py — GYM종국(김종국) 데일리/주간 브리핑 생성기
     --no-db      DB 저장 생략(슬랙 전송만)
     --print      만든 브리핑을 표준출력에 찍기(미리보기)
     --date YYYY-MM-DD   기준 날짜 지정(기본: 오늘, KST)
+    --force      이미 보낸 날이라도 다시 슬랙 전송(기본: 날짜+종류당 한 번만)
 
 필요 (.env, openclaw 루트 또는 ~/stock/stock/.env):
   SLACK_BOT_TOKEN_KEEPGOING   종국이(keepgoing) 봇 토큰 (없으면 SLACK_BOT_TOKEN 로 폴백)
@@ -79,6 +80,36 @@ def ensure_briefings_table(con):
         "id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, "
         "type TEXT NOT NULL DEFAULT 'daily', content TEXT NOT NULL, "
         "created_at TEXT NOT NULL)")
+
+
+# ── 중복 발송 방지 (2026-10-06) ──────────────────────────────────────────────
+# 같은 날 같은 브리핑이 슬랙에 두 번 올라오던 문제(9/26·9/30·10/5, 21:00 + 1~3분 뒤).
+# 21:00 crontab 과 openclaw cron(pt-trainer 에이전트)이 둘 다 이 스크립트를 돌렸다.
+# → 누가 몇 번 부르든 '날짜+종류' 당 한 번만 보내도록 DB 에 발송 자리표를 먼저 잡는다.
+#   PRIMARY KEY 라 동시에 두 번 실행돼도 한쪽만 자리를 잡는다(먼저 잡은 쪽이 보냄).
+def ensure_sends_table(con):
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS briefing_sends ("
+        "date TEXT NOT NULL, type TEXT NOT NULL, sent_at TEXT NOT NULL, "
+        "PRIMARY KEY (date, type))")
+    con.commit()
+
+
+def claim_send(con, ref, btype):
+    """발송 자리표 잡기. 잡았으면 True, 이미 누가 보냈(보내는 중)으면 False."""
+    ensure_sends_table(con)
+    cur = con.execute(
+        "INSERT OR IGNORE INTO briefing_sends (date, type, sent_at) VALUES (?,?,?)",
+        (ref.isoformat(), btype, datetime.now().isoformat()))
+    con.commit()
+    return cur.rowcount == 1
+
+
+def release_send(con, ref, btype):
+    """슬랙 전송이 실패하면 자리표를 돌려놓는다 → 다음 실행이 다시 보낼 수 있게."""
+    con.execute("DELETE FROM briefing_sends WHERE date=? AND type=?",
+                (ref.isoformat(), btype))
+    con.commit()
 
 
 def q(con, sql, params=()):
@@ -481,6 +512,7 @@ def main():
     no_slack = "--no-slack" in args
     no_db = "--no-db" in args
     do_print = "--print" in args
+    force = "--force" in args   # 이미 보낸 날이라도 다시 보내기(수동 재발송용)
 
     ref = date.today()
     if "--date" in args:
@@ -495,6 +527,22 @@ def main():
         print(f"[Warn] DB 파일 없음: {DB_PATH} → 빈 기록 기준으로 브리핑 생성")
 
     con = get_db()
+
+    # 슬랙으로 보낼 실행이면 먼저 발송 자리표를 잡는다. 이미 오늘 보냈으면 DB 저장·슬랙 모두 건너뜀
+    # (웹 대시보드에 같은 브리핑이 두 줄 생기는 것도 함께 막음). --print 미리보기는 막지 않음.
+    claimed = False
+    if not no_slack and not force:
+        try:
+            claimed = claim_send(con, ref, btype)
+        except Exception as ex:
+            # 자리표 확인 자체가 실패하면 예전처럼 보낸다(브리핑이 아예 안 가는 것보다 낫다).
+            print(f"[Warn] 중복 발송 확인 실패({ex}) → 확인 없이 진행")
+            claimed = None
+        if claimed is False:
+            print(f"[Skip] {ref} {btype} 브리핑은 이미 보냈음 → 중복 발송 안 함 (다시 보내려면 --force)")
+            con.close()
+            return
+
     content = build_weekly(con, ref) if btype == "weekly" else build_daily(con, ref)
     # 슬랙은 *볼드* mrkdwn 사용, 웹 대시보드는 별표 없는 평문이 깔끔하다.
     content_web = content.replace("*", "")
@@ -518,11 +566,16 @@ def main():
             new_achievements = chal.check_and_record_achievements(con, ref)
         except Exception as ex:
             print(f"[Error] 챌린지 달성 확인 실패: {ex}")
-    con.close()
 
     if not no_slack:
         if post_slack(content):
             print("✅ 슬랙 전송 완료 (keepgoing)")
+        elif claimed:
+            # 못 보냈으면 자리표를 돌려놔서 다음 실행(다른 cron 등)이 보낼 수 있게 한다.
+            try:
+                release_send(con, ref, btype)
+            except Exception as ex:
+                print(f"[Warn] 발송 자리표 되돌리기 실패: {ex}")
         for ach in new_achievements:
             congrats = f"🎉 *{ach['kind_label']} 달성! ({ach['milestone']})*\n{ach['message']}"
             if post_slack(congrats):
@@ -530,6 +583,7 @@ def main():
     elif new_achievements:
         for ach in new_achievements:
             print(f"[Info] 챌린지 달성(슬랙 생략): {ach['kind']} {ach['milestone']}")
+    con.close()
 
     print(f"완료: {btype} 브리핑 ({ref})")
 

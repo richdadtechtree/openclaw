@@ -65,6 +65,19 @@
   ⚠️ cron 은 서버 로컬 타임존 기준. 서버가 KST 아니면 `DAILY_SCHEDULE`/`WEEKLY_SCHEDULE` 로 시각 환산.
 - **웹 표시**: 대시보드(`pt_dashboard.py`, `http://mystatus-btr.duckdns.org`)의 "📢 김종국 브리핑" 섹션에 자동 노출. claude.ai 미리보기 아티팩트도 게시됨(위 대화 참고).
 
+### ✅ 2026-10-06 — 브리핑 중복 발송 + "Model Fallback" 안내 노출 수정
+- **중복 발송**(9/26·9/30·10/5, 21:00 정각 + 1~3분 뒤 똑같은 브리핑): 21:00 에 crontab(`openclaw-pt-daily-briefing`)과
+  openclaw cron `pt-daily-report-slack`(pt-trainer 에이전트, LLM 이라 1~3분 늦음)이 **둘 다** `pt_briefing.py` 를 돌렸다.
+  → `pt_briefing.py` 가 슬랙 전송 전 DB `briefing_sends(date,type)` 에 **발송 자리표**를 먼저 잡는다(PRIMARY KEY라 동시 실행도 한쪽만).
+  이미 잡혀 있으면 DB 저장·슬랙 모두 건너뜀(`[Skip]`), 전송 실패 시 자리표를 반납해 다른 cron 이 재시도 가능. 수동 재발송은 `--force`.
+  검증: `python3 scripts/test_pt_briefing_dedupe.py` (14항목). 서버의 openclaw cron 잡은 그대로 둬도 무해(정리하려면 `openclaw cron list` 후 제거).
+- **`↪️ Model Fallback: google/gemini-flash-lite-latest (selected openai/gpt-5.4-mini; unknown …)` 이 #pt-teacher 에 노출**:
+  keepgoing 에이전트는 자기 모델 설정이 없어 기본값 GPT 를 먼저 시도 → 매번 실패(별도 agentDir 이라 main 의 ChatGPT OAuth 로그인이
+  없는 것으로 추정, 서버 미확인) → Gemini 로 넘어가며 openclaw 가 안내문을 채널에 붙였다(끄는 설정 없음, 2026.7.1-2 소스 확인).
+  → `openclaw.json` keepgoing 에 **실제로 답하던 모델을 고정**: `primary=google/gemini-flash-lite-latest`, `fallbacks=[google/gemini-flash-latest]`.
+  답변 품질은 그동안과 동일. 바꾼 직후 한 번 `Model Fallback cleared` 안내가 나올 수 있음. `openclaw config validate` 통과 확인.
+  나중에 종국이를 GPT 로 돌리고 싶으면: keepgoing agentDir 에 OpenAI 로그인 후 이 `model` 항목을 지우면 된다.
+
 ## 🎭 종국이 페르소나(Soul/Identity) 강화 — ✅ 신규 (2026-08-19)
 
 실제 유튜브 'GYM JONG KOOK(짐종국)' 분석을 반영해 종국이 캐릭터를 **3층 구조**로 재정리했다.
