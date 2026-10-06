@@ -78,6 +78,18 @@
   답변 품질은 그동안과 동일. 바꾼 직후 한 번 `Model Fallback cleared` 안내가 나올 수 있음. `openclaw config validate` 통과 확인.
   나중에 종국이를 GPT 로 돌리고 싶으면: keepgoing agentDir 에 OpenAI 로그인 후 이 `model` 항목을 지우면 된다.
 
+### ✅ 2026-10-06 — 보고 독촉 톡(`scripts/pt_nudge.py`) 신설
+- **요청**: "운동·식단을 안 올리면 김종국처럼 타이트하게 올리라고 톡이 오면 좋겠다"(9/29 에도 같은 요청 → 종국이는 "알았어" 했지만
+  대화형 AI 는 **먼저 말을 걸 수 없어** 실제론 아무것도 안 왔다. 10/1~10/5 기록 공백).
+- **동작**: cron 10:00 morning / 13:30 lunch / 18:30 workout / 20:30 final. 빠진 것만 짚어 `<@U0BMLMRHAQL>` 멘션(폰 알림).
+  기록 판단 = PT DB **또는** 오늘 채널 메시지(키워드). 강도: 첫 톡 → 씹으면 한 단계 세게 → 하루 무소식이면 최강, 이틀↑ 잠수면 `N일째`.
+  예외: "아프/병원/몸살/부상" → 운동 독촉 제외 · "잔소리 쉬어/그만" → 그날 정지 · `PT_NUDGE=off` → 전부 정지.
+  중복 방지 DB `pt_nudges(date,slot)` (전송 실패 시 반납). 채널 읽기(`conversations.history`, 봇 `groups:history` 필요) 실패 시 DB 만으로 판단.
+- **같이 바꾼 것**: `pt_briefing.post_slack` 을 표준 라이브러리 `slack_call()` 로 교체(requests 의존 제거 → HANDOFF 12차 '조용한 누락' 원인 제거,
+  `PT_SLACK_API` 로 가짜 서버 주입 가능). keepgoing `AGENTS.md` 에 "채널의 독촉 톡은 네가 보낸 것, 답 오면 저장" 규칙 추가.
+- **서버 1회**: `cd ~/.openclaw && scripts/setup-briefing-cron.sh` (멱등, 기존 데일리/주간 줄도 같이 정리) → `crontab -l | grep pt-nudge` 4줄.
+  미리보기: `python3 scripts/pt_nudge.py final --dry-run`. 검사: `python3 scripts/test_pt_nudge.py`(26) · `test_pt_briefing_dedupe.py`(14).
+
 ## 🎭 종국이 페르소나(Soul/Identity) 강화 — ✅ 신규 (2026-08-19)
 
 실제 유튜브 'GYM JONG KOOK(짐종국)' 분석을 반영해 종국이 캐릭터를 **3층 구조**로 재정리했다.

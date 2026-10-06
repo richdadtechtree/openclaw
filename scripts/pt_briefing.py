@@ -478,25 +478,48 @@ def save_to_db(con, ref, btype, content):
     con.commit()
 
 
+SLACK_API = os.getenv("PT_SLACK_API", "https://slack.com/api")   # 검사 때 가짜 서버로 바꿔 끼움
+
+
+def slack_call(method, token, payload=None, params=None, timeout=30):
+    """슬랙 Web API 호출 — 표준 라이브러리(urllib)만 사용.
+    서버 시스템 python3 에는 requests 가 없어 예전엔 '[Warn] requests 미설치' 후 조용히 발송이
+    누락됐다(HANDOFF 12차). payload 가 있으면 POST(JSON), 없으면 GET(params)."""
+    import urllib.request
+    import urllib.parse
+    url = f"{SLACK_API.rstrip('/')}/{method}"
+    headers = {"Authorization": f"Bearer {token}"}
+    data = None
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json; charset=utf-8"
+    elif params:
+        url += "?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(url, data=data, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+
+def slack_token():
+    return os.getenv("SLACK_BOT_TOKEN_KEEPGOING") or os.getenv("SLACK_BOT_TOKEN")
+
+
+def slack_channel():
+    return os.getenv("SLACK_KEEPGOING_CHANNEL") or DEFAULT_KEEPGOING_CHANNEL
+
+
 def post_slack(content):
-    token = os.getenv("SLACK_BOT_TOKEN_KEEPGOING") or os.getenv("SLACK_BOT_TOKEN")
-    channel = os.getenv("SLACK_KEEPGOING_CHANNEL") or DEFAULT_KEEPGOING_CHANNEL
+    token = slack_token()
     if not token:
         print("[Warn] 슬랙 토큰 없음(SLACK_BOT_TOKEN_KEEPGOING/SLACK_BOT_TOKEN) → 슬랙 전송 생략")
         return False
     try:
-        import requests
-    except Exception:
-        print("[Warn] requests 미설치 → 슬랙 전송 생략")
+        r = slack_call("chat.postMessage", token,
+                       payload={"channel": slack_channel(), "text": content,
+                                "unfurl_links": False, "unfurl_media": False})
+    except Exception as ex:
+        print(f"[Error] 슬랙 전송 실패(연결): {ex}")
         return False
-    r = requests.post(
-        "https://slack.com/api/chat.postMessage",
-        headers={"Authorization": f"Bearer {token}",
-                 "Content-Type": "application/json; charset=utf-8"},
-        json={"channel": channel, "text": content,
-              "unfurl_links": False, "unfurl_media": False},
-        timeout=30,
-    ).json()
     if not r.get("ok"):
         print(f"[Error] 슬랙 전송 실패: {r}")
         return False

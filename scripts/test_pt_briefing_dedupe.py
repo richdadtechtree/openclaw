@@ -5,7 +5,7 @@ test_pt_briefing_dedupe.py — 종국이 브리핑 '하루 한 번만 발송' �
 
 21:00 crontab 과 openclaw cron 이 pt_briefing.py 를 둘 다 불러 같은 브리핑이 슬랙에
 두 번 올라오던 문제를 막았는지 확인한다. 진짜 슬랙·진짜 DB 는 건드리지 않는다
-(임시 HOME 에 빈 DB, 가짜 requests 모듈로 '보낸 횟수'만 센다).
+(임시 HOME 에 빈 DB, 내 컴퓨터 안의 가짜 슬랙 서버로 '보낸 횟수'만 센다).
 
 실행:  python3 scripts/test_pt_briefing_dedupe.py      (표준 라이브러리만)
 """
@@ -20,19 +20,34 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SCRIPT = HERE / "pt_briefing.py"
 
-# 가짜 requests: 보낸 내용을 파일에 한 줄씩 적고, FAKE_SLACK_OK=0 이면 실패로 응답.
-FAKE_REQUESTS = '''
-import os, json
-class _R:
-    def __init__(s, ok): s._ok = ok
-    def json(s): return {"ok": s._ok, "error": None if s._ok else "fake_fail"}
-def post(url, headers=None, json=None, timeout=None):
-    ok = os.environ.get("FAKE_SLACK_OK", "1") == "1"
-    if ok:
-        with open(os.environ["FAKE_SLACK_LOG"], "a", encoding="utf-8") as f:
-            f.write((json or {}).get("text", "")[:40].replace("\\n", " ") + "\\n")
-    return _R(ok)
-'''
+# 가짜 슬랙 서버: chat.postMessage 를 받으면 보낸 내용을 파일에 한 줄씩 적는다.
+# FAKE_SLACK_OK 파일이 있으면 실패로 응답(전송 실패 흉내). 진짜 slack.com 은 절대 안 부른다.
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+
+def start_fake_slack(log, fail_flag):
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):
+            body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            ok = not fail_flag.exists()
+            if ok and self.path.endswith("chat.postMessage"):
+                text = json.loads(body or b"{}").get("text", "")
+                with open(log, "a", encoding="utf-8") as f:
+                    f.write(text[:40].replace("\n", " ") + "\n")
+            out = json.dumps({"ok": ok, "error": None if ok else "fake_fail"}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(out)
+
+    srv = HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
 
 passed = failed = 0
 
@@ -53,23 +68,25 @@ def main():
         home = tmp / "home"
         (home / "pt_data").mkdir(parents=True)
         sqlite3.connect(home / "pt_data" / "pt.db").close()   # 빈 DB(기록 없음 브리핑)
-        fake = tmp / "fakemods"
-        fake.mkdir()
-        (fake / "requests.py").write_text(FAKE_REQUESTS, encoding="utf-8")
         log = tmp / "slack.log"
+        fail_flag = tmp / "FAIL"
+        srv = start_fake_slack(log, fail_flag)
 
         # 스크립트가 cwd 의 .env 도 읽으므로 cwd 를 빈 임시 폴더로 둔다.
         env = {k: v for k, v in os.environ.items()
                if not k.startswith(("SLACK_", "PT_"))}
-        env.update({"HOME": str(home), "PYTHONPATH": str(fake),
+        env.update({"HOME": str(home),
+                    "PT_SLACK_API": f"http://127.0.0.1:{srv.server_port}/api",
                     "SLACK_BOT_TOKEN_KEEPGOING": "xoxb-fake",
-                    "SLACK_KEEPGOING_CHANNEL": "CFAKE",
-                    "FAKE_SLACK_LOG": str(log)})
+                    "SLACK_KEEPGOING_CHANNEL": "CFAKE"})
 
         def run(*args, ok=True):
-            e = dict(env, FAKE_SLACK_OK="1" if ok else "0")
+            if ok:
+                fail_flag.unlink(missing_ok=True)
+            else:
+                fail_flag.touch()
             r = subprocess.run([sys.executable, str(SCRIPT), *args],
-                               cwd=tmp, env=e, capture_output=True, text=True, timeout=60)
+                               cwd=tmp, env=env, capture_output=True, text=True, timeout=60)
             return r.returncode, r.stdout + r.stderr
 
         def sent():
@@ -117,6 +134,7 @@ def main():
         run("daily", "--date", "2026-10-08", "--no-slack", "--no-db", "--print")
         code, out = run("daily", "--date", "2026-10-08")
         check("미리보기 뒤 실제 발송 정상", sent() == 6, out)
+        srv.shutdown()
 
     print(f"\n결과: {passed} 통과 / {failed} 실패")
     sys.exit(1 if failed else 0)
