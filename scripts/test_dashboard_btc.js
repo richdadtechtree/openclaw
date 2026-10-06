@@ -2,7 +2,8 @@
  * test_dashboard_btc.js — 주가 대시보드 '₿ 비트코인' 칸과 4칸 배치 확인 (실제 Chromium)
  *
  * 가짜 서버가 stock/templates/index.html(서버가 실제로 내주는 파일 — app.py 가 templates/ 를 먼저 찾음)을 내주고 /api/indices · /api/crypto 를 흉내 낸다.
- *   ① 캡처 폭(1320px): 4칸 × 2줄 — 1줄 지수 4개, 2줄 QLD·TQQQ + 비트코인(2칸 너비), 빈칸 없음
+ *   ① 캡처 폭(1320px): 2줄 — 1줄 지수 4개(같은 너비), 2줄 QLD·TQQQ·비트코인 3개(같은 너비), 양 끝 맞춤
+ *      + 이름이 잘리지 않음 (2026-10-06 실제 서버: 출처 'Korea Investment API (real-time)' 가 길어 QLD·TQQQ 이름이 잘렸다)
  *   ② 비트코인 칸 내용: 원화 크게 · 등락 기준 · 달러 · 김치 프리미엄 · 52주 최고가 대비 · 30일 추이
  *   ③ 중간 폭(1000px): 2칸 — 비트코인은 맨 아래 한 줄 통째
  *   ④ 폰(390px): 1칸 — 비트코인이 옆으로 넘치지 않음(가로 스크롤 없음)
@@ -25,6 +26,8 @@ const INDICES = {
   'S&P 500': idx(6702.1, 0.12, 7620.9), 'NASDAQ': idx(22650.3, -0.25, 27190.21),
   'QLD': idx(88.4, 1.1, 101.19), 'TQQQ': idx(72.3, 1.6, 88.09),
 };
+// 실제 서버 응답처럼 QLD·TQQQ 는 한투 실시간(긴 출처 이름)
+INDICES.QLD.source = INDICES.TQQQ.source = 'Korea Investment API (real-time)';
 // 2026-10-06 서버 실측값(scripts/test_btc_price.py)과 같은 모양
 const BTC_FULL = {
   krw: { price: 116190000, change_rate: -0.58, basis: '오전 9시 대비', source: 'Upbit',
@@ -81,7 +84,7 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   ok(fs.readFileSync(HTML, 'utf8') === fs.readFileSync(HTML_COPY, 'utf8'),
      'stock/templates/index.html = stock/index.html (한쪽만 고치면 서버엔 반영 안 될 수 있음)');
 
-  console.log('① 캡처 폭 1320px — 4칸 × 2줄');
+  console.log('① 캡처 폭 1320px — 1줄 4개 · 2줄 3개');
   let page = await open(1320);
   let l = await layout(page), R = rows(l);
   ok(l.length === 7, `카드 7장 (지수 6 + 비트코인 1) → ${l.length}`);
@@ -89,12 +92,26 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   ok(R[0].length === 4 && R[0].every(c => !c.crypto), '1줄 = 지수 4개');
   ok(R[1] && R[1].length === 3 && R[1][2].crypto, '2줄 = QLD·TQQQ + 비트코인');
   const one = R[0][0].w, btc = l.find(c => c.crypto);
-  ok(btc && btc.w > one * 2 - 2 && btc.w < one * 2 + 40, `비트코인 = 2칸 너비 (${btc && btc.w}px vs 1칸 ${one}px)`);
+  const spread = r => Math.max(...r.map(c => c.w)) - Math.min(...r.map(c => c.w));
+  ok(spread(R[0]) <= 1, `1줄 4장 같은 너비 (${R[0].map(c => c.w).join('/')}px)`);
+  ok(spread(R[1]) <= 1, `2줄 3장 같은 너비 (${R[1].map(c => c.w).join('/')}px)`);
+  ok(Math.abs(R[0][0].x - R[1][0].x) <= 1, '두 줄 왼쪽 끝 맞음');
   const right = Math.max(...R[0].map(c => c.x + c.w)), right2 = btc.x + btc.w;
-  ok(Math.abs(right - right2) <= 1, '2줄 오른쪽 끝이 1줄과 맞음(빈칸 없음)');
+  ok(Math.abs(right - right2) <= 1, '두 줄 오른쪽 끝 맞음(빈칸 없음)');
   ok(one >= 280, `카드 1장 폭 ≥ 280px (${one}px) — 숫자·스파크라인 여유`);
   const heads = await page.$$eval('#indices-grid .card-head', hs => hs.map(h => Math.round(h.getBoundingClientRect().height)));
   ok(Math.max(...heads) - Math.min(...heads) <= 2, `카드 머리(이름·출처) 높이가 모두 한 줄로 같음 (${[...new Set(heads)].join('/')}px)`);
+  const natural = await page.$$eval('#indices-grid > .row2', cs => cs.map(c => {
+    const last = c.lastElementChild.getBoundingClientRect(), top = c.getBoundingClientRect().top;
+    return Math.round(last.bottom - top);   // 카드 위 ~ 마지막 내용 아래 = 실제 내용 높이
+  }));
+  ok(Math.max(...natural) - Math.min(...natural) <= 70, `2줄 카드 내용 높이 차이 ≤ 70px — 빈 공간 적게 (${natural.join('/')}px)`);
+  const cut = await page.$$eval('#indices-grid .index-name', ns => ns.filter(n => n.scrollWidth > n.clientWidth + 1).map(n => n.textContent.trim()));
+  ok(cut.length === 0, `카드 이름이 하나도 안 잘림${cut.length ? ' → 잘림: ' + cut.join(', ') : ''}`);
+  const qld = await page.$$eval('#indices-grid .market-card', cs => cs.map(c => c.querySelector('.card-head').innerText).filter(t => t.includes('QLD'))[0] || '');
+  ok(qld.includes('QLD (2x)') && qld.includes('KIS 실시간'), `QLD 이름 + 짧은 출처 'KIS 실시간' (${qld.replace(/\n/g, ' | ')})`);
+  const srcTitle = await page.$eval('.row2:not(.crypto-card) .source-tag', e => e.title);
+  ok(srcTitle === 'Korea Investment API (real-time)', '출처 전체 이름은 마우스 올리면(title) 보임');
 
   console.log('② 비트코인 칸 내용');
   const txt = await page.$eval('.crypto-card', e => e.innerText);
@@ -102,7 +119,9 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   ok(/▼\s*-0\.58%/.test(txt), '원화 등락 ▼ -0.58%');
   ok(txt.includes('오전 9시 대비'), '등락 기준(오전 9시 대비) 표기');
   ok(txt.includes('$85,960') && txt.includes('-0.38%'), '달러 $85,960 · -0.38%');
-  ok(txt.includes('김치 프리미엄') && txt.includes('+0.05%'), '김치 프리미엄 +0.05%');
+  ok(txt.includes('김프') && txt.includes('+0.05%'), '김치 프리미엄(김프) +0.05%');
+  ok(await page.$$eval('.crypto-card .crypto-sub', r => r.length) === 1, '달러·김프는 한 줄(카드 높이 절약)');
+  ok(/환율 1,351\.0원/.test(await page.$eval('.crypto-card .crypto-sub [title]', e => e.title)), '김프 계산 기준·환율은 마우스 올리면(title) 보임');
   ok(txt.includes('52주 최고가') && txt.includes('163,325,000원') && txt.includes('-28.86%'), '52주 최고가 대비 -28.86%');
   ok(txt.includes('25.10.06'), '52주 최고가 날짜 25.10.06');
   ok(txt.includes('Upbit · Binance'), '출처 Upbit · Binance');
@@ -149,7 +168,7 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   page = await open(1320);
   const t6 = await page.$eval('.crypto-card', e => e.innerText);
   ok(t6.includes('$85,960') && t6.includes('24시간 대비'), '달러가 주인공 + 24시간 대비');
-  ok(!t6.includes('김치 프리미엄') && !t6.includes('52주'), '김프·52주 줄은 숨김');
+  ok(!t6.includes('김프') && !t6.includes('52주'), '김프·52주 줄은 숨김');
   await page.close();
 
   await browser.close(); srv.close();
