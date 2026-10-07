@@ -7,7 +7,7 @@
  *      + 이름이 잘리지 않음 (2026-10-06 실제 서버: 출처 'Korea Investment API (real-time)' 가 길어 QLD·TQQQ 이름이 잘렸다)
  *   ② 비트코인 칸 내용: 원화 크게 · 등락 기준 · 달러/김프 한 줄 · 역대 최고가(ATH)·낙폭(+다르면 52주 최고가) · 30일 추이
  *      (2026-10-07 '52주만 나온다' 요청: ATH 를 모를 땐 52주만, 알면 ATH, ATH=52주면 한 줄만)
- *   ③ 환율 칸 내용(2026-10-07): 현재 환율 · 전일 대비 · 3년 최고/최저/3년 전 대비 · 3년 추이 그래프 + 연도 표시
+ *   ③ 환율 칸 내용(2026-10-07): 현재 환율 · 전일 대비 · 3년 최고/최저/고점 대비(2026-10-08 '3년 전 대비'에서 변경) · 3년 추이 그래프 + 연도 표시
  *   ④ 중간 폭(1000px): 2장씩 4줄 / 폰(390px): 1장씩, 가로 스크롤 없음
  *   ⑤ 거래소·환율 소스가 전부 실패해도 지수 6장은 그대로 + 그 자리만 안내 문구(배치 유지)
  *   ⑥ 달러만 살아 있으면 달러를 주인공으로 / 환율 추이가 없으면 현재 환율만
@@ -44,7 +44,7 @@ const FX_FULL = {
   price: 1385.5, change_rate: -0.42, basis: '전일 대비', source: 'Naver', history_source: 'ECB',
   history: { points: Array.from({ length: 160 }, (_, i) => Math.round(50 + 45 * Math.sin(i / 20))),
              from: '2023-10-09', to: '2026-10-06', high: 1487.6, high_date: '2024-12-27',
-             low: 1305.2, low_date: '2024-07-16', start: 1352.1, change_pct: 2.47 },
+             low: 1305.2, low_date: '2024-07-16', start: 1352.1, from_high_pct: -6.86 },
 };
 let crypto = BTC_FULL;   // 테스트마다 바꿔 끼운다 (null = 전부 실패)
 let fx = FX_FULL;
@@ -161,7 +161,7 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   ok(/▼\s*-0\.42%/.test(fxt) && fxt.includes('전일 대비'), '전일 대비 ▼ -0.42%');
   ok(fxt.includes('3년 최고') && fxt.includes('1,487.60원') && fxt.includes('24.12.27'), '3년 최고 1,487.60원 (24.12.27)');
   ok(fxt.includes('3년 최저') && fxt.includes('1,305.20원') && fxt.includes('24.07.16'), '3년 최저 1,305.20원 (24.07.16)');
-  ok(fxt.includes('3년 전 대비') && fxt.includes('+2.47%'), '3년 전 대비 +2.47%');
+  ok(fxt.includes('고점 대비') && fxt.includes('-6.86%') && !fxt.includes('3년 전 대비'), '3년 전 대비 → 고점 대비 -6.86%');
   ok(fxt.includes('Naver · ECB'), '출처 Naver · ECB');
   ok(await page.$('.fx-card .fx-chart .sparkline-svg path') !== null, '3년 추이 선 그래프');
   const yrs = await page.$$eval('.fx-card .fx-years span', ss => ss.map(e => e.textContent));

@@ -207,10 +207,18 @@ def _history():
 
 
 def _summarize(rows, current):
-    """3년 일별 값 → 그래프 점(0~100) + 최고/최저/3년 전 대비."""
+    """3년 일별 값 → 그래프 점(0~100) + 최고/최저 + 고점 대비(지금 환율이 3년 최고점에서 몇 % 아래인지)."""
     vals = [v for _, v in rows]
     hi_i = max(range(len(vals)), key=vals.__getitem__)
     lo_i = min(range(len(vals)), key=vals.__getitem__)
+    high, high_date = vals[hi_i], rows[hi_i][0]
+    low, low_date = vals[lo_i], rows[lo_i][0]
+    # 추이(ECB)는 하루 늦게 들어오므로, 지금 환율이 기록보다 높거나 낮으면 오늘을 고점/저점으로 본다
+    today = date.today().isoformat()
+    if current and current > high:
+        high, high_date = current, today
+    if current and current < low:
+        low, low_date = current, today
     step = max(1, len(rows) // CHART_POINTS)
     pts = vals[::step]
     if current:
@@ -220,10 +228,11 @@ def _summarize(rows, current):
     return {
         "points": [round((p - lo) / span * 100, 1) for p in pts],
         "from": rows[0][0], "to": rows[-1][0],
-        "high": round(vals[hi_i], 2), "high_date": rows[hi_i][0],
-        "low": round(vals[lo_i], 2), "low_date": rows[lo_i][0],
+        "high": round(high, 2), "high_date": high_date,
+        "low": round(low, 2), "low_date": low_date,
         "start": round(vals[0], 2),
-        "change_pct": round(((current or vals[-1]) / vals[0] - 1) * 100, 2),
+        # 고점 대비(2026-10-08 사용자 요청: '3년 전 대비' 대신) — 0 이면 지금이 고점, -5 면 고점보다 5% 낮음
+        "from_high_pct": round(((current or vals[-1]) / high - 1) * 100, 2),
     }
 
 

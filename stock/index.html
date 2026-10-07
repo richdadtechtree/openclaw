@@ -1154,8 +1154,8 @@
           <div class="ath-box">
             <div class="ath-header"><span>3년 최고 (${ymd(h.high_date)})</span><span class="ath-val">${formatNumber(h.high)}원</span></div>
             <div class="ath-header"><span>3년 최저 (${ymd(h.low_date)})</span><span class="ath-val">${formatNumber(h.low)}원</span></div>
-            <div class="ath-header"><span>3년 전 대비</span>
-              <span class="ath-dd-pct">${h.change_pct >= 0 ? '+' : ''}${h.change_pct.toFixed(2)}%</span></div>
+            <div class="ath-header" title="지금 환율이 3년 최고점(${formatNumber(h.high)}원)보다 몇 % 낮은지"><span>고점 대비</span>
+              <span class="ath-dd-pct">${h.from_high_pct > 0 ? '+' : ''}${h.from_high_pct.toFixed(2)}%</span></div>
             <div class="progress-bar-container" title="3년 최저(왼쪽)~최고(오른쪽) 사이에서 지금 위치">
               <div class="progress-bar-fill" style="width: ${pos}%"></div>
             </div>
