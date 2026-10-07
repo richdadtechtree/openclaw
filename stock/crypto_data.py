@@ -9,7 +9,10 @@
   원화 가격 : 업비트(1순위) → 빗썸(예비)
   달러 가격 : 바이낸스 BTCUSDT(1순위) → 코인베이스 BTC-USD(예비)
   환율      : fx_data(네이버→두나무→ECB, 환율 칸과 같은 값) → 실패 시 업비트 USDT 원화가(대용)
-  30일 추이 : 업비트 일봉 종가
+  30일 추이 : 업비트 일봉 종가 (10년 그래프가 아직 준비 안 됐을 때만 대신 쓴다)
+  10년 추이 : 빗썸 일봉 전체(2013~, 한 번에 받음) → 실패 시 업비트 일봉(2017-09~, 있는 만큼만).
+              10년 동안 수백 배 올라 보통 눈금이면 앞쪽이 바닥에 붙는다 → 로그 눈금(같은 높이 = 같은 '배수').
+              첫 받기는 뒤에서(화면 안 막음), 6시간 캐시.
   역대 최고가: 업비트 일봉 '고가'를 상장(2017-09)부터 한 번 전부 훑어 최고값을 찾고 파일(.btc_ath.json)에
               저장 → 이후엔 '오늘 고가·52주 최고가'와만 비교해 더 높으면 갱신(매번 수천 일을 다시 받지 않음).
               첫 훑기가 끝나기 전·실패 시엔 역대 최고가를 표시하지 않고 52주 최고가만 보인다(지어내지 않음).
@@ -20,9 +23,11 @@
 직접 점검(서버, stock venv):  ~/stock/stock/venv/bin/python crypto_data.py
 """
 import json
+import math
 import os
 import threading
 import time
+from datetime import date, datetime, timedelta, timezone
 
 import requests
 
@@ -44,6 +49,12 @@ _cache = {"quote": (0, None), "spark": (0, []), "fx": (0, None)}
 # 역대 최고가(원화) 저장 파일 — 서버 실행 폴더(~/stock/stock)에 생긴다. 코드 동기화(rsync .py/.html)는 건드리지 않음.
 ATH_FILE = os.getenv("BTC_ATH_FILE", ".btc_ath.json")
 ATH_RESCAN_DAYS = 30      # 혹시 놓친 값이 있어도 한 달에 한 번은 처음부터 다시 훑어 바로잡는다
+LONG_YEARS = 10
+LONG_TTL = 6 * 3600       # 10년 추이 캐시(하루 한 점이라 자주 받을 필요 없음)
+LONG_RETRY = 600          # 실패하면 10분 뒤에 다시 시도(매 요청마다 두드리지 않게)
+LONG_POINTS = 200         # 그래프 점 개수(10년 ≈ 2~3주에 1점)
+KST = timezone(timedelta(hours=9))
+_long = {"ts": 0, "val": None, "loading": False, "failed": 0}
 _ath_lock = threading.Lock()
 _ath = {"loaded": False, "data": None, "scanning": False}
 
@@ -164,6 +175,85 @@ def _sparkline():
     return val or []
 
 
+# ── 10년 추이 ──────────────────────────────────────────────────────────────
+
+def _long_bithumb():
+    """빗썸 일봉 전체(한 번 요청) → [(날짜, 종가), ...] 오래된 것부터. 칸: [시각ms, 시가, 종가, 고가, 저가, 거래량]"""
+    d = _get("https://api.bithumb.com/public/candlestick/BTC_KRW/24h")
+    if d.get("status") != "0000":
+        raise RuntimeError(f"bithumb status={d.get('status')}")
+    rows = {}
+    for r in d["data"]:
+        day = datetime.fromtimestamp(int(r[0]) / 1000, KST).date().isoformat()
+        close = float(r[2])
+        if close > 0:
+            rows[day] = close
+    return sorted(rows.items())
+
+
+def _long_upbit():
+    rows = {day: close for day, _, close in _upbit_days() if close > 0}
+    return sorted(rows.items())
+
+
+def _load_long():
+    """10년 추이를 받아 그래프용으로 줄인다(로그 눈금 0~100)."""
+    for f, src in ((_long_bithumb, "Bithumb"), (_long_upbit, "Upbit")):
+        try:
+            rows = f()
+        except Exception as e:
+            print(f"[crypto] 10년 추이 {f.__name__} 실패: {e}")
+            continue
+        start = (date.today() - timedelta(days=365 * LONG_YEARS + 2)).isoformat()
+        rows = [r for r in rows if r[0] >= start]
+        if len(rows) < 365:                 # 1년도 안 되면 '긴 그래프'라 부를 수 없다 → 다음 소스
+            print(f"[crypto] 10년 추이 {f.__name__} 점이 너무 적음: {len(rows)}개")
+            continue
+        step = max(1, len(rows) // LONG_POINTS)
+        picked = rows[::step]
+        if picked[-1] != rows[-1]:
+            picked.append(rows[-1])         # 마지막 날은 꼭 넣는다
+        return {"closes": [v for _, v in picked], "from": rows[0][0], "to": rows[-1][0],
+                "source": src, "years": round(len(rows) / 365.25, 1)}
+    return None
+
+
+def _long_history():
+    """캐시된 10년 추이. 없거나 오래됐으면 뒤에서 새로 받는다(그동안은 있는 것/없음을 돌려줌)."""
+    now = time.time()
+    fresh = _long["val"] and now - _long["ts"] < LONG_TTL
+    retry_ok = now - _long["failed"] > LONG_RETRY
+    if not fresh and not _long["loading"] and retry_ok:
+        _long["loading"] = True
+
+        def run():
+            try:
+                v = _load_long()
+                if v:
+                    _long.update(val=v, ts=time.time())
+                else:
+                    _long["failed"] = time.time()
+            finally:
+                _long["loading"] = False
+        threading.Thread(target=run, daemon=True).start()
+    return _long["val"]
+
+
+def _long_chart(current):
+    """10년 종가 + 지금 가격 → 로그 눈금 0~100 점. 그래프 끝은 지금 가격."""
+    h = _long_history()
+    if not h:
+        return None
+    vals = h["closes"] + ([current] if current else [])
+    logs = [math.log10(v) for v in vals]
+    lo, hi = min(logs), max(logs)
+    span = (hi - lo) or 1
+    return {"points": [round((v - lo) / span * 100, 1) for v in logs],
+            "from": h["from"], "to": date.today().isoformat() if current else h["to"],
+            "source": h["source"], "years": h["years"], "log": True,
+            "min": round(min(vals)), "max": round(max(vals))}
+
+
 # ── 역대 최고가(원화, 업비트) ────────────────────────────────────────────────
 
 def _ath_load():
@@ -190,10 +280,10 @@ def _ath_save(d):
         print(f"[crypto] 역대 최고가 저장 실패: {e}")
 
 
-def _scan_upbit_ath(max_pages=25, pause=0.15):
-    """업비트 KRW-BTC 일봉을 오늘부터 거꾸로 200개씩 받아 '고가' 최댓값과 그날을 찾는다.
+def _upbit_days(max_pages=25, pause=0.15):
+    """업비트 KRW-BTC 일봉을 오늘부터 거꾸로 200개씩 전부 받는다 → [(날짜, 고가, 종가), ...] 최신이 앞.
     25쪽 × 200일 = 5000일(약 13년) → 상장(2017-09) 전체를 덮는다. 업비트 요청 한도(초당 10회)를 지키려고 쉬어 가며."""
-    best, best_day, to, days = 0.0, None, None, 0
+    out, to = [], None
     for _ in range(max_pages):
         url = "https://api.upbit.com/v1/candles/days?market=KRW-BTC&count=200"
         if to:
@@ -202,17 +292,24 @@ def _scan_upbit_ath(max_pages=25, pause=0.15):
         if not rows:
             break
         for r in rows:
-            hi = float(r.get("high_price") or 0)
-            if hi > best:
-                best, best_day = hi, str(r.get("candle_date_time_kst", ""))[:10]
-        days += len(rows)
+            out.append((str(r.get("candle_date_time_kst", ""))[:10],
+                        float(r.get("high_price") or 0), float(r.get("trade_price") or 0)))
         if len(rows) < 200:
             break                                   # 맨 처음(상장일)까지 다 받음
         to = str(rows[-1]["candle_date_time_utc"])[:19]   # 가장 오래된 날 앞에서 다음 쪽
         time.sleep(pause)
-    if best <= 0 or days < 365:
-        raise RuntimeError(f"일봉이 너무 적음: {days}일")
-    return {"price": best, "date": best_day, "days": days, "scanned": time.strftime("%Y-%m-%d")}
+    return out
+
+
+def _scan_upbit_ath():
+    """업비트 일봉 전체에서 '고가' 최댓값과 그날을 찾는다."""
+    rows = _upbit_days()
+    if len(rows) < 365:
+        raise RuntimeError(f"일봉이 너무 적음: {len(rows)}일")
+    day, best, _ = max(rows, key=lambda r: r[1])
+    if best <= 0:
+        raise RuntimeError("고가 값이 없음")
+    return {"price": best, "date": day, "days": len(rows), "scanned": time.strftime("%Y-%m-%d")}
 
 
 def _ath_scan_bg():
@@ -274,7 +371,7 @@ def get_btc():
         if not krw and not usd:
             return None
 
-        out = {"krw": krw, "usd": usd, "kimchi": None, "sparkline": _sparkline()}
+        out = {"krw": krw, "usd": usd, "kimchi": None, "sparkline": _sparkline(), "long": None}
 
         if krw:
             krw["change_rate"] = round(krw["change_rate"], 2)
@@ -287,6 +384,12 @@ def get_btc():
                     print(f"[crypto] 역대 최고가 처리 실패: {e}")
         if usd:
             usd["change_rate"] = round(usd["change_rate"], 2)
+
+        # 10년 그래프(원화). 준비 전이면 None → 화면은 30일 그래프를 대신 보여 준다
+        try:
+            out["long"] = _long_chart(krw["price"] if krw else None)
+        except Exception as e:
+            print(f"[crypto] 10년 그래프 실패: {e}")
 
         # 김치 프리미엄 = 한국 원화가 ÷ (해외 달러가 × 환율) − 1
         if krw and usd:

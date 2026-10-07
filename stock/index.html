@@ -470,6 +470,10 @@
     .fx-flag { display: inline-flex; gap: 2px; }
     .fx-chart { position: relative; margin-top: 12px; }
     .fx-chart .sparkline-box { margin-top: 0; height: 56px; }
+    /* 그래프 왼쪽 위 작은 꼬리표('3년', '10년 · 로그') — 높이를 늘리지 않게 겹쳐 놓는다 */
+    .chart-tag { position: absolute; top: -2px; left: 0; z-index: 1; font-size: 10px; line-height: 1;
+                 color: var(--text-faint); background: var(--bg-surface); padding: 1px 4px 1px 0; }
+    .crypto-card .fx-chart { margin-top: 10px; }
     .fx-years { position: relative; height: 14px; margin-top: 4px; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-faint); }
     .fx-years span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
     .fx-years span.first { transform: none; }
@@ -1175,14 +1179,15 @@
             </div>
             <div>
               ${box}
-              ${h ? renderFxChart(h) : ''}
+              ${h ? renderYearChart(h, '3년', '최근 3년 원/달러 환율 (유럽중앙은행 기준환율 등 일별 값)') : ''}
             </div>
           </div>
         </div>`;
     }
 
-    // 3년 추이 그래프: 스파크라인과 같은 선 모양 + 해가 바뀌는 곳에 세로 점선 + 아래 연도
-    function renderFxChart(h) {
+    // 여러 해 추이 그래프(환율 3년·비트코인 10년 공용): 스파크라인과 같은 선 + 해 바뀌는 곳 세로 점선 + 아래 연도.
+    // h = {points(0~100), from, to}. 연도 글자는 겹치지 않게 솎는다(10년이면 2년 간격쯤).
+    function renderYearChart(h, tag, title) {
       const t0 = Date.parse(h.from), t1 = Date.parse(h.to);
       const span = (t1 - t0) || 1;
       const pct = t => ((t - t0) / span) * 100;
@@ -1190,17 +1195,26 @@
       for (let y = new Date(t0).getFullYear() + 1; y <= new Date(t1).getFullYear(); y++) {
         years.push({ y, x: pct(Date.UTC(y, 0, 1)) });
       }
-      // 세로 점선(해 바뀜)은 그래프 위에 겹쳐 그린다. 280×56 상자 기준 좌표.
+      // 세로 점선(해 바뀜)은 해마다 — 그래프 위에 겹쳐 그린다. 280×56 상자 기준 좌표.
       const grid = years.map(({ x }) => {
         const px = 4 + (x / 100) * (280 - 8);
         return `<line x1="${px}" y1="0" x2="${px}" y2="56" stroke="var(--border-color)" stroke-dasharray="2,3"/>`;
       }).join('');
       const svg = renderSparklineSVG(h.points, 56, grid);
+      // 연도 글자 솎기(카드 폭 ≈ 260px 기준 %): 양 끝 '2016.10' 글자 ≈ 18%, 가운데 '2020' ≈ 10%, 글자 사이 2% 이상
+      const EDGE = 18, HALF = 5, GAP = 12;
+      let lastX = -100;
+      const mids = years.filter(({ x }) => {
+        if (x - HALF < EDGE || x + HALF > 100 - EDGE || x - lastX < GAP) return false;
+        lastX = x;
+        return true;
+      });
       const labels = [`<span class="first" style="left:0">${h.from.slice(0, 7).replace('-', '.')}</span>`]
-        .concat(years.filter(({ x }) => x > 12 && x < 88).map(({ y, x }) => `<span style="left:${x}%">${y}</span>`))
+        .concat(mids.map(({ y, x }) => `<span style="left:${x}%">${y}</span>`))
         .concat([`<span class="last" style="left:100%">${h.to.slice(0, 7).replace('-', '.')}</span>`]);
       return `
-        <div class="fx-chart" title="최근 3년 원/달러 환율 (유럽중앙은행 기준환율 등 일별 값)">
+        <div class="fx-chart year-chart" title="${title}">
+          ${tag ? `<span class="chart-tag">${tag}</span>` : ''}
           <div class="sparkline-box">${svg}</div>
           <div class="fx-years">${labels.join('')}</div>
         </div>`;
@@ -1289,7 +1303,11 @@
             </div>
             <div>
               ${highBox}
-              <div class="sparkline-box">${renderSparklineSVG(btc.sparkline)}</div>
+              ${btc.long
+                ? renderYearChart(btc.long, `${Math.round(btc.long.years)}년 · 로그`,
+                    `비트코인 원화 ${btc.long.years}년 추이 (${btc.long.source} 일봉 종가, 로그 눈금 — 같은 높이 = 같은 배수, `
+                    + `최저 ${formatNumber(btc.long.min, 0)}원 ~ 최고 ${formatNumber(btc.long.max, 0)}원)`)
+                : `<div class="sparkline-box" title="최근 30일 (10년 추이 준비 중)">${renderSparklineSVG(btc.sparkline)}</div>`}
             </div>
           </div>
         </div>`;

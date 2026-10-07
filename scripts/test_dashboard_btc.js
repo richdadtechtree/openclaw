@@ -5,7 +5,7 @@
  * /api/indices · /api/crypto · /api/fx 를 흉내 낸다.
  *   ① 캡처 폭(1320px): 4장×2줄 — 1줄 지수 4개, 2줄 QLD·TQQQ·비트코인·환율, 모든 카드 같은 너비·양 끝 맞춤
  *      + 이름이 잘리지 않음 (2026-10-06 실제 서버: 출처 'Korea Investment API (real-time)' 가 길어 QLD·TQQQ 이름이 잘렸다)
- *   ② 비트코인 칸 내용: 원화 크게 · 등락 기준 · 달러/김프 한 줄 · 역대 최고가(ATH)·낙폭(+다르면 52주 최고가) · 30일 추이
+ *   ② 비트코인 칸 내용: 원화 크게 · 등락 기준 · 달러/김프 한 줄 · 역대 최고가(ATH)·낙폭(+다르면 52주 최고가) · 10년 추이(로그 눈금, 연도 표시 — 2026-10-08 요청; 준비 전엔 30일)
  *      (2026-10-07 '52주만 나온다' 요청: ATH 를 모를 땐 52주만, 알면 ATH, ATH=52주면 한 줄만)
  *   ③ 환율 칸 내용(2026-10-07): 현재 환율 · 전일 대비 · 3년 최고/최저/고점 대비(2026-10-08 '3년 전 대비'에서 변경) · 3년 추이 그래프 + 연도 표시
  *   ④ 중간 폭(1000px): 2장씩 4줄 / 폰(390px): 1장씩, 가로 스크롤 없음
@@ -38,6 +38,9 @@ const BTC_FULL = {
   usd: { price: 85960, change_rate: -0.38, basis: '24시간 대비', source: 'Binance' },
   kimchi: { pct: 0.05, fx: 1351.0, basis: '환율' },
   sparkline: [20, 35, 30, 55, 70, 60, 45],
+  // 서버가 빗썸 일봉으로 만든 10년 추이(로그 눈금 0~100)
+  long: { points: Array.from({ length: 205 }, (_, i) => Math.round(i / 2.04 + 8 * Math.sin(i / 9))).map(v => Math.max(0, Math.min(100, v))),
+          from: '2016-10-07', to: '2026-10-07', source: 'Bithumb', years: 10, log: true, min: 706383, max: 177033281 },
 };
 // 원/달러 환율: 3년(2023-10-09 ~ 2026-10-06) 일별을 줄인 그래프 점 + 요약
 const FX_FULL = {
@@ -147,7 +150,18 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   const barW = await page.$eval('.crypto-card .progress-bar-fill', e => parseFloat(e.style.width));
   ok(Math.abs(barW - (100 - 35.4 * 1.5)) < 0.1, `막대는 ATH 낙폭 기준 (${barW}%)`);
   ok(txt.includes('Upbit · Binance'), '출처 Upbit · Binance');
-  ok(await page.$('.crypto-card .sparkline-svg path') !== null, '30일 추이 선 그래프');
+  ok(await page.$('.crypto-card .year-chart .sparkline-svg path') !== null, '10년 추이 선 그래프');
+  const by = await page.$$eval('.crypto-card .fx-years span', ss => ss.map(e => e.textContent));
+  ok(by[0] === '2016.10' && by[by.length - 1] === '2026.10' && by.length >= 4, `10년 그래프 아래 연도: ${by.join(' · ')}`);
+  const blap = await page.$$eval('.crypto-card .fx-years span', ss => { const r = ss.map(e => e.getBoundingClientRect());
+    const box = ss[0].parentElement.getBoundingClientRect();
+    return r.some((a, i) => (i && a.left < r[i - 1].right + 2) || a.left < box.left - 1 || a.right > box.right + 1); });
+  ok(!blap, '연도 글자끼리 안 겹치고 칸 밖으로 안 나감(솎아서 표시)');
+  ok(await page.$$eval('.crypto-card .year-chart line', ls => ls.length) === 10, '해마다 세로 점선(2017~2026 10개)');
+  const tag = await page.$eval('.crypto-card .chart-tag', e => e.textContent);
+  ok(tag === '10년 · 로그', `왼쪽 위 꼬리표 '${tag}'`);
+  const tip = await page.$eval('.crypto-card .year-chart', e => e.title);
+  ok(tip.includes('로그 눈금') && tip.includes('Bithumb') && tip.includes('706,383원') && tip.includes('177,033,281원'), '마우스 올리면 출처·로그 눈금·최저/최고 설명');
   ok(await page.$eval('.crypto-card .ath-dd-pct', e => e.classList.contains('alert-level')), '-20% 넘게 빠지면 빨간 경고색(지수 칸과 같은 규칙)');
   const subTop = await page.$$eval('.crypto-card .crypto-sub > span', ss => ss.map(e => Math.round(e.getBoundingClientRect().top)));
   ok(new Set(subTop).size === 1, '좁아진 칸에서도 달러·김프가 한 줄에(줄바꿈 없음)');
@@ -216,6 +230,20 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   ok(t6.includes('$85,960') && t6.includes('24시간 대비'), '달러가 주인공 + 24시간 대비');
   ok(!t6.includes('김프') && !t6.includes('52주') && !t6.includes('ATH'), '김프·52주·ATH 줄은 숨김');
   await page.close();
+
+  console.log('⑦-0 10년 그래프 준비 전 / 업비트 예비(9년)');
+  crypto = { ...BTC_FULL, long: null };
+  page = await open(1320);
+  ok(await page.$('.crypto-card .year-chart') === null && await page.$('.crypto-card .sparkline-svg path') !== null,
+     '10년 추이 준비 전엔 30일 그래프(연도 없음)로 대신');
+  await page.close();
+  crypto = { ...BTC_FULL, long: { ...BTC_FULL.long, from: '2017-09-25', source: 'Upbit', years: 9 } };
+  page = await open(1320);
+  const t9y = await page.$eval('.crypto-card .chart-tag', e => e.textContent);
+  const y9 = await page.$$eval('.crypto-card .fx-years span', ss => ss.map(e => e.textContent));
+  ok(t9y === '9년 · 로그' && y9[0] === '2017.09', `업비트 예비면 있는 만큼만: '${t9y}', ${y9.join(' · ')} — 10년인 척 안 함`);
+  await page.close();
+  crypto = BTC_FULL;
 
   console.log('⑦ 역대 최고가 표시 경우별');
   crypto = { ...BTC_FULL, krw: { ...BTC_FULL.krw, ath: 163325000, ath_date: '2025-10-06', dd_ath: -28.86 } };
