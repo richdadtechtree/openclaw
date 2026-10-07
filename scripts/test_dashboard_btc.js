@@ -1,15 +1,15 @@
 /**
- * test_dashboard_btc.js — 주가 대시보드 '₿ 비트코인' 칸과 4칸 배치 확인 (실제 Chromium)
+ * test_dashboard_btc.js — 주가 대시보드 '₿ 비트코인'·'💱 원/달러 환율' 칸과 4장×2줄 배치 확인 (실제 Chromium)
  *
- * 가짜 서버가 stock/templates/index.html(서버가 실제로 내주는 파일 — app.py 가 templates/ 를 먼저 찾음)을 내주고 /api/indices · /api/crypto 를 흉내 낸다.
- *   ① 캡처 폭(1320px): 2줄 — 1줄 지수 4개(같은 너비), 2줄 QLD·TQQQ·비트코인 3개(같은 너비), 양 끝 맞춤
+ * 가짜 서버가 stock/templates/index.html(서버가 실제로 내주는 파일 — app.py 가 templates/ 를 먼저 찾음)을 내주고
+ * /api/indices · /api/crypto · /api/fx 를 흉내 낸다.
+ *   ① 캡처 폭(1320px): 4장×2줄 — 1줄 지수 4개, 2줄 QLD·TQQQ·비트코인·환율, 모든 카드 같은 너비·양 끝 맞춤
  *      + 이름이 잘리지 않음 (2026-10-06 실제 서버: 출처 'Korea Investment API (real-time)' 가 길어 QLD·TQQQ 이름이 잘렸다)
- *   ② 비트코인 칸 내용: 원화 크게 · 등락 기준 · 달러 · 김치 프리미엄 · 52주 최고가 대비 · 30일 추이
- *   ③ 중간 폭(1000px): 2칸 — 비트코인은 맨 아래 한 줄 통째
- *   ④ 폰(390px): 1칸 — 비트코인이 옆으로 넘치지 않음(가로 스크롤 없음)
- *   ⑤ 거래소가 전부 실패해도 지수 6장은 그대로 + 비트코인 자리만 안내 문구
- *   ⑥ 달러만 살아 있으면 달러를 주인공으로 표시
- *   ⑦ 캡처가 기다리는 '#indices-grid .price-value' 가 나온다(슬랙 15:40 캡처 안 깨짐)
+ *   ② 비트코인 칸 내용: 원화 크게 · 등락 기준 · 달러/김프 한 줄 · 52주 최고가 대비 · 30일 추이
+ *   ③ 환율 칸 내용(2026-10-07): 현재 환율 · 전일 대비 · 3년 최고/최저/3년 전 대비 · 3년 추이 그래프 + 연도 표시
+ *   ④ 중간 폭(1000px): 2장씩 4줄 / 폰(390px): 1장씩, 가로 스크롤 없음
+ *   ⑤ 거래소·환율 소스가 전부 실패해도 지수 6장은 그대로 + 그 자리만 안내 문구(배치 유지)
+ *   ⑥ 달러만 살아 있으면 달러를 주인공으로 / 환율 추이가 없으면 현재 환율만
  *
  * 실행: node scripts/test_dashboard_btc.js   (개발 환경 전용, 서버엔 불필요)
  */
@@ -36,7 +36,15 @@ const BTC_FULL = {
   kimchi: { pct: 0.05, fx: 1351.0, basis: '환율' },
   sparkline: [20, 35, 30, 55, 70, 60, 45],
 };
+// 원/달러 환율: 3년(2023-10-09 ~ 2026-10-06) 일별을 줄인 그래프 점 + 요약
+const FX_FULL = {
+  price: 1385.5, change_rate: -0.42, basis: '전일 대비', source: 'Naver', history_source: 'ECB',
+  history: { points: Array.from({ length: 160 }, (_, i) => Math.round(50 + 45 * Math.sin(i / 20))),
+             from: '2023-10-09', to: '2026-10-06', high: 1487.6, high_date: '2024-12-27',
+             low: 1305.2, low_date: '2024-07-16', start: 1352.1, change_pct: 2.47 },
+};
 let crypto = BTC_FULL;   // 테스트마다 바꿔 끼운다 (null = 전부 실패)
+let fx = FX_FULL;
 
 const srv = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x').pathname;
@@ -46,6 +54,10 @@ const srv = http.createServer((req, res) => {
   if (u === '/api/crypto') {
     if (crypto === 'http500') { res.writeHead(500); return res.end('boom'); }
     return send('application/json', JSON.stringify(crypto ? { status: 'success', data: { BTC: crypto } } : { status: 'error', data: null }));
+  }
+  if (u === '/api/fx') {
+    if (fx === 'http500') { res.writeHead(500); return res.end('boom'); }
+    return send('application/json', JSON.stringify(fx ? { status: 'success', data: { USDKRW: fx } } : { status: 'error', data: null }));
   }
   // 나머지(알람·관심종목·요약)는 이 테스트 대상이 아니라 '데이터 없음'으로 둔다
   if (u.startsWith('/api/')) return send('application/json', '{"status":"error"}');
@@ -60,7 +72,7 @@ async function layout(page) {
   return page.$$eval('#indices-grid > .market-card', cs => cs.map(c => {
     const r = c.getBoundingClientRect();
     return { name: c.querySelector('.index-name').textContent.trim(), x: Math.round(r.left), y: Math.round(r.top),
-             w: Math.round(r.width), crypto: c.classList.contains('crypto-card') };
+             w: Math.round(r.width), crypto: c.classList.contains('crypto-card'), fx: c.classList.contains('fx-card') };
   }));
 }
 const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)); return Object.values(m); };
@@ -84,34 +96,32 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   ok(fs.readFileSync(HTML, 'utf8') === fs.readFileSync(HTML_COPY, 'utf8'),
      'stock/templates/index.html = stock/index.html (한쪽만 고치면 서버엔 반영 안 될 수 있음)');
 
-  console.log('① 캡처 폭 1320px — 1줄 4개 · 2줄 3개');
+  console.log('① 캡처 폭 1320px — 4장 × 2줄, 모두 같은 너비');
   let page = await open(1320);
   let l = await layout(page), R = rows(l);
-  ok(l.length === 7, `카드 7장 (지수 6 + 비트코인 1) → ${l.length}`);
-  ok(R.length === 2, `2줄 → ${R.length}줄`);
-  ok(R[0].length === 4 && R[0].every(c => !c.crypto), '1줄 = 지수 4개');
-  ok(R[1] && R[1].length === 3 && R[1][2].crypto, '2줄 = QLD·TQQQ + 비트코인');
-  const one = R[0][0].w, btc = l.find(c => c.crypto);
-  const spread = r => Math.max(...r.map(c => c.w)) - Math.min(...r.map(c => c.w));
-  ok(spread(R[0]) <= 1, `1줄 4장 같은 너비 (${R[0].map(c => c.w).join('/')}px)`);
-  ok(spread(R[1]) <= 1, `2줄 3장 같은 너비 (${R[1].map(c => c.w).join('/')}px)`);
-  ok(Math.abs(R[0][0].x - R[1][0].x) <= 1, '두 줄 왼쪽 끝 맞음');
-  const right = Math.max(...R[0].map(c => c.x + c.w)), right2 = btc.x + btc.w;
-  ok(Math.abs(right - right2) <= 1, '두 줄 오른쪽 끝 맞음(빈칸 없음)');
-  ok(one >= 280, `카드 1장 폭 ≥ 280px (${one}px) — 숫자·스파크라인 여유`);
+  ok(l.length === 8, `카드 8장 (지수 6 + 비트코인 + 환율) → ${l.length}`);
+  ok(R.length === 2 && R.every(r => r.length === 4), `2줄 × 4장 → ${R.map(r => r.length).join('+')}`);
+  ok(R[0].every(c => !c.crypto && !c.fx), '1줄 = 지수 4개');
+  ok(R[1][2] && R[1][2].crypto && R[1][3] && R[1][3].fx, '2줄 = QLD·TQQQ·비트코인·환율 순');
+  const ws = l.map(c => c.w);
+  ok(Math.max(...ws) - Math.min(...ws) <= 1, `8장 모두 같은 너비 (${[...new Set(ws)].join('/')}px)`);
+  ok(R[0].every((c, i) => Math.abs(c.x - R[1][i].x) <= 1), '두 줄 칸 위치가 위아래로 딱 맞음(양 끝 포함)');
+  ok(ws[0] >= 280, `카드 1장 폭 ≥ 280px (${ws[0]}px) — 숫자·그래프 여유`);
   const heads = await page.$$eval('#indices-grid .card-head', hs => hs.map(h => Math.round(h.getBoundingClientRect().height)));
   ok(Math.max(...heads) - Math.min(...heads) <= 2, `카드 머리(이름·출처) 높이가 모두 한 줄로 같음 (${[...new Set(heads)].join('/')}px)`);
-  const natural = await page.$$eval('#indices-grid > .row2', cs => cs.map(c => {
+  const natural = await page.$$eval('#indices-grid > .market-card', cs => cs.slice(4).map(c => {
     const last = c.lastElementChild.getBoundingClientRect(), top = c.getBoundingClientRect().top;
     return Math.round(last.bottom - top);   // 카드 위 ~ 마지막 내용 아래 = 실제 내용 높이
   }));
-  ok(Math.max(...natural) - Math.min(...natural) <= 70, `2줄 카드 내용 높이 차이 ≤ 70px — 빈 공간 적게 (${natural.join('/')}px)`);
+  ok(Math.max(...natural) - Math.min(...natural) <= 90, `2줄 카드 내용 높이 차이 ≤ 90px — 빈 공간 적게 (${natural.join('/')}px)`);
   const cut = await page.$$eval('#indices-grid .index-name', ns => ns.filter(n => n.scrollWidth > n.clientWidth + 1).map(n => n.textContent.trim()));
   ok(cut.length === 0, `카드 이름이 하나도 안 잘림${cut.length ? ' → 잘림: ' + cut.join(', ') : ''}`);
   const qld = await page.$$eval('#indices-grid .market-card', cs => cs.map(c => c.querySelector('.card-head').innerText).filter(t => t.includes('QLD'))[0] || '');
   ok(qld.includes('QLD (2x)') && qld.includes('KIS 실시간'), `QLD 이름 + 짧은 출처 'KIS 실시간' (${qld.replace(/\n/g, ' | ')})`);
-  const srcTitle = await page.$eval('.row2:not(.crypto-card) .source-tag', e => e.title);
+  const srcTitle = await page.$$eval('#indices-grid .source-tag', ts => ts.map(t => t.title).find(t => t.startsWith('Korea')));
   ok(srcTitle === 'Korea Investment API (real-time)', '출처 전체 이름은 마우스 올리면(title) 보임');
+  const over = await page.$$eval('#indices-grid > .market-card', cs => cs.filter(c => c.scrollWidth > c.clientWidth + 1).length);
+  ok(over === 0, '어느 카드도 글자가 옆으로 넘치지 않음');
 
   console.log('② 비트코인 칸 내용');
   const txt = await page.$eval('.crypto-card', e => e.innerText);
@@ -127,39 +137,63 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   ok(txt.includes('Upbit · Binance'), '출처 Upbit · Binance');
   ok(await page.$('.crypto-card .sparkline-svg path') !== null, '30일 추이 선 그래프');
   ok(await page.$eval('.crypto-card .ath-dd-pct', e => e.classList.contains('alert-level')), '-20% 넘게 빠지면 빨간 경고색(지수 칸과 같은 규칙)');
-  const overflow = await page.$eval('.crypto-card', e => e.scrollWidth > e.clientWidth + 1);
-  ok(!overflow, '비트코인 칸 안 글자가 넘치지 않음');
+  const subTop = await page.$$eval('.crypto-card .crypto-sub > span', ss => ss.map(e => Math.round(e.getBoundingClientRect().top)));
+  ok(new Set(subTop).size === 1, '좁아진 칸에서도 달러·김프가 한 줄에(줄바꿈 없음)');
   const dark = await page.$eval('.crypto-card .crypto-sub .down, .crypto-card .crypto-sub .up', e => getComputedStyle(e).color);
   ok(dark !== 'rgb(0, 0, 0)', `달러 등락률 색 적용(${dark})`);
+
+  console.log('③ 환율 칸 내용');
+  const fxt = await page.$eval('.fx-card', e => e.innerText);
+  ok(fxt.includes('원/달러 환율'), '이름 원/달러 환율');
+  ok(fxt.includes('1,385.50원'), '현재 환율 1,385.50원');
+  ok(/▼\s*-0\.42%/.test(fxt) && fxt.includes('전일 대비'), '전일 대비 ▼ -0.42%');
+  ok(fxt.includes('3년 최고') && fxt.includes('1,487.60원') && fxt.includes('24.12.27'), '3년 최고 1,487.60원 (24.12.27)');
+  ok(fxt.includes('3년 최저') && fxt.includes('1,305.20원') && fxt.includes('24.07.16'), '3년 최저 1,305.20원 (24.07.16)');
+  ok(fxt.includes('3년 전 대비') && fxt.includes('+2.47%'), '3년 전 대비 +2.47%');
+  ok(fxt.includes('Naver · ECB'), '출처 Naver · ECB');
+  ok(await page.$('.fx-card .fx-chart .sparkline-svg path') !== null, '3년 추이 선 그래프');
+  const yrs = await page.$$eval('.fx-card .fx-years span', ss => ss.map(e => e.textContent));
+  // 2024 는 시작(2023.10)에서 너무 가까워(7.7%) 글자가 겹치므로 일부러 숨긴다(점선은 남음)
+  ok(yrs[0] === '2023.10' && yrs[yrs.length - 1] === '2026.10' && yrs.includes('2025') && yrs.includes('2026') && !yrs.includes('2024'),
+     `그래프 아래 연도: ${yrs.join(' · ')} (시작에 붙은 2024 는 숨김)`);
+  const lap = await page.$$eval('.fx-card .fx-years span', ss => { const r = ss.map(e => e.getBoundingClientRect());
+    return r.some((a, i) => i && a.left < r[i - 1].right - 1); });
+  ok(!lap, '연도 글자끼리 겹치지 않음');
+  ok(await page.$$eval('.fx-card .fx-chart line', ls => ls.length) === 3, '해 바뀌는 곳(2024·2025·2026년 1월)에 세로 점선 3개');
+  const ylab = await page.$$eval('.fx-card .fx-years span', ss => { const c = ss[0].parentElement.getBoundingClientRect();
+    return ss.every(e => { const r = e.getBoundingClientRect(); return r.left >= c.left - 1 && r.right <= c.right + 1; }); });
+  ok(ylab, '연도 글자가 카드 밖으로 안 나감');
+  const bar = await page.$eval('.fx-card .progress-bar-fill', e => parseFloat(e.style.width));
+  ok(Math.abs(bar - (1385.5 - 1305.2) / (1487.6 - 1305.2) * 100) < 0.5, `막대 = 3년 최저~최고 사이 지금 위치 (${bar.toFixed(1)}%)`);
   await page.close();
 
-  console.log('③ 중간 폭 1000px — 2칸');
+  console.log('④-1 중간 폭 1000px — 2장씩');
   page = await open(1000);
   l = await layout(page); R = rows(l);
-  ok(R.length === 4 && R.slice(0, 3).every(r => r.length === 2), '지수 6장이 2장씩 3줄');
-  ok(R[3] && R[3].length === 1 && R[3][0].crypto, '비트코인은 맨 아래 한 줄 통째');
-  ok(Math.abs(R[3][0].w - (R[0][1].x + R[0][1].w - R[0][0].x)) <= 1, '비트코인 폭 = 2칸 전체');
+  ok(R.length === 4 && R.every(r => r.length === 2), `2장씩 4줄 → ${R.map(r => r.length).join('+')}`);
+  ok(Math.max(...l.map(c => c.w)) - Math.min(...l.map(c => c.w)) <= 1, '모두 같은 너비');
   await page.close();
 
-  console.log('④ 폰 390px — 1칸');
+  console.log('④-2 폰 390px — 1장씩');
   page = await open(390);
   l = await layout(page);
   ok(new Set(l.map(c => c.x)).size === 1, '모두 한 줄에 1장');
   const hs = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
-  ok(!hs, '가로 스크롤 없음(비트코인 span 2 가 화면을 밀지 않음)');
-  const bw = l.find(c => c.crypto).w, iw = l[0].w;
-  ok(bw === iw, `비트코인 폭 = 다른 카드 폭 (${bw} = ${iw})`);
+  ok(!hs, '가로 스크롤 없음');
+  ok(l.every(c => c.w === l[0].w), `비트코인·환율 폭 = 다른 카드 폭 (${l[0].w}px)`);
   await page.close();
 
-  console.log('⑤ 거래소 전부 실패');
+  console.log('⑤ 거래소·환율 소스 전부 실패');
   for (const mode of [null, 'http500']) {
-    crypto = mode;
+    crypto = mode; fx = mode;
     page = await open(1320);
     l = await layout(page);
-    ok(l.filter(c => !c.crypto).length === 6, `지수 6장 그대로 (${mode || 'status=error'})`);
+    ok(l.filter(c => !c.crypto && !c.fx).length === 6, `지수 6장 그대로 (${mode || 'status=error'})`);
     const t = await page.$eval('.crypto-card', e => e.innerText);
-    ok(t.includes('거래소 응답이 없습니다'), '비트코인 자리엔 안내 문구(배치 유지)');
-    ok(rows(l).length === 2, '배치 그대로 2줄');
+    ok(t.includes('거래소 응답이 없습니다'), '비트코인 자리엔 안내 문구');
+    const tf = await page.$eval('.fx-card', e => e.innerText);
+    ok(tf.includes('환율 정보 응답이 없습니다'), '환율 자리엔 안내 문구');
+    ok(rows(l).length === 2 && l.length === 8, '배치 그대로 4장 × 2줄');
     await page.close();
   }
 
@@ -169,6 +203,12 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   const t6 = await page.$eval('.crypto-card', e => e.innerText);
   ok(t6.includes('$85,960') && t6.includes('24시간 대비'), '달러가 주인공 + 24시간 대비');
   ok(!t6.includes('김프') && !t6.includes('52주'), '김프·52주 줄은 숨김');
+  await page.close();
+  crypto = BTC_FULL;
+  fx = { ...FX_FULL, history: null, history_source: null };
+  page = await open(1320);
+  const t7 = await page.$eval('.fx-card', e => e.innerText);
+  ok(t7.includes('1,385.50원') && !t7.includes('3년') && t7.includes('Naver'), '환율 추이 없음 → 현재 환율만(3년 칸·그래프 숨김)');
   await page.close();
 
   await browser.close(); srv.close();

@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 
 from market_data import get_snapshot, load_ath_from_history, get_custom_stocks_snapshot
 from crypto_data import get_btc
+from fx_data import get_usdkrw
 from trigger_engine import TriggerEngine
 from summary import build_summary_text
 from capture import capture_dashboard, capture_and_send
@@ -535,6 +536,22 @@ def get_crypto():
         "status": "success",
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "data": {"BTC": btc},
+    }
+
+
+@app.get("/api/fx")
+def get_fx():
+    """
+    원/달러 환율(현재·전일 대비)과 최근 3년 추이. 지수·비트코인과 분리해
+    환율 소스 장애가 다른 칸에 번지지 않게 한다. 전부 실패하면 status=error.
+    """
+    fx = get_usdkrw()
+    if not fx:
+        return {"status": "error", "data": None}
+    return {
+        "status": "success",
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "data": {"USDKRW": fx},
     }
 
 

@@ -8,7 +8,7 @@
 
   원화 가격 : 업비트(1순위) → 빗썸(예비)
   달러 가격 : 바이낸스 BTCUSDT(1순위) → 코인베이스 BTC-USD(예비)
-  환율      : 두나무(업비트 운영사) 환율 → 실패 시 업비트 USDT 원화가(대용)
+  환율      : fx_data(네이버→두나무→ECB, 환율 칸과 같은 값) → 실패 시 업비트 USDT 원화가(대용)
   30일 추이 : 업비트 일봉 종가
 
 - 등락률 기준이 거래소마다 다르다(업비트=매일 오전 9시 대비, 빗썸=최근 24시간 대비).
@@ -91,10 +91,10 @@ def _usd_coinbase():
 
 # ── 환율 (김치 프리미엄 계산용) ──────────────────────────────────────────────
 
-def _fx_dunamu():
-    # 업비트 운영사(두나무)가 김치 프리미엄 계산에 쓰는 원/달러 환율(은행 고시 기준)
-    d = _get("https://quotation-api-cdn.dunamu.com/v1/forex/recent?codes=FRX.KRWUSD")
-    return _sane_fx(float(d[0]["basePrice"])), "환율"
+def _fx_shared():
+    from fx_data import get_usdkrw_now   # 환율 칸과 캐시를 같이 쓴다(같은 값을 두 번 받지 않게)
+    now = get_usdkrw_now()
+    return (_sane_fx(now["price"]), "환율") if now else None
 
 
 def _fx_usdt():
@@ -126,8 +126,9 @@ def _fx():
     ts, val = _cache["fx"]
     if val and time.time() - ts < FX_TTL:
         return val
-    # 두 곳 다 실패하면 None → 김프 줄만 빠지고 나머지는 정상
-    val = _first_ok([_fx_dunamu, _fx_usdt], "환율")
+    # 환율 칸과 같은 값(fx_data: 네이버→두나무→ECB)을 먼저 쓰고, 다 안 되면 업비트 USDT 로 대신.
+    # 둘 다 실패하면 None → 김프 줄만 빠지고 나머지는 정상
+    val = _first_ok([_fx_shared, _fx_usdt], "환율")
     if val:
         _cache["fx"] = (time.time(), val)
     return val
