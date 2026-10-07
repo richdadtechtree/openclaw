@@ -5,7 +5,8 @@
  * /api/indices · /api/crypto · /api/fx 를 흉내 낸다.
  *   ① 캡처 폭(1320px): 4장×2줄 — 1줄 지수 4개, 2줄 QLD·TQQQ·비트코인·환율, 모든 카드 같은 너비·양 끝 맞춤
  *      + 이름이 잘리지 않음 (2026-10-06 실제 서버: 출처 'Korea Investment API (real-time)' 가 길어 QLD·TQQQ 이름이 잘렸다)
- *   ② 비트코인 칸 내용: 원화 크게 · 등락 기준 · 달러/김프 한 줄 · 52주 최고가 대비 · 30일 추이
+ *   ② 비트코인 칸 내용: 원화 크게 · 등락 기준 · 달러/김프 한 줄 · 역대 최고가(ATH)·낙폭(+다르면 52주 최고가) · 30일 추이
+ *      (2026-10-07 '52주만 나온다' 요청: ATH 를 모를 땐 52주만, 알면 ATH, ATH=52주면 한 줄만)
  *   ③ 환율 칸 내용(2026-10-07): 현재 환율 · 전일 대비 · 3년 최고/최저/3년 전 대비 · 3년 추이 그래프 + 연도 표시
  *   ④ 중간 폭(1000px): 2장씩 4줄 / 폰(390px): 1장씩, 가로 스크롤 없음
  *   ⑤ 거래소·환율 소스가 전부 실패해도 지수 6장은 그대로 + 그 자리만 안내 문구(배치 유지)
@@ -31,7 +32,9 @@ INDICES.QLD.source = INDICES.TQQQ.source = 'Korea Investment API (real-time)';
 // 2026-10-06 서버 실측값(scripts/test_btc_price.py)과 같은 모양
 const BTC_FULL = {
   krw: { price: 116190000, change_rate: -0.58, basis: '오전 9시 대비', source: 'Upbit',
-         high_52w: 163325000, high_52w_date: '2025-10-06', dd_52w: -28.86 },
+         high_52w: 163325000, high_52w_date: '2025-10-06', dd_52w: -28.86,
+         // 서버가 업비트 일봉 전체를 훑어 찾은 역대 최고가(52주 밖, 2021년) — 52주 최고가와 다른 경우
+         ath: 179869000, ath_date: '2021-11-09', dd_ath: -35.4 },
   usd: { price: 85960, change_rate: -0.38, basis: '24시간 대비', source: 'Binance' },
   kimchi: { pct: 0.05, fx: 1351.0, basis: '환율' },
   sparkline: [20, 35, 30, 55, 70, 60, 45],
@@ -132,8 +135,17 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   ok(txt.includes('김프') && txt.includes('+0.05%'), '김치 프리미엄(김프) +0.05%');
   ok(await page.$$eval('.crypto-card .crypto-sub', r => r.length) === 1, '달러·김프는 한 줄(카드 높이 절약)');
   ok(/환율 1,351\.0원/.test(await page.$eval('.crypto-card .crypto-sub [title]', e => e.title)), '김프 계산 기준·환율은 마우스 올리면(title) 보임');
-  ok(txt.includes('52주 최고가') && txt.includes('163,325,000원') && txt.includes('-28.86%'), '52주 최고가 대비 -28.86%');
-  ok(txt.includes('25.10.06'), '52주 최고가 날짜 25.10.06');
+  ok(txt.includes('역대 최고가') && txt.includes('179,869,000원') && txt.includes('21.11.09'), '역대 최고가 21.11.09 · 179,869,000원');
+  ok(txt.includes('ATH 대비 낙폭') && txt.includes('-35.40%'), 'ATH 대비 낙폭 -35.40% (지수 칸과 같은 말)');
+  ok(txt.includes('52주 최고') && txt.includes('25.10.06') && txt.includes('163,325,000원'), 'ATH 와 다르면 52주 최고가도 한 줄 (25.10.06 · 163,325,000원)');
+  // 2026-10-07 미리보기에서 좁은 칸에 '179,869,000 / 원' 처럼 숫자·라벨이 두 줄로 꺾였다 → 상자 줄은 전부 한 줄이어야
+  const tall = await page.$$eval('.crypto-card .ath-header, .fx-card .ath-header', hs =>
+    hs.filter(h => h.getBoundingClientRect().height > 22).map(h => h.innerText.replace(/\s+/g, ' ')));
+  ok(tall.length === 0, `비트코인·환율 상자 줄이 모두 한 줄${tall.length ? ' → 꺾임: ' + tall.join(' / ') : ''}`);
+  const boxOver = await page.$$eval('.crypto-card .ath-box, .fx-card .ath-box', bs => bs.filter(b => b.scrollWidth > b.clientWidth + 1).length);
+  ok(boxOver === 0, '상자 안 글자가 상자 밖으로 안 넘침');
+  const barW = await page.$eval('.crypto-card .progress-bar-fill', e => parseFloat(e.style.width));
+  ok(Math.abs(barW - (100 - 35.4 * 1.5)) < 0.1, `막대는 ATH 낙폭 기준 (${barW}%)`);
   ok(txt.includes('Upbit · Binance'), '출처 Upbit · Binance');
   ok(await page.$('.crypto-card .sparkline-svg path') !== null, '30일 추이 선 그래프');
   ok(await page.$eval('.crypto-card .ath-dd-pct', e => e.classList.contains('alert-level')), '-20% 넘게 빠지면 빨간 경고색(지수 칸과 같은 규칙)');
@@ -202,8 +214,23 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   page = await open(1320);
   const t6 = await page.$eval('.crypto-card', e => e.innerText);
   ok(t6.includes('$85,960') && t6.includes('24시간 대비'), '달러가 주인공 + 24시간 대비');
-  ok(!t6.includes('김프') && !t6.includes('52주'), '김프·52주 줄은 숨김');
+  ok(!t6.includes('김프') && !t6.includes('52주') && !t6.includes('ATH'), '김프·52주·ATH 줄은 숨김');
   await page.close();
+
+  console.log('⑦ 역대 최고가 표시 경우별');
+  crypto = { ...BTC_FULL, krw: { ...BTC_FULL.krw, ath: 163325000, ath_date: '2025-10-06', dd_ath: -28.86 } };
+  page = await open(1320);
+  const t8 = await page.$eval('.crypto-card', e => e.innerText);
+  ok(t8.includes('역대 최고가') && !t8.includes('52주'), 'ATH = 52주 최고가면 같은 숫자 두 번 안 보임(ATH 한 줄만)');
+  await page.close();
+  const { ath, ath_date, dd_ath, ...noAth } = BTC_FULL.krw;
+  crypto = { ...BTC_FULL, krw: noAth };
+  page = await open(1320);
+  const t9 = await page.$eval('.crypto-card', e => e.innerText);
+  ok(!t9.includes('ATH') && t9.includes('52주 최고가') && t9.includes('최고가 대비') && t9.includes('-28.86%'),
+     '서버가 아직 ATH 를 못 찾았으면 예전처럼 52주 최고가만(지어내지 않음)');
+  await page.close();
+  crypto = BTC_FULL;
   crypto = BTC_FULL;
   fx = { ...FX_FULL, history: null, history_source: null };
   page = await open(1320);

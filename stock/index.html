@@ -454,7 +454,17 @@
     .crypto-sub .up { color: var(--color-up); }
     .crypto-sub .down { color: var(--color-down); }
     .crypto-body .ath-box { margin-top: 0; }
-    .crypto-body .price-change-row { margin-bottom: 10px; }
+    .ath-box .ath-52w { font-size: 11.5px; }
+    .ath-box .ath-date { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-faint); }
+    /* 비트코인·환율 상자는 줄마다 한 줄 고정(좁은 칸에서 숫자가 꺾여 '원'만 아랫줄로 가던 문제 방지) */
+    .crypto-card .ath-header > span, .fx-card .ath-header > span { white-space: nowrap; }
+    .crypto-card .ath-header, .fx-card .ath-header { gap: 6px; }
+    .ath-box .ath-52w .ath-val { font-weight: 500; color: var(--text-muted); }
+    .crypto-body .price-change-row { margin-bottom: 8px; }
+    /* 비트코인 칸은 줄이 많아(달러·김프, 52주) 같은 줄 다른 카드보다 길어지기 쉬워서 간격을 조금 줄인다 */
+    .crypto-card .crypto-body { gap: 8px; }
+    .crypto-card .ath-box { padding: 10px 12px; }
+    .crypto-card .sparkline-box { margin-top: 8px; }
 
     /* 💱 환율 3년 추이: 선 그래프 + 해마다 세로 점선 + 아래 연도 글자 */
     .fx-flag { display: inline-flex; gap: 2px; }
@@ -1226,21 +1236,42 @@
             <span class="lbl">김프</span> <span class="v ${kimchi.pct >= 0 ? 'up' : 'down'}">${sign(kimchi.pct)}</span></span>` : '';
       const subRow = (usdCell || kimchiCell) ? `<div class="crypto-sub">${usdCell}${kimchiCell}</div>` : '';
 
-      // 52주 최고가 대비 — 지수 칸의 'ATH 대비 낙폭'과 같은 막대 표현 (업비트일 때만 값이 있다)
+      // 최고가 상자 — 지수 칸의 'ATH 상자'와 같은 모양·같은 말.
+      //  · 역대 최고가(ATH)를 아는 경우(서버가 업비트 일봉 전체를 한 번 훑은 뒤): ATH + ATH 대비 낙폭 + 막대,
+      //    52주 최고가가 ATH 와 다르면 한 줄 더(작게). 같으면 같은 숫자 두 번 안 보이게 생략.
+      //  · 아직 모르면(첫 훑기 전·업비트 장애): 예전처럼 52주 최고가만 — 역대 최고가를 지어내지 않는다.
       let highBox = '';
-      if (krw && krw.high_52w) {
-        const dd = krw.dd_52w;
+      // 날짜는 흐린 작은 글씨로 라벨 옆에(괄호 없이) — 좁은 칸(≈300px)에서도 한 줄에 들어가게
+      const ymd = d => d ? ` <span class="ath-date">${d.slice(2, 10).replace(/-/g, '.')}</span>` : '';
+      const ddBar = dd => {
         const severe = dd <= -20;
-        const width = Math.max(0, Math.min(100, 100 + dd * 1.5));
+        return { severe, html: `
+            <div class="progress-bar-container">
+              <div class="progress-bar-fill ${severe ? 'warning' : ''}" style="width: ${Math.max(0, Math.min(100, 100 + dd * 1.5))}%"></div>
+            </div>` };
+      };
+      if (krw && krw.ath) {
+        const bar = ddBar(krw.dd_ath);
+        const show52 = krw.high_52w && Math.abs(krw.high_52w / krw.ath - 1) > 0.001;
         highBox = `
           <div class="ath-box">
-            <div class="ath-header"><span>52주 최고가${krw.high_52w_date ? ` (${krw.high_52w_date.slice(2).replace(/-/g, '.')})` : ''}</span>
+            <div class="ath-header" title="역대 최고가(ATH) — 업비트 원화 일봉 고가 기준"><span>역대 최고가${ymd(krw.ath_date)}</span>
+              <span class="ath-val">${formatNumber(krw.ath, 0)}원</span></div>
+            <div class="ath-header"><span>ATH 대비 낙폭</span>
+              <span class="ath-dd-pct ${bar.severe ? 'alert-level' : ''}">${krw.dd_ath.toFixed(2)}%</span></div>
+            ${show52 ? `<div class="ath-header ath-52w" title="52주 최고가 대비 ${krw.dd_52w.toFixed(2)}%"><span>52주 최고${ymd(krw.high_52w_date)}</span>
+              <span class="ath-val">${formatNumber(krw.high_52w, 0)}원</span></div>` : ''}
+            ${bar.html}
+          </div>`;
+      } else if (krw && krw.high_52w) {
+        const bar = ddBar(krw.dd_52w);
+        highBox = `
+          <div class="ath-box">
+            <div class="ath-header"><span>52주 최고가${ymd(krw.high_52w_date)}</span>
               <span class="ath-val">${formatNumber(krw.high_52w, 0)}원</span></div>
             <div class="ath-header"><span>최고가 대비</span>
-              <span class="ath-dd-pct ${severe ? 'alert-level' : ''}">${dd.toFixed(2)}%</span></div>
-            <div class="progress-bar-container">
-              <div class="progress-bar-fill ${severe ? 'warning' : ''}" style="width: ${width}%"></div>
-            </div>
+              <span class="ath-dd-pct ${bar.severe ? 'alert-level' : ''}">${krw.dd_52w.toFixed(2)}%</span></div>
+            ${bar.html}
           </div>`;
       }
 

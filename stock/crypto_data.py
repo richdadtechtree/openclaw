@@ -10,12 +10,17 @@
   달러 가격 : 바이낸스 BTCUSDT(1순위) → 코인베이스 BTC-USD(예비)
   환율      : fx_data(네이버→두나무→ECB, 환율 칸과 같은 값) → 실패 시 업비트 USDT 원화가(대용)
   30일 추이 : 업비트 일봉 종가
+  역대 최고가: 업비트 일봉 '고가'를 상장(2017-09)부터 한 번 전부 훑어 최고값을 찾고 파일(.btc_ath.json)에
+              저장 → 이후엔 '오늘 고가·52주 최고가'와만 비교해 더 높으면 갱신(매번 수천 일을 다시 받지 않음).
+              첫 훑기가 끝나기 전·실패 시엔 역대 최고가를 표시하지 않고 52주 최고가만 보인다(지어내지 않음).
 
 - 등락률 기준이 거래소마다 다르다(업비트=매일 오전 9시 대비, 빗썸=최근 24시간 대비).
   그래서 응답에 basis(기준)를 함께 담아 화면에 그대로 적는다.
 
 직접 점검(서버, stock venv):  ~/stock/stock/venv/bin/python crypto_data.py
 """
+import json
+import os
 import threading
 import time
 
@@ -36,6 +41,12 @@ HEADERS = {
 _lock = threading.Lock()
 _cache = {"quote": (0, None), "spark": (0, []), "fx": (0, None)}
 
+# 역대 최고가(원화) 저장 파일 — 서버 실행 폴더(~/stock/stock)에 생긴다. 코드 동기화(rsync .py/.html)는 건드리지 않음.
+ATH_FILE = os.getenv("BTC_ATH_FILE", ".btc_ath.json")
+ATH_RESCAN_DAYS = 30      # 혹시 놓친 값이 있어도 한 달에 한 번은 처음부터 다시 훑어 바로잡는다
+_ath_lock = threading.Lock()
+_ath = {"loaded": False, "data": None, "scanning": False}
+
 
 def _get(url):
     r = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
@@ -52,6 +63,8 @@ def _krw_upbit():
         "change_rate": float(t["signed_change_rate"]) * 100,   # 0.0123 → 1.23(%)
         "basis": "오전 9시 대비",
         "source": "Upbit",
+        "high_today": float(t.get("high_price") or 0),        # 역대 최고가 갱신 비교용
+        "today": str(t.get("trade_date_kst") or ""),          # 'YYYYMMDD'
     }
     # 업비트만 52주 최고가를 준다 → 지수 칸의 'ATH 대비 낙폭' 자리에 대신 쓴다.
     hi = t.get("highest_52_week_price")
@@ -151,6 +164,104 @@ def _sparkline():
     return val or []
 
 
+# ── 역대 최고가(원화, 업비트) ────────────────────────────────────────────────
+
+def _ath_load():
+    if not _ath["loaded"]:
+        _ath["loaded"] = True
+        try:
+            with open(ATH_FILE, encoding="utf-8") as f:
+                d = json.load(f)
+            if float(d.get("price", 0)) > 0 and d.get("date"):
+                _ath["data"] = d
+        except (OSError, ValueError):
+            pass
+    return _ath["data"]
+
+
+def _ath_save(d):
+    _ath["data"] = d
+    try:
+        tmp = ATH_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False)
+        os.replace(tmp, ATH_FILE)          # 쓰다 끊겨도 반쪽 파일이 남지 않게
+    except OSError as e:
+        print(f"[crypto] 역대 최고가 저장 실패: {e}")
+
+
+def _scan_upbit_ath(max_pages=25, pause=0.15):
+    """업비트 KRW-BTC 일봉을 오늘부터 거꾸로 200개씩 받아 '고가' 최댓값과 그날을 찾는다.
+    25쪽 × 200일 = 5000일(약 13년) → 상장(2017-09) 전체를 덮는다. 업비트 요청 한도(초당 10회)를 지키려고 쉬어 가며."""
+    best, best_day, to, days = 0.0, None, None, 0
+    for _ in range(max_pages):
+        url = "https://api.upbit.com/v1/candles/days?market=KRW-BTC&count=200"
+        if to:
+            url += f"&to={to}"
+        rows = _get(url)
+        if not rows:
+            break
+        for r in rows:
+            hi = float(r.get("high_price") or 0)
+            if hi > best:
+                best, best_day = hi, str(r.get("candle_date_time_kst", ""))[:10]
+        days += len(rows)
+        if len(rows) < 200:
+            break                                   # 맨 처음(상장일)까지 다 받음
+        to = str(rows[-1]["candle_date_time_utc"])[:19]   # 가장 오래된 날 앞에서 다음 쪽
+        time.sleep(pause)
+    if best <= 0 or days < 365:
+        raise RuntimeError(f"일봉이 너무 적음: {days}일")
+    return {"price": best, "date": best_day, "days": days, "scanned": time.strftime("%Y-%m-%d")}
+
+
+def _ath_scan_bg():
+    """훑기는 수 초 걸리므로 화면을 붙잡지 않게 뒤에서 한 번만 돌린다."""
+    with _ath_lock:
+        if _ath["scanning"]:
+            return
+        _ath["scanning"] = True
+
+    def run():
+        try:
+            d = _scan_upbit_ath()
+            old = _ath["data"]
+            if old and float(old["price"]) > d["price"]:      # 저장값이 더 높으면(오늘 고가로 갱신된 것) 유지
+                d.update(price=float(old["price"]), date=old["date"])
+            _ath_save(d)
+            print(f"[crypto] 역대 최고가 확인: {d['price']:,.0f}원 ({d['date']}, 일봉 {d['days']}개)")
+        except Exception as e:
+            print(f"[crypto] 역대 최고가 훑기 실패: {e}")
+        finally:
+            _ath["scanning"] = False
+    threading.Thread(target=run, daemon=True).start()
+
+
+def _ath_for(krw):
+    """원화 시세(krw)에 역대 최고가를 붙인다. 한 번도 다 훑은 적 없으면 붙이지 않는다."""
+    d = _ath_load()
+    stale = (not d) or d.get("scanned", "") < time.strftime(
+        "%Y-%m-%d", time.localtime(time.time() - ATH_RESCAN_DAYS * 86400))
+    if stale:
+        _ath_scan_bg()
+    if not d:
+        return
+    # 오늘 고가·52주 최고가·지금 가격 중 저장값보다 높은 게 있으면 그게 새 역대 최고가
+    cands = [(float(d["price"]), d["date"])]
+    if krw.get("high_today"):
+        t = krw.get("today", "")
+        cands.append((krw["high_today"], f"{t[:4]}-{t[4:6]}-{t[6:8]}" if len(t) == 8 else time.strftime("%Y-%m-%d")))
+    if krw.get("high_52w") and krw.get("high_52w_date"):
+        cands.append((krw["high_52w"], krw["high_52w_date"]))
+    cands.append((krw["price"], time.strftime("%Y-%m-%d")))
+    price, day = max(cands, key=lambda c: c[0])
+    if price > float(d["price"]):
+        _ath_save({**d, "price": price, "date": day})
+    krw["ath"] = price
+    krw["ath_date"] = day
+    krw["dd_ath"] = round((krw["price"] / price - 1) * 100, 2)
+
+
 def get_btc():
     """대시보드용 비트코인 묶음. 원화·달러 둘 다 실패하면 None."""
     with _lock:
@@ -169,6 +280,11 @@ def get_btc():
             krw["change_rate"] = round(krw["change_rate"], 2)
             if krw.get("high_52w"):
                 krw["dd_52w"] = round((krw["price"] / krw["high_52w"] - 1) * 100, 2)
+            if krw["source"] == "Upbit":      # 역대 최고가는 업비트 기준(빗썸 예비 시세와 섞지 않음)
+                try:
+                    _ath_for(krw)
+                except Exception as e:
+                    print(f"[crypto] 역대 최고가 처리 실패: {e}")
         if usd:
             usd["change_rate"] = round(usd["change_rate"], 2)
 
@@ -188,5 +304,10 @@ def get_btc():
 
 
 if __name__ == "__main__":
-    import json
-    print(json.dumps(get_btc(), ensure_ascii=False, indent=2))
+    import sys
+    if "--ath" in sys.argv:            # 역대 최고가를 지금 바로 처음부터 훑어 저장(서버 점검용)
+        d = _scan_upbit_ath()
+        _ath_save(d)
+        print(json.dumps(d, ensure_ascii=False, indent=2))
+    else:
+        print(json.dumps(get_btc(), ensure_ascii=False, indent=2))
