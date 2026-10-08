@@ -928,6 +928,15 @@
       'TQQQ':    { name: 'TQQQ (3x)', country: 'us' }
     };
 
+    // 5년 그래프 기준 가로선(2026-10-08 요청): 카드의 역대 최고가(ATH) 대비 이만큼 빠진 높이.
+    //  · 코스피·코스닥 = -30% 실선 · QLD·TQQQ = -10% 점선
+    const DD_LINES = {
+      'KOSPI':  { pct: -30, dash: false },
+      'KOSDAQ': { pct: -30, dash: false },
+      'QLD':    { pct: -10, dash: true },
+      'TQQQ':   { pct: -10, dash: true },
+    };
+
     // 출처 꼬리표는 짧게(전체 이름은 마우스를 올리면 title 로 보임).
     // 'Korea Investment API (real-time)' 처럼 긴 값이 이름을 밀어내 잘리게 하던 문제 방지.
     function shortSource(src) {
@@ -1001,7 +1010,8 @@
 
     // SVG Sparkline Generator
     // height·overlay 는 환율 3년 그래프용(더 높은 상자 + 해 바뀜 점선). 지수 카드는 기본값 그대로.
-    function renderSparklineSVG(points, height = 44, overlay = '') {
+    // range=[낮음,높음] 을 주면 그 범위로 그린다(기준 가로선을 같은 눈금에 맞추려고). 없으면 점들의 최저~최고.
+    function renderSparklineSVG(points, height = 44, overlay = '', range = null) {
       if (!points || points.length < 2) {
         return `<svg class="sparkline-svg" viewBox="0 0 100 40"><line x1="0" y1="20" x2="100" y2="20" stroke="var(--border-color)" stroke-dasharray="2,2"/></svg>`;
       }
@@ -1009,13 +1019,13 @@
       const width = 280;
       const padding = 4;
       
-      const min = Math.min(...points);
-      const max = Math.max(...points);
-      const range = max - min || 1;
+      const min = range ? range[0] : Math.min(...points);
+      const max = range ? range[1] : Math.max(...points);
+      const span = max - min || 1;
       
       const coords = points.map((val, index) => {
         const x = padding + (index / (points.length - 1)) * (width - 2 * padding);
-        const y = height - padding - ((val - min) / range) * (height - 2 * padding);
+        const y = height - padding - ((val - min) / span) * (height - 2 * padding);
         return { x, y };
       });
 
@@ -1097,6 +1107,12 @@
         const progressWidth = Math.max(0, Math.min(100, 100 + ddPct * 1.5));
         const isDdSevere = ddPct <= -20;
         const displayName = getIndexDisplayName(symbol);
+        // 기준 가로선 값 = 역대 최고가 × (1 + pct/100). ATH 가 없으면 선을 긋지 않는다.
+        const dd = DD_LINES[symbol];
+        const ddRef = dd && data.ath > 0 ? {
+          pct: dd.pct, dash: dd.dash, value: data.ath * (1 + dd.pct / 100),
+          label: `${dd.pct}% ${formatNumber(data.ath * (1 + dd.pct / 100), data.ath >= 1000 ? 0 : 2)}`,
+        } : null;
         const src = data.source || 'Standard';
 
         return `
@@ -1126,9 +1142,15 @@
               </div>
             </div>
 
-            <div class="sparkline-box">
-              ${renderSparklineSVG(data.sparkline)}
-            </div>
+            ${data.long
+              // 5년 추이(네이버 일별 종가, QLD·TQQQ 는 액면분할 보정) — 비트코인·환율과 같은 연도 그래프
+              ? renderYearChart(data.long, `${Math.round(data.long.years)}년`,
+                  `${displayName.replace(/<[^>]+>/g, '').trim()} 최근 ${data.long.years}년 (네이버 일별 종가`
+                  + (data.long.splits && data.long.splits.length ? `, 액면분할 보정: ${data.long.splits.join(', ')}` : '')
+                  + `, 최저 ${formatNumber(data.long.min)} ~ 최고 ${formatNumber(data.long.max)})`
+                  + (ddRef ? ` · 가로선: 역대 최고가 ${formatNumber(data.ath)} 대비 ${ddRef.pct}% = ${formatNumber(ddRef.value)}` : ''),
+                  ddRef)
+              : `<div class="sparkline-box">${renderSparklineSVG(data.sparkline)}</div>`}
           </div>
         `;
       }).join('') + renderCryptoCard(AppState.crypto) + renderFxCard(AppState.fx);
@@ -1187,7 +1209,8 @@
 
     // 여러 해 추이 그래프(환율 3년·비트코인 10년 공용): 스파크라인과 같은 선 + 해 바뀌는 곳 세로 점선 + 아래 연도.
     // h = {points(0~100), from, to}. 연도 글자는 겹치지 않게 솎는다(10년이면 2년 간격쯤).
-    function renderYearChart(h, tag, title) {
+    // ref = {value, label, dash} 를 주면 그 값 높이에 기준 가로선(예: 고점 대비 -30%)을 긋는다.
+    function renderYearChart(h, tag, title, ref = null) {
       const t0 = Date.parse(h.from), t1 = Date.parse(h.to);
       const span = (t1 - t0) || 1;
       const pct = t => ((t - t0) / span) * 100;
@@ -1200,9 +1223,25 @@
         const px = 4 + (x / 100) * (280 - 8);
         return `<line x1="${px}" y1="0" x2="${px}" y2="56" stroke="var(--border-color)" stroke-dasharray="2,3"/>`;
       }).join('');
-      const svg = renderSparklineSVG(h.points, 56, grid);
-      // 연도 글자 솎기(카드 폭 ≈ 260px 기준 %): 양 끝 '2016.10' 글자 ≈ 18%, 가운데 '2020' ≈ 10%, 글자 사이 2% 이상
-      const EDGE = 18, HALF = 5, GAP = 12;
+      let points = h.points, refSvg = '';
+      if (ref && h.min != null && h.max != null && ref.value > 0) {
+        // 점(0~100)을 실제 값으로 되돌린 뒤, 기준선이 그래프 밖이면 범위를 넓혀 항상 보이게 다시 0~100 으로
+        const vals = h.points.map(p => h.min + (p / 100) * (h.max - h.min));
+        const lo = Math.min(h.min, ref.value), hi = Math.max(h.max, ref.value), sp = (hi - lo) || 1;
+        points = vals.map(v => ((v - lo) / sp) * 100);
+        const y = 56 - 4 - ((ref.value - lo) / sp) * (56 - 8);
+        // 라벨은 왼쪽(오른쪽 끝엔 '지금' 점이 기준선 근처에 있을 때가 많아 겹친다).
+        // 선이 위쪽이면 왼쪽 위 '5년' 꼬리표와 겹치지 않게 글자를 선 아래로.
+        const ty = y < 16 ? y + 10 : y - 3;
+        refSvg = `<line class="ref-line" x1="4" y1="${y.toFixed(1)}" x2="276" y2="${y.toFixed(1)}" stroke="var(--color-warning)"
+                   stroke-width="1.2" ${ref.dash ? 'stroke-dasharray="4,3"' : ''} opacity="0.9"/>
+                 <text class="ref-label" x="6" y="${ty.toFixed(1)}" text-anchor="start" font-size="9" font-weight="600"
+                   font-family="var(--font-mono)" fill="var(--color-warning)"
+                   paint-order="stroke" stroke="var(--bg-surface)" stroke-width="3" stroke-linejoin="round">${ref.label}</text>`;
+      }
+      const svg = renderSparklineSVG(points, 56, grid + refSvg, ref ? [0, 100] : null);
+      // 연도 글자 솎기(카드 폭 ≈ 260px 기준 %): 양 끝 '2016.10' 글자 ≈ 18%(+여유 2%), 가운데 '2020' ≈ 10%, 글자 사이 2% 이상
+      const EDGE = 20, HALF = 5, GAP = 12;
       let lastX = -100;
       const mids = years.filter(({ x }) => {
         if (x - HALF < EDGE || x + HALF > 100 - EDGE || x - lastX < GAP) return false;
