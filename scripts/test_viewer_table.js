@@ -147,6 +147,12 @@ const MSG13 = `[신문요약 1/4]
 • WHY: 경기광주역 접근성을 내세운 분양임.
 • HOW: 수요층을 넓혔음.`;
 
+// 2026-10-08 실제 — 나눠 보낸 순서 표시가 첫 기사 제목과 한 줄에 붙어 온다
+const MSG14 = `*[신문요약 4/5]* 25. 애플, 스마트홈 파트너로 LG 택했다
+• 원문: <https://www.mk.co.kr/news/business/12170771|mk.co.kr/news/business/12170771>
+• WHAT: 애플과 LG전자가 스마트 도어록·보안카메라 등을 공동 개발 중인 것으로 보도됐음.
+• WHY: 스마트홈 생태계를 넓히려는 목적임.
+• HOW: 공식 출시 일정은 확정 보도가 아님.`;
 // 슬랙이 보내는 그대로의 모양 — 글 속 & < > 는 &amp; &lt; &gt; 로 온다(2026-10-01 "&amp; 로 보인다" 제보)
 const MSG12 = `[신문요약 2/2]
 1. S&amp;P500 급등…R&amp;D 투자 확대
@@ -173,7 +179,8 @@ const srv = http.createServer((req, res) => {
     { ts: D + 'T11:08:00', source: 'user', kind: 'text', text: MSG9 },
     { ts: D + 'T11:09:00', source: 'user', kind: 'text', text: MSG10 },
     { ts: D + 'T11:10:00', source: 'user', kind: 'text', text: MSG12 },
-    { ts: D + 'T11:11:00', source: 'user', kind: 'text', text: MSG13 }] }));
+    { ts: D + 'T11:11:00', source: 'user', kind: 'text', text: MSG13 },
+    { ts: D + 'T11:12:00', source: 'user', kind: 'text', text: MSG14 }] }));
   if (u === '/api/news/today') return send('application/json', JSON.stringify({ ok: true, ready: true, date: D, count: 3,
     images: ['01.jpg', '02.jpg', '03.jpg'].map(n => ({ name: n, url: '/x.png', thumb: '/x.png', download_url: '/x.png' })) }));
   if (u === '/api/news/pagetext') return send('application/json', '{"ok":false}');
@@ -247,7 +254,8 @@ const MSG10 = `[신문요약 1/6] :newspaper: 2026년 9월 28일 신문 브리�
     check(r.head.join(',') === '지역,단지,총가구(분양)' && r.rows === 3, '표: 머리칸 3개 + 3줄', r.head.join(','));
     check(r.numRight === 'right', '숫자 칸(1305(1305))은 오른쪽 정렬');
     check(r.inArt && /brf-kv>brf-tblwrap>detail/.test(r.order), '표는 01 기사 안, WHAT 과 "지역별 전체 물량" 사이 제자리', r.order);
-    check(r.intros.length >= 2 && !r.introSide && r.chks === 0 && r.secs.every(x => /재요약/.test(x)),
+    // 2026-10-08: 맨 앞 "[신문요약 수정본 1/7]" 는 이제 안내문으로도 안 보이고 배지로만 간다 → 안내문은 1개 이상("원본: …")
+    check(r.intros.length >= 1 && !r.intros.some(x => /신문요약/.test(x)) && !r.introSide && r.chks === 0 && r.secs.every(x => /재요약/.test(x)),
           '앞머리 안내문엔 사진 칸 없음 · "📰 … 재요약" 은 섹션 제목일 뿐 체크 목록으로 기사를 삼키지 않음', r.intros.join(' / '));
     check(r.sides.every(Boolean), '기사 01·02 에만 사진 칸');
     check(r.plainTbl === '금리,3.5%,환율,1,380', '일반 메시지 속 표도 표로(구분줄 빼고)', r.plainTbl);
@@ -272,7 +280,7 @@ const MSG10 = `[신문요약 1/6] :newspaper: 2026년 9월 28일 신문 브리�
     const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05); };
     check(!t7.meta && t7.src, '작업 설명 줄("30쪽 전체를…"·"page는…"·"원문 기준으로 수정함")은 숨기고 "원본:" 은 남긴다');
     check(/봐야 할 5가지$/.test(t7.sec.trim()) && t7.nums === '1,2,3,4,5', '"…5가지" 뒤 줄바꿈 + ①~⑤ 가 번호 목록 1~5', t7.nums);
-    check(/^주택 공급의 핵심은/.test(t7.first || '') && /^정비사업 51\.6만/.test(t7.note || '') && t7.intro.length === 1,
+    check(/^주택 공급의 핵심은/.test(t7.first || '') && /^정비사업 51\.6만/.test(t7.note || '') && !t7.intro.some(x => /정비사업|신문요약/.test(x)),
           '요점 문장 + 그 아래 설명 줄이 한 항목(흐린 안내문으로 안 빠짐)', `${(t7.first || '').slice(0, 10)} | ${t7.note}`);
     const cr = contrast(t7.noteCol, t7.bg);
     check(cr >= 7, '설명 줄 글씨가 배경과 충분히 대비된다(7:1 이상 — 잘 보임)', `${cr.toFixed(1)}:1`);
@@ -350,6 +358,14 @@ const MSG10 = `[신문요약 1/6] :newspaper: 2026년 9월 28일 신문 브리�
     check(!/신반포22차 ‘디에이치/.test(nf[1].main) && !/경기광주역 롯데캐슬/.test(nf[2].main), '다음 기사 제목이 앞 기사 안으로 끌려가지 않는다');
     check(/매일경제/.test(nf[1].src) && /매일경제/.test(nf[2].src) && !/원문 확인 실패/.test(nf.map(x => x.main).join('')),
           '원문 링크는 그 기사 안에, "원문 확인 실패" 줄은 숨김');
+    const pt = await page.evaluate(() => {
+      const e = [...document.querySelectorAll('.entry')].find(x => /스마트홈 파트너/.test(x.textContent));
+      return { title: e.querySelector('.brf-title').textContent.trim(), body: e.querySelector('.body').textContent,
+               badge: [...e.querySelectorAll('.kind')].map(k => k.textContent).join(',') };
+    });
+    check(pt.title === '25. 애플, 스마트홈 파트너로 LG 택했다' && !/신문요약/.test(pt.body),
+          '제목에 붙어 온 "[신문요약 4/5]" 는 떼어낸다(제목·본문에 안 보임)', pt.title);
+    check(/4\/5/.test(pt.badge), '순서는 카드 위 작은 배지로만', pt.badge);
     check(r.over <= 0, '화면이 옆으로 넘치지 않는다', `${r.over}px`);
     await page.close();
   }

@@ -836,6 +836,11 @@ function briefing(raw){
   let head="";
   for(let i=0;i<lines.length;i++){
     if(!lines[i].trim()) continue;
+    /* 메시지 맨 앞 "[신문요약 4/5]"(·"[신문요약 수정본 1/7]"·볼드) = 슬랙에서 나눠 보낸 순서 표시.
+       2026-10-08: 이게 첫 기사 제목과 **한 줄에 붙어** 와서 "[신문요약 4/5] 25. 애플…" 처럼 제목에 섞여 보였다
+       (옆 요약 칸에서 특히 거슬린다 — 사용자 요청: 표기 안 해도 됨) → 떼어서 카드 오른쪽 위 작은 배지로만. */
+    const pk=lines[i].match(/^[\s*_]*\[\s*신문\s*요약[^\]\d]*?(\d+)\s*\/\s*(\d+)\s*\][\s*_]*/);
+    if(pk){ part=part||(pk[1]+"/"+pk[2]); lines[i]=lines[i].slice(pk[0].length); if(!lines[i].trim()) continue; }
     const m=lines[i].match(/^(.*?신문\s*브리핑)(.*)$/);
     if(m){
       head=m[1].replace(/[*_]/g,"").trim();
