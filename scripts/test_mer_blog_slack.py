@@ -44,10 +44,13 @@ check("옛 에디터(postViewArea)도 읽힘", m.pick_oneliner(m.parse_paragraph
 check("빈 페이지 → 문단 0개", m.parse_paragraphs("<html>로그인</html>") == [])
 
 
-REAL = '<div class="se-main-container"><p class="se-text-paragraph"><span>앞 본문입니다.</span></p><p class="se-text-paragraph"><span>%s</span></p></div>' % (
-    "한줄 코멘트. " + "미국국채 응찰배율이 나왔고 " * 5 + '<span style="color:red">"그래도 미국이 낫네"</span>라는 생각들을 하는 것 같다.' + " 끝." * 40)
+# 사용자가 보내준 실제 글의 마지막 문단(빨간 글씨 span 포함) — % 글자가 있어 문자열을 이어 붙인다
+COMMENT = '한줄 코멘트. 미국국채 10년물의 응찰배율이 2.77배가 나왔고, 간접입찰이 80%를 넘겼으며, 프라이머리 딜러 비중이 2.54%밖에 나오지 않았다. 응찰배율과 프라이머리딜러 비중은 미국국채에 대한 전반적인 수요를 볼 수 있고, 간접입찰은 그중에서 해외 수요를 판단하는 지표로 쓰인다. 세 지표가 모두 강한 수요를 보여준 것이다. 5.3%라는 낙찰금리 자체는 2000년이후 26년만에 최고 수준이라 부담스러운 숫자다. 하지만, 미국국채 수요가 살아있는 것이 시장을 어느정도 안심시킬 것 같다. 프랑스 상황을 보고는, <span style="color:red">"그래도 미국이 낫네"</span>라는 생각들을 하는 것 같다. 5.3%라는 금리 자체가 매력적으로 보였을 수도 있다.'
+REAL = ("<div class=\"se-main-container\"><p class=\"se-text-paragraph\"><span>앞 본문입니다.</span></p>"
+        "<p class=\"se-text-paragraph\"><span>" + COMMENT + "</span></p>"
+        "<p class=\"se-text-paragraph\"><span>#미국국채 #금리</span></p></div>")
 one, how = m.pick_oneliner(m.parse_paragraphs(REAL))
-check("실제 형식: '한줄 코멘트.' 로 시작하는 긴(370자↑) 문단 → 표지 제거 후 통째로", how == "marker" and one.startswith("미국국채") and one.endswith("끝.") and len(one) > 370)
+check("실제 형식: '한줄 코멘트.' 로 시작하는 긴(370자↑) 문단 → 표지 제거 후 통째로", how == "marker" and one.startswith("미국국채") and one.endswith("수도 있다.") and len(one) > 300 and "#" not in one)
 check("빨간 글씨(span) 안의 문장도 빠짐없이", "그래도 미국이 낫네" in one)
 
 msg = m.build_message({"title": "A<B", "link": "https://x"}, "한 줄", "marker")
