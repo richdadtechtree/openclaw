@@ -11,8 +11,7 @@
   환율      : fx_data(네이버→두나무→ECB, 환율 칸과 같은 값) → 실패 시 업비트 USDT 원화가(대용)
   30일 추이 : 업비트 일봉 종가 (10년 그래프가 아직 준비 안 됐을 때만 대신 쓴다)
   10년 추이 : 빗썸 일봉 전체(2013~, 한 번에 받음) → 실패 시 업비트 일봉(2017-09~, 있는 만큼만).
-              10년 동안 수백 배 올라 보통 눈금이면 앞쪽이 바닥에 붙는다 → 로그 눈금(같은 높이 = 같은 '배수').
-              첫 받기는 뒤에서(화면 안 막음), 6시간 캐시.
+              첫 받기는 뒤에서(화면 안 막음), 6시간 캐시. 기간 자르기·로그 눈금 판단은 charts.py(/api/charts).
   역대 최고가: 업비트 일봉 '고가'를 상장(2017-09)부터 한 번 전부 훑어 최고값을 찾고 파일(.btc_ath.json)에
               저장 → 이후엔 '오늘 고가·52주 최고가'와만 비교해 더 높으면 갱신(매번 수천 일을 다시 받지 않음).
               첫 훑기가 끝나기 전·실패 시엔 역대 최고가를 표시하지 않고 52주 최고가만 보인다(지어내지 않음).
@@ -23,7 +22,6 @@
 직접 점검(서버, stock venv):  ~/stock/stock/venv/bin/python crypto_data.py
 """
 import json
-import math
 import os
 import threading
 import time
@@ -52,7 +50,6 @@ ATH_RESCAN_DAYS = 30      # 혹시 놓친 값이 있어도 한 달에 한 번은
 LONG_YEARS = 10
 LONG_TTL = 6 * 3600       # 10년 추이 캐시(하루 한 점이라 자주 받을 필요 없음)
 LONG_RETRY = 600          # 실패하면 10분 뒤에 다시 시도(매 요청마다 두드리지 않게)
-LONG_POINTS = 200         # 그래프 점 개수(10년 ≈ 2~3주에 1점)
 KST = timezone(timedelta(hours=9))
 _long = {"ts": 0, "val": None, "loading": False, "failed": 0}
 _ath_lock = threading.Lock()
@@ -197,24 +194,19 @@ def _long_upbit():
 
 
 def _load_long():
-    """10년 추이를 받아 그래프용으로 줄인다(로그 눈금 0~100)."""
+    """10년 일별 종가를 받는다(그래프 기간 자르기는 charts.py)."""
     for f, src in ((_long_bithumb, "Bithumb"), (_long_upbit, "Upbit")):
         try:
             rows = f()
         except Exception as e:
             print(f"[crypto] 10년 추이 {f.__name__} 실패: {e}")
             continue
-        start = (date.today() - timedelta(days=365 * LONG_YEARS + 2)).isoformat()
+        start = (date.today() - timedelta(days=365 * LONG_YEARS + 7)).isoformat()
         rows = [r for r in rows if r[0] >= start]
         if len(rows) < 365:                 # 1년도 안 되면 '긴 그래프'라 부를 수 없다 → 다음 소스
             print(f"[crypto] 10년 추이 {f.__name__} 점이 너무 적음: {len(rows)}개")
             continue
-        step = max(1, len(rows) // LONG_POINTS)
-        picked = rows[::step]
-        if picked[-1] != rows[-1]:
-            picked.append(rows[-1])         # 마지막 날은 꼭 넣는다
-        return {"closes": [v for _, v in picked], "from": rows[0][0], "to": rows[-1][0],
-                "source": src, "years": round(len(rows) / 365.25, 1)}
+        return {"rows": rows, "source": src}
     return None
 
 
@@ -239,20 +231,10 @@ def _long_history():
     return _long["val"]
 
 
-def _long_chart(current):
-    """10년 종가 + 지금 가격 → 로그 눈금 0~100 점. 그래프 끝은 지금 가격."""
+def history_rows():
+    """그래프용 일별 원화 종가 [(날짜, 종가), ...] + 출처. 아직 없으면 ([], None)(뒤에서 받기 시작)."""
     h = _long_history()
-    if not h:
-        return None
-    vals = h["closes"] + ([current] if current else [])
-    logs = [math.log10(v) for v in vals]
-    lo, hi = min(logs), max(logs)
-    span = (hi - lo) or 1
-    return {"points": [round((v - lo) / span * 100, 1) for v in logs],
-            "from": h["from"], "to": date.today().isoformat() if current else h["to"],
-            "source": h["source"], "years": h["years"], "log": True,
-            "min": round(min(vals)), "max": round(max(vals))}
-
+    return (h["rows"], h["source"]) if h else ([], None)
 
 # ── 역대 최고가(원화, 업비트) ────────────────────────────────────────────────
 
@@ -371,7 +353,7 @@ def get_btc():
         if not krw and not usd:
             return None
 
-        out = {"krw": krw, "usd": usd, "kimchi": None, "sparkline": _sparkline(), "long": None}
+        out = {"krw": krw, "usd": usd, "kimchi": None, "sparkline": _sparkline()}
 
         if krw:
             krw["change_rate"] = round(krw["change_rate"], 2)
@@ -384,12 +366,6 @@ def get_btc():
                     print(f"[crypto] 역대 최고가 처리 실패: {e}")
         if usd:
             usd["change_rate"] = round(usd["change_rate"], 2)
-
-        # 10년 그래프(원화). 준비 전이면 None → 화면은 30일 그래프를 대신 보여 준다
-        try:
-            out["long"] = _long_chart(krw["price"] if krw else None)
-        except Exception as e:
-            print(f"[crypto] 10년 그래프 실패: {e}")
 
         # 김치 프리미엄 = 한국 원화가 ÷ (해외 달러가 × 환율) − 1
         if krw and usd:

@@ -5,9 +5,10 @@
 - 전부 키 없이 쓰는 공개 데이터. 소스마다 '순서대로 시도 → 처음 성공한 값' 방식.
 
   현재 환율 : 네이버 금융(1순위, 장중 실시간) → 두나무(업비트 운영사) → 유럽중앙은행(ECB) 기준환율
-  3년 추이  : 유럽중앙은행(ECB) 기준환율 — Frankfurter 공개 API(https://frankfurter.dev, ECB 자료를 그대로 제공)
+  10년 추이 : 유럽중앙은행(ECB) 기준환율 — Frankfurter 공개 API(https://frankfurter.dev, ECB 자료를 그대로 제공)
               → 실패 시 네이버 금융 일별 시세
-              ECB 기준환율은 중앙은행이 매 영업일 1회 고시하는 공식 값이라 3년 흐름을 보기에 믿을 만하다.
+              ECB 기준환율은 중앙은행이 매 영업일 1회 고시하는 공식 값이라 긴 흐름을 보기에 믿을 만하다.
+              그래프 기간 자르기·최고/최저 계산은 charts.py 가 한다(여기선 일별 값만 준다).
 
 - 값 검사: 1달러 = 800~2500원 밖이면 응답 이상으로 보고 버린다(다음 소스로).
 
@@ -25,8 +26,7 @@ import requests
 TIMEOUT = 6
 NOW_TTL = 60            # 초. 현재 환율 캐시
 HIST_TTL = 6 * 3600     # 초. 3년 추이는 하루 한 점이라 6시간 캐시
-YEARS = 3
-CHART_POINTS = 160      # 그래프 점 개수(3년 ≈ 주 1점). 너무 많으면 작은 카드에서 뭉개진다.
+YEARS = 10                # 그래프 기간 선택(6개월~10년, 2026-10-08)의 최대 길이
 FX_MIN, FX_MAX = 800, 2500
 
 HEADERS = {
@@ -153,10 +153,10 @@ def _hist_ecb():
 
 
 def _hist_naver():
-    # 네이버 일별 시세: 한 장(page)에 60일 → 3년 ≈ 13장. 오래 걸리지 않게 8초 안에서만.
+    # 네이버 일별 시세: 한 장(page)에 60일 → 10년 ≈ 42장. 예비 소스라 20초 안에서만(못 채우면 있는 만큼).
     rows, t0 = {}, time.time()
-    for page in range(1, 16):
-        if time.time() - t0 > 8:
+    for page in range(1, 46):
+        if time.time() - t0 > 20:
             break
         d = _get("https://m.stock.naver.com/front-api/marketIndex/prices"
                  f"?category=exchange&reutersCode=FX_USDKRW&page={page}&pageSize=60")
@@ -206,34 +206,6 @@ def _history():
     return val  # 다 실패하면 예전 캐시라도(없으면 None)
 
 
-def _summarize(rows, current):
-    """3년 일별 값 → 그래프 점(0~100) + 최고/최저 + 고점 대비(지금 환율이 3년 최고점에서 몇 % 아래인지)."""
-    vals = [v for _, v in rows]
-    hi_i = max(range(len(vals)), key=vals.__getitem__)
-    lo_i = min(range(len(vals)), key=vals.__getitem__)
-    high, high_date = vals[hi_i], rows[hi_i][0]
-    low, low_date = vals[lo_i], rows[lo_i][0]
-    # 추이(ECB)는 하루 늦게 들어오므로, 지금 환율이 기록보다 높거나 낮으면 오늘을 고점/저점으로 본다
-    today = date.today().isoformat()
-    if current and current > high:
-        high, high_date = current, today
-    if current and current < low:
-        low, low_date = current, today
-    step = max(1, len(rows) // CHART_POINTS)
-    pts = vals[::step]
-    if current:
-        pts = pts + [current]      # 그래프 끝은 지금 환율에 맞춘다
-    lo, hi = min(pts), max(pts)
-    span = (hi - lo) or 1
-    return {
-        "points": [round((p - lo) / span * 100, 1) for p in pts],
-        "from": rows[0][0], "to": rows[-1][0],
-        "high": round(high, 2), "high_date": high_date,
-        "low": round(low, 2), "low_date": low_date,
-        "start": round(vals[0], 2),
-        # 고점 대비(2026-10-08 사용자 요청: '3년 전 대비' 대신) — 0 이면 지금이 고점, -5 면 고점보다 5% 낮음
-        "from_high_pct": round(((current or vals[-1]) / high - 1) * 100, 2),
-    }
 
 
 def get_usdkrw_now():
@@ -248,7 +220,7 @@ def get_usdkrw_now():
 
 
 def get_usdkrw():
-    """대시보드용 묶음: 현재 환율·전일 대비·3년 추이. 현재값·추이 둘 다 없으면 None."""
+    """대시보드용 묶음: 현재 환율·전일 대비. 현재값·추이 둘 다 없으면 None. (그래프는 /api/charts)"""
     with _lock:
         now = get_usdkrw_now()
         hist = _history()
@@ -268,9 +240,15 @@ def get_usdkrw():
             out["change_rate"] = round(out["change_rate"], 2)
         out["price"] = round(out["price"], 2)
         out["basis"] = "전일 대비"
-        out["history"] = _summarize(rows, now["price"] if now else None) if rows else None
         out["history_source"] = hist_src
         return out
+
+
+def history_rows():
+    """그래프용 일별 환율 [(날짜, 값), ...] 오래된 것부터 + 출처. 없으면 ([], None). charts.py 가 쓴다."""
+    with _lock:
+        hist = _history()
+    return hist if hist else ([], None)
 
 
 def _probe():

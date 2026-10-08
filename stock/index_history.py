@@ -1,10 +1,12 @@
 """
-지수·ETF 5년 추이 (대시보드 코스피·코스닥·S&P500·나스닥·QLD·TQQQ 칸 아래 그래프)
+지수·ETF 10년 추이 (대시보드 코스피·코스닥·S&P500·나스닥·QLD·TQQQ 칸 아래 그래프)
 
 - 예전 30일 그래프는 야후(yfinance)에서 받았는데 서버 IP 에서 막혀 점선만 보였다.
   → 서버에서 잘 되는 **네이버 금융 일별 시세**로 바꾼다(지수 시세도 이미 네이버를 쓴다).
-- 네이버는 한 번에 50일까지만 준다(더 크게 달라면 이상한 응답) → 5년 ≈ 1250거래일 ≈ 25쪽.
+- 네이버는 한 번에 50일까지만 준다(더 크게 달라면 이상한 응답) → 10년 ≈ 2500거래일 ≈ 50쪽.
   처음 한 번만 다 받고 파일(.index_hist.json)에 저장, 이후엔 최신 1~2쪽만 받아 이어 붙인다.
+  (2026-10-08 그래프 기간 선택 6개월~10년 추가로 5년→10년. 예전 5년 파일이 있으면 모자란 옛날 쪽만 더 받는다.)
+  기간 자르기·최고/최저는 charts.py(/api/charts) 가 한다.
   받기는 뒤에서(화면 안 막음), 6시간마다 새로 고침.
 - ⚠️ QLD·TQQQ 는 액면분할 이력이 있는데 네이버 미국 일별 시세는 **분할을 반영하지 않은 값**이다
   (market_data.py NAVER_HISTORY 주석 참고). 그대로 그리면 분할한 날 가격이 1/2·1/3 로 '폭락'한 것처럼 보인다.
@@ -22,10 +24,9 @@ from datetime import date, timedelta
 
 import requests
 
-YEARS = 5
-POINTS = 160              # 그래프 점 개수(5년 ≈ 주 1점보다 조금 촘촘)
+YEARS = 10
 PAGE_SIZE = 50            # 네이버 상한(100 이면 비정상 응답)
-MAX_PAGES = 30            # 30쪽 × 50 = 1500거래일 ≈ 6년
+MAX_PAGES = 60            # 60쪽 × 50 = 3000거래일 ≈ 12년
 REFRESH = 6 * 3600        # 6시간마다 최신 쪽만 다시 받기
 RETRY = 600               # 실패하면 10분 뒤 재시도
 PAUSE = 0.12              # 네이버를 너무 몰아서 두드리지 않게
@@ -85,8 +86,10 @@ def _page(name, page):
 
 
 def _fetch(name, have):
-    """have(이미 가진 {날짜: 종가}) 에 없는 최신 날들만 받아 합친다. 처음이면 5년치 전부."""
+    """have(이미 가진 {날짜: 종가}) 에 없는 최신 날들만 받아 합친다. 처음이면 10년치 전부.
+    가진 것이 10년에 못 미치면(예전 5년 파일) 가진 구간을 지나 더 옛날 쪽까지 이어 받는다."""
     start = (date.today() - timedelta(days=365 * YEARS + 7)).isoformat()
+    covered = bool(have) and min(have) <= (date.today() - timedelta(days=365 * YEARS - 20)).isoformat()
     rows = dict(have)
     for p in range(1, MAX_PAGES + 1):
         got = _page(name, p)
@@ -94,8 +97,8 @@ def _fetch(name, have):
             break
         new = {d: v for d, v in got.items() if d not in rows}
         rows.update(got)                 # 최근 값은 덮어써서 고침(장중 값 → 확정 종가)
-        if have and not new:
-            break                        # 이미 가진 날까지 내려왔으면 그만(이어 붙이기)
+        if covered and not new:
+            break                        # 이미 10년치를 가졌고 아는 날까지 내려왔으면 그만(이어 붙이기)
         if min(got) <= start:
             break                        # 5년 전까지 다 받음
         time.sleep(PAUSE)
@@ -194,41 +197,29 @@ def _kick():
     threading.Thread(target=run, daemon=True).start()
 
 
-def get_long(name, current=None):
-    """그래프용 5년 추이 {points(0~100), from, to, years, source, splits}. 아직 없으면 None."""
+def history_rows(name):
+    """그래프용 일별 종가 [(날짜, 값), ...] 오래된 것부터(QLD·TQQQ 는 분할 보정) + 분할 기록.
+    아직 없으면 ([], []) — 뒤에서 받기 시작한다. charts.py 가 쓴다."""
     _load_file()
     _kick()
     raw = _state["rows"].get(name)
     if not raw or name not in SOURCES:
-        return None
+        return [], []
     rows = sorted(raw.items())
-    splits = []
     if SOURCES[name][1]:
         rows, splits = adjust_splits(rows)
-    step = max(1, len(rows) // POINTS)
-    pts = [v for _, v in rows[::step]]
-    if rows[::step][-1] != rows[-1]:
-        pts.append(rows[-1][1])
-    if current:
-        pts.append(current)              # 그래프 끝은 지금 값
-    lo, hi = min(pts), max(pts)
-    span = (hi - lo) or 1
-    return {
-        "points": [round((p - lo) / span * 100, 1) for p in pts],
-        "from": rows[0][0], "to": date.today().isoformat() if current else rows[-1][0],
-        # 실제 날짜 차이로(거래일 수로 나누면 한국·미국 휴일 수가 달라 어긋난다)
-        "years": round((date.fromisoformat(rows[-1][0]) - date.fromisoformat(rows[0][0])).days / 365.25, 1),
-        "source": "Naver", "min": round(lo, 2), "max": round(hi, 2),
-        "splits": [f"{d} {r}" for d, r in splits],
-    }
+        return rows, [f"{d} {r}" for d, r in splits]
+    return rows, []
 
 
 if __name__ == "__main__":
     refresh(force=True)
     for n in SOURCES:
-        g = get_long(n)
-        if g:
-            print(f"✅ {n:<8} {g['from']} ~ {g['to']} ({g['years']}년, 점 {len(g['points'])}개) "
-                  f"최저 {g['min']:,} 최고 {g['max']:,}" + (f" · 분할 보정 {g['splits']}" if g['splits'] else ""))
+        rows, splits = history_rows(n)
+        if rows:
+            yrs = (date.fromisoformat(rows[-1][0]) - date.fromisoformat(rows[0][0])).days / 365.25
+            vals = [v for _, v in rows]
+            print(f"✅ {n:<8} {rows[0][0]} ~ {rows[-1][0]} ({yrs:.1f}년, {len(rows)}일) "
+                  f"최저 {min(vals):,.2f} 최고 {max(vals):,.2f}" + (f" · 분할 보정 {splits}" if splits else ""))
         else:
             print(f"❌ {n:<8} 데이터 없음")

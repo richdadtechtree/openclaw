@@ -643,15 +643,6 @@ def get_snapshot(include_sparkline=False, use_cache=True):
             for name in data:
                 data[name]["sparkline"] = _sparkline_cache["data"].get(name, [])
 
-            # 5년 추이(네이버 일별, 분할 보정) — 대시보드 화면용. 알람(include_sparkline=False)은 안 거친다.
-            # 뒤에서 받으므로 처음 몇 초·실패 시엔 None → 화면은 30일 그래프/점선으로 남는다.
-            try:
-                import index_history
-                for name in data:
-                    data[name]["long"] = index_history.get_long(name, data[name].get("current"))
-            except Exception as e:
-                print(f"5년 추이 오류: {e}")
-
         return data
 
 

@@ -256,6 +256,20 @@
       gap: 8px;
     }
 
+    /* 그래프 기간 버튼(6개월~10년) — 고른 것만 진하게 */
+    .period-tabs { display: inline-flex; gap: 2px; padding: 3px; margin-left: auto; margin-right: 14px;
+                   background: var(--bg-card-subtle); border: 1px solid var(--border-color); border-radius: 999px; }
+    .period-tabs button { font: inherit; font-size: 12.5px; font-weight: 600; color: var(--text-muted); background: none;
+                          border: 0; border-radius: 999px; padding: 4px 11px; cursor: pointer; white-space: nowrap; }
+    .period-tabs button:hover { color: var(--text-main); }
+    .period-tabs button.active { background: var(--bg-surface); color: var(--text-main);
+                                 box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); }
+    @media (max-width: 768px) {
+      .market-section .section-title { flex-wrap: wrap; gap: 8px; }
+      .period-tabs { order: 3; margin: 0; width: 100%; justify-content: space-between; }
+      .period-tabs button { flex: 1; padding: 6px 0; }
+    }
+
     .section-title .subtitle {
       font-size: 13px;
       color: var(--text-muted);
@@ -844,6 +858,14 @@
     <section class="market-section">
       <div class="section-title">
         <h2>📊 주요 글로벌 시장 지수 & 시세 스냅샷</h2>
+        <!-- 그래프 기간 선택(2026-10-08): 8장 카드 아래 그래프가 한꺼번에 바뀐다 -->
+        <div class="period-tabs" id="period-tabs" role="group" aria-label="그래프 기간">
+          <button type="button" data-period="6m">6개월</button>
+          <button type="button" data-period="1y">1년</button>
+          <button type="button" data-period="3y">3년</button>
+          <button type="button" data-period="5y">5년</button>
+          <button type="button" data-period="10y">10년</button>
+        </div>
         <span class="subtitle" id="last-updated-time">최종 갱신: 불러오는 중…</span>
       </div>
       
@@ -965,6 +987,9 @@
       indices: null,
       crypto: null,
       fx: null,
+      // 그래프 기간: 주소 ?period= > 이 브라우저에 기억한 값 > 5년
+      period: '5y',
+      charts: {},          // { '5y': { ts, data }, ... } 기간마다 따로 기억(왔다 갔다 해도 다시 안 받게)
       alerts: null,
       customStocks: null,
       summary: null,
@@ -1055,6 +1080,52 @@
     }
 
     // ---------------------------------------------------- Fetch & Render Engine
+    // ---------------------------------------------------- 그래프 기간(6개월~10년)
+    const CHART_PERIODS = ['6m', '1y', '3y', '5y', '10y'];
+    const CHART_TTL = 5 * 60 * 1000;      // 서버도 5분 캐시라 그보다 자주 받을 필요 없음
+    (function initPeriod() {
+      let p = new URLSearchParams(location.search).get('period');
+      if (!CHART_PERIODS.includes(p)) {
+        try { p = localStorage.getItem('dash.chartPeriod'); } catch (e) { p = null; }
+      }
+      AppState.period = CHART_PERIODS.includes(p) ? p : '5y';
+    })();
+    function chartFor(key) {
+      const c = AppState.charts[AppState.period];
+      return c && c.data ? c.data[key] || null : null;
+    }
+    async function fetchCharts(period, force = false) {
+      const have = AppState.charts[period];
+      if (!force && have && Date.now() - have.ts < CHART_TTL) return have;
+      try {
+        const r = await fetch(`/api/charts?period=${period}`).then(r => r.json());
+        if (r && r.status === 'success') {
+          // 아직 데이터를 받는 중인 칸(null)이 있으면 30초 뒤 다시 받게 '오래된 것'으로 표시
+          const pending = Object.values(r.data || {}).some(v => !v);
+          AppState.charts[period] = { ts: pending ? Date.now() - CHART_TTL + 30000 : Date.now(), data: r.data };
+        }
+      } catch (e) { console.warn('charts fetch error', e); }
+      return AppState.charts[period];
+    }
+    function paintPeriodTabs() {
+      document.querySelectorAll('#period-tabs button').forEach(b => {
+        const on = b.dataset.period === AppState.period;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+    }
+    document.getElementById('period-tabs').addEventListener('click', async e => {
+      const b = e.target.closest('button[data-period]');
+      if (!b || b.dataset.period === AppState.period) return;
+      AppState.period = b.dataset.period;
+      try { localStorage.setItem('dash.chartPeriod', AppState.period); } catch (err) { /* 저장 못 해도 동작은 함 */ }
+      paintPeriodTabs();
+      renderIndices();                       // 받아 둔 게 있으면 바로, 없으면 예전 작은 그래프로 먼저
+      await fetchCharts(AppState.period);
+      renderIndices();
+    });
+    paintPeriodTabs();
+
     async function fetchDashboardData() {
       try {
         const [resIndices, resAlerts, resCustom, resSummary, resCrypto, resFx] = await Promise.all([
@@ -1065,7 +1136,9 @@
           // 비트코인은 거래소 장애가 나도 나머지 화면을 막지 않게 실패를 null 로 삼킨다
           fetch('/api/crypto').then(r => r.json()).catch(() => null),
           // 환율도 마찬가지로 실패해도 나머지 화면을 막지 않는다
-          fetch('/api/fx').then(r => r.json()).catch(() => null)
+          fetch('/api/fx').then(r => r.json()).catch(() => null),
+          // 그래프(고른 기간) — 5분에 한 번만 실제로 받는다
+          fetchCharts(AppState.period)
         ]);
         AppState.fx = (resFx && resFx.status === 'success') ? resFx.data.USDKRW : null;
         AppState.crypto = (resCrypto && resCrypto.status === 'success') ? resCrypto.data.BTC : null;
@@ -1108,6 +1181,7 @@
         const isDdSevere = ddPct <= -20;
         const displayName = getIndexDisplayName(symbol);
         // 기준 가로선 값 = 역대 최고가 × (1 + pct/100). ATH 가 없으면 선을 긋지 않는다.
+        const chart = chartFor(symbol);
         const dd = DD_LINES[symbol];
         const ddRef = dd && data.ath > 0 ? {
           pct: dd.pct, dash: dd.dash, value: data.ath * (1 + dd.pct / 100),
@@ -1142,12 +1216,12 @@
               </div>
             </div>
 
-            ${data.long
-              // 5년 추이(네이버 일별 종가, QLD·TQQQ 는 액면분할 보정) — 비트코인·환율과 같은 연도 그래프
-              ? renderYearChart(data.long, `${Math.round(data.long.years)}년`,
-                  `${displayName.replace(/<[^>]+>/g, '').trim()} 최근 ${data.long.years}년 (네이버 일별 종가`
-                  + (data.long.splits && data.long.splits.length ? `, 액면분할 보정: ${data.long.splits.join(', ')}` : '')
-                  + `, 최저 ${formatNumber(data.long.min)} ~ 최고 ${formatNumber(data.long.max)})`
+            ${chart
+              // 고른 기간 추이(네이버 일별 종가, QLD·TQQQ 는 액면분할 보정) — 8장 공용 그래프
+              ? renderYearChart(chart,
+                  `${displayName.replace(/<[^>]+>/g, '').trim()} (네이버 일별 종가`
+                  + (chart.splits && chart.splits.length ? `, 액면분할 보정: ${chart.splits.join(', ')}` : '')
+                  + `, 기간 최저 ${formatNumber(chart.low)} ~ 최고 ${formatNumber(chart.high)})`
                   + (ddRef ? ` · 가로선: 역대 최고가 ${formatNumber(data.ath)} 대비 ${ddRef.pct}% = ${formatNumber(ddRef.value)}` : ''),
                   ddRef)
               : `<div class="sparkline-box">${renderSparklineSVG(data.sparkline)}</div>`}
@@ -1168,21 +1242,22 @@
         return `<div class="market-card fx-card">${head('—')}
           <p class="crypto-basis">환율을 불러오는 중이거나 환율 정보 응답이 없습니다.</p></div>`;
       }
-      const h = fx.history;
+      const h = chartFor('USDKRW');                       // 고른 기간의 추이·최고·최저(없으면 상자·그래프 생략)
       const src = [fx.source, fx.history_source].filter((v, i, a) => v && a.indexOf(v) === i).join(' · ');
+      const pl = h ? periodLabel(h.years) : '';
       const ymd = d => d ? d.slice(2).replace(/-/g, '.') : '';     // 2025-04-17 → 25.04.17
 
-      // 3년 상자: 지수 칸의 'ATH 상자'와 같은 모양. 막대 = 3년 최저~최고 사이에서 지금 위치
+      // 기간 상자: 지수 칸의 'ATH 상자'와 같은 모양. 막대 = 기간 최저~최고 사이에서 지금 위치
       let box = '';
       if (h) {
         const pos = Math.max(0, Math.min(100, (fx.price - h.low) / ((h.high - h.low) || 1) * 100));
         box = `
           <div class="ath-box">
-            <div class="ath-header"><span>3년 최고 (${ymd(h.high_date)})</span><span class="ath-val">${formatNumber(h.high)}원</span></div>
-            <div class="ath-header"><span>3년 최저 (${ymd(h.low_date)})</span><span class="ath-val">${formatNumber(h.low)}원</span></div>
-            <div class="ath-header" title="지금 환율이 3년 최고점(${formatNumber(h.high)}원)보다 몇 % 낮은지"><span>고점 대비</span>
+            <div class="ath-header"><span>${pl} 최고 (${ymd(h.high_date)})</span><span class="ath-val">${formatNumber(h.high)}원</span></div>
+            <div class="ath-header"><span>${pl} 최저 (${ymd(h.low_date)})</span><span class="ath-val">${formatNumber(h.low)}원</span></div>
+            <div class="ath-header" title="지금 환율이 ${pl} 최고점(${formatNumber(h.high)}원)보다 몇 % 낮은지"><span>고점 대비</span>
               <span class="ath-dd-pct">${h.from_high_pct > 0 ? '+' : ''}${h.from_high_pct.toFixed(2)}%</span></div>
-            <div class="progress-bar-container" title="3년 최저(왼쪽)~최고(오른쪽) 사이에서 지금 위치">
+            <div class="progress-bar-container" title="${pl} 최저(왼쪽)~최고(오른쪽) 사이에서 지금 위치">
               <div class="progress-bar-fill" style="width: ${pos}%"></div>
             </div>
           </div>`;
@@ -1201,37 +1276,68 @@
             </div>
             <div>
               ${box}
-              ${h ? renderYearChart(h, '3년', '최근 3년 원/달러 환율 (유럽중앙은행 기준환율 등 일별 값)') : ''}
+              ${h ? renderYearChart(h, `원/달러 환율 (${h.source === 'ECB' ? '유럽중앙은행 기준환율' : h.source} 일별 값)`) : ''}
             </div>
           </div>
         </div>`;
     }
 
-    // 여러 해 추이 그래프(환율 3년·비트코인 10년 공용): 스파크라인과 같은 선 + 해 바뀌는 곳 세로 점선 + 아래 연도.
-    // h = {points(0~100), from, to}. 연도 글자는 겹치지 않게 솎는다(10년이면 2년 간격쯤).
-    // ref = {value, label, dash} 를 주면 그 값 높이에 기준 가로선(예: 고점 대비 -30%)을 긋는다.
-    function renderYearChart(h, tag, title, ref = null) {
-      const t0 = Date.parse(h.from), t1 = Date.parse(h.to);
+    // 기간 추이 그래프(8장 공용, 2026-10-08 기간 선택): 선 + 세로 점선 눈금 + 아래 날짜.
+    // c = /api/charts 한 칸 {values(실제 값), from, to, years, log, high, low, ...}
+    //  · log=true(그 기간에 5배↑ 움직임)면 로그 눈금 — 같은 높이 = 같은 배수
+    //  · 1.5년 이하(6개월·1년)는 '월' 눈금(1월이면 연도), 그보다 길면 '연도' 눈금
+    //  · 글자는 겹치지 않게 솎는다
+    // ref = {value, label, dash} 를 주면 그 값 높이에 기준 가로선(예: 고점 대비 -30%), 그래프 밖이면 범위를 넓혀 보이게.
+    function periodLabel(years) {
+      return years < 0.9 ? `${Math.max(1, Math.round(years * 12))}개월` : `${Math.round(years)}년`;
+    }
+    function renderYearChart(c, title, ref = null) {
+      const f = c.log ? (v => Math.log10(v)) : (v => v);
+      const vals = c.values.map(f);
+      let lo = Math.min(...vals), hi = Math.max(...vals);
+      const refV = ref && ref.value > 0 ? f(ref.value) : null;
+      if (refV != null) { lo = Math.min(lo, refV); hi = Math.max(hi, refV); }
+      const sp = (hi - lo) || 1;
+      const points = vals.map(v => ((v - lo) / sp) * 100);
+
+      const t0 = Date.parse(c.from), t1 = Date.parse(c.to);
       const span = (t1 - t0) || 1;
       const pct = t => ((t - t0) / span) * 100;
-      const years = [];
-      for (let y = new Date(t0).getFullYear() + 1; y <= new Date(t1).getFullYear(); y++) {
-        years.push({ y, x: pct(Date.UTC(y, 0, 1)) });
+      const monthly = c.years <= 1.5;
+      const ticks = [];
+      const d0 = new Date(t0);
+      if (monthly) {
+        for (let y = d0.getUTCFullYear(), m = d0.getUTCMonth() + 1; ; m++) {
+          if (m > 11) { m = 0; y++; }
+          const t = Date.UTC(y, m, 1);
+          if (t > t1) break;
+          ticks.push({ text: m === 0 ? `${y}` : `${m + 1}월`, x: pct(t), yearStart: m === 0 });
+        }
+      } else {
+        for (let y = d0.getUTCFullYear() + 1; Date.UTC(y, 0, 1) <= t1; y++) {
+          ticks.push({ text: `${y}`, x: pct(Date.UTC(y, 0, 1)), yearStart: true });
+        }
       }
-      // 세로 점선(해 바뀜)은 해마다 — 그래프 위에 겹쳐 그린다. 280×56 상자 기준 좌표.
-      const grid = years.map(({ x }) => {
+      // 글자 솎기(카드 폭 ≈ 260px 기준 %): 양 끝 'YYYY.MM' ≈ 18%(+여유 2%), 가운데 글자 ≈ 10%, 글자 사이 12% 이상
+      //  · 해 바뀜(1월=연도) 눈금을 먼저 넣고, 남는 자리에 다른 달을 채운다 → 1년 그래프에도 '2026' 이 꼭 보이게
+      const EDGE = 20, HALF = 5, GAP = 12;
+      const fits = x => x - HALF >= EDGE && x + HALF <= 100 - EDGE;
+      const shown = [];
+      for (const t of [...ticks.filter(t => t.yearStart), ...ticks.filter(t => !t.yearStart)]) {
+        if (fits(t.x) && shown.every(o => Math.abs(o.x - t.x) >= GAP)) shown.push(t);
+      }
+      shown.sort((a, b) => a.x - b.x);
+      // 세로 점선: 연도 눈금은 해마다(10년이어도 10개), 월 눈금은 글자가 있는 달 + 해 바뀜만(1년에 12개는 빽빽)
+      const lines = monthly ? ticks.filter(t => t.yearStart || shown.includes(t)) : ticks;
+      const grid = lines.map(({ x }) => {
         const px = 4 + (x / 100) * (280 - 8);
-        return `<line x1="${px}" y1="0" x2="${px}" y2="56" stroke="var(--border-color)" stroke-dasharray="2,3"/>`;
+        return `<line x1="${px.toFixed(1)}" y1="0" x2="${px.toFixed(1)}" y2="56" stroke="var(--border-color)" stroke-dasharray="2,3"/>`;
       }).join('');
-      let points = h.points, refSvg = '';
-      if (ref && h.min != null && h.max != null && ref.value > 0) {
-        // 점(0~100)을 실제 값으로 되돌린 뒤, 기준선이 그래프 밖이면 범위를 넓혀 항상 보이게 다시 0~100 으로
-        const vals = h.points.map(p => h.min + (p / 100) * (h.max - h.min));
-        const lo = Math.min(h.min, ref.value), hi = Math.max(h.max, ref.value), sp = (hi - lo) || 1;
-        points = vals.map(v => ((v - lo) / sp) * 100);
-        const y = 56 - 4 - ((ref.value - lo) / sp) * (56 - 8);
+      let refSvg = '';
+      if (refV != null) {
+        const y = 56 - 4 - ((refV - lo) / sp) * (56 - 8);
         // 라벨은 왼쪽(오른쪽 끝엔 '지금' 점이 기준선 근처에 있을 때가 많아 겹친다).
-        // 선이 위쪽이면 왼쪽 위 '5년' 꼬리표와 겹치지 않게 글자를 선 아래로.
+        // 선이 위쪽이면 왼쪽 위 꼬리표와 겹치지 않게 글자를 선 아래로.
         const ty = y < 16 ? y + 10 : y - 3;
         refSvg = `<line class="ref-line" x1="4" y1="${y.toFixed(1)}" x2="276" y2="${y.toFixed(1)}" stroke="var(--color-warning)"
                    stroke-width="1.2" ${ref.dash ? 'stroke-dasharray="4,3"' : ''} opacity="0.9"/>
@@ -1239,21 +1345,16 @@
                    font-family="var(--font-mono)" fill="var(--color-warning)"
                    paint-order="stroke" stroke="var(--bg-surface)" stroke-width="3" stroke-linejoin="round">${ref.label}</text>`;
       }
-      const svg = renderSparklineSVG(points, 56, grid + refSvg, ref ? [0, 100] : null);
-      // 연도 글자 솎기(카드 폭 ≈ 260px 기준 %): 양 끝 '2016.10' 글자 ≈ 18%(+여유 2%), 가운데 '2020' ≈ 10%, 글자 사이 2% 이상
-      const EDGE = 20, HALF = 5, GAP = 12;
-      let lastX = -100;
-      const mids = years.filter(({ x }) => {
-        if (x - HALF < EDGE || x + HALF > 100 - EDGE || x - lastX < GAP) return false;
-        lastX = x;
-        return true;
-      });
-      const labels = [`<span class="first" style="left:0">${h.from.slice(0, 7).replace('-', '.')}</span>`]
-        .concat(mids.map(({ y, x }) => `<span style="left:${x}%">${y}</span>`))
-        .concat([`<span class="last" style="left:100%">${h.to.slice(0, 7).replace('-', '.')}</span>`]);
+      const svg = renderSparklineSVG(points, 56, grid + refSvg, [0, 100]);
+      const ym = d => d.slice(0, 7).replace('-', '.');
+      const labels = [`<span class="first" style="left:0">${ym(c.from)}</span>`]
+        .concat(shown.map(({ text, x }) => `<span style="left:${x.toFixed(2)}%">${text}</span>`))
+        .concat([`<span class="last" style="left:100%">${ym(c.to)}</span>`]);
+      const tag = periodLabel(c.years) + (c.log ? ' · 로그' : '');
+      const tip = `${title} · ${ym(c.from)}~${ym(c.to)}${c.log ? ' · 로그 눈금(같은 높이 = 같은 배수)' : ''}`;
       return `
-        <div class="fx-chart year-chart" title="${title}">
-          ${tag ? `<span class="chart-tag">${tag}</span>` : ''}
+        <div class="fx-chart year-chart" title="${tip}">
+          <span class="chart-tag">${tag}</span>
           <div class="sparkline-box">${svg}</div>
           <div class="fx-years">${labels.join('')}</div>
         </div>`;
@@ -1342,11 +1443,9 @@
             </div>
             <div>
               ${highBox}
-              ${btc.long
-                ? renderYearChart(btc.long, `${Math.round(btc.long.years)}년 · 로그`,
-                    `비트코인 원화 ${btc.long.years}년 추이 (${btc.long.source} 일봉 종가, 로그 눈금 — 같은 높이 = 같은 배수, `
-                    + `최저 ${formatNumber(btc.long.min, 0)}원 ~ 최고 ${formatNumber(btc.long.max, 0)}원)`)
-                : `<div class="sparkline-box" title="최근 30일 (10년 추이 준비 중)">${renderSparklineSVG(btc.sparkline)}</div>`}
+              ${(() => { const c = chartFor('BTC'); return c
+                ? renderYearChart(c, `비트코인 원화 (${c.source} 일봉 종가, 기간 최저 ${formatNumber(c.low, 0)}원 ~ 최고 ${formatNumber(c.high, 0)}원)`)
+                : `<div class="sparkline-box" title="최근 30일 (기간 추이 준비 중)">${renderSparklineSVG(btc.sparkline)}</div>`; })()}
             </div>
           </div>
         </div>`;

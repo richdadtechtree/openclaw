@@ -2,7 +2,9 @@
  * test_dashboard_btc.js — 주가 대시보드 '₿ 비트코인'·'💱 원/달러 환율' 칸과 4장×2줄 배치 확인 (실제 Chromium)
  *
  * 가짜 서버가 stock/templates/index.html(서버가 실제로 내주는 파일 — app.py 가 templates/ 를 먼저 찾음)을 내주고
- * /api/indices · /api/crypto · /api/fx 를 흉내 낸다.
+ * /api/indices · /api/crypto · /api/fx · /api/charts?period= 를 흉내 낸다.
+ *   ⑧ 그래프 기간 선택(2026-10-08): 6개월·1년·3년·5년·10년 버튼 → 8장 그래프가 한꺼번에, 짧은 기간은 '월' 눈금,
+ *      고른 기간 기억(localStorage)·?period= 우선·받아 둔 기간은 다시 안 받음·환율 상자도 기간을 따라감
  *   ① 캡처 폭(1320px): 4장×2줄 — 1줄 지수 4개, 2줄 QLD·TQQQ·비트코인·환율, 모든 카드 같은 너비·양 끝 맞춤
  *      + 이름이 잘리지 않음 (2026-10-06 실제 서버: 출처 'Korea Investment API (real-time)' 가 길어 QLD·TQQQ 이름이 잘렸다)
  *   ② 비트코인 칸 내용: 원화 크게 · 등락 기준 · 달러/김프 한 줄 · 역대 최고가(ATH)·낙폭(+다르면 52주 최고가) · 10년 추이(로그 눈금, 연도 표시 — 2026-10-08 요청; 준비 전엔 30일)
@@ -29,12 +31,35 @@ const INDICES = {
 };
 // 실제 서버 응답처럼 QLD·TQQQ 는 한투 실시간(긴 출처 이름)
 INDICES.QLD.source = INDICES.TQQQ.source = 'Korea Investment API (real-time)';
-// 5년 추이(서버 index_history.get_long 모양) — 2026-10-08 요청. QLD 는 분할 보정 기록 포함
-const LONG5 = (min, max, splits = []) => ({ points: Array.from({ length: 160 }, (_, i) => Math.round(50 + 40 * Math.sin(i / 25) * (i / 160))),
-  from: '2021-10-08', to: '2026-10-08', years: 5, source: 'Naver', min, max, splits });
-INDICES.KOSPI.long = LONG5(2284.7, 3512.3); INDICES.KOSDAQ.long = LONG5(651.2, 1060.0);
-INDICES['S&P 500'].long = LONG5(3577.0, 6750.0); INDICES.NASDAQ.long = LONG5(10213.3, 22800.0);
-INDICES.QLD.long = LONG5(18.1, 95.0, ['2022-01-13 2:1']); INDICES.TQQQ.long = LONG5(8.6, 91.0);
+// 그래프(서버 charts.get_charts 모양): 기간마다 {values(실제 값), from, to, years, high, low, ...}
+const PFROM = { '6m': '2026-04-08', '1y': '2025-10-08', '3y': '2023-10-09', '5y': '2021-10-08', '10y': '2016-10-07' };
+const PYRS = { '6m': 0.5, '1y': 1, '3y': 3, '5y': 5, '10y': 10 };
+// lo~hi 사이를 오가는 160점(첫 점 = lo, 가운데 = hi 를 정확히 포함), 끝 = cur
+function mk(per, lo, hi, cur, extra = {}) {
+  const n = 160, v = Array.from({ length: n }, (_, i) => lo + (hi - lo) * (0.5 - 0.5 * Math.cos(i / (n - 1) * Math.PI * 2)));
+  v[0] = lo; v[Math.floor(n / 2)] = hi; v[n - 1] = cur;
+  const mn = Math.min(...v), mx = Math.max(...v);
+  return { values: v.map(x => +x.toFixed(4)), from: extra.from || PFROM[per], to: '2026-10-08', years: extra.years || PYRS[per],
+    high: mx, high_date: extra.high_date || '2024-12-27', low: mn, low_date: extra.low_date || '2024-07-16',
+    from_high_pct: +((cur / mx - 1) * 100).toFixed(2), change_pct: 0, log: mx / mn > 5, source: extra.source || 'Naver',
+    splits: extra.splits || [] };
+}
+function chartsFor(per) {
+  const k = { '6m': 0.97, '1y': 0.93, '3y': 0.8, '5y': 1, '10y': 0.55 }[per];   // 기간마다 최저가 다르게
+  return {
+    'KOSPI': per === '5y' ? mk(per, 2284.7, 3512.3, 3412.5) : mk(per, 3500 * k * 0.9, 3512.3, 3412.5),
+    'KOSDAQ': mk(per, 651.2, 1060.0, 865.2), 'S&P 500': mk(per, 3577.0 / k, 6750.0, 6702.1),
+    'NASDAQ': mk(per, 10213.3, 22800.0, 22650.3),
+    // 레버리지 ETF: 5년·10년은 5배↑(→ 로그 자동), 짧은 기간은 덜 움직임(보통 눈금)
+    'QLD': mk(per, ['5y', '10y'].includes(per) ? 18.1 : 95 * k * 0.8, 95.0, 88.4, { splits: ['2022-01-13 2:1'] }),
+    'TQQQ': mk(per, ['5y', '10y'].includes(per) ? 8.6 : 91 * k * 0.75, 91.0, 72.3),
+    'BTC': per === '10y' ? mk(per, 706383, 177033281, 116190000, { source: 'Bithumb' })
+                         : mk(per, 116190000 * k * 0.8, 163325000, 116190000, { source: 'Bithumb' }),
+    'USDKRW': mk(per, 1305.2, 1487.6, 1385.5, { source: 'ECB' }),
+  };
+}
+let chartOverride = {};      // 테스트마다 특정 칸을 null 등으로 바꿔 끼운다
+const chartReqs = [];        // /api/charts 요청 기록(받아 둔 기간은 다시 안 받는지)
 // 2026-10-06 서버 실측값(scripts/test_btc_price.py)과 같은 모양
 const BTC_FULL = {
   krw: { price: 116190000, change_rate: -0.58, basis: '오전 9시 대비', source: 'Upbit',
@@ -44,17 +69,9 @@ const BTC_FULL = {
   usd: { price: 85960, change_rate: -0.38, basis: '24시간 대비', source: 'Binance' },
   kimchi: { pct: 0.05, fx: 1351.0, basis: '환율' },
   sparkline: [20, 35, 30, 55, 70, 60, 45],
-  // 서버가 빗썸 일봉으로 만든 10년 추이(로그 눈금 0~100)
-  long: { points: Array.from({ length: 205 }, (_, i) => Math.round(i / 2.04 + 8 * Math.sin(i / 9))).map(v => Math.max(0, Math.min(100, v))),
-          from: '2016-10-07', to: '2026-10-07', source: 'Bithumb', years: 10, log: true, min: 706383, max: 177033281 },
 };
-// 원/달러 환율: 3년(2023-10-09 ~ 2026-10-06) 일별을 줄인 그래프 점 + 요약
-const FX_FULL = {
-  price: 1385.5, change_rate: -0.42, basis: '전일 대비', source: 'Naver', history_source: 'ECB',
-  history: { points: Array.from({ length: 160 }, (_, i) => Math.round(50 + 45 * Math.sin(i / 20))),
-             from: '2023-10-09', to: '2026-10-06', high: 1487.6, high_date: '2024-12-27',
-             low: 1305.2, low_date: '2024-07-16', start: 1352.1, from_high_pct: -6.86 },
-};
+// 원/달러 환율(현재값·전일 대비). 추이·기간 최고/최저는 /api/charts 의 USDKRW
+const FX_FULL = { price: 1385.5, change_rate: -0.42, basis: '전일 대비', source: 'Naver', history_source: 'ECB' };
 let crypto = BTC_FULL;   // 테스트마다 바꿔 끼운다 (null = 전부 실패)
 let fx = FX_FULL;
 
@@ -70,6 +87,11 @@ const srv = http.createServer((req, res) => {
   if (u === '/api/fx') {
     if (fx === 'http500') { res.writeHead(500); return res.end('boom'); }
     return send('application/json', JSON.stringify(fx ? { status: 'success', data: { USDKRW: fx } } : { status: 'error', data: null }));
+  }
+  if (u === '/api/charts') {
+    const per = new URL(req.url, 'http://x').searchParams.get('period') || '5y';
+    chartReqs.push(per);
+    return send('application/json', JSON.stringify({ status: 'success', period: per, data: { ...chartsFor(per), ...chartOverride } }));
   }
   // 나머지(알람·관심종목·요약)는 이 테스트 대상이 아니라 '데이터 없음'으로 둔다
   if (u.startsWith('/api/')) return send('application/json', '{"status":"error"}');
@@ -94,11 +116,11 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   const URL0 = `http://127.0.0.1:${srv.address().port}/`;
   const browser = await chromium.launch({ executablePath: fs.existsSync(CHROME) ? CHROME : undefined });
 
-  async function open(width) {
+  async function open(width, query = '') {
     const page = await browser.newPage({ viewport: { width, height: 1000 } });
     // 국기 이미지(flagcdn)·폰트는 외부라 막아서 테스트가 인터넷에 기대지 않게
     await page.route(/^https?:\/\/(?!127\.0\.0\.1)/, r => r.abort());
-    await page.goto(URL0);
+    await page.goto(URL0 + query);
     await page.waitForSelector('#indices-grid .price-value', { timeout: 10000 });
     await page.waitForTimeout(200);
     return page;
@@ -156,30 +178,27 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   const barW = await page.$eval('.crypto-card .progress-bar-fill', e => parseFloat(e.style.width));
   ok(Math.abs(barW - (100 - 35.4 * 1.5)) < 0.1, `막대는 ATH 낙폭 기준 (${barW}%)`);
   ok(txt.includes('Upbit · Binance'), '출처 Upbit · Binance');
-  ok(await page.$('.crypto-card .year-chart .sparkline-svg path') !== null, '10년 추이 선 그래프');
+  ok(await page.$('.crypto-card .year-chart .sparkline-svg path') !== null, '기간 추이 선 그래프(기본 5년)');
   const by = await page.$$eval('.crypto-card .fx-years span', ss => ss.map(e => e.textContent));
-  ok(by[0] === '2016.10' && by[by.length - 1] === '2026.10' && by.length >= 4, `10년 그래프 아래 연도: ${by.join(' · ')}`);
-  const blap = await page.$$eval('.crypto-card .fx-years span', ss => { const r = ss.map(e => e.getBoundingClientRect());
-    const box = ss[0].parentElement.getBoundingClientRect();
-    return r.some((a, i) => (i && a.left < r[i - 1].right + 6) || a.left < box.left - 1 || a.right > box.right + 1); });
-  ok(!blap, '연도 글자끼리 안 겹치고 칸 밖으로 안 나감(솎아서 표시)');
-  ok(await page.$$eval('.crypto-card .year-chart line', ls => ls.length) === 10, '해마다 세로 점선(2017~2026 10개)');
+  ok(by[0] === '2021.10' && by[by.length - 1] === '2026.10' && by.length >= 4, `5년 그래프 아래 연도: ${by.join(' · ')}`);
   const tag = await page.$eval('.crypto-card .chart-tag', e => e.textContent);
-  ok(tag === '10년 · 로그', `왼쪽 위 꼬리표 '${tag}'`);
+  ok(tag === '5년', `왼쪽 위 꼬리표 '${tag}' (5년엔 5배 미만이라 보통 눈금)`);
   const tip = await page.$eval('.crypto-card .year-chart', e => e.title);
-  ok(tip.includes('로그 눈금') && tip.includes('Bithumb') && tip.includes('706,383원') && tip.includes('177,033,281원'), '마우스 올리면 출처·로그 눈금·최저/최고 설명');
+  ok(tip.includes('Bithumb') && tip.includes('기간 최저') && !tip.includes('로그'), '마우스 올리면 출처·기간 최저/최고 설명');
   ok(await page.$eval('.crypto-card .ath-dd-pct', e => e.classList.contains('alert-level')), '-20% 넘게 빠지면 빨간 경고색(지수 칸과 같은 규칙)');
   const subTop = await page.$$eval('.crypto-card .crypto-sub > span', ss => ss.map(e => Math.round(e.getBoundingClientRect().top)));
   ok(new Set(subTop).size === 1, '좁아진 칸에서도 달러·김프가 한 줄에(줄바꿈 없음)');
   const dark = await page.$eval('.crypto-card .crypto-sub .down, .crypto-card .crypto-sub .up', e => getComputedStyle(e).color);
   ok(dark !== 'rgb(0, 0, 0)', `달러 등락률 색 적용(${dark})`);
 
-  console.log('②-1 지수·ETF 5년 그래프');
+  console.log('②-1 지수·ETF 그래프(기본 5년)');
   const idxCharts = await page.$$eval('#indices-grid > .market-card', cs => cs.slice(0, 4).concat(cs.slice(4, 6)).map(c => ({
     name: c.querySelector('.index-name').innerText.trim(), chart: !!c.querySelector('.year-chart'),
     tag: (c.querySelector('.chart-tag') || {}).textContent, years: [...c.querySelectorAll('.fx-years span')].map(e => e.textContent),
     title: (c.querySelector('.year-chart') || {}).title || '' })));
-  ok(idxCharts.length === 6 && idxCharts.every(c => c.chart && c.tag === '5년'), `지수·ETF 6장 모두 5년 그래프 + '5년' 꼬리표`);
+  ok(idxCharts.length === 6 && idxCharts.every(c => c.chart && c.tag.startsWith('5년')), `지수·ETF 6장 모두 5년 그래프 (${idxCharts.map(c => c.tag).join(' / ')})`);
+  ok(idxCharts.find(c => c.name.includes('TQQQ')).tag === '5년 · 로그' && idxCharts.find(c => c.name.includes('코스피')).tag === '5년',
+     '5배 넘게 움직인 TQQQ 만 로그(자동), 코스피는 보통 눈금');
   ok(idxCharts.every(c => c.years[0] === '2021.10' && c.years[c.years.length - 1] === '2026.10' && c.years.length >= 4),
      `아래 연도: ${idxCharts[0].years.join(' · ')}`);
   const ilap = await page.$$eval('#indices-grid .fx-years', ys => ys.some(y => { const r = [...y.children].map(e => e.getBoundingClientRect());
@@ -188,7 +207,7 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   ok(!ilap, '8장 모든 그래프에서 연도 글자 안 겹치고 칸 밖으로 안 나감');
   const q = idxCharts.find(c => c.name.includes('QLD'));
   ok(q.title.includes('액면분할 보정: 2022-01-13 2:1') && q.title.includes('네이버'), 'QLD 그래프에 분할 보정 사실을 마우스 설명으로 밝힘');
-  ok(idxCharts.find(c => c.name.includes('코스피')).title.includes('최저 2,284.70 ~ 최고 3,512.30'), '코스피 5년 최저~최고 설명');
+  ok(idxCharts.find(c => c.name.includes('코스피')).title.includes('기간 최저 2,284.70 ~ 최고 3,512.30'), '코스피 기간 최저~최고 설명');
 
   console.log('②-2 5년 그래프 기준 가로선(코스피·코스닥 -30% 실선 / QLD·TQQQ -10% 점선)');
   const refs = await page.$$eval('#indices-grid > .market-card', cs => cs.map(c => {
@@ -207,14 +226,14 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   ok(R2('TQQQ').title.includes('역대 최고가 88.09 대비 -10% = 79.28'), 'TQQQ 마우스 설명에 기준선 계산식');
   await page.close();
   // 기준선이 5년 최저보다 아래면 그래프 범위를 넓혀 선이 보이게
-  const keep = INDICES.KOSPI.long; INDICES.KOSPI.long = { ...keep, min: 3000, max: 3512.3 };
+  chartOverride = { KOSPI: mk('5y', 3000, 3512.3, 3412.5) };
   page = await open(1320);
   const low = await page.$$eval('#indices-grid > .market-card', cs => { const l = cs[0].querySelector('.ref-line');
     const pts = cs[0].querySelector('.year-chart path[fill="none"]').getAttribute('d').match(/[\d.]+,[\d.]+/g).map(s => +s.split(',')[1]);
     return { y: +l.getAttribute('y1'), maxY: Math.max(...pts) }; });
   ok(Math.abs(low.y - 52) < 0.2 && low.maxY < 52 - 5, `선이 5년 최저보다 낮으면 범위를 넓혀 맨 아래에 보임 (선 y ${low.y}, 그래프 최저점 y ${low.maxY.toFixed(1)})`);
   await page.close();
-  INDICES.KOSPI.long = keep;
+  chartOverride = {};
   page = await open(1320);
 
   console.log('③ 환율 칸 내용');
@@ -222,24 +241,13 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   ok(fxt.includes('원/달러 환율'), '이름 원/달러 환율');
   ok(fxt.includes('1,385.50원'), '현재 환율 1,385.50원');
   ok(/▼\s*-0\.42%/.test(fxt) && fxt.includes('전일 대비'), '전일 대비 ▼ -0.42%');
-  ok(fxt.includes('3년 최고') && fxt.includes('1,487.60원') && fxt.includes('24.12.27'), '3년 최고 1,487.60원 (24.12.27)');
-  ok(fxt.includes('3년 최저') && fxt.includes('1,305.20원') && fxt.includes('24.07.16'), '3년 최저 1,305.20원 (24.07.16)');
-  ok(fxt.includes('고점 대비') && fxt.includes('-6.86%') && !fxt.includes('3년 전 대비'), '3년 전 대비 → 고점 대비 -6.86%');
+  ok(fxt.includes('5년 최고') && fxt.includes('1,487.60원') && fxt.includes('24.12.27'), '5년 최고 1,487.60원 (24.12.27) — 상자도 고른 기간');
+  ok(fxt.includes('5년 최저') && fxt.includes('1,305.20원') && fxt.includes('24.07.16'), '5년 최저 1,305.20원 (24.07.16)');
+  ok(fxt.includes('고점 대비') && fxt.includes('-6.86%') && !fxt.includes('3년 전 대비'), '고점 대비 -6.86%');
   ok(fxt.includes('Naver · ECB'), '출처 Naver · ECB');
-  ok(await page.$('.fx-card .fx-chart .sparkline-svg path') !== null, '3년 추이 선 그래프');
-  const yrs = await page.$$eval('.fx-card .fx-years span', ss => ss.map(e => e.textContent));
-  // 2024 는 시작(2023.10)에서 너무 가까워(7.7%) 글자가 겹치므로 일부러 숨긴다(점선은 남음)
-  ok(yrs[0] === '2023.10' && yrs[yrs.length - 1] === '2026.10' && yrs.includes('2025') && yrs.includes('2026') && !yrs.includes('2024'),
-     `그래프 아래 연도: ${yrs.join(' · ')} (시작에 붙은 2024 는 숨김)`);
-  const lap = await page.$$eval('.fx-card .fx-years span', ss => { const r = ss.map(e => e.getBoundingClientRect());
-    return r.some((a, i) => i && a.left < r[i - 1].right - 1); });
-  ok(!lap, '연도 글자끼리 겹치지 않음');
-  ok(await page.$$eval('.fx-card .fx-chart line', ls => ls.length) === 3, '해 바뀌는 곳(2024·2025·2026년 1월)에 세로 점선 3개');
-  const ylab = await page.$$eval('.fx-card .fx-years span', ss => { const c = ss[0].parentElement.getBoundingClientRect();
-    return ss.every(e => { const r = e.getBoundingClientRect(); return r.left >= c.left - 1 && r.right <= c.right + 1; }); });
-  ok(ylab, '연도 글자가 카드 밖으로 안 나감');
+  ok(await page.$('.fx-card .fx-chart .sparkline-svg path') !== null, '환율 추이 선 그래프');
   const bar = await page.$eval('.fx-card .progress-bar-fill', e => parseFloat(e.style.width));
-  ok(Math.abs(bar - (1385.5 - 1305.2) / (1487.6 - 1305.2) * 100) < 0.5, `막대 = 3년 최저~최고 사이 지금 위치 (${bar.toFixed(1)}%)`);
+  ok(Math.abs(bar - (1385.5 - 1305.2) / (1487.6 - 1305.2) * 100) < 0.5, `막대 = 기간 최저~최고 사이 지금 위치 (${bar.toFixed(1)}%)`);
   await page.close();
 
   console.log('④-1 중간 폭 1000px — 2장씩');
@@ -280,27 +288,28 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   ok(!t6.includes('김프') && !t6.includes('52주') && !t6.includes('ATH'), '김프·52주·ATH 줄은 숨김');
   await page.close();
 
-  console.log('⑦-00 지수 5년 추이 준비 전');
-  const saved = INDICES.NASDAQ.long; delete INDICES.NASDAQ.long;
+  console.log('⑦-00 지수 추이 준비 전');
+  chartOverride = { NASDAQ: null };
   page = await open(1320);
   const nq = await page.$$eval('#indices-grid > .market-card', cs => { const c = cs.find(x => x.innerText.includes('나스닥'));
     return { year: !!c.querySelector('.year-chart'), spark: !!c.querySelector('.sparkline-svg') }; });
-  ok(!nq.year && nq.spark, '5년 추이가 아직 없는 칸은 예전 작은 그래프로(빈칸 없음)');
+  ok(!nq.year && nq.spark, '추이가 아직 없는 칸은 예전 작은 그래프로(빈칸 없음)');
   await page.close();
-  INDICES.NASDAQ.long = saved;
+  chartOverride = {};
 
-  console.log('⑦-0 10년 그래프 준비 전 / 업비트 예비(9년)');
-  crypto = { ...BTC_FULL, long: null };
+  console.log('⑦-0 비트코인 추이 준비 전 / 업비트 예비(9년)');
+  chartOverride = { BTC: null }; crypto = BTC_FULL;
   page = await open(1320);
   ok(await page.$('.crypto-card .year-chart') === null && await page.$('.crypto-card .sparkline-svg path') !== null,
-     '10년 추이 준비 전엔 30일 그래프(연도 없음)로 대신');
+     '기간 추이 준비 전엔 30일 그래프(연도 없음)로 대신');
   await page.close();
-  crypto = { ...BTC_FULL, long: { ...BTC_FULL.long, from: '2017-09-25', source: 'Upbit', years: 9 } };
-  page = await open(1320);
+  chartOverride = { BTC: mk('10y', 2.1e6, 177033281, 116190000, { from: '2017-09-25', years: 9, source: 'Upbit' }) };
+  page = await open(1320, '?period=10y');
   const t9y = await page.$eval('.crypto-card .chart-tag', e => e.textContent);
   const y9 = await page.$$eval('.crypto-card .fx-years span', ss => ss.map(e => e.textContent));
   ok(t9y === '9년 · 로그' && y9[0] === '2017.09', `업비트 예비면 있는 만큼만: '${t9y}', ${y9.join(' · ')} — 10년인 척 안 함`);
   await page.close();
+  chartOverride = {};
   crypto = BTC_FULL;
 
   console.log('⑦ 역대 최고가 표시 경우별');
@@ -318,10 +327,61 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   await page.close();
   crypto = BTC_FULL;
   crypto = BTC_FULL;
-  fx = { ...FX_FULL, history: null, history_source: null };
+  fx = { ...FX_FULL, history_source: null };
+  chartOverride = { USDKRW: null };
   page = await open(1320);
   const t7 = await page.$eval('.fx-card', e => e.innerText);
-  ok(t7.includes('1,385.50원') && !t7.includes('3년') && t7.includes('Naver'), '환율 추이 없음 → 현재 환율만(3년 칸·그래프 숨김)');
+  ok(t7.includes('1,385.50원') && !t7.includes('최고') && !(await page.$('.fx-card .year-chart')) && t7.includes('Naver'),
+     '환율 추이 없음 → 현재 환율만(기간 상자·그래프 숨김)');
+  await page.close();
+  chartOverride = {}; fx = FX_FULL;
+
+  console.log('⑧ 그래프 기간 선택(6개월·1년·3년·5년·10년)');
+  page = await open(1320);
+  const tabs = await page.$$eval('#period-tabs button', bs => bs.map(b => ({ t: b.textContent, on: b.classList.contains('active') })));
+  ok(tabs.map(b => b.t).join(',') === '6개월,1년,3년,5년,10년' && tabs.find(b => b.on).t === '5년', '버튼 5개, 처음엔 5년(슬랙 캡처도 5년)');
+  const tagsOf = () => page.$$eval('#indices-grid .chart-tag', ts => ts.map(t => t.textContent));
+  const labelsOf = sel => page.$$eval(sel + ' .fx-years span', ss => ss.map(e => e.textContent));
+  const clickP = async t => { await page.click(`#period-tabs button:text-is("${t}")`); await page.waitForTimeout(300); };
+  await clickP('1년');
+  let tg = await tagsOf();
+  ok(tg.length === 8 && tg.every(t => t === '1년'), `1년: 8장 모두 '1년' (${[...new Set(tg)].join('/')})`);
+  let lb = await labelsOf('#indices-grid > .market-card:first-child');
+  ok(lb[0] === '2025.10' && lb[lb.length - 1] === '2026.10' && lb.some(x => x.endsWith('월')), `1년은 '월' 눈금: ${lb.join(' · ')}`);
+  // 2026년 1월은 시작 글자(2025.10)에 너무 붙어(23%) 글자는 숨지만, 해 바뀜 세로 점선은 남는다
+  const janLine = await page.$$eval('#indices-grid > .market-card:first-child .year-chart line', ls => ls.map(l => +l.getAttribute('x1')));
+  const janX = 4 + ((Date.UTC(2026, 0, 1) - Date.UTC(2025, 9, 8)) / (Date.UTC(2026, 9, 8) - Date.UTC(2025, 9, 8))) * 272;
+  ok(janLine.some(x => Math.abs(x - janX) < 1.5), `1년: 해 바뀜(2026-01) 세로 점선은 그려짐 (x≈${janX.toFixed(1)})`);
+  ok((await page.$eval('.fx-card', e => e.innerText)).includes('1년 최고'), '환율 상자도 1년 최고/최저로');
+  await clickP('6개월');
+  tg = await tagsOf(); lb = await labelsOf('.fx-card');
+  ok(tg.every(t => t === '6개월') && lb[0] === '2026.04' && lb.some(x => x.endsWith('월')), `6개월: 꼬리표 '6개월', ${lb.join(' · ')}`);
+  await clickP('10년');
+  tg = await tagsOf();
+  const btcTag = await page.$eval('.crypto-card .chart-tag', e => e.textContent);
+  ok(btcTag === '10년 · 로그' && tg.every(t => t.startsWith('10년')) && tg[0] === '10년', `10년: 비트코인 '${btcTag}'(250배 → 로그 자동), 코스피 '${tg[0]}'`);
+  ok(await page.$$eval('.crypto-card .year-chart line', ls => ls.length) === 10, '10년 연도 눈금 점선 10개(2017~2026)');
+  ok(await page.$$eval('#indices-grid .ref-line', ls => ls.length) === 4, '기간을 바꿔도 기준 가로선 4개 그대로');
+  const allLap = await page.$$eval('#indices-grid .fx-years', ys => ys.some(y => { const r = [...y.children].map(e => e.getBoundingClientRect());
+    const box = y.getBoundingClientRect();
+    return r.some((a, i) => (i && a.left < r[i - 1].right + 6) || a.left < box.left - 1 || a.right > box.right + 1); }));
+  ok(!allLap, '10년에서도 날짜 글자 안 겹치고 칸 밖으로 안 나감');
+  const nBefore = chartReqs.length;
+  await clickP('1년'); await clickP('10년');
+  ok(chartReqs.length === nBefore, '이미 받은 기간으로 돌아가면 다시 안 받음(즉시 바뀜)');
+  await page.reload(); await page.waitForSelector('#indices-grid .year-chart'); await page.waitForTimeout(300);
+  ok(await page.$eval('#period-tabs button.active', b => b.textContent) === '10년' && (await tagsOf())[0] === '10년', '새로고침해도 고른 기간(10년) 기억');
+  await page.close();
+  page = await open(1320, '?period=3y');
+  lb = await labelsOf('.fx-card');
+  ok(await page.$eval('#period-tabs button.active', b => b.textContent) === '3년'
+     && lb[0] === '2023.10' && lb.includes('2025') && lb.includes('2026') && !lb.includes('2024'), `주소 ?period=3y 우선 · 3년 연도 ${lb.join(' · ')} (시작에 붙은 2024 는 숨김)`);
+  ok(await page.$$eval('.fx-card .year-chart line', ls => ls.length) === 3, '3년: 해 바뀜 점선 3개(2024·2025·2026)');
+  await page.close();
+  page = await open(390);
+  const tabFit = await page.$eval('#period-tabs', e => { const r = e.getBoundingClientRect(); return r.right <= innerWidth && e.scrollWidth <= e.clientWidth + 1; });
+  const hs2 = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  ok(tabFit && !hs2, '폰 390px: 기간 버튼이 화면 안에 다 들어가고 가로 스크롤 없음');
   await page.close();
 
   await browser.close(); srv.close();

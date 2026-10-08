@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from market_data import get_snapshot, load_ath_from_history, get_custom_stocks_snapshot
 from crypto_data import get_btc
 from fx_data import get_usdkrw
+from charts import get_charts, warm_up as charts_warm_up, PERIODS as CHART_PERIODS
 from trigger_engine import TriggerEngine
 from summary import build_summary_text
 from capture import capture_dashboard, capture_and_send
@@ -507,6 +508,8 @@ def news_refresh(background_tasks: BackgroundTasks, date: str = ""):
 def startup_event():
     # Load historical ATH values in a background thread
     threading.Thread(target=load_ath_from_history, daemon=True).start()
+    # 그래프 기간 선택용 10년치 일별 값(지수·비트코인·환율)을 뒤에서 미리 받기 시작
+    charts_warm_up()
 
 
 @app.get("/api/indices")
@@ -552,6 +555,22 @@ def get_fx():
         "status": "success",
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "data": {"USDKRW": fx},
+    }
+
+
+@app.get("/api/charts")
+def get_charts_api(period: str = "5y"):
+    """
+    카드 8장의 그래프를 고른 기간(6m·1y·3y·5y·10y)만큼 잘라 돌려준다.
+    값이 아직 준비 안 된 칸은 null → 화면은 예전 작은 그래프로 남는다.
+    """
+    if period not in CHART_PERIODS:
+        period = "5y"
+    return {
+        "status": "success",
+        "period": period,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "data": get_charts(period),
     }
 
 
