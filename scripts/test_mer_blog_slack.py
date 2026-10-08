@@ -56,4 +56,32 @@ check("빨간 글씨(span) 안의 문장도 빠짐없이", "그래도 미국이 
 msg = m.build_message({"title": "A<B", "link": "https://x"}, "한 줄", "marker")
 check("슬랙 메시지: 제목 이스케이프+링크+인용", "A&lt;B" in msg and "> 한 줄" in msg and "<https://x|원문 보기>" in msg)
 check("한줄평 없으면 솔직한 안내", "찾지 못했어요" in m.build_message({"title": "t", "link": "l"}, None, None))
+
+# ── GPT 요약 (게이트웨이 대신 가짜 chat 함수를 넣어 검사) ──
+BODY = "10년물 응찰배율이 2.77배, 간접입찰이 80%를 넘겼다. 낙찰금리는 5.3%로 2,000건 이상 참여했다. " * 2
+good = "• 응찰배율이 2.77배였다.\n2. 간접입찰은 80%를 넘겼다.\n- 낙찰금리는 5.3%였다.\n"
+calls = []
+def fake(ans):
+    def chat(system, user):
+        calls.append(user); return ans
+    return chat
+r = m.summarize("제목", BODY, chat=fake(good))
+check("요약: 3줄, 불릿·번호 머리 제거", r == ["응찰배율이 2.77배였다.", "간접입찰은 80%를 넘겼다.", "낙찰금리는 5.3%였다."])
+check("요약: 쉼표 숫자(2,000)와 2000 은 같은 숫자로 취급", m.numbers("2,000건") == {"2000"})
+calls.clear()
+r = m.summarize("제목", BODY, chat=fake("• 응찰배율 2.78배\n• 비중 9%\n• 금리 5.3%"))
+check("요약: 본문에 없는 숫자(2.78·9) → 1번 다시 시키고 그래도 틀리면 요약 포기", r is None and len(calls) == 2 and "2.78" in calls[1])
+seq = iter(["• 배율 2.78배\n• 간접 80%\n• 금리 5.3%", good])
+r = m.summarize("제목", BODY, chat=lambda s_, u_: next(seq))
+check("요약: 첫 답이 틀려도 재시도에서 맞으면 사용", r and len(r) == 3)
+check("요약: 너무 짧은(2줄) 답은 버림", m.summarize("제목", BODY, chat=fake("• 하나\n• 둘")) is None)
+def boom(s_, u_): raise RuntimeError("게이트웨이 꺼짐")
+check("요약: 게이트웨이 오류여도 예외 없이 None(제목·한줄평은 계속 감)", m.summarize("제목", BODY, chat=boom) is None)
+check("요약: 본문이 너무 짧으면(사진 글) 호출조차 안 함", m.summarize("제목", "짧다", chat=boom) is None)
+b = m.body_for_summary(["본문", "한줄 코멘트. 이건 한줄평", "#태그 #경제"], "이건 한줄평")
+check("요약 입력에서 한줄평 문단·해시태그 제외", b == "본문")
+check("긴 글은 앞·뒤만 보냄", len(m.body_for_summary(["가" * 20000], None)) < 12100)
+mm = m.build_message({"title": "t", "link": "https://x"}, "한 줄", "marker", ["A <1>", "B"])
+check("슬랙 메시지: 요약(AI 요약 표시) → 한줄평 → 링크 순서", mm.index("핵심 요약") < mm.index("한줄평") < mm.index("원문 보기") and "AI 요약" in mm and "&lt;1&gt;" in mm)
+check("요약 없으면 요약 블록 자체가 없음", "핵심 요약" not in m.build_message({"title": "t", "link": "l"}, "한 줄", "marker", None))
 print(f"\n{ok} 통과 / {fail} 실패"); sys.exit(1 if fail else 0)
