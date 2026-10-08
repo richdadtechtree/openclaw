@@ -40,6 +40,7 @@ import json
 import os
 import re
 import sys
+import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
@@ -271,15 +272,26 @@ def gateway_chat(system, user):
     if not token:
         raise RuntimeError("GATEWAY_TOKEN 이 .env 에 없습니다.")
     url = os.getenv("MER_GATEWAY_URL", "http://127.0.0.1:18789/v1/chat/completions")
-    body = json.dumps({
-        "model": os.getenv("MER_SUMMARY_AGENT", "openclaw/debate-gpt"),
-        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-        "max_tokens": 700, "temperature": 0.2}).encode()
-    req = urllib.request.Request(url, data=body, headers={
-        "Authorization": f"Bearer {token}", "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=90) as r:
-        data = json.loads(r.read().decode())
-    return data["choices"][0]["message"]["content"].strip()
+    model = os.getenv("MER_SUMMARY_AGENT", "openclaw/debate-gpt")
+    msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+    # 1차: 일반 옵션 포함 / 2차: 서버 오류(500)면 옵션 없이 최소 요청으로 한 번 더
+    # (ChatGPT Plus 쪽 에이전트가 temperature·max_tokens 를 못 받는 경우 대비)
+    attempts = [{"model": model, "messages": msgs, "max_tokens": 700, "temperature": 0.2},
+                {"model": model, "messages": msgs}]
+    last = None
+    for payload in attempts:
+        req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers={
+            "Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=90) as r:
+                data = json.loads(r.read().decode())
+            return data["choices"][0]["message"]["content"].strip()
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode("utf-8", "replace")[:300].replace("\n", " ")
+            last = RuntimeError(f"게이트웨이 HTTP {e.code}: {detail}")
+            if e.code < 500:           # 401/403/404 등은 다시 해도 같음
+                break
+    raise last
 
 
 def summarize(title, body, chat=None):
