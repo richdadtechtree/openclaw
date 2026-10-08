@@ -27,6 +27,7 @@ mer_blog_slack.py — 메르님 네이버 블로그(ranto28) 새 글 → 슬랙 
   python3 mer_blog_slack.py              # 새 글만 보냄 (cron 이 10분마다 호출)
   python3 mer_blog_slack.py --dry-run    # 보내지 않고 화면에만 출력
   python3 mer_blog_slack.py --latest     # 가장 최근 글 1건을 지금 보냄 — 연결 시험용
+  python3 mer_blog_slack.py --show latest  # (번호 몰라도) 가장 최근 글로 확인
   python3 mer_blog_slack.py --show URL   # 그 글의 요약·한줄평이 어떻게 나오는지만 확인 (슬랙 전송 없음)
   (--no-summary 를 붙이면 요약 없이 한줄평만)
 
@@ -358,7 +359,17 @@ def main():
     use_summary = not args.no_summary and os.getenv("MER_SUMMARY", "on").lower() != "off"
 
     if args.show:
-        paras = fetch_post(log_no(args.show) or args.show)
+        target = args.show.strip()
+        if target.lower() == "latest":               # 번호를 몰라도: 가장 최근 글
+            target = fetch_posts()[0]["no"]
+            print(f"가장 최근 글: {target}")
+        else:
+            target = log_no(target) or (target if target.isdigit() else None)
+        if not target:
+            print("❌ 글 번호를 못 찾았습니다. 실제 주소(예: https://blog.naver.com/ranto28/224012345678)나 "
+                  "번호만, 또는 latest 를 넣어주세요.", file=sys.stderr)
+            return 2
+        paras = fetch_post(target)
         one, how = pick_oneliner(paras)
         print(f"방식={how}\n한줄평={one}")
         if use_summary:

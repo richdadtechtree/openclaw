@@ -84,4 +84,8 @@ check("긴 글은 앞·뒤만 보냄", len(m.body_for_summary(["가" * 20000], N
 mm = m.build_message({"title": "t", "link": "https://x"}, "한 줄", "marker", ["A <1>", "B"])
 check("슬랙 메시지: 요약(AI 요약 표시) → 한줄평 → 링크 순서", mm.index("핵심 요약") < mm.index("한줄평") < mm.index("원문 보기") and "AI 요약" in mm and "&lt;1&gt;" in mm)
 check("요약 없으면 요약 블록 자체가 없음", "핵심 요약" not in m.build_message({"title": "t", "link": "l"}, "한 줄", "marker", None))
+import subprocess
+for bad in ("글번호", "https://blog.naver.com/ranto28"):
+    r = subprocess.run([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "mer_blog_slack.py"), "--show", bad], capture_output=True, text=True)
+    check(f"--show '{bad}' (번호 없음) → 오류 덩어리 대신 안내 + 종료코드 2", r.returncode == 2 and "글 번호를 못 찾았습니다" in r.stderr and "Traceback" not in r.stderr)
 print(f"\n{ok} 통과 / {fail} 실패"); sys.exit(1 if fail else 0)
