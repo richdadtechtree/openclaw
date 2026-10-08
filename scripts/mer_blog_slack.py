@@ -41,7 +41,8 @@ POST_URL = "https://blog.naver.com/PostView.naver?blogId={bid}&logNo={no}"
 UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 MAX_TRIES = 3          # 본문을 못 열 때 다시 시도하는 최대 횟수 (넘으면 제목만 보냄)
-MAX_ONELINER = 400     # 이보다 길면 '한줄'이 아니라 본문 일부로 보고 버린다
+MAX_ONELINER = 400     # 표지 없이 '마지막 문단'을 쓸 때만: 이보다 길면 본문 일부로 보고 버린다
+MAX_MARKED = 1500      # '한줄 코멘트' 표지가 직접 붙은 문단은 길어도 그대로 쓴다(실제 글은 300~400자)
 # '한줄평' 이라고 직접 적어둔 줄을 찾는 표지. (한줄평 / 한 줄 평 / 한줄 요약 / 한줄 정리 …)
 MARKER = re.compile(r"한\s*줄\s*(평|요약|정리|코멘트|총평|결론)")
 
@@ -189,13 +190,13 @@ def pick_oneliner(paras):
     for i in range(len(paras) - 1, -1, -1):
         line = paras[i]
         m = MARKER.search(line)
-        if not m or len(line) > MAX_ONELINER + 20:
+        if not m or len(line) > MAX_MARKED:
             continue
         tail = re.sub(r"^[\s\W_]*", "", line[m.end():]).strip()   # '평:' '평 -' 등 앞 기호 제거
         if tail:
             return tail, "marker"
         nxt = paras[i + 1] if i + 1 < len(paras) else ""     # 표지만 있으면 바로 다음 문단 하나
-        if nxt and not nxt.startswith("#") and len(nxt) <= MAX_ONELINER:
+        if nxt and not nxt.startswith("#") and len(nxt) <= MAX_MARKED:
             return nxt, "marker"
     for line in reversed(paras):
         if re.fullmatch(r"(#\S+\s*)+", line) or re.match(r"^(출처|source|참고)\b", line, re.I):

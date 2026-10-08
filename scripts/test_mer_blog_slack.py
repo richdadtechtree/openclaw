@@ -43,6 +43,13 @@ OLD = '<div id="postViewArea">첫 줄<br>한줄평 - 오래된 에디터 글<br>
 check("옛 에디터(postViewArea)도 읽힘", m.pick_oneliner(m.parse_paragraphs(OLD))[0] == "오래된 에디터 글")
 check("빈 페이지 → 문단 0개", m.parse_paragraphs("<html>로그인</html>") == [])
 
+
+REAL = '<div class="se-main-container"><p class="se-text-paragraph"><span>앞 본문입니다.</span></p><p class="se-text-paragraph"><span>%s</span></p></div>' % (
+    "한줄 코멘트. " + "미국국채 응찰배율이 나왔고 " * 5 + '<span style="color:red">"그래도 미국이 낫네"</span>라는 생각들을 하는 것 같다.' + " 끝." * 40)
+one, how = m.pick_oneliner(m.parse_paragraphs(REAL))
+check("실제 형식: '한줄 코멘트.' 로 시작하는 긴(370자↑) 문단 → 표지 제거 후 통째로", how == "marker" and one.startswith("미국국채") and one.endswith("끝.") and len(one) > 370)
+check("빨간 글씨(span) 안의 문장도 빠짐없이", "그래도 미국이 낫네" in one)
+
 msg = m.build_message({"title": "A<B", "link": "https://x"}, "한 줄", "marker")
 check("슬랙 메시지: 제목 이스케이프+링크+인용", "A&lt;B" in msg and "> 한 줄" in msg and "<https://x|원문 보기>" in msg)
 check("한줄평 없으면 솔직한 안내", "찾지 못했어요" in m.build_message({"title": "t", "link": "l"}, None, None))
