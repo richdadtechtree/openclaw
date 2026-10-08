@@ -166,3 +166,7 @@ agents/*/openclaw-workspace-state.json
 
 # 개발 환경에서만 쓰는 테스트용 패키지(playwright 등) — 서버엔 불필요
 node_modules/
+
+# 메르님 블로그 새 글 상태(보낸 글 목록) — 서버 런타임 파일
+mer_seen.json
+scripts/mer-blog.log
