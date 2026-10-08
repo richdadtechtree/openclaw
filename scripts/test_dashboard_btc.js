@@ -190,6 +190,33 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   ok(q.title.includes('액면분할 보정: 2022-01-13 2:1') && q.title.includes('네이버'), 'QLD 그래프에 분할 보정 사실을 마우스 설명으로 밝힘');
   ok(idxCharts.find(c => c.name.includes('코스피')).title.includes('최저 2,284.70 ~ 최고 3,512.30'), '코스피 5년 최저~최고 설명');
 
+  console.log('②-2 5년 그래프 기준 가로선(코스피·코스닥 -30% 실선 / QLD·TQQQ -10% 점선)');
+  const refs = await page.$$eval('#indices-grid > .market-card', cs => cs.map(c => {
+    const l = c.querySelector('.ref-line'), t = c.querySelector('.ref-label');
+    return { name: c.querySelector('.index-name').innerText.trim(), has: !!l,
+             dash: l ? l.getAttribute('stroke-dasharray') : null, y: l ? +l.getAttribute('y1') : null,
+             label: t ? t.textContent : '', title: (c.querySelector('.year-chart') || {}).title || '' };
+  }));
+  const R2 = n => refs.find(r => r.name.includes(n));
+  ok(R2('코스피').has && !R2('코스피').dash && R2('코스닥').has && !R2('코스닥').dash, '코스피·코스닥: 가로선(실선)');
+  ok(R2('QLD').dash && R2('TQQQ').dash, 'QLD·TQQQ: 가로선(점선)');
+  ok(!R2('S&P').has && !R2('나스닥').has && !R2('비트코인').has && !R2('환율').has, 'S&P·나스닥·비트코인·환율엔 선 없음');
+  ok(R2('코스피').label === '-30% 2,450' && R2('QLD').label === '-10% 91.07', `선 라벨: 코스피 '${R2('코스피').label}', QLD '${R2('QLD').label}'`);
+  const expY = 52 - ((3500 * 0.7 - 2284.7) / (3512.3 - 2284.7)) * 48;
+  ok(Math.abs(R2('코스피').y - expY) < 0.2, `코스피 선 높이 = ATH 3,500 × 0.7 = 2,450 위치 (y ${R2('코스피').y} ≈ ${expY.toFixed(1)})`);
+  ok(R2('TQQQ').title.includes('역대 최고가 88.09 대비 -10% = 79.28'), 'TQQQ 마우스 설명에 기준선 계산식');
+  await page.close();
+  // 기준선이 5년 최저보다 아래면 그래프 범위를 넓혀 선이 보이게
+  const keep = INDICES.KOSPI.long; INDICES.KOSPI.long = { ...keep, min: 3000, max: 3512.3 };
+  page = await open(1320);
+  const low = await page.$$eval('#indices-grid > .market-card', cs => { const l = cs[0].querySelector('.ref-line');
+    const pts = cs[0].querySelector('.year-chart path[fill="none"]').getAttribute('d').match(/[\d.]+,[\d.]+/g).map(s => +s.split(',')[1]);
+    return { y: +l.getAttribute('y1'), maxY: Math.max(...pts) }; });
+  ok(Math.abs(low.y - 52) < 0.2 && low.maxY < 52 - 5, `선이 5년 최저보다 낮으면 범위를 넓혀 맨 아래에 보임 (선 y ${low.y}, 그래프 최저점 y ${low.maxY.toFixed(1)})`);
+  await page.close();
+  INDICES.KOSPI.long = keep;
+  page = await open(1320);
+
   console.log('③ 환율 칸 내용');
   const fxt = await page.$eval('.fx-card', e => e.innerText);
   ok(fxt.includes('원/달러 환율'), '이름 원/달러 환율');
