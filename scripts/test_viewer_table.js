@@ -153,6 +153,8 @@ const MSG14 = `*[신문요약 4/5]* 25. 애플, 스마트홈 파트너로 LG 택
 • WHAT: 애플과 LG전자가 스마트 도어록·보안카메라 등을 공동 개발 중인 것으로 보도됐음.
 • WHY: 스마트홈 생태계를 넓히려는 목적임.
 • HOW: 공식 출시 일정은 확정 보도가 아님.`;
+// 2026-10-12 실제 메시지 그대로 — "[검수신문요약 1/8]" + 기사마다 제목 / • 사진 / • 원문 / • WHAT 순서
+const MSG15 = "[검수신문요약 1/8]\n\n\n1. :large_blue_circle: 수원 영통구, 집값 상승률 1위 … 분당구도 강세\n• 사진: 01\n• 원문: <https://www.hankyung.com/article/2026101145381|hankyung.com/article/2026101145381>\n• WHAT: 10월 1~7일 아파트값이 수원 영통구 0.62%, 성남 분당구 0.56%, 안양 동안구 0.41%, 광명 0.39%, 서울 서대문구 0.36%, 성북구 0.35% 올랐음.\n• WHY: 기사에서는 서울의 규제·가격 부담 속에 교통·학군을 갖춘 경기 남부와 서울 비강남권으로 수요가 이동한 흐름이라고 설명함.\n• HOW: 확정 통계임. 주간 상승률은 단기 수급 지표라 거래량·실거래가와 함께 봐야 함.\n\n2. :large_blue_circle: 낙찰가율 115% … 경매서도 뜨거운 경기 남부 아파트\n• 사진: 01\n• 원문: 원문 확인 실패\n• WHAT: 9월 아파트 경매 낙찰가율이 안양 동안구 115.7%, 수원 영통구 114.0%, 광명 113.1%, 수원 장안구 111.9%, 분당구 109.7%였음. 경기 평균은 88.8%, 서울은 94.7%였음.\n• WHY: 기사에서는 인기 지역의 경매 경쟁이 감정가를 웃돌 정도로 강해졌다고 설명함.\n• HOW: 확정 통계임. 선순위 권리·체납관리비·명도비용을 포함한 총비용 확인이 필요함.\n\n3. :large_blue_circle: “더 귀해진다” … 역세권 15억 이하 아파트 잡아볼까\n• 사진: 02\n• 원문: 원문 확인 실패\n• WHAT: 서울 아파트값이 87주 연속 올랐고, 10월 거래 중 10억원 이하 비중은 55.8%, 10억~15억원은 19.1%였음.\n• WHY: 기사에서는 대출·세금 규제 속에 역세권 중저가 단지의 희소성이 커졌다고 설명함.\n• HOW: 기사 조언임. 역 거리·정비사업 단계·전세가율·추가분담금을 따로 확인해야 함.\n\n4. :large_blue_circle: :star: [부동산 중요] [단독] 집지을 땅 없다는데 … LH 택지 절반 유찰\n• 사진: 03\n• 원문: <https://www.mk.co.kr/news/realestate/12173017|mk.co.kr/news/realestate/12173017>\n• WHAT: LH 공동주택용지 유찰률이 2021년 3%, 2022년 41%, 2023년 27%, 2024년 56%(45필지 중 25필지), 2025년 45%(22필지 중 10필지)였음. 공급 필지는 2022년 81개에서 2025년 22개로 72.8%, 공급금액은 6조5580억원에서 1조9952억원으로 69.6% 줄었음. 7월 기준 장기 미매각은 707필지·3조4491억원이었음.\n• WHY: 주택 공급의 출발점인 택지 감소가 중장기 공급 공백으로 이어질 수 있어 중요함.\n• HOW: 시행 중임. 2023년~2026년 5월 계약 40조4000억원 중 무이자 할부가 9조5000억원(23.5%)이었음.\n\n5. :large_blue_circle: 이번주 화성·양평 등 1829가구 청약\n• 사진: 04\n• 원문: <https://www.mk.co.kr/news/realestate/12173019|mk.co.kr/news/realestate/12173019>\n• WHAT: 10월 12~16일 전국 8개 단지에서 1829가구가 청약을 받음. 향남역 그로브 스위첸 933가구, 양평역 금호어울림 333가구, 더샵 동인 센트리체 314가구임.\n• WHY: 기사에서는 연휴 뒤 분양 일정이 재개돼 수도권과 지방 청약 수요가 시험받는다고 설명함.\n• HOW: 시행 예정임. 단지별 분양가·중도금대출·전매제한·거주의무 확인이 필요함.\n```{\"date\":\"2026-10-12\",\"articles\":[{\"title\":\"🔵 수원 영통구, 집값 상승률 1위 … 분당구도 강세\",\"page\":1,\"evidence\":[{\"k\":\"WHAT\",\"quote\":\"수원 영통구, 집값 상승률 1위 … 분당구도 강세\",\"nums\":[\"0.62%\",\"0.56%\",\"0.41%\",\"0.39%\",\"0.36%\",\"0.35%\"]},{\"k\":\"HOW\",\"src\":\"지면 통계\"}]},{\"title\":\"🔵 낙찰가율 115% … 경매서도 뜨거운 경기 남부 아파트\",\"page\":1,\"evidence\":[{\"k\":\"WHAT\",\"quote\":\"낙찰가율 115% … 경매서도 뜨거운 경기 남부 아파트\",\"nums\":[\"115.7%\",\"114.0%\",\"113.1%\",\"111.9%\",\"109.7%\",\"88.8%\",\"94.7%\"]},{\"k\":\"HOW\",\"src\":\"지면 통계\"}]},{\"title\":\"🔵 “더 귀해진다” … 역세권 15억 이하 아파트 잡아볼까\",\"page\":2,\"evidence\":[{\"k\":\"WHAT\",\"quote\":\"“더 귀해진다” … 역세권 15억 이하 아파트 잡아볼까\",\"nums\":[\"87주\",\"10억원\",\"55.8%\",\"10억~15억원\",\"19.1%\"]},{\"k\":\"HOW\",\"src\":\"기사 조언\"}]},{\"title\":\"🔵 ⭐ [부동산 중요] [단독] 집지을 땅 없다는데 … LH 택지 절반 유찰\",\"page\":3,\"evidence\":[{\"k\":\"WHAT\",\"quote\":\"집지을 땅 없다는데 … LH 택지 절반 유찰\",\"nums\":[\"56%\",\"45%\",\"72.8%\",\"69.6%\",\"707필지\",\"3조4491억원\"]},{\"k\":\"HOW\",\"src\":\"지면 통계\"}]},{\"title\":\"🔵 이번주 화성·양평 등 1829가구 청약\",\"page\":4,\"evidence\":[{\"k\":\"WHAT\",\"quote\":\"이번주 화성·양평 등 1829가구 청약\",\"nums\":[\"8개 단지\",\"1829가구\",\"933가구\",\"333가구\",\"314가구\"]},{\"k\":\"HOW\",\"src\":\"시행 예정\"}]}]}```";
 // 슬랙이 보내는 그대로의 모양 — 글 속 & < > 는 &amp; &lt; &gt; 로 온다(2026-10-01 "&amp; 로 보인다" 제보)
 const MSG12 = `[신문요약 2/2]
 1. S&amp;P500 급등…R&amp;D 투자 확대
@@ -180,7 +182,8 @@ const srv = http.createServer((req, res) => {
     { ts: D + 'T11:09:00', source: 'user', kind: 'text', text: MSG10 },
     { ts: D + 'T11:10:00', source: 'user', kind: 'text', text: MSG12 },
     { ts: D + 'T11:11:00', source: 'user', kind: 'text', text: MSG13 },
-    { ts: D + 'T11:12:00', source: 'user', kind: 'text', text: MSG14 }] }));
+    { ts: D + 'T11:12:00', source: 'user', kind: 'text', text: MSG14 },
+    { ts: D + 'T11:13:00', source: 'user', kind: 'text', text: MSG15 }] }));
   if (u === '/api/news/today') return send('application/json', JSON.stringify({ ok: true, ready: true, date: D, count: 3,
     images: ['01.jpg', '02.jpg', '03.jpg'].map(n => ({ name: n, url: '/x.png', thumb: '/x.png', download_url: '/x.png' })) }));
   if (u === '/api/news/pagetext') return send('application/json', '{"ok":false}');
@@ -366,6 +369,21 @@ const MSG10 = `[신문요약 1/6] :newspaper: 2026년 9월 28일 신문 브리�
     check(pt.title === '25. 애플, 스마트홈 파트너로 LG 택했다' && !/신문요약/.test(pt.body),
           '제목에 붙어 온 "[신문요약 4/5]" 는 떼어낸다(제목·본문에 안 보임)', pt.title);
     check(/4\/5/.test(pt.badge), '순서는 카드 위 작은 배지로만', pt.badge);
+    const g12 = await page.evaluate(() => {
+      const e = [...document.querySelectorAll('.entry')].find(x => /낙찰가율 115%/.test(x.textContent));
+      return { body: e.querySelector('.body').textContent, badge: [...e.querySelectorAll('.kind')].map(k => k.textContent).join(','),
+        arts: [...e.querySelectorAll('.brf-art')].map(a => {
+          const t = a.querySelector('.brf-title'), cl = t && t.cloneNode(true);
+          if (cl) cl.querySelectorAll('.brf-flag').forEach(n => n.remove());
+          return { t: cl ? cl.textContent.trim().slice(0, 12) : '(제목 없음)', what: ((a.querySelector('.brf-kv .v') || {}).textContent || '').slice(0, 8),
+                   kvs: a.querySelectorAll('.brf-kv').length };
+        }) };
+    });
+    check(g12.arts.length === 5 && g12.arts.every((x, i) => x.t.startsWith((i + 1) + '.')) && g12.arts.every(x => x.kvs === 3),
+          '제목 / 사진 / 원문 / WHAT 순서(2026-10-12)도 기사 5개가 각자 제목·WHAT·WHY·HOW', g12.arts.map(x => x.t.slice(0, 6)).join(' / '));
+    check(/^10월 1~7/.test(g12.arts[0].what) && /^9월 아파트/.test(g12.arts[1].what) && /^서울 아파트/.test(g12.arts[2].what),
+          '제목마다 자기 WHAT(한 칸씩 밀리지 않음)', g12.arts.map(x => x.what).join(' / '));
+    check(!/검수신문요약/.test(g12.body) && /1\/8/.test(g12.badge), '"[검수신문요약 1/8]" 도 떼고 배지로만', g12.badge);
     check(r.over <= 0, '화면이 옆으로 넘치지 않는다', `${r.over}px`);
     await page.close();
   }
