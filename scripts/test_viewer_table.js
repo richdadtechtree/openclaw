@@ -171,6 +171,28 @@ const MSG12 = `[신문요약 2/2]
 const MSG2 = `참고로 비교표야\n| 항목 | 값 |\n|---|---|\n| 금리 | 3.5% |\n| 환율 | 1,380 |`;
 const MSG3 = `:white_check_mark: 반드시 체크할 핵심 주제\n• 고덕강일3단지 토지임대부 구조와 실제 청약 조건.\n• 정비사업의 착공 전환.`;
 
+// 구조 우선(2026-10-12 "요약이든 브리핑이든 잘 판단해서") — 머리말 낱말이 바뀌고, 기사 제목이 목록·강조·체크 머리말처럼 생겨도
+//   다음에 (사진·원문 줄만 지나) WHAT 이 오면 기사 제목. 끝의 진짜 종합 분석(5가지·핵심 한 줄)은 그대로.
+const MSG17 = `[신문요약 1/2]
+2026-10-14 오늘의 경제 뉴스 정리
+1. 서울 아파트 거래 체크할 5가지
+• 사진: 03
+• 원문: <https://a.com/x|매일경제>
+• WHAT: 구조판별A 거래량 3,200건
+• WHY: 금리.
+• HOW: 지켜봄.
+📌 강남 재건축 핵심 한 줄
+• WHAT: 구조판별B 재건축 120건
+• WHY: 규제 완화.
+:white_check_mark: 반드시 체크할 핵심 주제 금리
+• 사진: 05
+• WHAT: 구조판별C 금리 3.5%
+🔍 오늘 신문에서 반드시 연결해서 봐야 할 5가지
+1. 금리 하락
+2. 거래 증가
+📌 오늘 신문 핵심 한 줄
+거래가 늘어난다`;
+
 const srv = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x'), u = url.pathname, D = url.searchParams.get('date') || '2026-09-24';
   const send = (t, b) => { res.writeHead(200, { 'Content-Type': t }); res.end(b); };
@@ -187,7 +209,8 @@ const srv = http.createServer((req, res) => {
     { ts: D + 'T11:11:00', source: 'user', kind: 'text', text: MSG13 },
     { ts: D + 'T11:12:00', source: 'user', kind: 'text', text: MSG14 },
     { ts: D + 'T11:13:00', source: 'user', kind: 'text', text: MSG15 },
-    { ts: D + 'T11:14:00', source: 'user', kind: 'text', text: MSG16 }] }));
+    { ts: D + 'T11:14:00', source: 'user', kind: 'text', text: MSG16 },
+    { ts: D + 'T11:15:00', source: 'user', kind: 'text', text: MSG17 }] }));
   if (u === '/api/news/today') return send('application/json', JSON.stringify({ ok: true, ready: true, date: D, count: 3,
     images: ['01.jpg', '02.jpg', '03.jpg'].map(n => ({ name: n, url: '/x.png', thumb: '/x.png', download_url: '/x.png' })) }));
   if (u === '/api/news/pagetext') return send('application/json', '{"ok":false}');
@@ -404,6 +427,18 @@ const MSG10 = `[신문요약 1/6] :newspaper: 2026년 9월 28일 신문 브리�
     check(/^3분기 서울/.test(g13.arts[0].what) && /^서울 장기전세/.test(g13.arts[1].what) && /^삼성E&A/.test(g13.arts[2].what),
           '제목마다 자기 WHAT(밀리지 않음)', g13.arts.map(x => x.what).join(' / '));
     check(!/확인 실패/.test(g13.text), '"원문: 원문 확인 실패" 줄은 숨김');
+    const g14 = await page.evaluate(() => {
+      const e = [...document.querySelectorAll('.entry')].find(x => /구조판별A/.test(x.textContent));
+      const body = e.querySelector('.body');
+      return { head: (body.querySelector('.brf-head') || {}).textContent || '', nums: body.querySelectorAll('.brf-num').length,
+        keys: body.querySelectorAll('.brf-key').length, chks: body.querySelectorAll('.brf-chk').length,
+        arts: [...body.querySelectorAll('.brf-art')].map(a => ((a.querySelector('.brf-title') || {}).textContent || '').trim() + ' | ' +
+          ((a.querySelector('.brf-kv .v') || {}).textContent || '').slice(0, 5)) };
+    });
+    check(g14.head.trim() === '2026-10-14 오늘의 경제 뉴스 정리', '머리말 낱말이 바뀌어도("…뉴스 정리") 날짜 든 짧은 첫 줄은 머리말', g14.head);
+    check(g14.arts.length === 3 && /5가지 \| 구조판별A/.test(g14.arts[0]) && /핵심 한 줄 \| 구조판별B/.test(g14.arts[1]) && /핵심 주제 금리 \| 구조판별C/.test(g14.arts[2]),
+          '목록·강조·체크 머리말처럼 생긴 제목도 다음에 WHAT 이 오면 기사 제목', g14.arts.join(' / '));
+    check(g14.nums === 2 && g14.keys === 1 && g14.chks === 0, '진짜 종합 분석(5가지 목록·핵심 한 줄)은 그대로', `번호 ${g14.nums} · 강조 ${g14.keys} · 체크 ${g14.chks}`);
     check(r.over <= 0, '화면이 옆으로 넘치지 않는다', `${r.over}px`);
     await page.close();
   }
