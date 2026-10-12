@@ -145,7 +145,7 @@ const BRIEF = [
   console.log('\n[⑥ 우선순위]');
   await page.evaluate(() => document.querySelectorAll('.brf-side')[0].querySelector('[data-act="pick"]').click());
   await page.waitForSelector('#lb:not([hidden])');
-  await page.click('#lb-next');                // 02 → 03
+  await page.$eval('#lb-next', b => b.click());                // 02 → 03
   await page.click('#lb-pick');
   s = await sides();
   check(s[0].no === '03' && /직접 연결/.test(s[0].src), '직접 연결(📌)이 자동 대조보다 우선', s[0].src);

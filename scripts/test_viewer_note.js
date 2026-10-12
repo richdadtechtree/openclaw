@@ -170,18 +170,18 @@ const openSide = async (page, k, act = 'pen') => {
   check(n.imgRight <= n.left + 1, '사진 오른쪽 끝이 요약 칸보다 왼쪽', `사진 ${n.imgRight} ≤ 칸 ${n.left}`);
   check(n.stageW + n.w <= 1281, '사진 칸 + 요약 칸 = 화면 폭(겹침 없음)', `${n.stageW}+${n.w}`);
   await page.mouse.move(400, 400);
-  check(n.nextRight <= n.left + 1, '› 화살표가 요약 칸 위에 올라가지 않는다', `화살표 ${n.nextRight}`);
+  // (넘김 화살표는 2026-10-12 사용자 요청으로 숨김 → 요약 칸과 겹칠 일 없음)
 
   console.log('\n[④ 장 넘기기]');
-  await page.click('#lb-next'); await waitImg(page);
+  await page.$eval('#lb-next', b => b.click()); await waitImg(page);
   n = await note(page);
   check(n.shown && n.titles.length === 1 && /K의료관광/.test(n.titles[0]) && n.cur[0] === false,
         '04번 장 → 그 장의 기사(K의료관광)로 바뀐다', n.titles.join(''));
-  await page.click('#lb-next'); await waitImg(page);
+  await page.$eval('#lb-next', b => b.click()); await waitImg(page);
   n = await note(page);
   const w05 = await page.evaluate(() => document.getElementById('lb-stage').getBoundingClientRect().width);
   check(!n.shown && !n.btn && w05 >= 1279, '기사가 없는 장(05) → 칸·버튼 숨기고 사진을 넓게', `사진 칸 ${Math.round(w05)}px`);
-  await page.click('#lb-prev'); await waitImg(page);
+  await page.$eval('#lb-prev', b => b.click()); await waitImg(page);
   check((await note(page)).shown, '다시 04로 오면 칸이 돌아온다');
 
   console.log('\n[⑤ 📝 / N 으로 끄고 켜기]');

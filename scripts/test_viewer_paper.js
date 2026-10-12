@@ -200,7 +200,7 @@ const sideInk = (page, k) => page.evaluate((k) => {
   check(await page.isVisible('#lb-pick'), '고르기 모드: 상단에 "📌 이 장 연결" 버튼');
   check(await page.evaluate(() => !M.on), '고르기 모드는 형광펜 꺼진 채(좌우 넘기기 가능)');
   check(await page.evaluate(() => V.pick && /수색/.test(V.pick.title)), '어느 기사를 고르는 중인지 기억한다');
-  for (let k = 0; k < 4; k++) await page.click('#lb-next');
+  for (let k = 0; k < 4; k++) await page.$eval('#lb-next', b => b.click());
   await waitImg(page);
   await page.click('#lb-pick');
   s = await sides(page);

@@ -154,7 +154,7 @@ const srv = http.createServer((req, res) => {
   console.log('\n[⑤ 우선순위]');
   await page.evaluate(() => document.querySelectorAll('.brf-side')[0].querySelector('[data-act="pick"]').click());
   await page.waitForSelector('#lb-pick:not([hidden])');
-  await page.click('#lb-next');
+  await page.$eval('#lb-next', b => b.click());
   await page.click('#lb-pick');
   s = await sides();
   check(s[0].no === '04' && /직접 연결/.test(s[0].src), '직접 연결(📌)이 JSON 보다 우선', s[0].src);

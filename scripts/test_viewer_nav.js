@@ -1,12 +1,12 @@
 /**
- * test_viewer_nav.js — 신문 사진 뷰어의 '넘김 화살표' 동작 확인 (실제 Chromium)
+ * test_viewer_nav.js — 신문 사진 뷰어 '넘김 화살표(‹ ›) 숨김' 확인 (실제 Chromium)
+ *
+ * 2026-10-12 사용자 요청: 사진을 열었을 때 좌우로 옮기는 표시(화살표)가 아예 뜨지 않게.
+ * (예전엔 열 때·마우스를 움직일 때 1초씩 보였다가 사라졌다.)
  *
  * 확인하는 것
- *   ① 1초 동안 가만히 두면 화살표가 사라진다 (신문 글씨를 가리지 않게)
- *   ② 마우스를 움직이거나 화면을 건드리면 다시 나온다
- *   ③ 사라진 동안엔 눌리지 않는다(pointer-events:none)
- *   ④ 사진 옆에 여백이 있으면 화살표가 '사진 바깥'에 놓인다 → 아예 안 겹친다
- *   ⑤ 장 넘기기는 그대로 동작한다
+ *   ① 열자마자 · 마우스를 움직여도 · 화면을 건드려도 · 장을 넘겨도 화살표가 안 보인다 (PC·폰)
+ *   ② 장 넘기기는 그대로 — PC 는 ←→ 키, 확대 중엔 Shift+←→, 폰은 go()(옆으로 쓸기와 같은 함수)
  *
  * 실행 (playwright 가 있는 개발 환경에서만 — 서버엔 없어도 된다):
  *   npm i playwright && node scripts/test_viewer_nav.js
@@ -66,21 +66,10 @@ const openViewer = (page) => page.evaluate(() => {
   });
 });
 
-const navState = (page) => page.evaluate(() => {
-  const p = document.getElementById('lb-prev'), n = document.getElementById('lb-next');
-  const img = document.getElementById('lb-img').getBoundingClientRect();
-  const pr = p.getBoundingClientRect();
-  return {
-    idle: p.classList.contains('idle') && n.classList.contains('idle'),
-    // ⚠️ 첫 장에서는 '이전'이 비활성(opacity .25)이라 보임 판정 기준이 못 된다 → '다음'으로 잰다
-    opacity: +getComputedStyle(n).opacity,
-    left: p.style.left,
-    overlapsImage: pr.right > img.left + 0.5,
-    imgLeft: Math.round(img.left), navRight: Math.round(pr.right),
-  };
-});
-
-const FADE = 400;   // CSS 페이드 0.3초 + 여유
+const navShown = (page) => page.evaluate(() => ['lb-prev', 'lb-next'].some(id => {
+  const b = document.getElementById(id), r = b.getBoundingClientRect(), cs = getComputedStyle(b);
+  return r.width > 0 && cs.display !== 'none' && cs.visibility !== 'hidden' && +cs.opacity > 0.05;
+}));
 
 (async () => {
   await new Promise(r => srv.listen(0, r));
@@ -89,54 +78,39 @@ const FADE = 400;   // CSS 페이드 0.3초 + 여유
   let pass = true;
   const check = (ok, msg, extra = '') => { pass &&= ok; console.log((ok ? '  ✅ ' : '  ❌ ') + msg + (extra ? `  ${extra}` : '')); };
 
-  console.log('\n[PC 1280x800 — 사진 옆에 여백이 있는 경우]');
+  console.log('\n[PC 1280x800]');
   let page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   await page.goto(base + '/slack');
   await openViewer(page);
-  await page.waitForTimeout(FADE);
-
-  let s = await navState(page);
-  check(!s.idle && s.opacity > 0.9, '열자마자 화살표가 보인다', `opacity=${s.opacity}`);
-  check(!s.overlapsImage, '화살표가 사진(신문)을 안 가린다',
-        `화살표 우측 ${s.navRight}px < 사진 좌측 ${s.imgLeft}px, left=${s.left}`);
-
-  await page.waitForTimeout(1300);
-  s = await navState(page);
-  check(s.idle && s.opacity < 0.05, '1초 뒤 화살표가 사라진다', `opacity=${s.opacity}`);
-
-  await page.mouse.move(640, 400);
-  await page.waitForTimeout(FADE);
-  s = await navState(page);
-  check(!s.idle && s.opacity > 0.9, '마우스를 움직이면 다시 나온다', `opacity=${s.opacity}`);
-
-  await page.waitForTimeout(1300);
-  const pe = await page.evaluate(() => getComputedStyle(document.getElementById('lb-prev')).pointerEvents);
-  check(pe === 'none', '사라진 동안엔 눌리지 않는다', `pointer-events=${pe}`);
+  await page.waitForTimeout(100);
+  check(!(await navShown(page)), '열자마자 화살표가 안 보인다');
+  await page.mouse.move(640, 400); await page.mouse.move(60, 400);
+  await page.waitForTimeout(100);
+  check(!(await navShown(page)), '마우스를 움직여도(가장자리 포함) 안 보인다');
+  await page.keyboard.press('ArrowRight');
+  check(await page.evaluate(() => V.i) === 1, '→ 키로 다음 장', `V.i=${await page.evaluate(() => V.i)}`);
+  check(!(await navShown(page)), '장을 넘겨도 화살표가 안 보인다');
+  await page.keyboard.press('ArrowLeft');
+  check(await page.evaluate(() => V.i) === 0, '← 키로 이전 장');
+  await page.click('#lb-in');
+  await page.keyboard.press('Shift+ArrowRight');
+  check(await page.evaluate(() => V.i) === 1, '확대 중엔 Shift+→ 로 다음 장');
   await page.close();
 
-  console.log('\n[휴대폰 390x780 — 사진이 화면을 거의 채우는 경우]');
+  console.log('\n[휴대폰 390x780]');
   page = await browser.newPage({ viewport: { width: 390, height: 780 }, hasTouch: true, isMobile: true });
   await page.goto(base + '/slack');
   await openViewer(page);
-  await page.waitForTimeout(FADE);
-  s = await navState(page);
-  check(!s.idle, '열자마자 보인다');
-  check(s.overlapsImage, '(참고) 폰에선 사진이 꽉 차 화살표가 겹친다 → 자동숨김이 필요한 이유');
-
-  await page.waitForTimeout(1300);
-  s = await navState(page);
-  check(s.idle && s.opacity < 0.05, '1초 뒤 사라진다 → 지면을 안 가린다', `opacity=${s.opacity}`);
-
+  await page.waitForTimeout(100);
+  check(!(await navShown(page)), '열자마자 화살표가 안 보인다');
   await page.touchscreen.tap(195, 400);
-  await page.waitForTimeout(FADE);
-  s = await navState(page);
-  check(!s.idle, '화면을 건드리면 다시 나온다');
-
+  await page.waitForTimeout(100);
+  check(!(await navShown(page)), '화면을 건드려도 안 보인다');
   const before = await page.evaluate(() => V.i);
   await page.evaluate(() => go(1));
   const after = await page.evaluate(() => V.i);
   check(after === before + 1, '장 넘기기는 그대로 동작한다', `${before} → ${after}`);
-  check(!(await navState(page)).idle, '넘기면 화살표가 다시 보인다');
+  check(!(await navShown(page)), '넘겨도 화살표가 안 보인다');
 
   await browser.close(); srv.close();
   console.log('\n총평: ' + (pass ? '✅ 전부 통과' : '❌ 실패 있음'));
