@@ -841,7 +841,7 @@ function briefing(raw){
        (옆 요약 칸에서 특히 거슬린다 — 사용자 요청: 표기 안 해도 됨) → 떼어서 카드 오른쪽 위 작은 배지로만. */
     const pk=lines[i].match(/^[\s*_]*\[[^\]\d]{0,6}?신문\s*요약[^\]\d]*?(\d+)\s*\/\s*(\d+)\s*\][\s*_]*/);   // [검수신문요약 1/8] 같은 변형도(2026-10-12)
     if(pk){ part=part||(pk[1]+"/"+pk[2]); lines[i]=lines[i].slice(pk[0].length); if(!lines[i].trim()) continue; }
-    const m=lines[i].match(/^(.*?신문\s*브리핑)(.*)$/);
+    const m=lines[i].match(/^(.*?신문\s*(?:브리핑|요약))(.*)$/);   // "…신문 요약" 도 머리말(2026-10-13 — 목록 머리말로 오인돼 기사 제목이 번호 목록이 됐다)
     if(m){
       head=m[1].replace(/[*_]/g,"").trim();
       // ⚠️ 헤더 뒤를 통째로 버리면 안 된다. 같은 줄에 기사 제목(때로는 "🔴 반드시 체크 |"
@@ -926,6 +926,15 @@ function briefing(raw){
   /* 2026-10-12: 사진 줄까지 끼어 "제목 / • 사진: 02 / • 원문: … / • WHAT" 순서로 왔다 → 순서를 하나하나 맞추지 않고
        '이 줄 뒤에 사진·출처 줄만 있다가 곧장 WHAT 이 오면 이 줄은 새 기사 제목'으로 일반화(사진·출처 줄이 1개 이상일 때만 —
        그냥 '제목 / WHAT' 은 원래 규칙이 이미 제목으로 본다). */
+  // 이 줄 다음(사진·출처 줄은 건너뛰고) 곧장 "• WHAT" 이 오는가 = 이 줄은 기사 제목
+  const headsArticle=(i)=>{
+    for(let j=i+1;j<LINES.length;j++){
+      const t=LINES[j].trim(); if(!t) continue;
+      if(isSrcLine(t) || /^•?\s*원문\s*확인/.test(t) || PAGE_LINE_RE.test(t)) continue;
+      return /^•\s*WHAT\s*[:：]/i.test(t);
+    }
+    return false;
+  };
   const srcHeadsWhat=(i)=>{
     let skipped=0;
     for(let j=i+1;j<LINES.length;j++){
@@ -981,6 +990,11 @@ function briefing(raw){
     }
     // "<링크|원문> · PDF 21쪽" → 그 기사 끝에 작은 출처 줄로(따로 카드 만들지 않음). PDF 쪽 = 사진 번호 단서
     if(isSrcLine(line)){
+      // "• 원문: 원문 확인 실패" = 알맹이 없는 출처 줄 → "• 원문 확인 실패" 처럼 숨긴다(기사 끝이면 기사만 닫음)
+      if(/확인\s*실패/.test(srcPlain(line)) && !/PDF\s*\d/i.test(srcPlain(line))){
+        if(art!==null && artKV.size) flush();
+        continue;
+      }
       const pm=srcPlain(line).match(/PDF\s*(\d{1,3})\s*(?:쪽|p|페이지)/i);
       const html='<div class="brf-src">'+inline(line.replace(/^•\s*/,""))+"</div>";
       if(art!==null && !artKV.size){ art+=html; if(pm&&!pageHint) pageHint=+pm[1]; continue; }   // 제목 바로 아래 출처(새 형식) → 기사는 계속
@@ -1006,6 +1020,9 @@ function briefing(raw){
     }
 
     const plain0=line.replace(/[*_]/g,"").trim();
+    /* 안전장치(2026-10-13): 번호 목록·체크 목록을 그리는 중이라도, 다음에 (사진·출처 줄 뒤) WHAT 이 오는 줄은 기사 제목이다
+       → 목록을 끝내고 아래 '제목' 처리로 넘긴다. (머리말을 목록 머리말로 잘못 알아봐도 기사 제목이 번호 목록으로 빨려 들어가지 않게) */
+    if((inList || chk) && headsArticle(li)){ flushChk(); inList=false; lastItem=-1; }
     // "📌 오늘 신문 핵심 한 줄" 뒤 문장이 다음 줄에 따로 온 경우
     if(keyWait!==null){ out.push(keyBox(keyWait,plain0.replace(/^(?:>|&gt;)\s*/,""))); keyWait=null; continue; }   // 인용 표시 '>' 는 뗀다
     // "📌 오늘 신문 핵심 한 줄 서울 주택은 …" → 강조 상자
