@@ -950,14 +950,17 @@
       'TQQQ':    { name: 'TQQQ (3x)', country: 'us' }
     };
 
-    // 5년 그래프 기준 가로선(2026-10-08 요청): 카드의 역대 최고가(ATH) 대비 이만큼 빠진 높이.
-    //  · 코스피·코스닥 = -30% 실선 · QLD·TQQQ = -10% 점선
+    // 그래프 기준 가로선(2026-10-08 요청): 카드의 역대 최고가(ATH) 대비 이만큼 빠진 높이.
+    //  · 코스피·코스닥 = -30%·-40%·-50% 실선(2026-10-15 -40·-50 추가, 깊을수록 진한 색) · QLD·TQQQ = -10% 점선
+    //  · 그래프 범위는 첫 줄(가장 얕은 줄)까지만 넓힌다 — 더 깊은 줄은 그 기간 범위 안에 있을 때만 그린다
+    //    (짧은 기간에 -50% 까지 넣으면 가격선이 위에 납작하게 눌려 안 보인다)
     const DD_LINES = {
-      'KOSPI':  { pct: -30, dash: false },
-      'KOSDAQ': { pct: -30, dash: false },
-      'QLD':    { pct: -10, dash: true },
-      'TQQQ':   { pct: -10, dash: true },
+      'KOSPI':  { pcts: [-30, -40, -50], dash: false },
+      'KOSDAQ': { pcts: [-30, -40, -50], dash: false },
+      'QLD':    { pcts: [-10], dash: true },
+      'TQQQ':   { pcts: [-10], dash: true },
     };
+    const DD_COLORS = { '-10': 'var(--color-warning)', '-30': 'var(--color-warning)', '-40': '#f97316', '-50': 'var(--color-down)' };
 
     // 출처 꼬리표는 짧게(전체 이름은 마우스를 올리면 title 로 보임).
     // 'Korea Investment API (real-time)' 처럼 긴 값이 이름을 밀어내 잘리게 하던 문제 방지.
@@ -1036,7 +1039,8 @@
     // SVG Sparkline Generator
     // height·overlay 는 환율 3년 그래프용(더 높은 상자 + 해 바뀜 점선). 지수 카드는 기본값 그대로.
     // range=[낮음,높음] 을 주면 그 범위로 그린다(기준 가로선을 같은 눈금에 맞추려고). 없으면 점들의 최저~최고.
-    function renderSparklineSVG(points, height = 44, overlay = '', range = null) {
+    // overlayTop 은 가격 선까지 다 그린 뒤 맨 위에 얹는다(기준선 글자가 그래프에 가려지지 않게).
+    function renderSparklineSVG(points, height = 44, overlay = '', range = null, overlayTop = '') {
       if (!points || points.length < 2) {
         return `<svg class="sparkline-svg" viewBox="0 0 100 40"><line x1="0" y1="20" x2="100" y2="20" stroke="var(--border-color)" stroke-dasharray="2,2"/></svg>`;
       }
@@ -1075,6 +1079,7 @@
           <path d="${areaD}" fill="${fillColor}" />
           <path d="${pathD}" fill="none" stroke="${strokeColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
           <circle cx="${coords[coords.length - 1].x}" cy="${coords[coords.length - 1].y}" r="3" fill="${strokeColor}" />
+          ${overlayTop}
         </svg>
       `;
     }
@@ -1183,10 +1188,10 @@
         // 기준 가로선 값 = 역대 최고가 × (1 + pct/100). ATH 가 없으면 선을 긋지 않는다.
         const chart = chartFor(symbol);
         const dd = DD_LINES[symbol];
-        const ddRef = dd && data.ath > 0 ? {
-          pct: dd.pct, dash: dd.dash, value: data.ath * (1 + dd.pct / 100),
-          label: `${dd.pct}% ${formatNumber(data.ath * (1 + dd.pct / 100), data.ath >= 1000 ? 0 : 2)}`,
-        } : null;
+        const ddRefs = dd && data.ath > 0 ? dd.pcts.map(pct => ({
+          pct, dash: dd.dash, color: DD_COLORS[pct] || 'var(--color-warning)', value: data.ath * (1 + pct / 100),
+          label: `${pct}% ${formatNumber(data.ath * (1 + pct / 100), data.ath >= 1000 ? 0 : 2)}`,
+        })) : [];
         const src = data.source || 'Standard';
 
         return `
@@ -1222,8 +1227,9 @@
                   `${displayName.replace(/<[^>]+>/g, '').trim()} (네이버 일별 종가`
                   + (chart.splits && chart.splits.length ? `, 액면분할 보정: ${chart.splits.join(', ')}` : '')
                   + `, 기간 최저 ${formatNumber(chart.low)} ~ 최고 ${formatNumber(chart.high)})`
-                  + (ddRef ? ` · 가로선: 역대 최고가 ${formatNumber(data.ath)} 대비 ${ddRef.pct}% = ${formatNumber(ddRef.value)}` : ''),
-                  ddRef)
+                  + (ddRefs.length ? ` · 가로선: 역대 최고가 ${formatNumber(data.ath)} 대비 `
+                     + ddRefs.map(r => `${r.pct}% = ${formatNumber(r.value)}`).join(', ') : ''),
+                  ddRefs)
               : `<div class="sparkline-box">${renderSparklineSVG(data.sparkline)}</div>`}
           </div>
         `;
@@ -1287,16 +1293,17 @@
     //  · log=true(그 기간에 5배↑ 움직임)면 로그 눈금 — 같은 높이 = 같은 배수
     //  · 1.5년 이하(6개월·1년)는 '월' 눈금(1월이면 연도), 그보다 길면 '연도' 눈금
     //  · 글자는 겹치지 않게 솎는다
-    // ref = {value, label, dash} 를 주면 그 값 높이에 기준 가로선(예: 고점 대비 -30%), 그래프 밖이면 범위를 넓혀 보이게.
+    // refs = [{value, label, dash, color}, ...] 기준 가로선들(예: 고점 대비 -30/-40/-50%).
+    //   첫 줄은 그래프 밖이면 범위를 넓혀 항상 보이게, 나머지 줄은 그 범위 안에 있을 때만 그린다.
     function periodLabel(years) {
       return years < 0.9 ? `${Math.max(1, Math.round(years * 12))}개월` : `${Math.round(years)}년`;
     }
-    function renderYearChart(c, title, ref = null) {
+    function renderYearChart(c, title, refs = []) {
       const f = c.log ? (v => Math.log10(v)) : (v => v);
       const vals = c.values.map(f);
       let lo = Math.min(...vals), hi = Math.max(...vals);
-      const refV = ref && ref.value > 0 ? f(ref.value) : null;
-      if (refV != null) { lo = Math.min(lo, refV); hi = Math.max(hi, refV); }
+      refs = (refs || []).filter(r => r && r.value > 0);
+      if (refs.length) { const v0 = f(refs[0].value); lo = Math.min(lo, v0); hi = Math.max(hi, v0); }
       const sp = (hi - lo) || 1;
       const points = vals.map(v => ((v - lo) / sp) * 100);
 
@@ -1333,19 +1340,29 @@
         const px = 4 + (x / 100) * (280 - 8);
         return `<line x1="${px.toFixed(1)}" y1="0" x2="${px.toFixed(1)}" y2="56" stroke="var(--border-color)" stroke-dasharray="2,3"/>`;
       }).join('');
-      let refSvg = '';
-      if (refV != null) {
-        const y = 56 - 4 - ((refV - lo) / sp) * (56 - 8);
+      let refLines = '', refTexts = '';                   // 줄을 모두 그린 뒤 글자를 맨 위에(다른 줄이 글자를 가리지 않게)
+      const placed = [];                                  // 이미 놓은 라벨 {x, y} — 겹치면 옆으로 비킨다
+      refs.forEach((r, i) => {
+        const v = f(r.value);
+        if (i > 0 && (v < lo - 1e-9 || v > hi + 1e-9)) return;      // 깊은 줄은 범위 밖이면 생략
+        const y = 56 - 4 - ((v - lo) / sp) * (56 - 8);
         // 라벨은 왼쪽(오른쪽 끝엔 '지금' 점이 기준선 근처에 있을 때가 많아 겹친다).
-        // 선이 위쪽이면 왼쪽 위 꼬리표와 겹치지 않게 글자를 선 아래로.
+        // 선이 위쪽이면 왼쪽 위 꼬리표와 겹치지 않게 글자를 선 아래로. 앞 라벨과 세로로 붙으면 오른쪽으로 한 칸.
         const ty = y < 16 ? y + 10 : y - 3;
-        refSvg = `<line class="ref-line" x1="4" y1="${y.toFixed(1)}" x2="276" y2="${y.toFixed(1)}" stroke="var(--color-warning)"
-                   stroke-width="1.2" ${ref.dash ? 'stroke-dasharray="4,3"' : ''} opacity="0.9"/>
-                 <text class="ref-label" x="6" y="${ty.toFixed(1)}" text-anchor="start" font-size="9" font-weight="600"
-                   font-family="var(--font-mono)" fill="var(--color-warning)"
-                   paint-order="stroke" stroke="var(--bg-surface)" stroke-width="3" stroke-linejoin="round">${ref.label}</text>`;
-      }
-      const svg = renderSparklineSVG(points, 56, grid + refSvg, [0, 100]);
+        let x = 6;
+        while (placed.some(p => Math.abs(p.y - ty) < 10 && Math.abs(p.x - x) < 60)) x += 64;
+        placed.push({ x, y: ty });
+        refLines += `<line class="ref-line" data-pct="${r.pct}" x1="4" y1="${y.toFixed(1)}" x2="276" y2="${y.toFixed(1)}" stroke="${r.color || 'var(--color-warning)'}"
+                   stroke-width="1.2" ${r.dash ? 'stroke-dasharray="4,3"' : ''} opacity="0.9"/>`;
+        // 글자 뒤 바탕 상자 — 다른 기준선이 글자 높이를 지나가도 또렷하게(9px 고정폭 글자 ≈ 5.4px/자)
+        refTexts += `<rect class="ref-bg" x="${x - 2}" y="${(ty - 8).toFixed(1)}" width="${(r.label.length * 5.5 + 4).toFixed(0)}" height="10"
+                   rx="2" fill="var(--bg-surface)" opacity="0.92"/>`;
+        refTexts += `<text class="ref-label" x="${x}" y="${ty.toFixed(1)}" text-anchor="start" font-size="9" font-weight="600"
+                   font-family="var(--font-mono)" fill="${r.color || 'var(--color-warning)'}"
+                   paint-order="stroke" stroke="var(--bg-surface)" stroke-width="3" stroke-linejoin="round">${r.label}</text>`;
+      });
+      // 기준선은 가격 선 아래(가격이 주인공), 기준선 글자는 맨 위
+      const svg = renderSparklineSVG(points, 56, grid + refLines, [0, 100], refTexts);
       const ym = d => d.slice(0, 7).replace('-', '.');
       const labels = [`<span class="first" style="left:0">${ym(c.from)}</span>`]
         .concat(shown.map(({ text, x }) => `<span style="left:${x.toFixed(2)}%">${text}</span>`))

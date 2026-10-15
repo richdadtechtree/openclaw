@@ -209,7 +209,7 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   ok(q.title.includes('액면분할 보정: 2022-01-13 2:1') && q.title.includes('네이버'), 'QLD 그래프에 분할 보정 사실을 마우스 설명으로 밝힘');
   ok(idxCharts.find(c => c.name.includes('코스피')).title.includes('기간 최저 2,284.70 ~ 최고 3,512.30'), '코스피 기간 최저~최고 설명');
 
-  console.log('②-2 5년 그래프 기준 가로선(코스피·코스닥 -30% 실선 / QLD·TQQQ -10% 점선)');
+  console.log('②-2 기준 가로선(코스피·코스닥 -30/-40/-50% 실선 / QLD·TQQQ -10% 점선)');
   const refs = await page.$$eval('#indices-grid > .market-card', cs => cs.map(c => {
     const l = c.querySelector('.ref-line'), t = c.querySelector('.ref-label');
     return { name: c.querySelector('.index-name').innerText.trim(), has: !!l,
@@ -224,6 +224,15 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   const expY = 52 - ((3500 * 0.7 - 2284.7) / (3512.3 - 2284.7)) * 48;
   ok(Math.abs(R2('코스피').y - expY) < 0.2, `코스피 선 높이 = ATH 3,500 × 0.7 = 2,450 위치 (y ${R2('코스피').y} ≈ ${expY.toFixed(1)})`);
   ok(R2('TQQQ').title.includes('역대 최고가 88.09 대비 -10% = 79.28'), 'TQQQ 마우스 설명에 기준선 계산식');
+  // 2026-10-15: -40%·-50% 추가. 범위는 -30% 까지만 넓히고 더 깊은 줄은 그 범위 안일 때만
+  const pctsOf = async n => page.$$eval('#indices-grid > .market-card', (cs, n) => {
+    const c = cs.find(x => x.querySelector('.index-name').innerText.includes(n));
+    return [...c.querySelectorAll('.ref-line')].map(l => +l.dataset.pct); }, n);
+  const kp5 = await pctsOf('코스피'), kq5 = await pctsOf('코스닥');
+  ok(kp5.join() === '-30', `5년 코스피: -40%(2,100)·-50%(1,750)는 5년 최저(2,284.70)보다 아래라 생략 → ${kp5.join(', ')}`);
+  ok(kq5.join() === '-30,-40', `5년 코스닥: -40%(737.65)는 범위 안이라 그림, -50%(614.71)는 생략 → ${kq5.join(', ')}`);
+  ok((await page.$eval('#indices-grid > .market-card:nth-child(1) .year-chart', e => e.title)).includes('-40% = 2,100.00, -50% = 1,750.00'),
+     '마우스 설명엔 세 줄 값 모두');
   await page.close();
   // 기준선이 5년 최저보다 아래면 그래프 범위를 넓혀 선이 보이게
   chartOverride = { KOSPI: mk('5y', 3000, 3512.3, 3412.5) };
@@ -361,7 +370,20 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   const btcTag = await page.$eval('.crypto-card .chart-tag', e => e.textContent);
   ok(btcTag === '10년 · 로그' && tg.every(t => t.startsWith('10년')) && tg[0] === '10년', `10년: 비트코인 '${btcTag}'(250배 → 로그 자동), 코스피 '${tg[0]}'`);
   ok(await page.$$eval('.crypto-card .year-chart line', ls => ls.length) === 10, '10년 연도 눈금 점선 10개(2017~2026)');
-  ok(await page.$$eval('#indices-grid .ref-line', ls => ls.length) === 4, '기간을 바꿔도 기준 가로선 4개 그대로');
+  const kp10 = await page.$$eval('#indices-grid > .market-card:nth-child(1) .ref-line', ls => ls.map(l => ({ p: +l.dataset.pct, c: l.getAttribute('stroke') })));
+  ok(kp10.map(l => l.p).join() === '-30,-40,-50' && new Set(kp10.map(l => l.c)).size === 3,
+     `10년 코스피(최저 1,732): -30·-40·-50% 세 줄 모두, 색 셋 다 다름 (${kp10.map(l => l.c).join(' / ')})`);
+  ok(await page.$$eval('#indices-grid > .market-card', cs => cs.slice(4, 6).every(c => c.querySelectorAll('.ref-line').length === 1)),
+     'QLD·TQQQ 는 여전히 -10% 한 줄');
+  const labLap = await page.$$eval('#indices-grid .year-chart', cs => cs.some(c => { const r = [...c.querySelectorAll('.ref-label')].map(t => t.getBoundingClientRect());
+    return r.some((a, i) => r.some((b, j) => j > i && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom)); }));
+  ok(!labLap, '줄 라벨끼리 겹치지 않음(가까우면 옆으로 비킴)');
+  // 2026-10-15 미리보기: -40% 줄이 '-50%' 글자를 가로질렀다 → 글자는 모든 줄보다 뒤(=위)에 그려져야
+  const textsOnTop = await page.$$eval('#indices-grid .year-chart svg', ss => ss.every(svg => {
+    const kids = [...svg.children], lastLine = Math.max(-1, ...kids.map((k, i) => k.classList.contains('ref-line') ? i : -1));
+    const lastPath = Math.max(-1, ...kids.map((k, i) => k.tagName === 'path' ? i : -1));
+    return kids.every((k, i) => !k.classList.contains('ref-label') || (i > lastLine && i > lastPath)); }));
+  ok(textsOnTop, '줄 글자가 모든 기준선·가격 그래프보다 위에 그려짐(가려지지 않음)');
   const allLap = await page.$$eval('#indices-grid .fx-years', ys => ys.some(y => { const r = [...y.children].map(e => e.getBoundingClientRect());
     const box = y.getBoundingClientRect();
     return r.some((a, i) => (i && a.left < r[i - 1].right + 6) || a.left < box.left - 1 || a.right > box.right + 1); }));
