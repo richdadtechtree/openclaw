@@ -183,7 +183,10 @@ const zoomIn = async (page, n = 5) => {
         '확대해도 가장자리를 넘어(화면의 40%까지) 구석 기사를 가운데로 끌어올 수 있다', `tx=${Math.round(far.tx)} (한계 ${Math.round(far.sw * 0.4)})`);
   await page.click('#lb-pen'); await page.waitForTimeout(150);
   check(await page.evaluate(() => M.on && !V.hand), '🖍 를 켜면 손바닥은 꺼진다(바로 긋기)');
-  await page.click('#lb-hand');
+  check(!(await page.isVisible('#lb-hand')) && await page.isVisible('#lb-t-hand'), '형광펜 중엔 ✋ 가 상단이 아니라 편집 도구모음 안에 있다(2026-10-16)');
+  await page.click('#lb-t-hand');
+  check(await page.evaluate(() => V.hand && !['lb-t-line','lb-t-oval','lb-t-free'].some(id => document.getElementById(id).getAttribute('aria-pressed') === 'true')),
+        '도구모음 ✋ 를 켜면 직선·동그라미·자유 표시는 꺼진다(하나만 고르기)');
   const before = await pos(page);
   await drag(-150, 0);
   const lines = await page.evaluate(() => (M.marks[markName()] || []).length);
@@ -192,7 +195,7 @@ const zoomIn = async (page, n = 5) => {
   check(await page.evaluate(() => !V.hand), '색을 고르면 손바닥이 꺼진다');
   await drag(-150, 0);
   check(await page.evaluate(() => (M.marks[markName()] || []).length) === 1, '그다음 왼쪽 드래그는 다시 줄 긋기');
-  await page.click('#lb-hand'); await page.click('#lb-erase');
+  await page.click('#lb-t-hand'); await page.click('#lb-erase');
   check(await page.evaluate(() => !V.hand), '지우개를 고르면 손바닥이 꺼진다');
   await page.click('#lb-pen-off');
   await page.keyboard.press('m');
@@ -221,9 +224,13 @@ const zoomIn = async (page, n = 5) => {
   await page.click('#lb-pen-off'); await page.waitForTimeout(150);
   check(same(r0, await rect()), '형광펜을 꺼도 그 자리 그대로');
   // 확대 + 형광펜 켜 둔 채 ✋ 로 옮기고 → 색을 고르면(사용자 화면 그대로) 그 자리 유지
-  await page.click('#lb-pen'); await zoomIn(page, 3); await page.click('#lb-hand');
+  await page.click('#lb-pen'); await zoomIn(page, 3); await page.click('#lb-t-hand');
   await drag(250, 180); await page.waitForTimeout(100);
   const zr = await rect();
+  await page.click('#lb-t-hand'); await page.waitForTimeout(100);
+  check(await page.evaluate(() => !V.hand && document.getElementById('lb-t-' + M.tool).getAttribute('aria-pressed') === 'true') && same(zr, await rect()),
+        '도구모음 ✋ 를 다시 누르면 긋기로 돌아오고(고르던 도구 표시) 자리는 그대로');
+  await page.click('#lb-t-hand');
   await page.click('#lb-c2'); await page.waitForTimeout(100);
   check(await page.evaluate(() => !V.hand && V.zoom > 1.2) && same(zr, await rect()), "확대한 채 ✋ 로 옮긴 뒤 색을 골라도 그 자리 그대로", `(${zr.x},${zr.y},${zr.w})`);
   await page.click('#lb-pen-off'); await page.evaluate(() => resetZoom()); await page.waitForTimeout(100);

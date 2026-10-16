@@ -300,6 +300,7 @@
             padding:6px 10px;background:#11151f;border-bottom:1px solid #242a36;
             position:relative;z-index:2}
   .lb-tools[hidden]{display:none}
+  .lb.marking #lb-hand{display:none}            /* 형광펜 중엔 ✋ 가 편집 도구모음 안에 있다 */
   .lb-tools button{appearance:none;border:1px solid transparent;background:transparent;color:#e7eaf1;
             border-radius:999px;height:32px;min-width:34px;padding:0 10px;font-size:13px;cursor:pointer;
             display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
@@ -453,6 +454,9 @@
   </div>
   <button class="lb-nav prev" id="lb-prev" aria-label="이전 장">‹</button>
   <div class="lb-tools" id="lb-tools" hidden>
+    <!-- 2026-10-16 사용자 요청: 그리는 동안엔 ✋ 를 편집 도구모음 맨 앞에(상단 ✋ 는 숨김) — 옮기기↔긋기를 한 줄에서 -->
+    <button id="lb-t-hand" title="손바닥 — 끌어서 신문 옮기기 (M) · 다시 누르거나 색·도구를 고르면 긋기" aria-label="손바닥(옮기기)" aria-pressed="false">✋</button>
+    <span class="sep"></span>
     <button id="lb-c1" title="빨강" aria-label="빨강"><span class="pen" style="background:#ff5b5b"></span></button>
     <button id="lb-c2" title="파랑" aria-label="파랑"><span class="pen" style="background:#4da3ff"></span></button>
     <button id="lb-c3" title="노랑" aria-label="노랑"><span class="pen" style="background:#ffd93b"></span></button>
@@ -1647,6 +1651,7 @@ function setPen(on){
   $("lb-stage").classList.remove("movable","moving");
   $("lb-pen").setAttribute("aria-pressed", on?"true":"false");
   $("lb-tools").hidden=!on;
+  $("lb").classList.toggle("marking", on);    // 상단 ✋ 숨기고 도구모음 안 ✋ 를 쓴다
   $("lb-stage").classList.toggle("marking", on);
   const eraseBtn=$("lb-erase"); if(eraseBtn) eraseBtn.setAttribute("aria-pressed","false");
   // 도구모음 줄이 생기거나 사라지면 사진이 쓸 수 있는 높이가 달라진다 → 다시 맞춘다
@@ -1782,6 +1787,9 @@ function setHand(on, keep){
      ("손바닥으로 옮긴 뒤 펜을 누르면 사진이 원래 자리로 돌아간다" — 사용자 요청). ✋ 버튼·M 키로 직접 끌 때만 정상 범위로. */
   if(!on && keep){ if(V.stage) keepLoose(); } else if(!on){ V.loose=false; if(V.stage) clampPan(); }   // 직접 끄면 바로 정상 범위로
   $("lb-hand").setAttribute("aria-pressed", V.hand?"true":"false");
+  $("lb-t-hand").setAttribute("aria-pressed", V.hand?"true":"false");
+  // 도구모음은 '하나만 고르기' 처럼 보이게 — 손바닥이면 직선·동그라미·자유 표시를 잠시 끈다(끄면 고르던 도구로 돌아옴)
+  try{ TOOLS.forEach(([id,k])=>$(id).setAttribute("aria-pressed", !V.hand && k===M.tool?"true":"false")); }catch(e){}
   $("lb-stage").classList.toggle("hand", V.hand);
   if(V.stage) paint();
 }
@@ -1880,6 +1888,8 @@ $("lb-out").onclick=()=>zoomAt(1/1.6);
 // ── 형광펜 버튼들 ───────────────────────────────────────────────────────
 $("lb-pen").onclick=()=>{ setPen(!M.on); if(M.on) setHand(false,true); };   // 형광펜을 켜면 바로 그을 수 있게 손바닥은 끈다
 $("lb-hand").onclick=()=>setHand(!V.hand);
+// 편집 도구모음 안 ✋: 켜면 옮기기, 다시 누르면 옮겨 둔 자리 그대로 긋기로(가운데로 안 돌아감)
+$("lb-t-hand").onclick=()=>{ if(V.hand) setHand(false,true); else { if(M.erase) setErase(false); setHand(true); } };
 $("lb-pen-off").onclick=()=>setPen(false);
 // 색 고르기 — 빨강 · 파랑 · 노랑
 const COLORS=[["lb-c1","#ff5b5b"],["lb-c2","#4da3ff"],["lb-c3","#ffd93b"]];
@@ -1953,7 +1963,7 @@ document.addEventListener("keydown",e=>{
     M.on ? setPen(false) : closeViewer(); return;
   }
   if(e.key==="h"||e.key==="H"){ setPen(!M.on); if(M.on) setHand(false,true); return; }
-  if((e.key==="m"||e.key==="M")&&!e.ctrlKey&&!e.metaKey){ setHand(!V.hand); return; }   // ✋ 손바닥(옮기기)
+  if((e.key==="m"||e.key==="M")&&!e.ctrlKey&&!e.metaKey){ setHand(!V.hand, M.on); return; }   // 형광펜 중엔 끌 때도 옮긴 자리 그대로   // ✋ 손바닥(옮기기)
   if((e.key==="n"||e.key==="N")&&!e.ctrlKey&&!e.metaKey&&!$("lb-note-btn").hidden){ toggleNote(); return; }   // 옆 요약 칸 켜고 끄기
   if((e.key==="z"||e.key==="Z")&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); $("lb-undo").onclick(); return; }
   // 선 굵기 한 단계씩 — [ 가늘게 / ] 굵게
