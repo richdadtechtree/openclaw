@@ -1650,7 +1650,7 @@ function setPen(on){
   $("lb-stage").classList.toggle("marking", on);
   const eraseBtn=$("lb-erase"); if(eraseBtn) eraseBtn.setAttribute("aria-pressed","false");
   // 도구모음 줄이 생기거나 사라지면 사진이 쓸 수 있는 높이가 달라진다 → 다시 맞춘다
-  if($("lb-img").naturalWidth) measure();
+  if($("lb-img").naturalWidth) measure(true);   // 보던 자리 그대로(가운데로 되돌리지 않음)
   if(on){ showNav(); setSaved("이 창에서만 유지 · 새로고침하면 사라짐"); }
 }
 
@@ -1668,6 +1668,7 @@ function openViewer(i,opts={}){
   $("lb-pick").hidden=!V.pick;
   $("lb").hidden=false;
   document.body.style.overflow="hidden";     // 뒤쪽 페이지가 같이 스크롤되지 않게
+  if(opts.pen && !M.on) setPen(true);         // 도구모음을 먼저 펴 두고 사진 크기를 잰다(다시 열어도 기사 확대가 풀리지 않게)
   showPage();
   // 지면 고르기면 '무엇을 하면 되는지'를 더 오래 보여준다
   $("lb-hint").textContent = V.pick
@@ -1677,7 +1678,6 @@ function openViewer(i,opts={}){
   clearTimeout(V.hintT); V.hintT=setTimeout(()=>$("lb-hint").classList.add("gone"), V.pick?6000:2600);
   V.navPos=null; showNav();                    // 열자마자 한 번 보여주고 1초 뒤 감춘다
   resetMarksIfNewDate();                       // 날짜가 바뀌었으면 비운다
-  if(opts.pen && !M.on) setPen(true);
   setHand(HAND_DEFAULT);                       // 열 때 기본은 ✋ 손바닥(PC) — 2026-10-01 사용자 요청
   drawMarks();
 }
@@ -1714,23 +1714,46 @@ function showPage(){
   // 다음·이전 장을 미리 받아둔다 → 넘길 때 하얗게 안 뜬다
   [V.i+1,V.i-1].forEach(k=>{ if(V.list[k]) new Image().src=V.list[k].url; });
 }
-function measure(){
+function measure(keep){
   // 사진 원본 크기와, 화면에 '딱 맞게' 넣었을 때의 크기를 계산해 둔다.
   const img=$("lb-img"), st=$("lb-stage").getBoundingClientRect();
+  /* keep(2026-10-16 사용자 요청): 🖍 형광펜 도구모음이 생기거나 사라져 사진 칸 크기만 바뀐 경우엔
+     가운데로 되돌리지 않고 **보던 자리·크기를 그대로** 둔다(손바닥으로 옮겨 둔 곳에서 바로 줄을 긋게).
+     → 옛 칸의 가운데에 있던 지면 지점이 같은 화면 자리에 오도록, 화면에 보이는 크기도 최대한 같게. */
+  // 가운데·1배 그대로(옮기거나 키운 적 없음)면 예전처럼 새 칸에 딱 맞춘다 → 도구모음이 사진을 가리지 않게
+  const moved = V.stage && V.fitW>0 && (V.zoom>1.001 || Math.abs(V.tx-(V.stage.w-V.fitW)/2)>2 || Math.abs(V.ty-(V.stage.h-V.fitH)/2)>2);
+  const old = keep && moved && img.naturalWidth
+    ? {L:V.stageL, T:V.stageT, w:V.fitW*V.zoom, h:V.fitH*V.zoom, tx:V.tx, ty:V.ty, cx:V.stageL+V.stage.w/2, cy:V.stageT+V.stage.h/2} : null;
   V.nat={w:img.naturalWidth||1,h:img.naturalHeight||1};
   const fit=Math.min(st.width/V.nat.w, st.height/V.nat.h);
   V.fitW=V.nat.w*fit; V.fitH=V.nat.h*fit;
-  V.stage={w:st.width,h:st.height};
+  V.stage={w:st.width,h:st.height}; V.stageL=st.left; V.stageT=st.top;
   if(V.zoom===undefined) V.zoom=1;
+  if(old){
+    V.zoom=Math.max(1, Math.min(maxZoom(), old.w/V.fitW));      // 화면에 보이는 크기를 그대로(1배보다 작게는 안 됨)
+    const fx=(old.cx-old.L-old.tx)/old.w, fy=(old.cy-old.T-old.ty)/old.h;   // 옛 가운데에 있던 지면 지점(0~1 비율)
+    V.tx=old.cx-V.stageL-fx*V.fitW*V.zoom;
+    V.ty=old.cy-V.stageT-fy*V.fitH*V.zoom;
+    V.loose=true; keepLoose();                 // 옮겨 둔 자리가 정상 범위 밖이면 손바닥처럼 넓은 범위를 허용
+    paint(); return;
+  }
   center(); paint();
 }
 function center(){
+  V.loose=false;                               // 가운데로 되돌릴 땐 '옮겨 둔 자리 지키기'도 끝
   V.tx=(V.stage.w-V.fitW*V.zoom)/2;
   V.ty=(V.stage.h-V.fitH*V.zoom)/2;
 }
+/* 지금 자리가 '정상 범위'(손바닥이 아닐 때 허용되는 범위) 밖인가 → 밖이면 V.loose 로 그 자리를 지킨다 */
+function keepLoose(){
+  const tx=V.tx, ty=V.ty, h=V.hand;
+  V.hand=false; V.loose=false; clampPan();
+  const out=Math.abs(V.tx-tx)>0.5 || Math.abs(V.ty-ty)>0.5;
+  V.tx=tx; V.ty=ty; V.hand=h; V.loose=out;
+}
 function clampPan(){
   const w=V.fitW*V.zoom, h=V.fitH*V.zoom;
-  if(V.hand){
+  if(V.hand || V.loose){
     /* ✋ 손바닥 모드(2026-10-01): 원래는 사진 가장자리가 화면 끝에 닿으면 더 못 옮겨서,
        지면 구석의 기사를 화면 가운데로 끌어올 수 없었다("오른쪽 드래그는 한계가 있다").
        → 손바닥 모드에선 화면의 40% 만큼 가장자리를 넘어 옮길 수 있게 한다(1배에서도). 사진이 통째로 사라지진 않는다. */
@@ -1753,8 +1776,11 @@ const HAND_DEFAULT=(()=>{
   try{ return matchMedia("(pointer: fine)").matches; }catch(e){ return false; }
 })();
 // ✋ 손바닥 모드 켜고 끄기 — 끄면 사진을 다시 정상 범위 안으로 돌려놓는다
-function setHand(on){
+function setHand(on, keep){
   V.hand=!!on;
+  /* keep(2026-10-16): 🖍·색·도구·지우개를 고르느라 손바닥이 저절로 꺼질 땐 옮겨 둔 자리를 그대로 둔다
+     ("손바닥으로 옮긴 뒤 펜을 누르면 사진이 원래 자리로 돌아간다" — 사용자 요청). ✋ 버튼·M 키로 직접 끌 때만 정상 범위로. */
+  if(!on && keep){ if(V.stage) keepLoose(); } else if(!on){ V.loose=false; if(V.stage) clampPan(); }   // 직접 끄면 바로 정상 범위로
   $("lb-hand").setAttribute("aria-pressed", V.hand?"true":"false");
   $("lb-stage").classList.toggle("hand", V.hand);
   if(V.stage) paint();
@@ -1852,14 +1878,14 @@ $("lb-in").onclick=()=>zoomAt(1.6);
 $("lb-out").onclick=()=>zoomAt(1/1.6);
 
 // ── 형광펜 버튼들 ───────────────────────────────────────────────────────
-$("lb-pen").onclick=()=>{ setPen(!M.on); if(M.on) setHand(false); };   // 형광펜을 켜면 바로 그을 수 있게 손바닥은 끈다
+$("lb-pen").onclick=()=>{ setPen(!M.on); if(M.on) setHand(false,true); };   // 형광펜을 켜면 바로 그을 수 있게 손바닥은 끈다
 $("lb-hand").onclick=()=>setHand(!V.hand);
 $("lb-pen-off").onclick=()=>setPen(false);
 // 색 고르기 — 빨강 · 파랑 · 노랑
 const COLORS=[["lb-c1","#ff5b5b"],["lb-c2","#4da3ff"],["lb-c3","#ffd93b"]];
 COLORS.forEach(([id,col])=>{
   $(id).onclick=()=>{
-    M.color=col; setErase(false); setHand(false);   // 색을 고르면 '그리려는 것' → 손바닥 끔
+    M.color=col; setErase(false); setHand(false,true);   // 색을 고르면 '그리려는 것' → 손바닥 끔
     COLORS.forEach(([k])=>$(k).setAttribute("aria-pressed", k===id?"true":"false"));
     const sel=selStroke();                     // 방금 그린 동그라미는 색도 바로 바뀐다
     if(sel){ sel.c=col; drawMarks(); }
@@ -1870,7 +1896,7 @@ $("lb-c1").setAttribute("aria-pressed","true");        // 기본은 빨강
 // 도구 고르기 — 직선(기본) · 동그라미 · 자유
 const TOOLS=[["lb-t-line","line"],["lb-t-oval","oval"],["lb-t-free","free"]];
 function setTool(t){
-  M.tool=t; setErase(false); setHand(false);
+  M.tool=t; setErase(false); setHand(false,true);
   M.sel=null;                                  // 도구를 바꾸면 '방금 그린 것' 고르기는 끝
   TOOLS.forEach(([id,k])=>$(id).setAttribute("aria-pressed", k===t?"true":"false"));
   drawMarks();                                 // 점선 안내를 지운다
@@ -1890,7 +1916,7 @@ WEIGHTS.forEach(([id,v])=>{ $(id).onclick=()=>setWeight(v); });
 
 function setErase(on){
   M.erase=on;
-  if(on){ M.sel=null; drawMarks(); setHand(false); }   // 지울 땐 옮기기 안내(점선)를 치우고, 손바닥도 끈다
+  if(on){ M.sel=null; drawMarks(); setHand(false,true); }   // 지울 땐 옮기기 안내(점선)를 치우고, 손바닥도 끈다
   $("lb-erase").setAttribute("aria-pressed", on?"true":"false");
 }
 $("lb-erase").onclick=()=>setErase(!M.erase);
@@ -1926,7 +1952,7 @@ document.addEventListener("keydown",e=>{
     if(selStroke()){ M.sel=null; drawMarks(); return; }
     M.on ? setPen(false) : closeViewer(); return;
   }
-  if(e.key==="h"||e.key==="H"){ setPen(!M.on); if(M.on) setHand(false); return; }
+  if(e.key==="h"||e.key==="H"){ setPen(!M.on); if(M.on) setHand(false,true); return; }
   if((e.key==="m"||e.key==="M")&&!e.ctrlKey&&!e.metaKey){ setHand(!V.hand); return; }   // ✋ 손바닥(옮기기)
   if((e.key==="n"||e.key==="N")&&!e.ctrlKey&&!e.metaKey&&!$("lb-note-btn").hidden){ toggleNote(); return; }   // 옆 요약 칸 켜고 끄기
   if((e.key==="z"||e.key==="Z")&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); $("lb-undo").onclick(); return; }

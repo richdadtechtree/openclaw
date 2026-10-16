@@ -12,6 +12,7 @@
  *   ⑧ ✋ 손바닥 버튼(2026-10-01): 켜면 **왼쪽 버튼**으로 끌어 옮긴다 — 형광펜이 켜져 있어도 줄 대신 이동,
  *      1배에서도 옮겨지고 가장자리를 화면 40% 까지 넘어 구석 기사를 가운데로 · 장 넘김·닫기 안 함 ·
  *      색·도구·🖍 를 고르면 손바닥이 꺼져 바로 긋기 · M 키 · 끄면 정상 범위로 돌아옴 · 폰 상단 바 안 넘침
+ *   ⑩ 2026-10-16: ✋ 로 옮겨 둔 뒤 🖍·색·도구를 눌러도 사진이 제자리로 안 돌아감(그 자리에서 바로 긋기), ✋ 버튼으로 직접 끌 때만 가운데로
  *   ⑨ **PC 에선 뷰어를 열면 ✋ 가 기본으로 켜져 있다**(폰은 꺼짐 — 쓸어서 장 넘기기) · 손바닥이어도 두 번 눌러 확대·바깥 눌러 닫기
  *
  * 실행: node scripts/test_viewer_pan.js
@@ -199,6 +200,36 @@ const zoomIn = async (page, n = 5) => {
   await page.keyboard.press('m');
   const hb = await page.evaluate(() => ({ tx: V.tx, w: V.fitW * V.zoom, sw: V.stage.w }));
   check(!await page.evaluate(() => V.hand) && hb.tx <= 0.5 && hb.tx >= hb.sw - hb.w - 0.5, '끄면 사진이 정상 범위 안으로 돌아온다');
+
+  // 2026-10-16 사용자 요청: 손바닥으로 옮겨 둔 뒤 🖍·색·도구를 눌러도 사진이 원래 자리로 돌아가지 않는다(그 자리에서 바로 긋기)
+  console.log('\n[✋ 로 옮긴 자리 지키기 → 🖍 로 바로 긋기]');
+  await page.evaluate(() => resetZoom()); await page.waitForTimeout(100);
+  await page.keyboard.press('m');                       // 손바닥 켜기(1배)
+  await drag(-300, -200); await page.waitForTimeout(100);
+  const rect = () => page.evaluate(() => { const r = document.getElementById('lb-img').getBoundingClientRect();
+    return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width) }; });
+  const same = (a, b) => Math.abs(a.x - b.x) <= 2 && Math.abs(a.y - b.y) <= 2 && Math.abs(a.w - b.w) <= 2;
+  const r0 = await rect();
+  await page.click('#lb-pen'); await page.waitForTimeout(150);
+  const r1 = await rect();
+  check(await page.evaluate(() => M.on && !V.hand) && same(r0, r1), '🖍 를 눌러도 옮겨 둔 자리·크기 그대로', `(${r0.x},${r0.y},${r0.w}) → (${r1.x},${r1.y},${r1.w})`);
+  await page.click('#lb-c1'); await page.click('#lb-t-oval'); await page.waitForTimeout(100);
+  check(same(r0, await rect()), '색·도구를 골라도 그대로');
+  const n0 = await page.evaluate(() => (M.marks[markName()] || []).length);
+  await drag(-80, -40); await page.waitForTimeout(100);
+  check(await page.evaluate(() => (M.marks[markName()] || []).length) === n0 + 1 && same(r0, await rect()), '그 자리에서 바로 그려지고 사진은 안 움직인다');
+  await page.click('#lb-pen-off'); await page.waitForTimeout(150);
+  check(same(r0, await rect()), '형광펜을 꺼도 그 자리 그대로');
+  // 확대 + 형광펜 켜 둔 채 ✋ 로 옮기고 → 색을 고르면(사용자 화면 그대로) 그 자리 유지
+  await page.click('#lb-pen'); await zoomIn(page, 3); await page.click('#lb-hand');
+  await drag(250, 180); await page.waitForTimeout(100);
+  const zr = await rect();
+  await page.click('#lb-c2'); await page.waitForTimeout(100);
+  check(await page.evaluate(() => !V.hand && V.zoom > 1.2) && same(zr, await rect()), "확대한 채 ✋ 로 옮긴 뒤 색을 골라도 그 자리 그대로", `(${zr.x},${zr.y},${zr.w})`);
+  await page.click('#lb-pen-off'); await page.evaluate(() => resetZoom()); await page.waitForTimeout(100);
+  await page.click('#lb-hand'); await page.click('#lb-hand'); await page.waitForTimeout(100);
+  const rc = await page.evaluate(() => ({ tx: V.tx, c: (V.stage.w - V.fitW * V.zoom) / 2 }));
+  check(Math.abs(rc.tx - rc.c) < 1, '✋ 버튼으로 직접 끄면 그때는 정상 자리(가운데)로', `tx=${Math.round(rc.tx)} 가운데=${Math.round(rc.c)}`);
 
   const ph = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
   await ph.goto(base + '/slack');
