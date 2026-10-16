@@ -227,7 +227,7 @@
   .lb[hidden]{display:none}
   .lb-bar{display:flex;align-items:center;gap:6px;padding:10px 12px;
           padding-top:max(10px,env(safe-area-inset-top));color:#e7eaf1;
-          background:linear-gradient(#0b0e14ee,#0b0e1400);position:relative;z-index:2}
+          background:linear-gradient(#0b0e14ee,#0b0e1400);position:relative;z-index:3}   /* 3: ⤓ 저장 메뉴가 형광펜 도구모음(2) 위로 */
   .lb-count{font-family:var(--mono);font-size:13px;font-variant-numeric:tabular-nums;color:#c7cedb}
   .lb-count b{color:#fff;font-weight:700}
   .lb-native{font-family:var(--mono);font-size:11.5px;color:#8b93a4;margin-right:auto;margin-left:7px}
@@ -399,6 +399,18 @@
   }
   /* 뷰어 상단 '📌 이 장 연결' — 지면 고르기 중에만 보인다 */
   .lb-btn[hidden]{display:none}
+  /* ⤓ 저장 메뉴 (2026-10-16) */
+  .lb-dlmenu{position:absolute;right:12px;top:100%;margin-top:2px;z-index:5;min-width:228px;
+             background:#161a23;border:1px solid #2b3244;border-radius:11px;padding:6px;
+             box-shadow:0 10px 28px #0009;display:flex;flex-direction:column;gap:2px}
+  .lb-dlmenu[hidden]{display:none}
+  .lb-dlmenu button,.lb-dlmenu a{appearance:none;border:0;background:transparent;color:#e7eaf1;text-align:left;
+             font:inherit;font-size:14px;padding:9px 10px;border-radius:8px;cursor:pointer;text-decoration:none;display:block}
+  .lb-dlmenu button:hover,.lb-dlmenu a:hover{background:#2f4272;color:#fff}
+  .lb-dlmenu button:disabled{opacity:.4;cursor:default;background:transparent}
+  .lb-dlmenu small{color:#8b93a4;font-size:11.5px;margin-left:4px}
+  .lb-dlmsg{font-size:12px;color:#9fb3e6;padding:2px 10px 4px;min-height:0}
+  .lb-dlmsg:empty{display:none}
   @media (max-width:520px){ .lb-btn.pick .lg{display:none} }
   .lb-btn.pick{background:#2f4272;border-color:#7f9bf5;color:#fff;font-size:13px;font-weight:700;white-space:nowrap}
 </style>
@@ -449,7 +461,15 @@
     <button class="lb-btn" id="lb-pen" title="형광펜 (H)" aria-label="형광펜" aria-pressed="false">🖍</button>
     <button class="lb-btn" id="lb-out" title="축소" aria-label="축소">−</button>
     <button class="lb-btn" id="lb-in" title="확대" aria-label="확대">＋</button>
-    <a class="lb-btn" id="lb-dl" href="#" title="이 장 저장" aria-label="이 장 저장">⤓</a>
+    <button class="lb-btn" id="lb-dl" title="저장 — 줄 그은 그대로 그림·PDF로" aria-label="저장" aria-haspopup="menu" aria-expanded="false">⤓</button>
+    <!-- 2026-10-16 사용자 요청: 줄 그은 뒤 PDF 전체 / 낱장 그림으로 받기. 전부 이 브라우저 안에서 만든다(서버로 아무것도 안 보냄) -->
+    <div class="lb-dlmenu" id="lb-dlmenu" role="menu" hidden>
+      <button role="menuitem" id="lb-dl-img">🖼 이 장 그림 <small>줄 포함 · JPG</small></button>
+      <button role="menuitem" id="lb-dl-pdf">📄 전체 PDF <small>모든 장 · 줄 포함</small></button>
+      <button role="menuitem" id="lb-dl-pdfm">🖍 줄 그은 장만 PDF</button>
+      <a role="menuitem" id="lb-dl-orig" href="#" download>⤓ 이 장 원본 <small>줄 없이</small></a>
+      <div class="lb-dlmsg" id="lb-dlmsg" aria-live="polite"></div>
+    </div>
     <button class="lb-btn" id="lb-close" title="닫기 (Esc)" aria-label="닫기">✕</button>
   </div>
   <button class="lb-nav prev" id="lb-prev" aria-label="이전 장">‹</button>
@@ -1687,6 +1707,7 @@ function openViewer(i,opts={}){
   drawMarks();
 }
 function closeViewer(){
+  dlMenu(false);
   $("lb").hidden=true;
   document.body.style.overflow="";
   clearTimeout(V.navT);                        // 닫은 뒤 타이머가 남아 돌지 않게
@@ -1705,7 +1726,7 @@ function showPage(){
   img.src=im.url;                              // 뷰어는 썸네일이 아니라 원본을 쓴다
   img.alt=`${V.i+1}번째 장`;
   $("lb-count").innerHTML=`<b>${String(V.i+1).padStart(2,"0")}</b> / ${V.list.length}`;
-  $("lb-dl").href=im.download_url;
+  $("lb-dl-orig").href=im.download_url;
   $("lb-prev").disabled=V.i<=0;
   $("lb-next").disabled=V.i>=V.list.length-1;
   V.zoom=1;
@@ -1957,8 +1978,9 @@ const ARROW_DELTA={ArrowLeft:[1,0],ArrowRight:[-1,0],ArrowUp:[0,1],ArrowDown:[0,
                    a:[1,0],d:[-1,0],w:[0,1],s:[0,-1],A:[1,0],D:[-1,0],W:[0,1],S:[0,-1]};
 document.addEventListener("keydown",e=>{
   if($("lb").hidden) return;
-  // Esc 는 한 단계씩 물러난다: 동그라미 고르기 해제 → 형광펜 끄기 → 뷰어 닫기
+  // Esc 는 한 단계씩 물러난다: (저장 메뉴 닫기) → 동그라미 고르기 해제 → 형광펜 끄기 → 뷰어 닫기
   if(e.key==="Escape"){
+    if(!$("lb-dlmenu").hidden){ dlMenu(false); return; }
     if(selStroke()){ M.sel=null; drawMarks(); return; }
     M.on ? setPen(false) : closeViewer(); return;
   }
@@ -2438,6 +2460,115 @@ function cropFig(fig,img,box){
   fig.style.aspectRatio=String((w*nw)/(h*nh));
   Object.assign(img.style,{position:"absolute",width:(100/w)+"%",height:"auto",left:(-x/w*100)+"%",top:(-y/h*100)+"%",maxWidth:"none"});
 }
+/* ── ⤓ 저장: 줄 그은 그대로 그림·PDF 로 (2026-10-16 사용자 요청) ───────────────────────
+   · 이 장 그림(JPG) / 전체 PDF / 줄 그은 장만 PDF / 이 장 원본.
+   · 전부 **이 브라우저 안에서** 만든다 — 원본 사진 위에 화면과 같은 방식(곱하기 섞기·투명도 0.62)으로 줄을 얹고,
+     PDF 는 아래 작은 PDF 만들기(외부 라이브러리 없음)로 JPG 를 한 장에 하나씩 붙인다. 서버에는 아무것도 안 보낸다.
+   · 사진이 크면(지면 30장) PDF 가 수십 MB 가 될 수 있어 긴 변을 2600px 로 줄여 담는다(글씨는 충분히 선명). */
+const DL_MAX=2600, DL_Q=0.88, MARK_ALPHA=0.62;
+function dlMenu(open){
+  const m=$("lb-dlmenu"); if(!m) return;
+  m.hidden=!open; $("lb-dl").setAttribute("aria-expanded", open?"true":"false");
+  if(open){
+    const any=(V.list||[]).some(im=>(M.marks[im.name]||[]).length);
+    $("lb-dl-pdfm").disabled=!any || DL.busy;
+    $("lb-dl-pdfm").title=any?"":"아직 줄을 그은 장이 없어요";
+    $("lb-dl-pdf").disabled=$("lb-dl-img").disabled=DL.busy;
+  }
+}
+const DL={busy:false};
+$("lb-dl").onclick=(e)=>{ e.stopPropagation(); dlMenu($("lb-dlmenu").hidden); };
+document.addEventListener("pointerdown",e=>{ if(!$("lb-dlmenu").hidden && !e.target.closest("#lb-dlmenu,#lb-dl")) dlMenu(false); });
+$("lb-dl-orig").onclick=()=>setTimeout(()=>dlMenu(false),0);
+function dlMsg(t){ $("lb-dlmsg").textContent=t||""; }
+function loadImg(url){
+  return new Promise((ok,fail)=>{ const im=new Image(); im.decoding="async";
+    im.onload=()=>ok(im); im.onerror=()=>fail(new Error("사진을 못 불러옴")); im.src=url; });
+}
+/* 한 장을 '원본 + 그은 줄' 그림으로 → canvas */
+async function renderPage(im){
+  const img=await loadImg(im.url);
+  const nw=img.naturalWidth, nh=img.naturalHeight, k=Math.min(1, DL_MAX/Math.max(nw,nh));
+  const w=Math.round(nw*k), h=Math.round(nh*k);
+  const cv=document.createElement("canvas"); cv.width=w; cv.height=h;
+  const ctx=cv.getContext("2d");
+  ctx.fillStyle="#fff"; ctx.fillRect(0,0,w,h);           // 투명 PNG·GIF 도 흰 종이 위에
+  ctx.drawImage(img,0,0,w,h);
+  const list=(M.date===state.date && M.marks[im.name])||[];
+  if(list.length){
+    const lay=document.createElement("canvas"); lay.width=w; lay.height=h;
+    const lc=lay.getContext("2d"); lc.lineCap="round"; lc.lineJoin="round";
+    for(const st of list) strokeOne(lc, st, w, h, 1.5);
+    ctx.globalCompositeOperation="multiply"; ctx.globalAlpha=MARK_ALPHA;   // 화면의 형광펜과 똑같이 글씨가 비쳐 보이게
+    ctx.drawImage(lay,0,0);
+    ctx.globalCompositeOperation="source-over"; ctx.globalAlpha=1;
+  }
+  return cv;
+}
+const toJpeg=(cv)=>new Promise((ok,fail)=>cv.toBlob(b=>b?ok(b):fail(new Error("그림 만들기 실패")),"image/jpeg",DL_Q));
+function saveBlob(blob,name){
+  const a=document.createElement("a"), u=URL.createObjectURL(blob);
+  a.href=u; a.download=name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(u), 60000);
+}
+const dlBase=()=>(state.date||"newspaper");   // ⚠️ 파일 이름은 영문·숫자만 — 한글 이름은 일부 브라우저가 "download" 로 바꿔 버린다
+const pageNo=(i)=>String(i+1).padStart(2,"0");
+/* 아주 작은 PDF 만들기 — JPG 를 장마다 하나씩 그대로(DCTDecode) 붙인다. 쪽 크기 = 가로 A4(595pt), 세로는 사진 비율. */
+function makePdf(pages){                       // pages: [{w,h,jpg:Uint8Array}]
+  const enc=new TextEncoder(), parts=[], offs=[]; let len=0;
+  const put=(x)=>{ const b=typeof x==="string"?enc.encode(x):x; parts.push(b); len+=b.length; };
+  const obj=(n,body)=>{ offs[n]=len; put(`${n} 0 obj\n`); body(); put("\nendobj\n"); };
+  put("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
+  const n=pages.length, kids=pages.map((_,i)=>`${3+i*3} 0 R`).join(" ");
+  obj(1,()=>put("<< /Type /Catalog /Pages 2 0 R >>"));
+  obj(2,()=>put(`<< /Type /Pages /Kids [${kids}] /Count ${n} >>`));
+  pages.forEach((pg,i)=>{
+    const P=3+i*3, C=P+1, I=P+2, W=595.28, H=+(W*pg.h/pg.w).toFixed(2);
+    const cs=`q ${W} 0 0 ${H} 0 0 cm /Im0 Do Q`;
+    obj(P,()=>put(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /XObject << /Im0 ${I} 0 R >> >> /Contents ${C} 0 R >>`));
+    obj(C,()=>{ put(`<< /Length ${cs.length} >>\nstream\n`); put(cs); put("\nendstream"); });
+    obj(I,()=>{ put(`<< /Type /XObject /Subtype /Image /Width ${pg.w} /Height ${pg.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${pg.jpg.length} >>\nstream\n`);
+                put(pg.jpg); put("\nendstream"); });
+  });
+  const total=3+n*3, xref=len;
+  put(`xref\n0 ${total}\n0000000000 65535 f \n`);
+  for(let k=1;k<total;k++) put(String(offs[k]).padStart(10,"0")+" 00000 n \n");
+  put(`trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+  return new Blob(parts,{type:"application/pdf"});
+}
+async function dlPdf(onlyMarked){
+  if(DL.busy) return;
+  const idx=(V.list||[]).map((im,i)=>i).filter(i=>!onlyMarked || (M.marks[V.list[i].name]||[]).length);
+  if(!idx.length){ dlMsg("줄 그은 장이 없어요"); return; }
+  DL.busy=true; dlMenu(true);
+  try{
+    const pages=[];
+    for(let k=0;k<idx.length;k++){
+      dlMsg(`PDF 만드는 중… ${k+1}/${idx.length}장`);
+      const cv=await renderPage(V.list[idx[k]]);
+      const jpg=new Uint8Array(await (await toJpeg(cv)).arrayBuffer());
+      pages.push({w:cv.width,h:cv.height,jpg});
+      cv.width=cv.height=0;                    // 메모리 바로 돌려주기(폰에서 30장)
+    }
+    const blob=makePdf(pages);
+    saveBlob(blob, `${dlBase()}_${onlyMarked?"marked":"all"}_${idx.length}p.pdf`);
+    dlMsg(`✅ 저장함 · ${idx.length}장 · ${(blob.size/1048576).toFixed(1)}MB`);
+  }catch(err){ dlMsg("❌ PDF 만들기 실패: "+(err.message||err)); }
+  finally{ DL.busy=false; if(!$("lb-dlmenu").hidden) dlMenu(true); }
+}
+$("lb-dl-pdf").onclick=()=>dlPdf(false);
+$("lb-dl-pdfm").onclick=()=>dlPdf(true);
+$("lb-dl-img").onclick=async()=>{
+  if(DL.busy) return; DL.busy=true; dlMsg("그림 만드는 중…");
+  try{
+    const im=V.list[V.i], cv=await renderPage(im);
+    const marked=(M.marks[im.name]||[]).length;
+    saveBlob(await toJpeg(cv), `${dlBase()}_p${pageNo(V.i)}${marked?"_marked":""}.jpg`);
+    dlMsg(`✅ 저장함 · ${pageNo(V.i)}번째 장${marked?" (줄 포함)":""}`);
+  }catch(err){ dlMsg("❌ 저장 실패: "+(err.message||err)); }
+  finally{ DL.busy=false; }
+};
+
 function drawSideMarks(){ document.querySelectorAll(".brf-side[data-i]").forEach(drawSideMark); }
 
 // 사진 칸의 버튼들 — 하나의 리스너로 처리(피드가 다시 그려져도 다시 달 필요 없음)
