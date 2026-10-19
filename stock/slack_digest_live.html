@@ -497,7 +497,7 @@
     <button id="lb-pen-off" title="형광펜 끄기">✕ 끄기</button>
   </div>
   <div class="lb-body">
-    <div class="lb-stage" id="lb-stage"><img id="lb-img" alt=""><canvas class="lb-mark" id="lb-mark"></canvas></div>
+    <div class="lb-stage" id="lb-stage"><img id="lb-img" alt="" draggable="false"><canvas class="lb-mark" id="lb-mark"></canvas></div>
     <aside class="lb-note" id="lb-note" hidden aria-label="이 지면에 실린 기사 요약"></aside>
   </div>
   <button class="lb-nav next" id="lb-next" aria-label="다음 장">›</button>
@@ -1683,8 +1683,26 @@ function setPen(on){
      pen  : true 면 형광펜을 켠 채로 연다(기사 옆 사진을 누르면 바로 줄을 그을 수 있게)
      pick : {key,title} 면 '지면 고르기' — 상단에 📌 이 장 연결 버튼이 나온다 */
 const HINT_DEFAULT=document.getElementById("lb-hint").textContent;
+/* ── 뷰어가 열려 있는 동안만: 우클릭 메뉴·이미지 끌어가기 막기 (2026-10-19 사용자 요청) ──────────────
+   예전엔 사진 칸(stage)에서만 contextmenu 를 막아, 오른쪽 버튼으로 끌다가 **사진 칸 밖(위쪽 바·옆 요약 칸)에서 버튼을 떼면**
+   (윈도 크롬은 버튼을 뗄 때 메뉴를 띄운다) 크롬 '이미지 저장…' 메뉴가 떴다. 이미지를 왼쪽으로 끌면 브라우저 기본
+   '이미지 끌어가기'(반투명 사진이 따라옴)가 끼어들 수도 있었다.
+   → 뷰어(#lb, 화면 전체를 덮는 창) 안에서 일어나는 contextmenu·dragstart 를 document **capture 단계**에서 먼저 막는다.
+     뷰어는 iframe 이 아니라 같은 문서 안에 있어 이 document 하나면 된다.
+     열 때 붙이고 닫을 때 뗀다(뷰어가 닫혀 있을 땐 페이지의 다른 우클릭·끌기는 그대로). */
+function lbGuard(e){
+  const lb=$("lb");
+  if(lb.hidden || !lb.contains(e.target)) return;
+  e.preventDefault();
+}
+function lbGuards(on){
+  const f=on?"addEventListener":"removeEventListener";
+  for(const t of ["contextmenu","dragstart"]) document[f](t, lbGuard, true);   // true = capture 단계
+  V.guards=on;
+}
 function openViewer(i,opts={}){
   if(!newsState.images||!newsState.images.length) return;
+  if(!V.guards) lbGuards(true);
   V.list=newsState.images; V.i=Math.max(0,Math.min(i,V.list.length-1));
   resetPointers();                             // 이전에 꼬인 터치 상태를 새 기사로 가져오지 않게
   V.pick=opts.pick||null;
@@ -1707,6 +1725,7 @@ function openViewer(i,opts={}){
   drawMarks();
 }
 function closeViewer(){
+  lbGuards(false);                             // 열 때 붙인 우클릭·끌기 막기를 뗀다
   dlMenu(false);
   $("lb").hidden=true;
   document.body.style.overflow="";
@@ -2083,6 +2102,9 @@ stage.addEventListener("pointerdown",e=>{
   // ✋ 손바닥 모드 = 왼쪽 버튼(손가락 하나)도 '옮기기' — 형광펜이 켜져 있어도 긋지 않는다
   if(e.button===2 || (V.hand && e.button===0 && V.pts.size===1)){
     M.cur=null;
+    /* 2026-10-19: 오른쪽 버튼은 1배(확대 안 함)에서도 옮긴다 — 1배의 정상 범위는 '가운데 고정'이라 그대로는 안 움직이므로,
+       손바닥처럼 넓은 범위(V.loose)를 허용한다. 장 넘김·resetZoom·✋ 끄기 때 가운데로 돌아온다. 확대 중엔 예전처럼 정상 범위. */
+    if(e.button===2 && V.zoom<=1.001) V.loose=true;
     V.drag={x:e.clientX,y:e.clientY,tx:V.tx,ty:V.ty,t:Date.now(),moved:0,pan:true};
     stage.classList.add("panning");
     return;
@@ -2145,7 +2167,7 @@ stage.addEventListener("pointermove",e=>{
   if(!V.drag) return;
   const dx=e.clientX-V.drag.x, dy=e.clientY-V.drag.y;
   V.drag.moved=Math.max(V.drag.moved,Math.hypot(dx,dy));
-  if(V.zoom>1.001 || V.hand){ V.tx=V.drag.tx+dx; V.ty=V.drag.ty+dy; paint(); }   // 손바닥 모드는 1배에서도 옮긴다
+  if(V.zoom>1.001 || V.hand || V.drag.pan){ V.tx=V.drag.tx+dx; V.ty=V.drag.ty+dy; paint(); }   // 손바닥·오른쪽 버튼은 1배에서도 옮긴다
 });
 /* 누르지 않고 지나가기만 할 때 — 고른 동그라미 위면 커서를 '옮기기' 모양으로.
    (손가락에는 커서가 없으니 마우스일 때만 본다) */

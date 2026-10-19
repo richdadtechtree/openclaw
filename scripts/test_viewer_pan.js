@@ -12,6 +12,7 @@
  *   ⑧ ✋ 손바닥 버튼(2026-10-01): 켜면 **왼쪽 버튼**으로 끌어 옮긴다 — 형광펜이 켜져 있어도 줄 대신 이동,
  *      1배에서도 옮겨지고 가장자리를 화면 40% 까지 넘어 구석 기사를 가운데로 · 장 넘김·닫기 안 함 ·
  *      색·도구·🖍 를 고르면 손바닥이 꺼져 바로 긋기 · M 키 · 끄면 정상 범위로 돌아옴 · 폰 상단 바 안 넘침
+ *   ⑪ 2026-10-19: 뷰어 안 어디서든 우클릭 메뉴·dragstart 차단(document capture, 닫으면 정리) · 1배에서도 오른쪽 드래그 이동 · 왼쪽 긋기·지우개·휠·Esc 그대로
  *   ⑩ 2026-10-16: ✋ 로 옮겨 둔 뒤 🖍·색·도구를 눌러도 사진이 제자리로 안 돌아감(그 자리에서 바로 긋기), ✋ 버튼으로 직접 끌 때만 가운데로
  *   ⑨ **PC 에선 뷰어를 열면 ✋ 가 기본으로 켜져 있다**(폰은 꺼짐 — 쓸어서 장 넘기기) · 손바닥이어도 두 번 눌러 확대·바깥 눌러 닫기
  *
@@ -237,6 +238,51 @@ const zoomIn = async (page, n = 5) => {
   await page.click('#lb-hand'); await page.click('#lb-hand'); await page.waitForTimeout(100);
   const rc = await page.evaluate(() => ({ tx: V.tx, c: (V.stage.w - V.fitW * V.zoom) / 2 }));
   check(Math.abs(rc.tx - rc.c) < 1, '✋ 버튼으로 직접 끄면 그때는 정상 자리(가운데)로', `tx=${Math.round(rc.tx)} 가운데=${Math.round(rc.c)}`);
+
+  // 2026-10-19 사용자 요청: 뷰어 안 어디서든 우클릭 메뉴·이미지 끌어가기 차단(capture 단계) · 오른쪽 버튼은 1배에서도 이동 · 닫으면 정리
+  console.log('\n[우클릭 메뉴·이미지 끌기 차단 / 1배 오른쪽 드래그]');
+  await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
+  await openViewer(page); await page.waitForTimeout(250);
+  await page.evaluate(() => { setHand(false); resetZoom(); }); await page.waitForTimeout(120);
+  // 뒤늦게(버블 단계) 붙인 감시자로 '기본 동작이 막혔는지'만 기록 — 앱 핸들러가 capture 에서 먼저 막아야 true
+  await page.evaluate(() => { window.__ctx = []; window.__drag = [];
+    window.addEventListener('contextmenu', e => __ctx.push([e.target.id || e.target.className || e.target.tagName, e.defaultPrevented]));
+    window.addEventListener('dragstart', e => __drag.push([e.target.id || e.target.tagName, e.defaultPrevented])); });
+  const fire = (sel, type) => page.evaluate(([sel, type]) => {
+    const el = document.querySelector(sel); return !el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 2 })); }, [sel, type]);
+  check(await fire('#lb-img', 'contextmenu') && await fire('#lb-mark', 'contextmenu') && await fire('.lb-bar', 'contextmenu') && await fire('#lb-count', 'contextmenu'),
+        '뷰어 안 어디서든(사진·그림판·위쪽 바) 우클릭 메뉴가 막힌다');
+  check(await page.evaluate(() => document.getElementById('lb-img').draggable === false) && await fire('#lb-img', 'dragstart') && await fire('#lb-stage', 'dragstart'),
+        '사진·사진 칸의 브라우저 기본 끌기(dragstart)가 막힌다');
+  // 실제 마우스: 사진 위에서 오른쪽 버튼을 누르고 위쪽 바까지 끌고 가서 떼기(윈도 크롬은 뗄 때 메뉴를 띄운다)
+  const q0 = await pos(page);
+  await page.evaluate(() => { __ctx.length = 0; });
+  await page.mouse.move(640, 500); await page.mouse.down({ button: 'right' });
+  await page.mouse.move(560, 430, { steps: 6 });
+  const q1 = await pos(page);
+  await page.mouse.move(560, 20, { steps: 6 }); await page.mouse.up({ button: 'right' });
+  await page.waitForTimeout(150);
+  const ctx = await page.evaluate(() => __ctx);
+  check(q1.z === 1 && q1.tx < q0.tx - 40 && q1.ty < q0.ty - 40, '1배(확대 안 함)에서도 오른쪽 버튼으로 끌면 지면이 움직인다', `(${q0.tx},${q0.ty}) → (${q1.tx},${q1.ty})`);
+  check(ctx.length > 0 && ctx.every(c => c[1]), '실제 오른쪽 클릭·드래그에서 생긴 메뉴 신호가 모두 막혔다', JSON.stringify(ctx));
+  check(q1.i === 0 && await page.evaluate(() => !document.getElementById('lb').hidden), '장이 안 넘어가고 뷰어도 안 닫힌다');
+  // 왼쪽 버튼 기능은 그대로: 형광펜 긋기 · 지우개 · 휠 확대 · Esc
+  await page.click('#lb-pen'); await page.waitForTimeout(150);
+  const L0 = await page.evaluate(() => (M.marks[markName()] || []).length);
+  await page.mouse.move(600, 600); await page.mouse.down({ button: 'right' }); await page.mouse.move(640, 620, { steps: 4 }); await page.mouse.up({ button: 'right' });
+  check(await page.evaluate(() => (M.marks[markName()] || []).length) === L0, '형광펜 중 1배 오른쪽 드래그도 줄을 긋지 않는다(이동만)');
+  await page.mouse.move(560, 520); await page.mouse.down(); await page.mouse.move(700, 520, { steps: 6 }); await page.mouse.up();
+  check(await page.evaluate(() => (M.marks[markName()] || []).length) === L0 + 1, '왼쪽 버튼 긋기는 그대로 된다');
+  await page.click('#lb-erase'); await page.mouse.click(630, 520);
+  check(await page.evaluate(() => (M.marks[markName()] || []).length) === L0, '지우개도 그대로 된다');
+  await page.click('#lb-erase');
+  const zb = (await pos(page)).z; await page.mouse.move(640, 450); await page.mouse.wheel(0, -400); await page.waitForTimeout(250);
+  check((await pos(page)).z > zb, '마우스 휠 확대도 그대로 된다', `${zb} → ${(await pos(page)).z}`);
+  await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
+  check(await page.evaluate(() => document.getElementById('lb').hidden), 'Esc 로 (형광펜 끄고) 닫힌다');
+  // 닫은 뒤엔 막기를 뗀다 → 페이지의 우클릭·끌기는 원래대로
+  check(await page.evaluate(() => V.guards === false) && !(await fire('body', 'contextmenu')) && !(await fire('body', 'dragstart')),
+        '뷰어를 닫으면 막기 리스너를 정리한다(페이지 우클릭·끌기는 원래대로)');
 
   const ph = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
   await ph.goto(base + '/slack');
