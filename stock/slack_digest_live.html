@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>오늘 신문 요약</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
   :root {
     --bg:#eef0f4; --surface:#fff; --ink:#191c24; --muted:#5c6675; --faint:#8a93a3;
@@ -11,7 +12,7 @@
     --c-news:#45589e; --c-brief:#0d7f72; --c-alert:#a86413; --c-side:#bd3529; --c-other:#6a7180;
     --live:#12a150;
     --shadow:0 1px 2px rgba(20,26,40,.05),0 8px 24px -14px rgba(20,26,40,.18);
-    --sans:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR","Segoe UI",Roboto,sans-serif;
+    --sans:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR","Segoe UI",Roboto,sans-serif;
     --mono:"SF Mono","JetBrains Mono","D2Coding",ui-monospace,Menlo,Consolas,monospace;
   }
   @media (prefers-color-scheme:dark){:root{
@@ -417,6 +418,79 @@
   .lb-dlmsg:empty{display:none}
   @media (max-width:520px){ .lb-btn.pick .lg{display:none} }
   .lb-btn.pick{background:#2f4272;border-color:#7f9bf5;color:#fff;font-size:13px;font-weight:700;white-space:nowrap}
+
+  /* ══ 2026-10-20 리디자인 — 가독성·요즘 스타일 (사용자 요청) ═══════════════════════════════
+     원칙: 글은 크게·줄 간격 넉넉히, 칸은 둥글고 여백 넓게, 장식은 줄이고 '기사 → WHAT/WHY/HOW' 흐름이 한눈에.
+     기존 규칙을 지우지 않고 아래에서 덮어쓴다(되돌릴 땐 이 묶음만 지우면 된다). 글자 크기는 계속 px × --fs. */
+  :root{--radius:18px;--c-what:#3a5bd0;--c-why:#b45309;--c-how:#0f766e}
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--c-what:#8ea6ff;--c-why:#f2b15c;--c-how:#4fd1bf}}
+  :root[data-theme="dark"]{--c-what:#8ea6ff;--c-why:#f2b15c;--c-how:#4fd1bf}
+  :root[data-theme="light"]{--c-what:#3a5bd0;--c-why:#b45309;--c-how:#0f766e}
+  body{letter-spacing:-.01em}
+  h1.date{font-weight:800;letter-spacing:-.035em}
+  .card{border-radius:var(--radius);padding:22px 26px 24px;border-color:color-mix(in srgb,var(--line) 70%,transparent)}
+  .news{border-radius:var(--radius)}
+  .card .meta{margin-bottom:12px}
+  .body{line-height:1.8}
+  /* 메시지 머리줄(날짜·부분 표시) — 큰 제목 대신 작고 단정한 꼬리표 */
+  .brf-head{font-size:calc(14.5px*var(--fs));font-weight:700;color:var(--muted);letter-spacing:-.005em;
+            margin:0 0 20px;padding:0 0 12px;border-bottom:1px solid var(--line)}
+  .brf-cat{font-size:calc(20px*var(--fs));border-left:0;padding-left:0;color:var(--ink);display:flex;align-items:center;gap:10px}
+  .brf-cat::before{content:"";width:6px;height:1.1em;border-radius:3px;background:var(--accent-bright)}
+  /* 기사 한 편 = 제목 → 라벨 달린 세 줄. 기사 사이는 넉넉히 */
+  .brf-art{margin:0 0 30px}
+  .brf-art.has-side{gap:28px;padding-top:22px}
+  .brf-title{font-size:calc(19px*var(--fs));font-weight:800;line-height:1.42;letter-spacing:-.025em;margin:0 0 12px}
+  .brf-kv{gap:14px;margin:.6em 0;font-size:calc(15.5px*var(--fs));line-height:1.8}
+  .brf-kv .k{width:calc(52px*var(--fs));padding-top:.32em;font-family:var(--sans);font-size:calc(11px*var(--fs));font-weight:800;
+             letter-spacing:.04em;color:var(--kc,var(--faint))}
+  .brf-kv .k::before{content:"";display:inline-block;width:.5em;height:.5em;border-radius:50%;margin-right:.45em;vertical-align:.1em;background:currentColor}
+  .brf-kv[data-k="WHAT"]{--kc:var(--c-what)} .brf-kv[data-k="WHY"]{--kc:var(--c-why)} .brf-kv[data-k="HOW"]{--kc:var(--c-how)}
+  .brf-kv[data-k="WHAT"] .v{font-weight:600}                 /* 무슨 일인지가 가장 먼저 눈에 */
+  .brf-src{font-family:var(--sans);border:0;border-radius:999px;padding:4px 11px;margin-top:14px;
+           background:color-mix(in srgb,var(--muted) 9%,transparent);color:var(--muted)}
+  .brf-src a{font-family:var(--mono);font-size:.95em;border-bottom:0}
+  .brf-pg{border:0;background:color-mix(in srgb,var(--accent-bright) 12%,transparent);color:var(--accent);font-weight:700}
+  .brf-key{border-left:0;border-radius:14px;padding:16px 18px;background:color-mix(in srgb,var(--accent-bright) 10%,var(--surface))}
+  .brf-sec{border-bottom:0;margin-top:34px}
+  .side-fig{border-radius:12px;box-shadow:0 1px 2px rgba(20,26,40,.08)}
+  .side-acts button{border-radius:999px;padding:5px 12px}
+  @media (max-width:520px){
+    .card{padding:16px 16px 18px;border-radius:14px}
+    .brf-title{font-size:calc(17.5px*var(--fs))}
+    .brf-kv{margin:.75em 0}
+    .brf-kv .k{display:block;margin:0 0 1px;width:auto}       /* 폰: 라벨은 위에 작게, 글은 폭을 다 쓰게 */
+    .brf-src{display:inline-block;max-width:100%;line-height:1.6}  /* '원문 :' 이 두 줄로 쪼개지지 않게 */
+    .brf-src a{word-break:break-all}
+    /* 폰: 왼쪽 시간 줄(타임라인)이 폭 70px 을 먹어 글이 좁았다 → 시간은 카드 위 작은 글씨로, 카드는 화면 폭을 다 쓴다 */
+    .entry{padding-left:0}
+    .entry::before,.entry .node{display:none}
+    .entry .time{position:static;display:block;width:auto;text-align:left;margin:0 0 6px 4px;font-size:12px}
+    .daybreak,.paper-note{margin-left:0}
+  }
+  /* ── 매일경제 사설 칸 ── */
+  .mk-ed{margin:34px 0 0 78px;padding:24px 26px 26px;border-radius:var(--radius);background:var(--surface);
+         border:1px solid color-mix(in srgb,var(--line) 70%,transparent);box-shadow:var(--shadow)}
+  .mk-ed[hidden]{display:none}
+  .mk-ed-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding-bottom:14px;margin-bottom:6px;border-bottom:2px solid var(--ink)}
+  .mk-ed-kicker{font-size:12px;font-weight:800;letter-spacing:.08em;color:var(--c-side)}
+  .mk-ed-head h2{margin:0;font-size:calc(21px*var(--fs));font-weight:800;letter-spacing:-.03em}
+  .mk-ed-date{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--faint)}
+  .mk-ed-item{padding:20px 0 4px;border-top:1px solid var(--line)}
+  .mk-ed-item:first-child{border-top:0}
+  .mk-ed-item h3{margin:0 0 6px;font-size:calc(18.5px*var(--fs));font-weight:800;line-height:1.45;letter-spacing:-.025em}
+  .mk-ed-meta{font-size:calc(12.5px*var(--fs));color:var(--faint);margin-bottom:10px}
+  .mk-ed-meta a{color:var(--accent-bright);text-decoration:none;font-weight:600}
+  .mk-ed-body p{margin:0 0 .85em;font-size:calc(15.5px*var(--fs));line-height:1.85;word-break:keep-all;overflow-wrap:anywhere}
+  .mk-ed-body:not(.open) p:nth-child(n+3){display:none}
+  .mk-ed-body:not(.open) p:nth-child(2):not(:last-child){-webkit-mask-image:linear-gradient(#000 40%,transparent);mask-image:linear-gradient(#000 40%,transparent)}
+  .mk-ed-more{appearance:none;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);font:inherit;
+              font-size:13px;font-weight:700;border-radius:999px;padding:6px 14px;cursor:pointer;margin:2px 0 8px}
+  .mk-ed-more:hover{border-color:var(--accent-bright)}
+  .mk-ed-empty{padding:16px 0 4px;color:var(--muted);font-size:14px;line-height:1.7}
+  .mk-ed-empty a{color:var(--accent-bright);font-weight:600;text-decoration:none}
+  .mk-ed-stale{display:inline-block;margin-left:6px;font-size:11px;font-weight:700;color:var(--c-alert)}
+  @media (max-width:520px){ .mk-ed{margin-left:0;padding:18px 16px 18px;border-radius:14px} }
 </style>
 </head>
 <body class="paper">
@@ -449,6 +523,11 @@
 
   <div class="toolbar" id="toolbar"></div>
   <main class="feed" id="feed"></main>
+  <!-- 2026-10-20 사용자 요청: 매일경제 사설을 맨 아래 늘 (서버 stock/mk_editorial.py → /api/news/editorial) -->
+  <section class="mk-ed" id="mk-ed" hidden aria-labelledby="mk-ed-h">
+    <div class="mk-ed-head"><span class="mk-ed-kicker">오피니언</span><h2 id="mk-ed-h">매일경제 사설</h2><span class="mk-ed-date" id="mk-ed-date"></span></div>
+    <div id="mk-ed-list"></div>
+  </section>
   <footer>
     <span id="foot-count">—</span>
     <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST</span>
@@ -1027,7 +1106,7 @@ function briefing(raw){
       continue;
     }
     if(m=line.match(/^•\s*(WHAT|WHY|HOW|What|Why|How)\s*[:：]\s*([\s\S]*)$/)){
-      open(); art+='<div class="brf-kv"><span class="k">'+m[1].toUpperCase()+'</span><span class="v">'+inline(m[2])+"</span></div>";
+      open(); art+='<div class="brf-kv" data-k="'+m[1].toUpperCase()+'"><span class="k">'+m[1].toUpperCase()+'</span><span class="v">'+inline(m[2])+"</span></div>";
       artKV.add(m[1].toUpperCase());
       continue;
     }
@@ -1279,7 +1358,40 @@ const newsState={open:false,date:"",busy:false,images:[]};
 
 function mb(n){ n=Number(n||0); if(!n) return ""; return n<1024*1024 ? (n/1024).toFixed(0)+"KB" : (n/1024/1024).toFixed(1)+"MB"; }
 
+/* ── 매일경제 사설 (2026-10-20) — 맨 아래 칸. 못 가져와도 화면은 깨지지 않고 원문 목록 링크만 보여 준다. */
+const ED={date:"",at:0,ok:false};
+async function loadEditorial(){
+  const sec=document.getElementById("mk-ed"); if(!sec) return;
+  if(ED.date===state.date && Date.now()-ED.at < (ED.ok?10:3)*60000) return;
+  ED.date=state.date; ED.at=Date.now();
+  let d=null;
+  try{ const r=await fetch(`/api/news/editorial?date=${state.date}`,{cache:"no-store"}); d=await r.json(); }catch(_){ d=null; }
+  if(ED.date!==state.date) return;                     // 그새 날짜를 바꿨다
+  ED.ok=!!(d&&d.ok&&d.items&&d.items.length);
+  const list=document.getElementById("mk-ed-list");
+  document.getElementById("mk-ed-date").textContent=state.date.replace(/^(\d+)-(\d+)-(\d+)$/,"$1.$2.$3");
+  if(!ED.ok){
+    list.innerHTML='<div class="mk-ed-empty">이 날짜의 사설을 아직 못 가져왔어요. '+
+      '<a href="https://www.mk.co.kr/opinion/editorial/" target="_blank" rel="noopener">매일경제 사설 목록 열기 ↗</a></div>';
+  }else{
+    const hm=t=>{ const m=String(t||"").match(/^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)/); return m?`${+m[2]}월 ${+m[3]}일 ${m[4]}:${m[5]}`:""; };
+    list.innerHTML=d.items.map((a,k)=>'<article class="mk-ed-item">'+
+      '<h3>'+esc(a.title||"")+(d.stale?'<span class="mk-ed-stale">최신 사설</span>':"")+'</h3>'+
+      '<div class="mk-ed-meta">'+(hm(a.published)?esc(hm(a.published))+' 올라옴 · ':"")+
+        '<a href="'+esc(a.url||"#")+'" target="_blank" rel="noopener">원문 보기 ↗</a></div>'+
+      '<div class="mk-ed-body" id="mk-ed-b'+k+'">'+(a.paras||[]).map(p=>"<p>"+esc(p)+"</p>").join("")+'</div>'+
+      ((a.paras||[]).length>2?'<button class="mk-ed-more" data-k="'+k+'" aria-expanded="false">전문 펼치기</button>':"")+
+      "</article>").join("");
+  }
+  sec.hidden=false;
+}
+document.addEventListener("click",e=>{
+  const b=e.target.closest(".mk-ed-more"); if(!b) return;
+  const body=document.getElementById("mk-ed-b"+b.dataset.k), open=!body.classList.contains("open");
+  body.classList.toggle("open",open); b.textContent=open?"접기":"전문 펼치기"; b.setAttribute("aria-expanded",String(open));
+});
 async function loadNews(){
+  loadEditorial();
   const box=document.getElementById("news");
   if(!box) return;
   let d=null;

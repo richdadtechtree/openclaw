@@ -472,6 +472,24 @@ def news_pagewords(date: str = "", name: str = ""):
     return JSONResponse(_news.page_words(date, name))
 
 
+# ── 매일경제 사설 (2026-10-20 사용자 요청: 신문 요약 페이지 맨 아래에 늘) ─────────────
+try:
+    import mk_editorial as _mk_ed
+except Exception:                                   # 모듈 문제가 페이지 전체를 막지 않게
+    _mk_ed = None
+
+
+@app.get("/api/news/editorial")
+def news_editorial(date: str = ""):
+    """그날 신문에 실린 매일경제 사설(제목·본문 문단·원문 링크). 못 찾으면 ok:false — 화면은 조용히 안내만."""
+    if _mk_ed is None:
+        return JSONResponse(status_code=503, content={"ok": False, "items": [], "error": "모듈 없음"})
+    try:
+        return JSONResponse(_mk_ed.get_editorials(date))
+    except Exception as e:
+        return JSONResponse({"ok": False, "items": [], "error": str(e)[:200]})
+
+
 @app.get("/api/news/zip")
 def news_zip(date: str = "", what: str = "photos"):
     """그날 사진을 한 번에 받는 ZIP. what=all 이면 PDF 도 함께."""
