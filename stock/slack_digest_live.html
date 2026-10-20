@@ -4,13 +4,28 @@
 <meta charset="utf-8">
 <title>오늘 신문 요약</title>
 <script>
-/* 2026-10-21 우클릭 메뉴 막기 — 페이지 맨 앞에서 가장 먼저 붙인다(사용자 제보: 그래도 '이미지 저장' 메뉴가 뜬다).
-   크롬 확장 프로그램(예: 데이터 스크래퍼)은 보통 페이지를 다 읽은 뒤에 자기 우클릭 감시자를 붙이는데,
-   그게 신호를 중간에서 멈추면(stopImmediatePropagation) 사진 창을 열 때 붙이던 막기(lbGuards)까지 신호가 안 왔다.
-   → 여기서 먼저 막아 두면 순서상 늘 우리가 첫째다. 사진 창(#lb)이 열려 있을 때만 막고, 닫혀 있으면 아무것도 안 한다. */
-window.__ctxSeen=0;   // 아래 '가로채기 점검'(ctxProbe)이 이 감시자까지 신호가 왔는지 센다
-window.addEventListener("contextmenu",function(e){if(e.__probe)window.__ctxSeen++;var lb=document.getElementById("lb");if(lb&&!lb.hidden)e.preventDefault();},true);
-window.addEventListener("dragstart",function(e){var lb=document.getElementById("lb");if(lb&&!lb.hidden&&lb.contains(e.target))e.preventDefault();},true);
+/* 2026-10-21 우클릭 메뉴 막기 — 페이지 맨 앞에서 가장 먼저 붙인다(사용자 제보: 그래도 메뉴가 뜬다).
+   ① 크롬 확장(스크래퍼 등)이 나중에 붙인 감시자가 신호를 멈춰도 우리가 먼저 받는다.
+   ② '우클릭 허용' 류 확장은 페이지의 preventDefault(기본 동작 취소)를 **아무것도 안 하는 가짜로 바꿔치기**하기도 한다
+      → 숨은 작은 틀(iframe)에서 **손대지 않은 진짜 preventDefault** 를 꺼내 두고 그걸로 취소한다(hardCancel).
+   ③ 주소에 ?diag=1 을 붙이면 화면 왼쪽 아래에 '우클릭 점검' 칸이 떠서, 진짜 우클릭마다 우리 코드가 받았는지·막혔는지 보여 준다.
+   사진 창(#lb)이 열려 있을 때만 막고, 닫혀 있으면 아무것도 안 한다. */
+(function(){
+  var PD=Event.prototype.preventDefault, patched=!/\[native code\]/.test(String(PD));
+  try{ var f=document.createElement("iframe"); f.style.display="none"; f.setAttribute("aria-hidden","true");
+       document.documentElement.appendChild(f); if(f.contentWindow) PD=f.contentWindow.Event.prototype.preventDefault; }catch(_){}
+  window.__pdPatched=patched;
+  window.hardCancel=function(e){ try{PD.call(e);}catch(_){ try{e.preventDefault();}catch(__){} } try{e.returnValue=false;}catch(_){} };
+  window.__ctxSeen=0;   // '가로채기 점검'(ctxProbe)이 이 감시자까지 신호가 왔는지 센다
+  window.__ctxLog=[];
+  window.addEventListener("contextmenu",function(e){
+    if(e.__probe) window.__ctxSeen++;
+    var lb=document.getElementById("lb"), open=!!(lb&&!lb.hidden);
+    if(open) window.hardCancel(e);
+    if(e.isTrusted) window.__ctxLog.push({t:Date.now(),open:open,head:true});
+  },true);
+  window.addEventListener("dragstart",function(e){var lb=document.getElementById("lb");if(lb&&!lb.hidden&&lb.contains(e.target))window.hardCancel(e);},true);
+})();
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
@@ -575,7 +590,7 @@ window.addEventListener("dragstart",function(e){var lb=document.getElementById("
   </section>
   <footer>
     <span id="foot-count">—</span>
-    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-21</span></span>
+    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-21b</span></span>
   </footer>
 </div>
 
@@ -1893,9 +1908,9 @@ function lbGuard(e){
   // 뷰어(#lb)는 화면 전체를 덮는다 → 뷰어가 열려 있는 동안의 우클릭은 대상이 window·document 여도(뷰어 밖으로 끌고 나가 뗀 경우) 막는다
   const t=e.target;
   if(t && t.nodeType===1 && !lb.contains(t) && t!==document.documentElement && t!==document.body) return;
-  e.preventDefault();
+  (window.hardCancel||(ev=>ev.preventDefault()))(e);
 }
-const VIEWER_BUILD="2026-10-21-ctxmenu4";       // 서버에 새 화면이 들어왔는지 확인용(주소창 옆 F12 콘솔: VIEWER_BUILD)
+const VIEWER_BUILD="2026-10-21-ctxmenu5";       // 서버에 새 화면이 들어왔는지 확인용(주소창 옆 F12 콘솔: VIEWER_BUILD)
 function lbGuards(on){
   const f=on?"addEventListener":"removeEventListener";
   // window·document 둘 다 capture 단계 — window 가 가장 먼저 받는다(다른 스크립트·확장 프로그램이 중간에서 멈춰도 먼저 막음)
@@ -1911,6 +1926,7 @@ function ctxProbe(){
   const n=window.__ctxSeen||0, ev=new MouseEvent("contextmenu",{bubbles:true,cancelable:true});
   ev.__probe=1; $("lb-stage").dispatchEvent(ev);
   ctxProbe.ok = (window.__ctxSeen||0)>n && ev.defaultPrevented;
+  if(window.__pdPatched) console.info("[우클릭] 확장 프로그램이 preventDefault 를 바꿔치기함 → 진짜 함수로 취소 중");
   if(!ctxProbe.ok){ $("lb-warn").hidden=false; const t=$("build-tag"); if(t) t.textContent+=" · 우클릭 가로챔"; }
   return ctxProbe.ok;
 }
@@ -2302,7 +2318,7 @@ function maybeDoubleTap(x,y){
 // ── 입력: 손가락 — 드래그 이동 / 두 손가락 핀치 / 스와이프로 장 넘기기 ──
 // 오른쪽 버튼을 눌렀을 때 브라우저 메뉴가 뜨면 끌어 옮길 수가 없다 → 사진 위에서만 막는다.
 // (사진 저장은 상단 바의 ⤓ 버튼으로 하면 된다)
-stage.addEventListener("contextmenu",e=>e.preventDefault());
+stage.addEventListener("contextmenu",e=>(window.hardCancel||(ev=>ev.preventDefault()))(e));
 
 stage.addEventListener("pointerdown",e=>{
   /* ⚠️ 2026-09-29 폰 버그: '손가락 뗐다(pointerup/cancel)' 신호를 폰이 한 번 빼먹으면
@@ -2686,6 +2702,30 @@ document.getElementById("feed").addEventListener("click",e=>{
   const g=r.dataset.go, n=+g.slice(1), info=g[0]==="p"?item._flowIdx.byPage.get(n):item._flowIdx.byNo.get(n);
   flowGo(info&&info.el);
 });
+
+
+/* ── 우클릭 점검 칸 (?diag=1, 2026-10-21) — 사용자 PC 에서 실제로 무슨 일이 일어나는지 보려고 ──
+   진짜 우클릭(isTrusted)마다: 맨 앞 감시자가 받았는지 / 마지막(버블)에서 취소돼 있었는지 / 사진 창이 열려 있었는지 */
+if(/[?&]diag=1/.test(location.search)){
+  const box=document.createElement("div");
+  box.id="ctx-diag";
+  box.style.cssText="position:fixed;left:8px;bottom:8px;z-index:9999;max-width:420px;padding:10px 12px;border-radius:10px;"+
+    "background:#111c;color:#e7f0ff;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;border:1px solid #4a5b85;white-space:pre-wrap";
+  document.body.appendChild(box);
+  const rows=[];
+  const draw=()=>{ box.textContent="우클릭 점검 · "+VIEWER_BUILD+"\n"+
+    "preventDefault 바꿔치기: "+(window.__pdPatched?"있음(확장이 바꿈 → 진짜 함수로 대응)":"없음")+"\n"+
+    "시험 신호(사진 창 처음 열 때): "+(ctxProbe.done?(ctxProbe.ok?"정상":"가로챔 의심"):"아직")+"\n"+
+    (rows.length?rows.slice(-6).join("\n"):"→ 사진 창을 열고 오른쪽 클릭을 해 보세요"); };
+  window.addEventListener("contextmenu",e=>{
+    if(!e.isTrusted) return;
+    const seen=(window.__ctxLog||[]).some(x=>Date.now()-x.t<500);
+    rows.push(new Date().toLocaleTimeString("ko-KR")+"  맨앞감시자:"+(seen?"받음":"못받음")+"  막힘:"+(e.defaultPrevented?"예":"아니오")+
+              "  사진창:"+(!$("lb").hidden?"열림":"닫힘"));
+    draw();
+  },false);                                                 // 버블(맨 마지막) — 최종 결과를 본다
+  setInterval(draw,1500); draw();
+}
 
 function decorate(force){
   const feed=document.getElementById("feed"); if(!feed) return;

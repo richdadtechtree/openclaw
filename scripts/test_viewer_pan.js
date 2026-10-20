@@ -308,6 +308,22 @@ const zoomIn = async (page, n = 5) => {
   check(await ep.evaluate(() => document.getElementById('lb-warn').hidden), '✕ 로 알림을 닫을 수 있다');
   await ectx.close();
 
+  // 2026-10-21: '우클릭 허용' 류 확장이 preventDefault 를 아무것도 안 하는 가짜로 바꿔치기해도 진짜 함수로 취소
+  console.log('\n[preventDefault 바꿔치기 확장 · 점검 칸]');
+  const pctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await pctx.addInitScript(() => { const o = Event.prototype.preventDefault;
+    Event.prototype.preventDefault = function () { if (this.type === 'contextmenu') return; return o.call(this); }; });
+  const pp = await pctx.newPage(); await pp.goto(base + '/slack?diag=1'); await openViewer(pp); await pp.waitForTimeout(150);
+  await pp.evaluate(() => { window.__fin = []; window.addEventListener('contextmenu', e => __fin.push(e.defaultPrevented), false); });
+  await pp.mouse.move(640, 450); await pp.mouse.down({ button: 'right' }); await pp.mouse.move(600, 420, { steps: 3 }); await pp.mouse.up({ button: 'right' });
+  await pp.waitForTimeout(150);
+  const fin = await pp.evaluate(() => __fin);
+  check(fin.length > 0 && fin.every(Boolean), 'preventDefault 를 바꿔치기한 확장이 있어도 실제 우클릭이 취소된다(진짜 함수 사용)', JSON.stringify(fin));
+  const diag = await pp.evaluate(() => (document.getElementById('ctx-diag') || {}).textContent || '');
+  check(/바꿔치기: 있음/.test(diag) && /맨앞감시자:받음  막힘:예  사진창:열림/.test(diag), '?diag=1 점검 칸이 바꿔치기·받음·막힘을 보여 준다', diag.split('\n').pop());
+  await pctx.close();
+  check(await page.evaluate(() => !document.getElementById('ctx-diag')), '?diag=1 이 없으면 점검 칸은 안 나온다');
+
   const ph = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
   await ph.goto(base + '/slack');
   await openViewer(ph);
