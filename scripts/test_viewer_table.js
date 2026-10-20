@@ -216,6 +216,11 @@ HOW [기사 사례]: 10m 이상 높은 필로티.
 • WHAT: 지면새형식D 항공·에너지·콘텐츠 기업의 분기 이익 추정이 엇갈림.
 • WHY: 환율.`;
 
+// 2026-10-20 실제 메시지 — ① "• HOW [확정]: …"(표지와 콜론 사이 꼬리표) 가 HOW 로 안 잡혀 글줄로 나왔다 · "원문기사:" 줄
+const MSG19 = "[2026-10-20 수동 브리핑 #10 기사 수치 보강]\n_10. 돈줄 마른 골목상권…신보가 대신 갚은 빚, 제조업 추월 (PDF 10쪽)_\n• WHAT: 신용보증기금이 대신 갚은 내수소비업종 대출이 제조업을 추월.\n• WHY: 소비 위축, 휴·폐업 증가로 소상공인 대출 상환 부진.\n• HOW [확정]: 지난해 내수소비업종 대위변제액 9249억원, 제조업 8727억원.\n원문기사: <https://www.mk.co.kr/news/economy/12179916|mk.co.kr/news/economy/12179916>\n위 2/4 메시지의 #10 내용을 이 검증 수치로 보완함.";
+// ② "_신문 5가지 연결_" 아래 ①~⑤ 가 기사 제목·지면 사진으로 그려졌다(머리말이 "…5가지" 로 끝나지 않아서) · :left_right_arrow: 사라짐
+const MSG20 = "[2026-10-20 신문 수동 재브리핑 4/4] :earth_africa: 글로벌 + 종합 (28~35/35)\n_34. 중국 3분기 GDP 4.5% 증가 (28)_\nWHAT: 3분기 성장률 4.5%, 예상치 4.4% 상회.\nWHY: AI 관련 수출 성장.\nHOW [확정]: 1분기 5.0%, 2분기 4.3%, 3분기 4.5%; 1~9월 부동산개발투자 20.6% 감소.\n원문: <https://www.mk.co.kr/news/world/12179813|mk.co.kr/news/world/12179813>\n_35. 이수만 제작 A20 글로벌 음원 성과 (29)_\nWHAT: 그룹 A20, 해외 음원차트 상위권 진입.\nWHY: K팝 제작·유통 전략과 플랫폼 홍보.\nHOW [기사 집계]: 스포티파이·아이튠즈 순위 및 제작 과정 소개.\n\n_신문 5가지 연결_\n① 서울 입주 감소(1) :left_right_arrow: 정비사업 이주비 부담(2)\n② 개인 레버리지 ETF 매수(12) :left_right_arrow: 방어주 강세(13·14)\n③ 방산 실적 전망 하향(16) :left_right_arrow: 주가 반등\n④ 배터리주 미국 ESS 기회(19) :left_right_arrow: AI 데이터센터 인프라 문제(32)\n⑤ 미국 AI 인프라 위험(28·32) :left_right_arrow: 중국 AI 수출 주도 성장(34)\n_오늘 핵심 한 줄:_ 국내는 주택 입주 감소·금융 비용 및 레버리지 투자 확대가, 글로벌은 AI 투자 확대와 자금조달 부담이 동시에 부각.\n검수 참고: 원문 이미지 스크랩 30쪽을 살펴봄. 1·7쪽 중복, 30쪽 단독 사진 제외. 작은 글자 및 명확히 확인하지 못한 세부 숫자는 생략.\n※ 자동화는 06:33경 실행 기록 있으나 당일 Slack 발송이 없었음. 단계별 오류 로그는 확보되지 않아 원인 미확정.";
+
 const srv = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x'), u = url.pathname, D = url.searchParams.get('date') || '2026-09-24';
   const send = (t, b) => { res.writeHead(200, { 'Content-Type': t }); res.end(b); };
@@ -234,7 +239,9 @@ const srv = http.createServer((req, res) => {
     { ts: D + 'T11:13:00', source: 'user', kind: 'text', text: MSG15 },
     { ts: D + 'T11:14:00', source: 'user', kind: 'text', text: MSG16 },
     { ts: D + 'T11:15:00', source: 'user', kind: 'text', text: MSG17 },
-    { ts: D + 'T11:16:00', source: 'user', kind: 'text', text: MSG18 }] }));
+    { ts: D + 'T11:16:00', source: 'user', kind: 'text', text: MSG18 },
+    { ts: D + 'T11:17:00', source: 'user', kind: 'text', text: MSG19 },
+    { ts: D + 'T11:18:00', source: 'user', kind: 'text', text: MSG20 }] }));
   if (u === '/api/news/today') return send('application/json', JSON.stringify({ ok: true, ready: true, date: D, count: 3,
     images: ['01.jpg', '02.jpg', '03.jpg'].map(n => ({ name: n, url: '/x.png', thumb: '/x.png', download_url: '/x.png' })) }));
   if (u === '/api/news/pagetext') return send('application/json', '{"ok":false}');
@@ -472,6 +479,21 @@ const MSG10 = `[신문요약 1/6] :newspaper: 2026년 9월 28일 신문 브리�
     check(g15.map(x => x.no).join(',') === '01,02,03,02', '그래서 기사 옆에 그 지면 사진이 붙는다', g15.map(x => x.no).join(','));
     check(g15.every(x => !/[_()]|PDF/.test(x.t.replace(x.pg, ''))) && g15.map(x => x.pg).join('|') === '1·7쪽|2쪽|3쪽 좌하|2쪽 하단',
           '제목엔 밑줄·괄호가 안 남고, 쪽·자리는 작은 꼬리표로', g15.map(x => x.t).join(' / '));
+    const g16 = await page.evaluate(() => {
+      const ent = re => [...document.querySelectorAll('.entry')].find(x => re.test(x.textContent));
+      const e1 = ent(/수치 보강/), e2 = ent(/신문 5가지 연결/);
+      const kv = a => [...a.querySelectorAll('.brf-kv')].map(k => k.dataset.k + ':' + (k.querySelector('.brf-tagx') || {}).textContent);
+      return { kv1: kv(e1.querySelector('.brf-art')), src1: !!e1.querySelector('.brf-art .brf-src'),
+        kv2: [...e2.querySelectorAll('.brf-art')].map(kv), sec: [...e2.querySelectorAll('.brf-sec')].map(x => x.textContent),
+        nums: [...e2.querySelectorAll('.brf-num')].map(x => x.textContent), arts: [...e2.querySelectorAll('.brf-art .brf-title')].map(x => x.textContent),
+        key: (e2.querySelector('.brf-key') || {}).textContent || '' };
+    });
+    check(g16.kv1.join(',') === 'WHAT:undefined,WHY:undefined,HOW:확정' && g16.kv2.every(k => k.length === 3 && /^HOW:/.test(k[2])),
+          '"• HOW [확정]: …"·"HOW [기사 집계]: …" 도 HOW 줄로, 꼬리표는 작은 칩', JSON.stringify([g16.kv1, g16.kv2]));
+    check(g16.src1, '"원문기사:" 줄도 그 기사 안의 원문 표시로');
+    check(g16.sec.includes('신문 5가지 연결') && g16.nums.length === 5 && g16.nums.every(n => /↔/.test(n)) && /서울 입주 감소\(1\) ↔ 정비사업 이주비 부담\(2\)/.test(g16.nums[0]),
+          '"신문 5가지 연결" 은 머리말 + 번호 목록 5개(↔ 그대로, 기사 제목·지면 사진 아님)', g16.nums[0]);
+    check(g16.arts.length === 2 && /핵심 한 줄/.test(g16.key), '기사는 34·35 두 개뿐, "오늘 핵심 한 줄" 은 강조 상자', g16.arts.join(' / '));
     check(r.over <= 0, '화면이 옆으로 넘치지 않는다', `${r.over}px`);
     await page.close();
   }
