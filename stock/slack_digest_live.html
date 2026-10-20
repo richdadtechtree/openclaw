@@ -549,6 +549,7 @@
            max-width:min(620px,calc(100% - 24px));padding:9px 10px 9px 14px;border-radius:12px;font-size:13px;line-height:1.5;
            color:#fff4dc;background:rgba(120,72,10,.92);border:1px solid #e0a552;box-shadow:0 6px 20px #0008}
   .lb-warn[hidden]{display:none}
+  .lb-stage.spacepan,.lb-stage.spacepan img{cursor:grab}   /* Space 누르고 있는 동안 = 옮기기 손 모양 */
   .lb-warn button{appearance:none;border:0;background:transparent;color:inherit;font-size:15px;cursor:pointer;padding:2px 6px;border-radius:6px}
   .lb-warn button:hover{background:#ffffff22}
 </style>
@@ -590,7 +591,7 @@
   </section>
   <footer>
     <span id="foot-count">—</span>
-    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-21b</span></span>
+    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-21c</span></span>
   </footer>
 </div>
 
@@ -645,8 +646,8 @@
   </div>
   <button class="lb-nav next" id="lb-next" aria-label="다음 장">›</button>
   <!-- 2026-10-21: 확장 프로그램이 페이지보다 먼저 우클릭을 가로채면(우클릭 강제 허용 기능) 페이지 코드로는 메뉴를 못 막는다 → 알려 준다 -->
-  <div class="lb-warn" id="lb-warn" hidden role="status"><span>⚠️ 크롬 <b>확장 프로그램</b>이 오른쪽 클릭을 먼저 가로채고 있어 메뉴가 뜰 수 있어요. 신문 옮기기는 <b>✋ 손바닥(왼쪽 버튼으로 끌기)</b>을 쓰세요.</span><button type="button" id="lb-warn-x" aria-label="닫기">✕</button></div>
-  <div class="lb-hint" id="lb-hint">←→ 키·옆으로 쓸어 넘기기 · 휠/더블탭 확대 · 확대 후 방향키·우클릭 드래그로 이동 · 🖍 형광펜(H) · Esc 닫기</div>
+  <div class="lb-warn" id="lb-warn" hidden role="status"><span>⚠️ 크롬 <b>확장 프로그램</b>이 오른쪽 클릭을 먼저 가로채고 있어 메뉴가 뜰 수 있어요. 신문 옮기기는 <b>✋ 손바닥</b>·<b>Space 누른 채 끌기</b>·<b>휠 버튼 누른 채 끌기</b>를 쓰세요.</span><button type="button" id="lb-warn-x" aria-label="닫기">✕</button></div>
+  <div class="lb-hint" id="lb-hint">←→ 키·옆으로 쓸어 넘기기 · 휠/더블탭 확대 · 옮기기: ✋·Space+끌기·휠 버튼 끌기·방향키 · 🖍 형광펜(H) · Esc 닫기</div>
 </div>
 
 <script>
@@ -1910,7 +1911,7 @@ function lbGuard(e){
   if(t && t.nodeType===1 && !lb.contains(t) && t!==document.documentElement && t!==document.body) return;
   (window.hardCancel||(ev=>ev.preventDefault()))(e);
 }
-const VIEWER_BUILD="2026-10-21-ctxmenu5";       // 서버에 새 화면이 들어왔는지 확인용(주소창 옆 F12 콘솔: VIEWER_BUILD)
+const VIEWER_BUILD="2026-10-21-ctxmenu6";       // 서버에 새 화면이 들어왔는지 확인용(주소창 옆 F12 콘솔: VIEWER_BUILD)
 function lbGuards(on){
   const f=on?"addEventListener":"removeEventListener";
   // window·document 둘 다 capture 단계 — window 가 가장 먼저 받는다(다른 스크립트·확장 프로그램이 중간에서 멈춰도 먼저 막음)
@@ -2227,6 +2228,11 @@ $("lb-tools").addEventListener("pointerdown",e=>e.stopPropagation());
    WASD 로도 옮길 수 있게 해 둔다(게임처럼 왼손만으로). */
 const ARROW_DELTA={ArrowLeft:[1,0],ArrowRight:[-1,0],ArrowUp:[0,1],ArrowDown:[0,-1],
                    a:[1,0],d:[-1,0],w:[0,1],s:[0,-1],A:[1,0],D:[-1,0],W:[0,1],S:[0,-1]};
+document.addEventListener("keyup",e=>{
+  if(e.key!==" "||!V.space) return;
+  V.space=false; $("lb-stage").classList.remove("spacepan");
+  if(!$("lb").hidden && !V.spaceUsed) go(1);              // 끌지 않고 톡 눌렀다 뗀 것 = 다음 장
+});
 document.addEventListener("keydown",e=>{
   if($("lb").hidden) return;
   // Esc 는 한 단계씩 물러난다: (저장 메뉴 닫기) → 동그라미 고르기 해제 → 형광펜 끄기 → 뷰어 닫기
@@ -2251,7 +2257,8 @@ document.addEventListener("keydown",e=>{
   if(e.key==="PageUp"){ e.preventDefault(); go(-1); return; }
   if(e.shiftKey&&e.key==="ArrowRight"){ e.preventDefault(); go(1); return; }
   if(e.shiftKey&&e.key==="ArrowLeft"){ e.preventDefault(); go(-1); return; }
-  if(e.key===" "){ e.preventDefault(); go(1); return; }
+  /* Space: 톡 누르면 다음 장(예전 그대로), **누른 채 왼쪽 버튼으로 끌면 옮기기**(2026-10-21 — 오른쪽 버튼은 확장 프로그램 탓에 메뉴가 떠서) */
+  if(e.key===" "){ e.preventDefault(); if(!e.repeat){ V.space=true; V.spaceUsed=false; $("lb-stage").classList.add("spacepan"); } return; }
 
   // 방금 그린 동그라미가 고른 상태면 방향키는 '그 동그라미 미세 조정'이 된다.
   // (Shift+←→ 는 위에서 이미 장 넘기기로 처리되므로 여기 오지 않는다)
@@ -2319,6 +2326,7 @@ function maybeDoubleTap(x,y){
 // 오른쪽 버튼을 눌렀을 때 브라우저 메뉴가 뜨면 끌어 옮길 수가 없다 → 사진 위에서만 막는다.
 // (사진 저장은 상단 바의 ⤓ 버튼으로 하면 된다)
 stage.addEventListener("contextmenu",e=>(window.hardCancel||(ev=>ev.preventDefault()))(e));
+stage.addEventListener("mousedown",e=>{ if(e.button===1) e.preventDefault(); });   // 휠 버튼 자동 스크롤 막기
 
 stage.addEventListener("pointerdown",e=>{
   /* ⚠️ 2026-09-29 폰 버그: '손가락 뗐다(pointerup/cancel)' 신호를 폰이 한 번 빼먹으면
@@ -2332,11 +2340,15 @@ stage.addEventListener("pointerdown",e=>{
   // ★ 오른쪽 버튼 = 언제나 '화면 끌어 옮기기'.
   //   형광펜 모드에서는 왼쪽 버튼이 그리기라, 옮기려면 이 길이 필요하다.
   // ✋ 손바닥 모드 = 왼쪽 버튼(손가락 하나)도 '옮기기' — 형광펜이 켜져 있어도 긋지 않는다
-  if(e.button===2 || (V.hand && e.button===0 && V.pts.size===1)){
+  /* 옮기기 단추: 오른쪽 버튼 · 휠(가운데) 버튼 · Space 누른 채 왼쪽 버튼 · ✋ 손바닥이면 왼쪽 버튼
+     (2026-10-21 휠 버튼·Space 추가 — 오른쪽 버튼은 일부 확장 프로그램/마우스 프로그램이 크롬 메뉴를 강제로 띄워서) */
+  if(e.button===0 && V.space) V.spaceUsed=true;
+  if(e.button===1) e.preventDefault();                    // 휠 버튼의 '자동 스크롤' 동그라미가 뜨지 않게
+  if(e.button===2 || e.button===1 || (V.space && e.button===0) || (V.hand && e.button===0 && V.pts.size===1)){
     M.cur=null;
     /* 2026-10-19: 오른쪽 버튼은 1배(확대 안 함)에서도 옮긴다 — 1배의 정상 범위는 '가운데 고정'이라 그대로는 안 움직이므로,
        손바닥처럼 넓은 범위(V.loose)를 허용한다. 장 넘김·resetZoom·✋ 끄기 때 가운데로 돌아온다. 확대 중엔 예전처럼 정상 범위. */
-    if(e.button===2 && V.zoom<=1.001) V.loose=true;
+    if((e.button===2 || e.button===1 || V.space) && V.zoom<=1.001) V.loose=true;
     V.drag={x:e.clientX,y:e.clientY,tx:V.tx,ty:V.ty,t:Date.now(),moved:0,pan:true};
     stage.classList.add("panning");
     return;

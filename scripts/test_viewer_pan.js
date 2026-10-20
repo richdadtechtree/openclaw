@@ -324,6 +324,29 @@ const zoomIn = async (page, n = 5) => {
   await pctx.close();
   check(await page.evaluate(() => !document.getElementById('ctx-diag')), '?diag=1 이 없으면 점검 칸은 안 나온다');
 
+  // 2026-10-21: 오른쪽 버튼 대신 쓸 수 있는 옮기기 — Space 누른 채 왼쪽 끌기 · 휠(가운데) 버튼 끌기. Space 톡 = 다음 장은 그대로
+  console.log('\n[Space·휠 버튼으로 옮기기]');
+  await page.evaluate(() => { closeViewer(); }); await openViewer(page); await page.waitForTimeout(150);
+  await page.evaluate(() => { setHand(false); resetZoom(); }); await page.waitForTimeout(100);
+  const i0 = (await pos(page)).i;
+  await page.keyboard.press('Space'); await page.waitForTimeout(150);
+  check((await pos(page)).i === i0 + 1, 'Space 를 톡 누르면 예전처럼 다음 장', `${i0 + 1}→${(await pos(page)).i + 1}쪽`);
+  await page.keyboard.press('Shift+ArrowLeft'); await page.waitForTimeout(150);
+  await page.click('#lb-pen'); await page.waitForTimeout(150);
+  const sp0 = await pos(page), SL0 = await page.evaluate(() => (M.marks[markName()] || []).length);
+  await page.keyboard.down('Space');
+  await page.mouse.move(640, 500); await page.mouse.down(); await page.mouse.move(540, 420, { steps: 6 }); await page.mouse.up();
+  await page.keyboard.up('Space'); await page.waitForTimeout(150);
+  const sp1 = await pos(page);
+  check(sp1.tx < sp0.tx - 40 && sp1.i === sp0.i && await page.evaluate(() => (M.marks[markName()] || []).length) === SL0,
+        'Space 누른 채 왼쪽 버튼으로 끌면 옮겨지고(형광펜 중이어도 줄 안 그어짐) 장은 그대로', `(${sp0.tx},${sp0.ty}) → (${sp1.tx},${sp1.ty})`);
+  await page.mouse.move(640, 500); await page.mouse.down({ button: 'middle' }); await page.mouse.move(700, 560, { steps: 6 }); await page.mouse.up({ button: 'middle' });
+  await page.waitForTimeout(150);
+  const sp2 = await pos(page);
+  check(sp2.tx > sp1.tx + 40 && sp2.ty > sp1.ty + 40 && sp2.i === sp1.i && await page.evaluate(() => (M.marks[markName()] || []).length) === SL0,
+        '휠(가운데) 버튼을 누른 채 끌어도 옮겨진다', `(${sp1.tx},${sp1.ty}) → (${sp2.tx},${sp2.ty})`);
+  await page.click('#lb-pen-off');
+
   const ph = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
   await ph.goto(base + '/slack');
   await openViewer(ph);
