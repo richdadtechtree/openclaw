@@ -475,6 +475,10 @@
            background:color-mix(in srgb,var(--muted) 9%,transparent);color:var(--muted)}
   .brf-src a{font-family:var(--mono);font-size:.95em;border-bottom:0}
   .brf-tagx{display:inline-block;margin-right:7px;padding:0 7px;border-radius:6px;font-size:.82em;font-weight:700;line-height:1.7;vertical-align:.08em;color:var(--kc,var(--muted));background:color-mix(in srgb,var(--kc,var(--muted)) 13%,transparent)}
+  .brf-tagx[data-tg]{color:var(--tg);background:color-mix(in srgb,var(--tg) 15%,transparent);border:1px solid color-mix(in srgb,var(--tg) 35%,transparent)}
+  .brf-tagx[data-tg="fact"]{--tg:#2fb36d} .brf-tagx[data-tg="plan"]{--tg:#3d8bfd} .brf-tagx[data-tg="data"]{--tg:#a371f7}
+  .brf-tagx[data-tg="anal"]{--tg:#e8913a} .brf-tagx[data-tg="fore"]{--tg:#e0569b} .brf-tagx[data-tg="note"]{--tg:#8b95a5}
+  .lb-note .brf-tagx[data-tg]{color:color-mix(in srgb,var(--tg) 75%,#000)}
   .brf-pg{border:0;background:color-mix(in srgb,var(--accent-bright) 12%,transparent);color:var(--accent);font-weight:700}
   .brf-key{border-left:0;border-radius:14px;padding:16px 18px;background:color-mix(in srgb,var(--accent-bright) 10%,var(--surface))}
   .brf-sec{border-bottom:0;margin-top:34px}
@@ -503,6 +507,8 @@
   .mk-ed-date{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--faint)}
   .mk-ed-item{padding:20px 0 4px;border-top:1px solid var(--line)}
   .mk-ed-item:first-child{border-top:0}
+  .mk-ed-sub{margin-top:30px}
+  .mk-ed-sub + .mk-ed-item{border-top:0}
   .mk-ed-item h3{margin:0 0 6px;font-size:calc(18.5px*var(--fs));font-weight:800;line-height:1.45;letter-spacing:-.025em}
   .mk-ed-meta{font-size:calc(12.5px*var(--fs));color:var(--faint);margin-bottom:10px}
   .mk-ed-meta a{color:var(--accent-bright);text-decoration:none;font-weight:600}
@@ -1142,6 +1148,12 @@ function briefing(raw){
     }
     return false;
   };
+  /* 줄 맨 앞 [꼬리표] → 종류별 색 칩(2026-10-20 사용자 요청: HOW 의 [확정]·[조사 데이터·기관] 등을 색으로 구분)
+     확정=초록 · 계획/예정/검토=파랑 · 조사 데이터=보라 · 전문가 분석=주황 · 전망/추측=분홍 · 기자 해석·출처 미표기=회색 */
+  const tagged=(s)=>{ const tg=s.match(/^\s*\[([^\]\n]{1,40})\]\s*[:：]?\s*/); if(!tg) return inline(s);
+    const t=tg[1], kind=/출처\s*미표기|기자/.test(t)?"note":/조사|데이터/.test(t)?"data":/전망|추측/.test(t)?"fore":
+      /분석/.test(t)?"anal":/계획|예정|검토|추진/.test(t)?"plan":/확정/.test(t)?"fact":"";
+    return '<span class="brf-tagx"'+(kind?' data-tg="'+kind+'"':"")+'>'+esc(t)+"</span>"+inline(s.slice(tg[0].length)); };
   const detailHtml=(t)=>{ const d=t.match(/^([^:：<]{2,16})[:：]\s*([\s\S]+)$/);
     return '<div class="brf-line brf-detail">'+(d?'<span class="dl">'+inline(d[1].replace(/[*_]/g,""))+'</span> '+inline(d[2]):inline(t))+"</div>"; };
 
@@ -1173,9 +1185,9 @@ function briefing(raw){
       continue;
     }
     if(m=line.match(/^•\s*(WHAT|WHY|HOW|What|Why|How)\s*[:：]\s*([\s\S]*)$/)){
-      open(); { const tg=m[2].match(/^\s*\[([^\]\n]{1,24})\]\s*[:：]?\s*/);   // [확정]·[예정/검토] → 작은 칩(2026-10-20)
+      open(); // [확정]·[예정/검토] → 작은 칩(2026-10-20)
         art+='<div class="brf-kv" data-k="'+m[1].toUpperCase()+'"><span class="k">'+m[1].toUpperCase()+'</span><span class="v">'+
-             (tg?'<span class="brf-tagx">'+esc(tg[1])+"</span>"+inline(m[2].slice(tg[0].length)):inline(m[2]))+"</span></div>"; }
+             tagged(m[2])+"</span></div>";
       artKV.add(m[1].toUpperCase());
       continue;
     }
@@ -1215,7 +1227,7 @@ function briefing(raw){
     // 번호 목록 안의 불릿(• …)은 방금 항목의 설명으로 붙인다
     if(inList && lastItem>=0 && (m=line.match(/^•\s*([\s\S]+)$/))){ addNote(m[1]); continue; }
     if(m=line.match(/^•\s*([\s\S]*)$/)){           // 그 밖의 불릿
-      open(); art+='<div class="brf-line">• '+inline(m[1])+"</div>";
+      open(); art+='<div class="brf-line">• '+tagged(m[1])+"</div>";
       continue;
     }
 
@@ -1458,13 +1470,18 @@ async function loadEditorial(){
       '<a href="https://www.mk.co.kr/opinion/editorial/" target="_blank" rel="noopener">매일경제 사설 목록 열기 ↗</a></div>';
   }else{
     const hm=t=>{ const m=String(t||"").match(/^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)/); return m?`${+m[2]}월 ${+m[3]}일 ${m[4]}:${m[5]}`:""; };
-    list.innerHTML=d.items.map((a,k)=>'<article class="mk-ed-item">'+
+    const item=(a,k)=>'<article class="mk-ed-item">'+
       '<h3>'+esc(a.title||"")+(d.stale?'<span class="mk-ed-stale">최신 사설</span>':"")+'</h3>'+
       '<div class="mk-ed-meta">'+(hm(a.published)?esc(hm(a.published))+' 올라옴 · ':"")+
         '<a href="'+esc(a.url||"#")+'" target="_blank" rel="noopener">원문 보기 ↗</a></div>'+
       '<div class="mk-ed-body" id="mk-ed-b'+k+'">'+(a.paras||[]).map(p=>"<p>"+esc(p)+"</p>").join("")+'</div>'+
       ((a.paras||[]).length>2?'<button class="mk-ed-more" data-k="'+k+'" aria-expanded="false">전문 펼치기</button>':"")+
-      "</article>").join("");
+      "</article>";
+    // 2026-10-20: 한국경제 사설도 같은 모양으로(항목의 press 별로 칸 나눔, press 없으면 매일경제)
+    const groups=[];
+    d.items.forEach((a,k)=>{ const p=a.press||"매일경제"; let g=groups.find(x=>x.p===p); if(!g) groups.push(g={p,h:[]}); g.h.push(item(a,k)); });
+    document.getElementById("mk-ed-h").textContent=groups[0].p+" 사설";
+    list.innerHTML=groups.map((g,i)=>(i?'<div class="mk-ed-head mk-ed-sub"><span class="mk-ed-kicker">오피니언</span><h2>'+esc(g.p)+' 사설</h2></div>':"")+g.h.join("")).join("");
   }
   sec.hidden=false;
 }
