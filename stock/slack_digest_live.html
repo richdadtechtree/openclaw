@@ -274,6 +274,9 @@
      그 크기로 '다시 그리게' 한다 → 원본 해상도까지는 글씨가 또렷하다.
      이동(translate)만 transform 으로 하는 건 화질에 영향이 없다. */
   .lb-stage img{position:absolute;left:0;top:0;user-select:none;-webkit-user-drag:none;background:#fff}
+  /* 2026-10-20: 사진 자체는 마우스를 받지 않는다(눌림·끌기·휠은 전부 사진 칸 #lb-stage 가 받는다).
+     → 크롬이 '이미지 위 우클릭'으로 보지 않아 "새 탭에서 이미지 열기·이미지 저장" 메뉴가 생길 수 없다(우클릭 막기의 이중 안전장치). */
+  #lb-img{pointer-events:none;-webkit-touch-callout:none}
   /* ── 형광펜 ───────────────────────────────────────────────────────────
      사진 '위'에 투명한 그림판을 정확히 겹쳐 둔다. 사진과 똑같은 위치·크기·이동을
      그대로 따라가므로, 확대하거나 끌어도 형광펜이 글씨에 딱 붙어 있다.
@@ -1692,12 +1695,17 @@ const HINT_DEFAULT=document.getElementById("lb-hint").textContent;
      열 때 붙이고 닫을 때 뗀다(뷰어가 닫혀 있을 땐 페이지의 다른 우클릭·끌기는 그대로). */
 function lbGuard(e){
   const lb=$("lb");
-  if(lb.hidden || !lb.contains(e.target)) return;
+  if(lb.hidden) return;
+  // 뷰어(#lb)는 화면 전체를 덮는다 → 뷰어가 열려 있는 동안의 우클릭은 대상이 window·document 여도(뷰어 밖으로 끌고 나가 뗀 경우) 막는다
+  const t=e.target;
+  if(t && t.nodeType===1 && !lb.contains(t) && t!==document.documentElement && t!==document.body) return;
   e.preventDefault();
 }
+const VIEWER_BUILD="2026-10-20-ctxmenu2";       // 서버에 새 화면이 들어왔는지 확인용(주소창 옆 F12 콘솔: VIEWER_BUILD)
 function lbGuards(on){
   const f=on?"addEventListener":"removeEventListener";
-  for(const t of ["contextmenu","dragstart"]) document[f](t, lbGuard, true);   // true = capture 단계
+  // window·document 둘 다 capture 단계 — window 가 가장 먼저 받는다(다른 스크립트·확장 프로그램이 중간에서 멈춰도 먼저 막음)
+  for(const t of ["contextmenu","dragstart"]){ window[f](t, lbGuard, true); document[f](t, lbGuard, true); }
   V.guards=on;
 }
 function openViewer(i,opts={}){

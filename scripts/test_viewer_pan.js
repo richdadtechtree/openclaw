@@ -252,6 +252,11 @@ const zoomIn = async (page, n = 5) => {
     const el = document.querySelector(sel); return !el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 2 })); }, [sel, type]);
   check(await fire('#lb-img', 'contextmenu') && await fire('#lb-mark', 'contextmenu') && await fire('.lb-bar', 'contextmenu') && await fire('#lb-count', 'contextmenu'),
         '뷰어 안 어디서든(사진·그림판·위쪽 바) 우클릭 메뉴가 막힌다');
+  check(await page.evaluate(() => { const r = document.getElementById('lb-img').getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return hit && hit.id === 'lb-stage'; }),
+        '사진 위를 눌러도 브라우저는 사진(img)이 아니라 사진 칸을 누른 것으로 본다 → 크롬 "이미지" 메뉴가 생길 수 없다(2026-10-20)');
+  check(await page.evaluate(() => { const e = new MouseEvent('contextmenu', { bubbles: true, cancelable: true }); return !window.dispatchEvent(e) && !document.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); }),
+        '뷰어 밖(창·문서 자체)에서 끝난 우클릭도 뷰어가 열려 있으면 막는다');
   check(await page.evaluate(() => document.getElementById('lb-img').draggable === false) && await fire('#lb-img', 'dragstart') && await fire('#lb-stage', 'dragstart'),
         '사진·사진 칸의 브라우저 기본 끌기(dragstart)가 막힌다');
   // 실제 마우스: 사진 위에서 오른쪽 버튼을 누르고 위쪽 바까지 끌고 가서 떼기(윈도 크롬은 뗄 때 메뉴를 띄운다)
