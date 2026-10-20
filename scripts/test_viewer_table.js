@@ -193,6 +193,29 @@ const MSG17 = `[신문요약 1/2]
 📌 오늘 신문 핵심 한 줄
 거래가 늘어난다`;
 
+// 2026-10-20 실제 메시지 모양 — 제목이 _기울임_ 으로 오고, 지면 번호가 앞말 없이 제목 끝에 "(PDF 1·7)" "(2)" "(3 좌)" 로 붙는다.
+//   예전엔 "(사진 07)" 처럼 앞말이 있어야만 알아봐서 옆에 지면이 안 붙었다("어느 지면에 실렸는지 아직 몰라요").
+const MSG18 = `[2026-10-20 신문 수동 재브리핑 1/4] :house: 부동산·산업 (1~9/35)
+원본 PDF: <https://drive.google.com/file/d/13jeHDp/view|drive.google.com/file/d/…/view>
+※ 1·7쪽은 중복 기사, 30쪽은 사진만 있어 제외함.
+
+_1. 서울 11월 입주 488가구 (PDF 1·7)_
+WHAT: 지면새형식A 서울 11월 입주 예정 3개 단지·488가구.
+WHY: 전국 입주물량 감소.
+HOW [예정]: 전국 1만1559가구(-30%).
+원문: <https://www.mk.co.kr/news/realestate/12179853|mk.co.kr/news/realestate/12179853>
+_2. 강북 재개발 이주비 금리 (2)_
+WHAT: 지면새형식B 서울 정비사업 지역별 이주비 대출금리 격차.
+WHY: 종전자산 담보가치 차이.
+HOW [확정/검토]: 강남4구 기본 평균 3.78%.
+_6. 고급 아파트 하이필로티 (3 좌하)_
+WHAT: 지면새형식C 신축 아파트에서 높은 저층 필로티 채택 확대.
+WHY: 개방감.
+HOW [기사 사례]: 10m 이상 높은 필로티.
+17. 제주항공 등 영업이익 추정 변화 (PDF 2쪽 하단)
+• WHAT: 지면새형식D 항공·에너지·콘텐츠 기업의 분기 이익 추정이 엇갈림.
+• WHY: 환율.`;
+
 const srv = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x'), u = url.pathname, D = url.searchParams.get('date') || '2026-09-24';
   const send = (t, b) => { res.writeHead(200, { 'Content-Type': t }); res.end(b); };
@@ -210,7 +233,8 @@ const srv = http.createServer((req, res) => {
     { ts: D + 'T11:12:00', source: 'user', kind: 'text', text: MSG14 },
     { ts: D + 'T11:13:00', source: 'user', kind: 'text', text: MSG15 },
     { ts: D + 'T11:14:00', source: 'user', kind: 'text', text: MSG16 },
-    { ts: D + 'T11:15:00', source: 'user', kind: 'text', text: MSG17 }] }));
+    { ts: D + 'T11:15:00', source: 'user', kind: 'text', text: MSG17 },
+    { ts: D + 'T11:16:00', source: 'user', kind: 'text', text: MSG18 }] }));
   if (u === '/api/news/today') return send('application/json', JSON.stringify({ ok: true, ready: true, date: D, count: 3,
     images: ['01.jpg', '02.jpg', '03.jpg'].map(n => ({ name: n, url: '/x.png', thumb: '/x.png', download_url: '/x.png' })) }));
   if (u === '/api/news/pagetext') return send('application/json', '{"ok":false}');
@@ -439,6 +463,15 @@ const MSG10 = `[신문요약 1/6] :newspaper: 2026년 9월 28일 신문 브리�
     check(g14.arts.length === 3 && /5가지 \| 구조판별A/.test(g14.arts[0]) && /핵심 한 줄 \| 구조판별B/.test(g14.arts[1]) && /핵심 주제 금리 \| 구조판별C/.test(g14.arts[2]),
           '목록·강조·체크 머리말처럼 생긴 제목도 다음에 WHAT 이 오면 기사 제목', g14.arts.join(' / '));
     check(g14.nums === 2 && g14.keys === 1 && g14.chks === 0, '진짜 종합 분석(5가지 목록·핵심 한 줄)은 그대로', `번호 ${g14.nums} · 강조 ${g14.keys} · 체크 ${g14.chks}`);
+    const g15 = await page.evaluate(() => {
+      const e = [...document.querySelectorAll('.entry')].find(x => /지면새형식A/.test(x.textContent));
+      return [...e.querySelectorAll('.brf-art')].map(a => ({ t: (a.querySelector('.brf-title') || {}).textContent || '', page: a.dataset.page || '',
+        no: ((a.querySelector('.side-no') || {}).textContent || '').trim(), pg: ((a.querySelector('.brf-pg') || {}).textContent || '') }));
+    });
+    check(g15.length === 4 && g15.map(x => x.page).join(',') === '1,2,3,2', '제목 끝 "(PDF 1·7)" "(2)" "(3 좌하)" "(PDF 2쪽 하단)" 에서 지면 번호를 읽는다', g15.map(x => x.page).join(','));
+    check(g15.map(x => x.no).join(',') === '01,02,03,02', '그래서 기사 옆에 그 지면 사진이 붙는다', g15.map(x => x.no).join(','));
+    check(g15.every(x => !/[_()]|PDF/.test(x.t.replace(x.pg, ''))) && g15.map(x => x.pg).join('|') === '1·7쪽|2쪽|3쪽 좌하|2쪽 하단',
+          '제목엔 밑줄·괄호가 안 남고, 쪽·자리는 작은 꼬리표로', g15.map(x => x.t).join(' / '));
     check(r.over <= 0, '화면이 옆으로 넘치지 않는다', `${r.over}px`);
     await page.close();
   }

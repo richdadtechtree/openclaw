@@ -133,6 +133,7 @@
   .brf-chk .v{flex:1;min-width:0}
   /* 기사가 아닌 앞머리 안내문 — 작고 흐리게, 사진 칸 없음 */
   .brf-intro{margin:0 0 10px;color:color-mix(in srgb,var(--ink) 80%,var(--surface))}   /* 흐린 회색은 잘 안 보였다 */
+  .brf-pg{display:inline-block;margin-left:8px;padding:1px 7px;border:1px solid var(--line);border-radius:999px;font-size:calc(11.5px*var(--fs));font-weight:600;font-style:normal;color:var(--muted);vertical-align:2px;white-space:nowrap}   /* 제목 끝 지면 번호·자리(2026-10-20) */
   .brf-intro .brf-title{font-size:calc(14.5px*var(--fs));font-weight:500;color:inherit;margin:0}
   .brf-intro .brf-sub,.brf-intro .brf-line{font-size:calc(14px*var(--fs))}
   .brf-tblwrap{overflow-x:auto;margin:.55em 0 .8em calc(50px*var(--fs) + 10px);-webkit-overflow-scrolling:touch}
@@ -609,7 +610,12 @@ const FLAG_RE=/^\s*([🔴🟠🟡🟢🔵🟣🟤⚪⚫]?)\s*([^|｜\n]{0,14}?)\
 const PAGE_NUM="(\\d{1,2})\\s*(?:\\.(?:jpe?g|gif|png|webp))?\\s*(?:번|장|쪽|면)?";      // 07 · 07.jpg · 7번
 const PAGE_LINE_RE=new RegExp("^•?\\s*(?:📄|📰|🗞️?|📷)?\\s*\\**\\s*(?:사진|지면|스크랩)\\s*(?:번호)?\\s*\\**\\s*[:：]?\\s*"+PAGE_NUM+
   "\\s*(?:[,·~\\-/]\\s*\\d{1,3}.*)?$","u");        // "07, 08"·"7/30" 처럼 뒤에 더 붙으면 첫 번호만 쓴다
-const PAGE_TAIL_RE=new RegExp("\\s*[(\\[]\\s*(?:사진|지면)\\s*[:：]?\\s*"+PAGE_NUM+"\\s*(?:[,·~\\-]\\s*\\d{1,2}[^)\\]]*)?[)\\]]\\s*$");
+/* 제목 끝 지면 번호 (2026-10-20 GPT 새 형식: "(PDF 1·7)" "(2)" "(6 좌)" "(16 상)" "(19 좌하)" "(PDF 10쪽)" "(13 하단)")
+   예전엔 "(사진 07)"·"(지면 7)" 처럼 앞말이 있을 때만 알아봐서, 앞말 없는 새 형식은 옆에 지면이 안 붙었다.
+   → 앞말(사진·지면·PDF·p) 은 있어도 없어도 되고, 뒤에 쪽·면, 여러 쪽(1·7), 자리(좌·우·상·하·좌측·하단…)가 붙어도 된다.
+   ⚠️ 이 규칙은 '기사 제목 줄'(다음에 WHAT 이 오는 줄)에만 쓴다. 숫자는 첫 쪽만 쓴다(1·7 → 1). */
+const PAGE_POS="좌측|우측|상단|하단|중단|중앙|가운데|왼쪽|오른쪽|좌상|좌하|우상|우하|좌|우|상|하|중";
+const PAGE_TAIL_RE=new RegExp("\\s*[(\\[]\\s*(?:(?:사진|지면|PDF|p\\.?)\\s*[:：]?\\s*)?"+PAGE_NUM+"\\s*(?:p\\b)?\\s*((?:[,·~\\-]\\s*\\d{1,2}\\s*(?:쪽|면|p)?\\s*)*)("+PAGE_POS+")?\\s*[)\\]]\\s*$","i");
 
 /* ── WHAT/WHY/HOW 표기 흔들림 맞추기 (2026-09-24) ──────────────────────
    GPT 요약이 형식을 바꿔 보내는 날이 있다:
@@ -1141,8 +1147,16 @@ function briefing(raw){
     }
     flush();
     // 제목 끝에 "(사진 07)" 처럼 붙어 온 지면 번호도 떼어서 기억한다
+    // GPT 가 제목 줄을 통째로 _기울임_ 으로 보내는 날이 있다("_1. 서울 … (PDF 1·7)_") → 감싼 밑줄을 벗긴다(제목은 기울이지 않는다)
+    { const um=rest.match(/^_+([^_][\s\S]*?)_+$/); if(um) rest=um[1].trim(); }
     const tp=rest.match(PAGE_TAIL_RE);
-    if(tp){ rest=rest.slice(0,tp.index).trim(); }
+    let pgTag="";
+    if(tp){
+      rest=rest.slice(0,tp.index).trim();
+      // 지면 안 자리(좌·우·상단…)는 지면에서 기사를 찾는 데 도움이 되니 제목 옆에 작게 남긴다
+      const more=(tp[2]||"").replace(/\s+/g,""), pos=tp[3]||"";
+      pgTag='<span class="brf-pg" title="신문 쪽 번호(사진 번호)">'+(+tp[1])+esc(more.replace(/(쪽|면|p)/gi,"").replace(/,/g,"·"))+"쪽"+(pos?" "+esc(pos):"")+"</span>";
+    }
     /* 제목 **중간**에 🔴 같은 중요 표시가 붙어 온 경우(2026-09-24 사용자 요청)
          "01. “3억대 서울 분양도 나와” 추석후 청약 큰장 🔴 오늘 신문에서 …가장 중요한 기사 중 하나임."
        → 🔴 부터는 줄을 바꿔 제목 아래 설명으로. (줄 **맨 앞**의 "🔴 반드시 체크 | 제목" 머리표는 briefTitle 이 따로 처리) */
@@ -1155,6 +1169,7 @@ function briefing(raw){
     if(fi>=0 && lead) fi+=lead;
     if(fi>0 && !/[|｜]/.test(rest.slice(fi))){ flagTail=rest.slice(fi).trim(); rest=rest.slice(0,fi).trim(); }
     art=briefTitle(rest);                          // (3) 기사 제목 = 다른 크기로 한눈에
+    if(pgTag) art=art.replace("</div>", pgTag+"</div>");   // 첫 </div> = 제목 줄 끝
     if(flagTail) art+='<div class="brf-sub brf-flagnote">'+inline(flagTail)+"</div>";
     if(tp) pageHint=+tp[1];                        // flush() 가 0 으로 되돌린 뒤에 넣어야 한다
   }
@@ -2337,7 +2352,7 @@ function fontCtl(){
 function artTitle(art){
   const t=art.querySelector(".brf-title");
   let s="";
-  if(t){ const c=t.cloneNode(true); c.querySelectorAll(".brf-flag").forEach(n=>n.remove()); s=c.textContent; }
+  if(t){ const c=t.cloneNode(true); c.querySelectorAll(".brf-flag,.brf-pg").forEach(n=>n.remove()); s=c.textContent; }   // 쪽 꼬리표(2026-10-20)도 빼야 📌 연결 열쇠가 예전과 같다
   else s=(art.querySelector(".brf-main")||art).textContent;
   return s.replace(/\s+/g," ").trim();
 }
