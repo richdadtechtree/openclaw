@@ -492,6 +492,33 @@
   .mk-ed-empty a{color:var(--accent-bright);font-weight:600;text-decoration:none}
   .mk-ed-stale{display:inline-block;margin-left:6px;font-size:11px;font-weight:700;color:var(--c-alert)}
   @media (max-width:520px){ .mk-ed{margin-left:0;padding:18px 16px 18px;border-radius:14px} }
+
+  /* ── '연결 5가지' 기사 고리 (2026-10-20) ── */
+  .brf-num.is-flow{padding:14px 16px;margin:.7em 0;border:1px solid var(--line);border-radius:14px;
+                   background:color-mix(in srgb,var(--accent-bright) 4%,var(--surface))}
+  .brf-num.is-flow + .brf-num.is-flow{margin-top:.7em}
+  .brf-num.is-flow .n{margin-top:.15em}
+  .flow-name{display:block;font-size:1.02em;font-weight:800;letter-spacing:-.02em;margin-bottom:8px}
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:6px 4px;font-weight:650}
+  .flow-node{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;line-height:1.5;
+             background:var(--surface);border:1px solid var(--line-strong)}
+  .flow-op{color:var(--accent-bright);font-weight:800;padding:0 3px}
+  .flow-refs{display:inline-flex;gap:3px}
+  .flow-ref{appearance:none;border:0;cursor:pointer;font:inherit;font-size:.74em;font-weight:800;line-height:1;
+            padding:4px 7px;border-radius:999px;color:#fff;background:var(--accent-bright);font-variant-numeric:tabular-nums}
+  .flow-ref:hover{filter:brightness(1.12)}
+  .flow-ref.none{cursor:default;color:var(--muted);background:color-mix(in srgb,var(--muted) 15%,transparent)}
+  .note .flow-ref{font-size:.7em;padding:3px 6px;vertical-align:.1em}
+  .note .flow-refs{margin:0 3px}
+  .flow-lbl{display:inline-block;margin-right:7px;font-size:.82em;font-weight:800;color:var(--accent)}
+  .brf-num.is-flow .note{margin-top:.45em}
+  .flow-arts{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:9px;padding-top:8px;border-top:1px dashed var(--line)}
+  .flow-art{appearance:none;border:0;background:none;padding:0;cursor:pointer;font:inherit;font-size:.82em;font-weight:500;
+            color:var(--muted);text-align:left}
+  .flow-art:hover{color:var(--accent-bright);text-decoration:underline}
+  .brf-art.flow-flash{animation:flowflash 1.8s ease}
+  @keyframes flowflash{0%,40%{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent-bright) 55%,transparent);border-radius:12px}100%{box-shadow:none}}
+  @media (max-width:520px){ .brf-num.is-flow{padding:12px 12px} .flow-node{padding:4px 9px} }
 </style>
 </head>
 <body class="paper">
@@ -1358,6 +1385,7 @@ function render(){
   document.getElementById("foot-count").textContent=`메시지 ${msgs.length} · 표시 ${shown.length}`;
   seenKeys=new Set(msgs.map(msgKey));   // 다음 렌더 때 '새 것'을 가려내기 위한 기준
   feedVer++; decorate();                // 피드를 새로 그렸으면 '글+지면' 사진 칸도 다시 붙인다
+  decorateFlows();                      // '연결 5가지' 를 기사 고리로(2026-10-20)
 }
 // 메시지 한 건을 구별하는 열쇠. ts 는 슬랙에서 메시지마다 고유하다.
 function msgKey(m){ return (m.ts||"")+"|"+(m.kind||""); }
@@ -2539,6 +2567,93 @@ function matchPage(text, names){
 /* 사진 칸을 붙이거나(글+지면) 걷어낸다(글만). 여러 번 불러도 안전하다.
    20초마다 목록을 다시 받아도 바뀐 게 없으면 손대지 않는다 → 사진이 깜빡이지 않는다. */
 let feedVer=0, lastDecor="";
+
+/* ── '오늘 신문 연결 5가지' 를 기사 고리로 (2026-10-20 사용자 요청: "기사들을 연결해서 세상의 흐름을") ─────────────
+   GPT 가 보내는 "① 서울 입주 감소(1) ↔ 정비사업 이주비 부담(2)" 의 (1)(2) 는 **기사 번호**다(10-19 형식 "(10쪽)" 은 지면 쪽).
+   → 줄을 화살표로 나눠 '기사 카드' 고리로 그리고, 번호를 누르면 그 기사로 이동(잠깐 빛남), 올리면 기사 제목·WHAT 이 보인다.
+     카드 아래엔 연결된 기사 제목들을 작게 모아 보여 준다(폰은 마우스를 못 올리니까).
+   · 아래 붙은 설명 줄 "흐름:" 은 고리 위 굵은 이름으로, "연결 고리:"·"다음에 볼 것:" 은 작은 라벨로.
+   · 번호가 하나도 없거나 화살표가 없는 평범한 목록은 그대로 둔다(예전 모양 유지). */
+const FLOW_OP=/\s*(↔️?|⇄|<->|→|->|⇒|←|<-)\s*/;
+function flowIndex(entry){
+  // 이 메시지 + 그 앞 메시지들의 기사 — 가까운 것 우선(같은 번호가 예전 요약에도 있을 수 있다)
+  const byNo=new Map(), byPage=new Map(), ents=[...document.querySelectorAll("#feed .entry")];
+  const i=ents.indexOf(entry);
+  for(let k=i;k>=0;k--) ents[k].querySelectorAll(".brf-art").forEach(a=>{
+    const t=artTitle(a), m=t.match(/^(\d{1,3})[.)]\s*(.+)$/);
+    const info={el:a, title:t, what:((a.querySelector('.brf-kv[data-k="WHAT"] .v')||{}).textContent||"").trim()};
+    if(m && !byNo.has(+m[1])) byNo.set(+m[1],info);
+    const pg=+a.dataset.page||0; if(pg && !byPage.has(pg)) byPage.set(pg,info);
+  });
+  return {byNo, byPage};
+}
+function flowRef(n, info, page){
+  if(!info) return '<span class="flow-ref none" title="이 번호의 기사를 화면에서 못 찾았어요">'+esc(String(n))+(page?"쪽":"")+"</span>";
+  const tip=info.title+(info.what?" — "+info.what.slice(0,70):"");
+  return '<button type="button" class="flow-ref" data-go="'+(page?"p":"n")+n+'" title="'+esc(tip)+'">'+esc(String(n))+(page?"쪽":"")+"</button>";
+}
+// "(1)" "(13·14)" "(28·32)" "(10쪽)" → 번호 단추. 글 안의 다른 괄호(예: "(-30%)")는 건드리지 않는다
+function flowRefs(html, idx, used){
+  return html.replace(/\((\d{1,2}(?:\s*[·,]\s*\d{1,2})*)\s*(쪽|면|p)?\)/g, (all, nums, unit)=>{
+    const page=!!unit, ns=nums.split(/\s*[·,]\s*/).map(Number);
+    const infos=ns.map(n=>page?idx.byPage.get(n):idx.byNo.get(n));
+    if(!infos.some(Boolean)) return all;                 // 아무 기사도 못 찾으면 원래 글자 그대로
+    ns.forEach((n,k)=>{ if(infos[k]) used.set(infos[k].el, infos[k]); });
+    return '<span class="flow-refs">'+ns.map((n,k)=>flowRef(n,infos[k],page)).join("")+"</span>";
+  });
+}
+function decorateFlows(){
+  document.querySelectorAll("#feed .brf-num:not([data-flow])").forEach(item=>{
+    item.dataset.flow="0";
+    const v=item.querySelector(".v"); if(!v) return;
+    const notes=[...v.querySelectorAll(".note")];
+    const mainHtml=[...v.childNodes].filter(n=>!(n.nodeType===1 && n.classList.contains("note")))
+                     .map(n=>n.nodeType===1?n.outerHTML:esc(n.textContent)).join("").trim();
+    const mainTxt=mainHtml.replace(/<[^>]+>/g,"");
+    if(!FLOW_OP.test(mainTxt) || !/\(\d{1,2}(?:\s*[·,]\s*\d{1,2})*\s*(?:쪽|면|p)?\)/.test(mainTxt)) return;
+    const idx=flowIndex(item.closest(".entry")), used=new Map();
+    // 화살표로 나눠 카드로
+    const parts=mainHtml.split(/\s*(↔️?|⇄|&lt;-&gt;|→|-&gt;|⇒|←|&lt;-)\s*/);
+    let chain="";
+    parts.forEach((seg,k)=>{
+      if(k%2){ const op=seg.replace(/&lt;/g,"<").replace(/&gt;/g,">");
+               chain+='<span class="flow-op" aria-hidden="true">'+(/↔|⇄|<->/.test(op)?"⇄":/←|<-/.test(op)?"←":"→")+"</span>"; return; }
+      if(!seg.trim()) return;
+      chain+='<span class="flow-node">'+flowRefs(seg.trim(), idx, used)+"</span>";
+    });
+    // 설명 줄: "흐름:" → 이름, "연결 고리:"·"다음에 볼 것:" 등 → 라벨
+    let name="", noteHtml="";
+    notes.forEach(n=>{
+      const h=n.innerHTML.trim(), m=h.replace(/<[^>]+>/g,"").match(/^\s*(흐름|흐름 이름|연결 고리|연결고리|근거|다음에 볼 것|체크할 것|볼 것|의미)\s*[:：]\s*/);
+      if(m && /^흐름/.test(m[1])){ name=flowRefs(h.replace(/^\s*[^:：]{1,8}[:：]\s*/,""), idx, used); return; }
+      const body=flowRefs(m?h.replace(/^\s*[^:：]{1,10}[:：]\s*/,""):h, idx, used);
+      noteHtml+='<span class="note">'+(m?'<b class="flow-lbl">'+esc(m[1])+"</b>":"")+body+"</span>";
+    });
+    const arts=[...used.values()].sort((a,b)=>(parseInt(a.title)||0)-(parseInt(b.title)||0));
+    v.innerHTML=(name?'<span class="flow-name">'+name+"</span>":"")+'<span class="flow">'+chain+"</span>"+noteHtml+
+      (arts.length?'<span class="flow-arts">'+arts.map(a=>'<button type="button" class="flow-art" data-ttl="'+esc(a.title)+'">'+esc(a.title)+"</button>").join("")+"</span>":"");
+    item.dataset.flow="1"; item.classList.add("is-flow");
+    // 단추가 가리킬 기사 요소를 기억(번호 → 요소)
+    item._flowArts=new Map([...used.values()].map(a=>[a.title,a.el]));
+    item._flowIdx=idx;
+  });
+}
+function flowGo(el){
+  if(!el) return;
+  el.scrollIntoView({behavior:"smooth", block:"center"});
+  el.classList.remove("flow-flash"); void el.offsetWidth; el.classList.add("flow-flash");
+  setTimeout(()=>el.classList.remove("flow-flash"),1800);
+}
+document.getElementById("feed").addEventListener("click",e=>{
+  const r=e.target.closest(".flow-ref[data-go]"), a=e.target.closest(".flow-art");
+  if(!r && !a) return;
+  const item=e.target.closest(".brf-num"); if(!item||!item._flowIdx) return;
+  e.preventDefault();
+  if(a) return flowGo(item._flowArts.get(a.dataset.ttl));
+  const g=r.dataset.go, n=+g.slice(1), info=g[0]==="p"?item._flowIdx.byPage.get(n):item._flowIdx.byNo.get(n);
+  flowGo(info&&info.el);
+});
+
 function decorate(force){
   const feed=document.getElementById("feed"); if(!feed) return;
   const paper=viewMode()==="paper";

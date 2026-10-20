@@ -491,8 +491,9 @@ const MSG10 = `[신문요약 1/6] :newspaper: 2026년 9월 28일 신문 브리�
     check(g16.kv1.join(',') === 'WHAT:undefined,WHY:undefined,HOW:확정' && g16.kv2.every(k => k.length === 3 && /^HOW:/.test(k[2])),
           '"• HOW [확정]: …"·"HOW [기사 집계]: …" 도 HOW 줄로, 꼬리표는 작은 칩', JSON.stringify([g16.kv1, g16.kv2]));
     check(g16.src1, '"원문기사:" 줄도 그 기사 안의 원문 표시로');
-    check(g16.sec.includes('신문 5가지 연결') && g16.nums.length === 5 && g16.nums.every(n => /↔/.test(n)) && /서울 입주 감소\(1\) ↔ 정비사업 이주비 부담\(2\)/.test(g16.nums[0]),
-          '"신문 5가지 연결" 은 머리말 + 번호 목록 5개(↔ 그대로, 기사 제목·지면 사진 아님)', g16.nums[0]);
+    // (2026-10-20 같은 날) 번호가 화면의 기사와 이어지면 '기사 고리'(⇄ + 번호 단추)로 그린다 — test_viewer_flow.js
+    check(g16.sec.includes('신문 5가지 연결') && g16.nums.length === 5 && g16.nums.every(n => /[↔⇄]/.test(n)) && /^1서울 입주 감소1⇄정비사업 이주비 부담2/.test(g16.nums[0]),
+          '"신문 5가지 연결" 은 머리말 + 번호 목록 5개(↔ 그대로·기사 고리, 기사 제목·지면 사진 아님)', g16.nums[0]);
     check(g16.arts.length === 2 && /핵심 한 줄/.test(g16.key), '기사는 34·35 두 개뿐, "오늘 핵심 한 줄" 은 강조 상자', g16.arts.join(' / '));
     check(r.over <= 0, '화면이 옆으로 넘치지 않는다', `${r.over}px`);
     await page.close();
