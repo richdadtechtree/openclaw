@@ -3,6 +3,14 @@
 <head>
 <meta charset="utf-8">
 <title>오늘 신문 요약</title>
+<script>
+/* 2026-10-21 우클릭 메뉴 막기 — 페이지 맨 앞에서 가장 먼저 붙인다(사용자 제보: 그래도 '이미지 저장' 메뉴가 뜬다).
+   크롬 확장 프로그램(예: 데이터 스크래퍼)은 보통 페이지를 다 읽은 뒤에 자기 우클릭 감시자를 붙이는데,
+   그게 신호를 중간에서 멈추면(stopImmediatePropagation) 사진 창을 열 때 붙이던 막기(lbGuards)까지 신호가 안 왔다.
+   → 여기서 먼저 막아 두면 순서상 늘 우리가 첫째다. 사진 창(#lb)이 열려 있을 때만 막고, 닫혀 있으면 아무것도 안 한다. */
+window.addEventListener("contextmenu",function(e){var lb=document.getElementById("lb");if(lb&&!lb.hidden)e.preventDefault();},true);
+window.addEventListener("dragstart",function(e){var lb=document.getElementById("lb");if(lb&&!lb.hidden&&lb.contains(e.target))e.preventDefault();},true);
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
@@ -558,7 +566,7 @@
   </section>
   <footer>
     <span id="foot-count">—</span>
-    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST</span>
+    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-21</span></span>
   </footer>
 </div>
 
@@ -1876,7 +1884,7 @@ function lbGuard(e){
   if(t && t.nodeType===1 && !lb.contains(t) && t!==document.documentElement && t!==document.body) return;
   e.preventDefault();
 }
-const VIEWER_BUILD="2026-10-20-ctxmenu2";       // 서버에 새 화면이 들어왔는지 확인용(주소창 옆 F12 콘솔: VIEWER_BUILD)
+const VIEWER_BUILD="2026-10-21-ctxmenu3";       // 서버에 새 화면이 들어왔는지 확인용(주소창 옆 F12 콘솔: VIEWER_BUILD)
 function lbGuards(on){
   const f=on?"addEventListener":"removeEventListener";
   // window·document 둘 다 capture 단계 — window 가 가장 먼저 받는다(다른 스크립트·확장 프로그램이 중간에서 멈춰도 먼저 막음)

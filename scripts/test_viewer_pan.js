@@ -257,6 +257,13 @@ const zoomIn = async (page, n = 5) => {
         '사진 위를 눌러도 브라우저는 사진(img)이 아니라 사진 칸을 누른 것으로 본다 → 크롬 "이미지" 메뉴가 생길 수 없다(2026-10-20)');
   check(await page.evaluate(() => { const e = new MouseEvent('contextmenu', { bubbles: true, cancelable: true }); return !window.dispatchEvent(e) && !document.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })); }),
         '뷰어 밖(창·문서 자체)에서 끝난 우클릭도 뷰어가 열려 있으면 막는다');
+  // 2026-10-21: 확장 프로그램이 페이지를 다 읽은 뒤 붙인 우클릭 감시자가 신호를 멈춰도(stopImmediatePropagation) 우리가 먼저 막는다
+  //   실제 순서 재현: 페이지를 다 읽은 뒤(사진 창을 열기 **전**) 확장 프로그램이 감시자를 붙이고 → 사용자가 사진 창을 연다
+  await page.evaluate(() => { closeViewer(); window.__ext = e => e.stopImmediatePropagation(); window.addEventListener('contextmenu', window.__ext, true); });
+  await openViewer(page); await page.waitForTimeout(150);
+  check(await page.evaluate(() => { const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true }); document.getElementById('lb-stage').dispatchEvent(ev);
+      window.removeEventListener('contextmenu', window.__ext, true); return ev.defaultPrevented; }),
+        '확장 프로그램이 우클릭 신호를 중간에서 멈춰도 메뉴가 막힌다(페이지 맨 앞 감시자)');
   check(await page.evaluate(() => document.getElementById('lb-img').draggable === false) && await fire('#lb-img', 'dragstart') && await fire('#lb-stage', 'dragstart'),
         '사진·사진 칸의 브라우저 기본 끌기(dragstart)가 막힌다');
   // 실제 마우스: 사진 위에서 오른쪽 버튼을 누르고 위쪽 바까지 끌고 가서 떼기(윈도 크롬은 뗄 때 메뉴를 띄운다)
