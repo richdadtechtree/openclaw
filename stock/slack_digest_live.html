@@ -8,7 +8,8 @@
    크롬 확장 프로그램(예: 데이터 스크래퍼)은 보통 페이지를 다 읽은 뒤에 자기 우클릭 감시자를 붙이는데,
    그게 신호를 중간에서 멈추면(stopImmediatePropagation) 사진 창을 열 때 붙이던 막기(lbGuards)까지 신호가 안 왔다.
    → 여기서 먼저 막아 두면 순서상 늘 우리가 첫째다. 사진 창(#lb)이 열려 있을 때만 막고, 닫혀 있으면 아무것도 안 한다. */
-window.addEventListener("contextmenu",function(e){var lb=document.getElementById("lb");if(lb&&!lb.hidden)e.preventDefault();},true);
+window.__ctxSeen=0;   // 아래 '가로채기 점검'(ctxProbe)이 이 감시자까지 신호가 왔는지 센다
+window.addEventListener("contextmenu",function(e){if(e.__probe)window.__ctxSeen++;var lb=document.getElementById("lb");if(lb&&!lb.hidden)e.preventDefault();},true);
 window.addEventListener("dragstart",function(e){var lb=document.getElementById("lb");if(lb&&!lb.hidden&&lb.contains(e.target))e.preventDefault();},true);
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -527,6 +528,14 @@ window.addEventListener("dragstart",function(e){var lb=document.getElementById("
   .brf-art.flow-flash{animation:flowflash 1.8s ease}
   @keyframes flowflash{0%,40%{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent-bright) 55%,transparent);border-radius:12px}100%{box-shadow:none}}
   @media (max-width:520px){ .brf-num.is-flow{padding:12px 12px} .flow-node{padding:4px 9px} }
+
+  /* 확장 프로그램 우클릭 가로채기 알림 (2026-10-21) */
+  .lb-warn{position:absolute;left:50%;bottom:54px;transform:translateX(-50%);z-index:4;display:flex;gap:10px;align-items:center;
+           max-width:min(620px,calc(100% - 24px));padding:9px 10px 9px 14px;border-radius:12px;font-size:13px;line-height:1.5;
+           color:#fff4dc;background:rgba(120,72,10,.92);border:1px solid #e0a552;box-shadow:0 6px 20px #0008}
+  .lb-warn[hidden]{display:none}
+  .lb-warn button{appearance:none;border:0;background:transparent;color:inherit;font-size:15px;cursor:pointer;padding:2px 6px;border-radius:6px}
+  .lb-warn button:hover{background:#ffffff22}
 </style>
 </head>
 <body class="paper">
@@ -620,6 +629,8 @@ window.addEventListener("dragstart",function(e){var lb=document.getElementById("
     <aside class="lb-note" id="lb-note" hidden aria-label="이 지면에 실린 기사 요약"></aside>
   </div>
   <button class="lb-nav next" id="lb-next" aria-label="다음 장">›</button>
+  <!-- 2026-10-21: 확장 프로그램이 페이지보다 먼저 우클릭을 가로채면(우클릭 강제 허용 기능) 페이지 코드로는 메뉴를 못 막는다 → 알려 준다 -->
+  <div class="lb-warn" id="lb-warn" hidden role="status"><span>⚠️ 크롬 <b>확장 프로그램</b>이 오른쪽 클릭을 먼저 가로채고 있어 메뉴가 뜰 수 있어요. 신문 옮기기는 <b>✋ 손바닥(왼쪽 버튼으로 끌기)</b>을 쓰세요.</span><button type="button" id="lb-warn-x" aria-label="닫기">✕</button></div>
   <div class="lb-hint" id="lb-hint">←→ 키·옆으로 쓸어 넘기기 · 휠/더블탭 확대 · 확대 후 방향키·우클릭 드래그로 이동 · 🖍 형광펜(H) · Esc 닫기</div>
 </div>
 
@@ -1884,12 +1895,24 @@ function lbGuard(e){
   if(t && t.nodeType===1 && !lb.contains(t) && t!==document.documentElement && t!==document.body) return;
   e.preventDefault();
 }
-const VIEWER_BUILD="2026-10-21-ctxmenu3";       // 서버에 새 화면이 들어왔는지 확인용(주소창 옆 F12 콘솔: VIEWER_BUILD)
+const VIEWER_BUILD="2026-10-21-ctxmenu4";       // 서버에 새 화면이 들어왔는지 확인용(주소창 옆 F12 콘솔: VIEWER_BUILD)
 function lbGuards(on){
   const f=on?"addEventListener":"removeEventListener";
   // window·document 둘 다 capture 단계 — window 가 가장 먼저 받는다(다른 스크립트·확장 프로그램이 중간에서 멈춰도 먼저 막음)
   for(const t of ["contextmenu","dragstart"]){ window[f](t, lbGuard, true); document[f](t, lbGuard, true); }
   V.guards=on;
+}
+/* 우클릭 가로채기 점검(2026-10-21) — 사진 창을 처음 열 때 한 번, 시험용 우클릭 신호를 보내 본다.
+   페이지 맨 앞 감시자(<head>)까지 신호가 안 오면 = 어떤 확장 프로그램이 그보다 먼저 받아 멈춘 것
+   → 페이지 코드로는 메뉴를 못 막으니 화면에 알리고 ✋ 손바닥을 권한다(사용자 쪽에서 확장 설정을 바꿔야 근본 해결). */
+function ctxProbe(){
+  if(ctxProbe.done) return ctxProbe.ok;
+  ctxProbe.done=true;
+  const n=window.__ctxSeen||0, ev=new MouseEvent("contextmenu",{bubbles:true,cancelable:true});
+  ev.__probe=1; $("lb-stage").dispatchEvent(ev);
+  ctxProbe.ok = (window.__ctxSeen||0)>n && ev.defaultPrevented;
+  if(!ctxProbe.ok){ $("lb-warn").hidden=false; const t=$("build-tag"); if(t) t.textContent+=" · 우클릭 가로챔"; }
+  return ctxProbe.ok;
 }
 function openViewer(i,opts={}){
   if(!newsState.images||!newsState.images.length) return;
@@ -1902,6 +1925,7 @@ function openViewer(i,opts={}){
   $("lb-pick").hidden=!V.pick;
   $("lb").hidden=false;
   document.body.style.overflow="hidden";     // 뒤쪽 페이지가 같이 스크롤되지 않게
+  ctxProbe();                                  // 확장 프로그램이 우클릭을 가로채는지(처음 한 번)
   if(opts.pen && !M.on) setPen(true);         // 도구모음을 먼저 펴 두고 사진 크기를 잰다(다시 열어도 기사 확대가 풀리지 않게)
   showPage();
   // 지면 고르기면 '무엇을 하면 되는지'를 더 오래 보여준다
@@ -2119,6 +2143,7 @@ $("lb-out").onclick=()=>zoomAt(1/1.6);
 // ── 형광펜 버튼들 ───────────────────────────────────────────────────────
 $("lb-pen").onclick=()=>{ setPen(!M.on); if(M.on) setHand(false,true); };   // 형광펜을 켜면 바로 그을 수 있게 손바닥은 끈다
 $("lb-hand").onclick=()=>setHand(!V.hand);
+$("lb-warn-x").onclick=()=>{ $("lb-warn").hidden=true; };   // 확장 프로그램 우클릭 가로채기 알림 닫기
 // 편집 도구모음 안 ✋: 켜면 옮기기, 다시 누르면 옮겨 둔 자리 그대로 긋기로(가운데로 안 돌아감)
 $("lb-t-hand").onclick=()=>{ if(V.hand) setHand(false,true); else { if(M.erase) setErase(false); setHand(true); } };
 $("lb-pen-off").onclick=()=>setPen(false);

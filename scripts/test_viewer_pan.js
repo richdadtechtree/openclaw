@@ -296,6 +296,18 @@ const zoomIn = async (page, n = 5) => {
   check(await page.evaluate(() => V.guards === false) && !(await fire('body', 'contextmenu')) && !(await fire('body', 'dragstart')),
         '뷰어를 닫으면 막기 리스너를 정리한다(페이지 우클릭·끌기는 원래대로)');
 
+  // 2026-10-21: 확장 프로그램이 페이지보다 먼저(document_start) 우클릭을 가로채면 페이지 코드로는 못 막는다 → 화면에 알림
+  console.log('\n[확장 프로그램 우클릭 가로채기 알림]');
+  check(await page.evaluate(() => { openViewer(0); return document.getElementById('lb-warn').hidden; }), '확장 프로그램이 없으면 알림이 안 뜬다');
+  const ectx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  await ectx.addInitScript(() => window.addEventListener('contextmenu', e => e.stopImmediatePropagation(), true));
+  const ep = await ectx.newPage(); await ep.goto(base + '/slack'); await openViewer(ep); await ep.waitForTimeout(150);
+  check(await ep.evaluate(() => !document.getElementById('lb-warn').hidden && /손바닥/.test(document.getElementById('lb-warn').textContent)),
+        '확장 프로그램이 먼저 가로채면 "✋ 손바닥을 쓰세요" 알림이 뜬다');
+  await ep.click('#lb-warn-x');
+  check(await ep.evaluate(() => document.getElementById('lb-warn').hidden), '✕ 로 알림을 닫을 수 있다');
+  await ectx.close();
+
   const ph = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
   await ph.goto(base + '/slack');
   await openViewer(ph);
