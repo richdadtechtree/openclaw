@@ -317,6 +317,7 @@
   /* ✋ 손바닥 모드 — 형광펜이 켜져 있어도 왼쪽 버튼은 '옮기기'. 커서도 손 모양으로(십자 커서보다 우선) */
   .lb-stage.hand,.lb-stage.hand img,.lb-stage.hand.marking,.lb-stage.hand.marking img{cursor:grab}
   .lb-stage.hand.panning,.lb-stage.hand.panning img{cursor:grabbing}
+  #lb-note-btn[aria-pressed="true"]{background:#2f4272;border-color:#7f9bf5;color:#fff}
   #lb-hand[aria-pressed="true"]{background:#2f4272;border-color:#7f9bf5;color:#fff}
   /* 형광펜 모드일 때 아래쪽에 뜨는 작은 도구모음 */
   /* 도구모음은 **사진 위에 떠 있지 않고** 상단 바 바로 아래 '한 줄'을 차지한다.
@@ -597,7 +598,7 @@
   </section>
   <footer>
     <span id="foot-count">—</span>
-    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-21c</span></span>
+    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-22a</span></span>
   </footer>
 </div>
 
@@ -606,7 +607,7 @@
   <div class="lb-bar">
     <span class="lb-count" id="lb-count"></span><span class="lb-native" id="lb-native"></span>
     <button class="lb-btn pick" id="lb-pick" hidden title="지금 보는 장을 이 기사의 지면으로 연결">📌 <span class="lg">이 장 </span>연결</button>
-    <button class="lb-btn" id="lb-note-btn" hidden title="기사 요약(WHAT·WHY·HOW) 옆에 보기 (N)" aria-label="기사 요약 보기" aria-pressed="true">📝</button>
+    <button class="lb-btn" id="lb-note-btn" hidden title="기사 요약(WHAT·WHY·HOW) 옆에 보기 (N)" aria-label="기사 요약 보기" aria-pressed="true">📝 요약</button>
     <button class="lb-btn" id="lb-hand" title="손바닥 — 왼쪽 버튼으로 끌어 신문 옮기기 (M)" aria-label="손바닥(옮기기)" aria-pressed="false">✋</button>
     <button class="lb-btn" id="lb-pen" title="형광펜 (H)" aria-label="형광펜" aria-pressed="false">🖍</button>
     <button class="lb-btn" id="lb-out" title="축소" aria-label="축소">−</button>
@@ -1625,7 +1626,9 @@ function hideNav(){
    → 요약 규칙(WHAT·WHY·HOW·표·보충 줄)을 다시 만들 필요 없이 화면과 **똑같은 내용**이 나온다.
    연 기사는 맨 위 + 왼쪽 파란 줄, 같은 장의 다른 기사는 아래에 흐리게.
    지면 고르기(📌) 중이거나 이 장에 연결된 기사가 없으면 칸을 숨겨 사진을 넓게 쓴다. */
-const NOTE_KEY="digest.lbNote";
+/* ⚠ 2026-10-22: 예전 키(digest.lbNote)에 "0"(끔)이 남아 있어 기사 사진을 눌러도 옆 요약이 안 나왔다(사용자: "요약도 옆에 보여 달라").
+   → 키를 바꿔 모두 다시 '켬'에서 시작하고, 📝 단추에 '요약' 글자를 붙여 끄고 켜는 곳이 보이게 했다. */
+const NOTE_KEY="digest.lbNote2";
 function noteWanted(){ try{ return localStorage.getItem(NOTE_KEY)!=="0"; }catch(e){ return true; } }
 const NUM_RE=/\d[\d,.]*(?:\s?%p?)?/g;
 function markNums(root){
