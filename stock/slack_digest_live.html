@@ -28,6 +28,11 @@
 })();
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+/* 2026-10-22 사용자 요청: 밝게/어둡게 고르기. 고른 값은 이 브라우저에 기억(digest.theme) — 없으면 기기 설정을 따른다.
+   그림이 그려지기 전에 붙여야 깜빡이지 않아서 맨 앞에서 먼저 정한다. */
+try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") document.documentElement.dataset.theme=t; }catch(e){}
+</script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
   :root {
@@ -392,6 +397,8 @@
   .fontctl button:disabled{opacity:.35;cursor:default}
   .fontctl button:focus-visible{outline:2px solid var(--accent-bright);outline-offset:1px}
   .fontctl .dn{font-size:12px} .fontctl .up{font-size:16px}
+  .themectl button{font-size:13px;font-weight:600;color:var(--muted)}
+  .themectl button[aria-pressed="true"]{background:color-mix(in srgb,var(--accent-bright) 16%,transparent);color:var(--ink)}
   .fontctl .lv{font-family:var(--mono);font-size:11.5px;font-weight:600;color:var(--muted);min-width:46px}
   body.paper .wrap{max-width:1120px}
   .paper-note{margin:0 0 18px 78px;font-size:13px;color:var(--muted);border:1px dashed var(--line-strong);
@@ -598,7 +605,7 @@
   </section>
   <footer>
     <span id="foot-count">—</span>
-    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-22c</span></span>
+    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-22d</span></span>
   </footer>
 </div>
 
@@ -1403,7 +1410,7 @@ function render(){
   tb.appendChild(chip("all","전체",msgs.length,null));
   ["bot","user","unknown"].forEach(k=>{if(counts[k])tb.appendChild(chip(k,cat(k).label,counts[k],cat(k).color))});
   const right=document.createElement("div"); right.className="tb-right";
-  right.append(fontCtl());                   // 오른쪽 끝: 가− 100% 가+  (보기 방식은 '글+지면' 하나뿐 — 2026-09-24)
+  right.append(themeCtl(), fontCtl());       // 오른쪽 끝: ☀/🌙 밝기 · 가− 100% 가+  (보기 방식은 '글+지면' 하나뿐 — 2026-09-24)
   tb.appendChild(right);
   syncChips();
   const feed=document.getElementById("feed");feed.innerHTML="";
@@ -2582,6 +2589,27 @@ function stepFont(d){
   const i=FONT_STEPS.indexOf(fontScale());
   const v=FONT_STEPS[Math.max(0,Math.min(FONT_STEPS.length-1,i+d))];
   mem.font=String(v); lsSet(FONT_KEY,String(v)); applyFont();
+}
+// 밝게/어둡게 — CSS 는 이미 :root[data-theme] 로 두 색을 다 갖고 있어 값만 바꾸면 된다(2026-10-22)
+const THEME_KEY="digest.theme";
+function curTheme(){
+  const t=document.documentElement.dataset.theme;
+  if(t==="light"||t==="dark") return t;
+  return matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";
+}
+function syncTheme(){
+  const t=curTheme();
+  document.querySelectorAll(".themectl button").forEach(b=>b.setAttribute("aria-pressed", b.dataset.t===t?"true":"false"));
+}
+function themeCtl(){
+  const g=document.createElement("div");
+  g.className="fontctl themectl"; g.setAttribute("role","group"); g.setAttribute("aria-label","화면 밝기");
+  g.innerHTML='<button data-t="light" title="밝은 화면">☀ 밝게</button><button data-t="dark" title="어두운 화면">🌙 어둡게</button>';
+  g.querySelectorAll("button").forEach(b=>b.onclick=()=>{
+    document.documentElement.dataset.theme=b.dataset.t; lsSet(THEME_KEY,b.dataset.t); syncTheme();
+  });
+  setTimeout(syncTheme);
+  return g;
 }
 function fontCtl(){
   const g=document.createElement("div");
