@@ -598,7 +598,7 @@
   </section>
   <footer>
     <span id="foot-count">—</span>
-    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-22a</span></span>
+    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-22b</span></span>
   </footer>
 </div>
 
@@ -1676,14 +1676,14 @@ function fillNote(){
   const was=!box.hidden;
   box.hidden=!show;
   if(show){
-    box.innerHTML='<div class="nt-head">'+String(V.i+1).padStart(2,"0")+'번째 장 · 기사 '+arts.length+'건 · 숫자 강조</div>';
+    box.innerHTML='<div class="nt-head">'+String(V.i+1).padStart(2,"0")+'번째 장 · 기사 '+arts.length+'건</div>';
     for(const a of arts){
       const m=a.querySelector(".brf-main"); if(!m) continue;
       const c=document.createElement("section");
       c.className="nt-art"+(a===V.fromArt?" cur":"");
       c.innerHTML=m.innerHTML;
       c.querySelectorAll("[id]").forEach(e=>e.removeAttribute("id"));
-      markNums(c);
+      // 2026-10-22 사용자 요청: 숫자 노란 강조(markNums)는 빼고 화면 요약과 똑같이 보여 준다
       box.append(c);
     }
     box.scrollTop=0;
