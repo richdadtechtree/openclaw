@@ -605,7 +605,7 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   </section>
   <footer>
     <span id="foot-count">—</span>
-    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-22d</span></span>
+    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-22e</span></span>
   </footer>
 </div>
 
@@ -619,7 +619,8 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
     <button class="lb-btn" id="lb-pen" title="형광펜 (H)" aria-label="형광펜" aria-pressed="false">🖍</button>
     <button class="lb-btn" id="lb-out" title="축소" aria-label="축소">−</button>
     <button class="lb-btn" id="lb-in" title="확대" aria-label="확대">＋</button>
-    <button class="lb-btn" id="lb-dl" title="저장 — 줄 그은 그대로 그림·PDF로" aria-label="저장" aria-haspopup="menu" aria-expanded="false">⤓</button>
+    <!-- 2026-10-22: ⤓ 아이콘만으론 PDF 받기가 있는 줄 몰라서(사용자 요청 "줄 그은 걸 PDF로") 글자를 붙였다 -->
+    <button class="lb-btn" id="lb-dl" title="저장 — 줄 그은 그대로 그림·PDF로" aria-label="저장(PDF·그림)" aria-haspopup="menu" aria-expanded="false">⤓ PDF</button>
     <!-- 2026-10-16 사용자 요청: 줄 그은 뒤 PDF 전체 / 낱장 그림으로 받기. 전부 이 브라우저 안에서 만든다(서버로 아무것도 안 보냄) -->
     <div class="lb-dlmenu" id="lb-dlmenu" role="menu" hidden>
       <button role="menuitem" id="lb-dl-img">🖼 이 장 그림 <small>줄 포함 · JPG</small></button>
