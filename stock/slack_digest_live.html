@@ -598,7 +598,7 @@
   </section>
   <footer>
     <span id="foot-count">—</span>
-    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-22b</span></span>
+    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-22c</span></span>
   </footer>
 </div>
 
@@ -608,7 +608,7 @@
     <span class="lb-count" id="lb-count"></span><span class="lb-native" id="lb-native"></span>
     <button class="lb-btn pick" id="lb-pick" hidden title="지금 보는 장을 이 기사의 지면으로 연결">📌 <span class="lg">이 장 </span>연결</button>
     <button class="lb-btn" id="lb-note-btn" hidden title="기사 요약(WHAT·WHY·HOW) 옆에 보기 (N)" aria-label="기사 요약 보기" aria-pressed="true">📝 요약</button>
-    <button class="lb-btn" id="lb-hand" title="손바닥 — 왼쪽 버튼으로 끌어 신문 옮기기 (M)" aria-label="손바닥(옮기기)" aria-pressed="false">✋</button>
+    <button class="lb-btn" id="lb-hand" title="손바닥 — 왼쪽 버튼으로 끌어 신문 옮기기 (M) · Ctrl 누른 채 끌어도 옮김" aria-label="손바닥(옮기기)" aria-pressed="false">✋</button>
     <button class="lb-btn" id="lb-pen" title="형광펜 (H)" aria-label="형광펜" aria-pressed="false">🖍</button>
     <button class="lb-btn" id="lb-out" title="축소" aria-label="축소">−</button>
     <button class="lb-btn" id="lb-in" title="확대" aria-label="확대">＋</button>
@@ -626,7 +626,7 @@
   <button class="lb-nav prev" id="lb-prev" aria-label="이전 장">‹</button>
   <div class="lb-tools" id="lb-tools" hidden>
     <!-- 2026-10-16 사용자 요청: 그리는 동안엔 ✋ 를 편집 도구모음 맨 앞에(상단 ✋ 는 숨김) — 옮기기↔긋기를 한 줄에서 -->
-    <button id="lb-t-hand" title="손바닥 — 끌어서 신문 옮기기 (M) · 다시 누르거나 색·도구를 고르면 긋기" aria-label="손바닥(옮기기)" aria-pressed="false">✋</button>
+    <button id="lb-t-hand" title="손바닥 — 끌어서 신문 옮기기 (M · Ctrl 누른 채 끌기) · 다시 누르거나 색·도구를 고르면 긋기" aria-label="손바닥(옮기기)" aria-pressed="false">✋</button>
     <span class="sep"></span>
     <button id="lb-c1" title="빨강" aria-label="빨강"><span class="pen" style="background:#ff5b5b"></span></button>
     <button id="lb-c2" title="파랑" aria-label="파랑"><span class="pen" style="background:#4da3ff"></span></button>
@@ -2248,6 +2248,12 @@ $("lb-tools").addEventListener("pointerdown",e=>e.stopPropagation());
    WASD 로도 옮길 수 있게 해 둔다(게임처럼 왼손만으로). */
 const ARROW_DELTA={ArrowLeft:[1,0],ArrowRight:[-1,0],ArrowUp:[0,1],ArrowDown:[0,-1],
                    a:[1,0],d:[-1,0],w:[0,1],s:[0,-1],A:[1,0],D:[-1,0],W:[0,1],S:[0,-1]};
+/* 2026-10-22 사용자 요청: **Ctrl 누른 채 왼쪽 버튼으로 끌면 옮기기**(잠깐 손바닥). 형광펜을 켠 채로 긋다가 바로 옮길 수 있게.
+   실제 판단은 pointerdown 의 e.ctrlKey 로 하고, 여기서는 누르고 있는 동안 손 모양 커서만 바꾼다. */
+const ctrlCursor=on=>$("lb-stage").classList.toggle("spacepan", on||!!V.space);
+document.addEventListener("keydown",e=>{ if(e.key==="Control"&&!$("lb").hidden) ctrlCursor(true); });
+document.addEventListener("keyup",e=>{ if(e.key==="Control") ctrlCursor(false); });
+window.addEventListener("blur",()=>ctrlCursor(false));      // Ctrl 누른 채 다른 창으로 가면 keyup 이 안 온다
 document.addEventListener("keyup",e=>{
   if(e.key!==" "||!V.space) return;
   V.space=false; $("lb-stage").classList.remove("spacepan");
@@ -2364,11 +2370,12 @@ stage.addEventListener("pointerdown",e=>{
      (2026-10-21 휠 버튼·Space 추가 — 오른쪽 버튼은 일부 확장 프로그램/마우스 프로그램이 크롬 메뉴를 강제로 띄워서) */
   if(e.button===0 && V.space) V.spaceUsed=true;
   if(e.button===1) e.preventDefault();                    // 휠 버튼의 '자동 스크롤' 동그라미가 뜨지 않게
-  if(e.button===2 || e.button===1 || (V.space && e.button===0) || (V.hand && e.button===0 && V.pts.size===1)){
+  const ctrlPan=e.button===0 && e.ctrlKey && e.pointerType==="mouse";   // Ctrl 누른 채 왼쪽 버튼 = 옮기기
+  if(e.button===2 || e.button===1 || (V.space && e.button===0) || ctrlPan || (V.hand && e.button===0 && V.pts.size===1)){
     M.cur=null;
     /* 2026-10-19: 오른쪽 버튼은 1배(확대 안 함)에서도 옮긴다 — 1배의 정상 범위는 '가운데 고정'이라 그대로는 안 움직이므로,
        손바닥처럼 넓은 범위(V.loose)를 허용한다. 장 넘김·resetZoom·✋ 끄기 때 가운데로 돌아온다. 확대 중엔 예전처럼 정상 범위. */
-    if((e.button===2 || e.button===1 || V.space) && V.zoom<=1.001) V.loose=true;
+    if((e.button===2 || e.button===1 || V.space || ctrlPan) && V.zoom<=1.001) V.loose=true;
     V.drag={x:e.clientX,y:e.clientY,tx:V.tx,ty:V.ty,t:Date.now(),moved:0,pan:true};
     stage.classList.add("panning");
     return;
