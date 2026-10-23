@@ -47,6 +47,11 @@ def _with_gate_footer(html_text, request=None):
         who = _gate.who_html(request) if _gate else ""
     except Exception:
         foot = who = ""
+    try:
+        thm = _gate.theme_head(request) if _gate else ""      # 계정에 저장된 화이트/다크(없으면 빈 글)
+    except Exception:
+        thm = ""
+    html_text = html_text.replace("<!--GATE_THEME-->", thm)
     return html_text.replace("<!--GATE_FOOT-->", foot).replace("<!--GATE_WHO-->", who)
 
 # Ensure templates and static directories exist

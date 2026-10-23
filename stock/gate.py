@@ -44,7 +44,7 @@ from datetime import datetime, timedelta, timezone
 KST = timezone(timedelta(hours=9))
 
 # 처리방침·동의 문구를 고치면 이 날짜를 바꾼다 → 모든 사용자가 새 문구에 다시 동의해야 입장한다.
-POLICY_VERSION = "2026-10-23.4"      # 동의 기록에 남는 버전(문구를 고칠 때마다 올린다)
+POLICY_VERSION = "2026-10-23.5"      # 동의 기록에 남는 버전(문구를 고칠 때마다 올린다)
 POLICY_EFFECTIVE = "2026-10-23"        # 처리방침에 보이는 시행일
 
 COOKIE_SESSION = "gate_sess"          # ⚠️ PT 대시보드(Flask)의 'session' 쿠키와 같은 도메인에서 겹치지 않게 이름을 다르게
@@ -203,7 +203,7 @@ def _db():
     con.executescript(_SCHEMA)
     have = {r["name"] for r in con.execute("PRAGMA table_info(users)")}
     for col, ddl in (("is_admin", "INTEGER NOT NULL DEFAULT 0"), ("expires_at", "TEXT"),
-                     ("nick_set", "INTEGER NOT NULL DEFAULT 0"), ("nick_key", "TEXT")):       # 예전에 만든 DB 도 가입자 정보를 그대로 둔 채 이어서 쓴다
+                     ("nick_set", "INTEGER NOT NULL DEFAULT 0"), ("nick_key", "TEXT"), ("theme", "TEXT")):       # 예전에 만든 DB 도 가입자 정보를 그대로 둔 채 이어서 쓴다
         if col not in have:
             con.execute("ALTER TABLE users ADD COLUMN %s %s" % (col, ddl))
     con.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_users_nick ON users(nick_key)")          # 같은 닉네임 중복 방지(NULL 은 여러 개 가능)
@@ -360,6 +360,32 @@ def delete_user(uid):
     with _db() as con:
         con.execute("DELETE FROM consents WHERE user_id=?", (uid,))
         con.execute("DELETE FROM users WHERE id=?", (uid,))
+
+
+THEMES = ("auto", "light", "dark")
+
+
+def set_theme(uid, theme):
+    """계정별 화면 모드 저장(auto=기기 설정 따름 / light=화이트 / dark=다크). 허용 값 외에는 저장하지 않는다."""
+    if theme not in THEMES:
+        return False
+    with _db() as con:
+        con.execute("UPDATE users SET theme=? WHERE id=?", (theme, uid))
+    return True
+
+
+def theme_head(request):
+    """<head> 에 끼워 넣는 짧은 스크립트: 이 계정이 고른 화면 모드를 그림이 그려지기 전에 적용(깜빡임 방지).
+    고른 적 없으면 빈 글 → 화면이 예전처럼 이 브라우저의 기억/기기 설정을 따른다. 값은 허용 목록에서만 나오므로 그대로 넣어도 안전."""
+    try:
+        u = session_user(request) if (request is not None and cfg()["enabled"]) else None
+    except Exception:
+        u = None
+    t = (u["theme"] if u and "theme" in u.keys() else None)
+    if t not in THEMES:
+        return ""
+    return ('<script>window.__GATE_THEME="%s";(function(t){var d=document.documentElement;'
+            'if(t==="auto")d.removeAttribute("data-theme");else d.setAttribute("data-theme",t);})("%s");</script>' % (t, t))
 
 
 def is_admin(u):
@@ -533,7 +559,7 @@ def privacy_html():
 
 <h2>1. 처리하는 개인정보 항목과 목적</h2>
 <table>
-<tr><th>항목</th><td>소셜 로그인(구글 또는 카카오)이 알려 주는 <b>고유 식별번호</b>, 가입할 때 이용자가 직접 정한 <b>닉네임</b>, 가입 시각·최근 접속 시각, 동의 이력</td></tr>
+<tr><th>항목</th><td>소셜 로그인(구글 또는 카카오)이 알려 주는 <b>고유 식별번호</b>, 가입할 때 이용자가 직접 정한 <b>닉네임</b>, 가입 시각·최근 접속 시각, 동의 이력, <b>화면 모드 설정</b>(화이트/다크/자동 — 선택한 경우에만)</td></tr>
 <tr><th>목적</th><td>이용자 확인(본인 계정 식별), 서비스 이용 권한·기한 관리(승인 여부와 이용 기한 확인), 부정 이용 방지</td></tr>
 <tr><th>운영자가 부여하는 정보</th><td><b>승인 상태</b>와 <b>이용 기한</b>(운영자가 정한 경우)은 이용자가 입력하는 것이 아니라 운영자가 계정에 기록하는 정보이며, 가입자 관리 화면에서 운영자만 볼 수 있습니다.</td></tr>
 <tr><th>자동 생성 정보</th><td>웹서버 <b>접속 기록</b>(접속 IP 주소, 접속 시각, 요청한 주소)이 서비스 이용 중 자동으로 남습니다. 목적은 안정적 운영과 부정 이용 방지입니다.</td></tr>
@@ -582,7 +608,7 @@ def consent_html(nick_value, nxt, error="", checks=()):
 <b>실명·전화번호·이메일은 쓰지 마세요.</b> 나중에 내 정보 화면에서 바꿀 수 있어요.</p>
 <h2>개인정보 수집·이용 동의 (필수)</h2>
 <table>
-<tr><th>수집 항목</th><td>소셜 로그인 고유 식별번호, 위에서 직접 입력한 닉네임 (구글·카카오의 이름·이메일은 받지 않아요)</td></tr>
+<tr><th>수집 항목</th><td>소셜 로그인 고유 식별번호, 위에서 직접 입력한 닉네임, 화면 모드 설정(선택 시) (구글·카카오의 이름·이메일은 받지 않아요)</td></tr>
 <tr><th>이용 목적</th><td>이용자 확인, 서비스 이용 권한·기한 관리, 부정 이용 방지</td></tr>
 <tr><th>보유 기간</th><td>탈퇴 시까지 (탈퇴하면 즉시 삭제)</td></tr>
 <tr><th>동의 거부 권리</th><td>동의하지 않을 수 있으며, 이 경우 서비스를 이용할 수 없습니다.</td></tr>
@@ -945,7 +971,7 @@ def install(app):
         prov = {"google": "구글", "kakao": "카카오"}.get(u["provider"], u["provider"])
         body = """<div class="card"><h1>내 정보</h1>
 %s<table><tr><th>회원 번호</th><td>%d</td></tr><tr><th>닉네임</th><td>%s</td></tr><tr><th>로그인 방식</th><td>%s</td></tr>
-<tr><th>가입 시각</th><td>%s</td></tr><tr><th>동의 시각</th><td>%s (처리방침 %s)</td></tr><tr><th>상태</th><td>%s</td></tr><tr><th>이용 기한</th><td>%s</td></tr></table>
+<tr><th>가입 시각</th><td>%s</td></tr><tr><th>동의 시각</th><td>%s (처리방침 %s)</td></tr><tr><th>상태</th><td>%s</td></tr><tr><th>이용 기한</th><td>%s</td></tr><tr><th>화면 모드</th><td>%s</td></tr></table>
 <p class="sub">저장된 정보는 위가 전부예요(실명·이메일 등은 저장하지 않습니다).</p>
 <h2>닉네임 바꾸기</h2>
 <form method="post" action="/gate/nickname"><input class="txt" type="text" name="nickname" value="%s" maxlength="20" required autocomplete="off" aria-label="새 닉네임">
@@ -959,8 +985,24 @@ def install(app):
             html.escape(u["consent_at"] or "-"), html.escape(u["consent_version"] or "-"),
             html.escape({"approved": "이용 가능", "pending": "승인 대기", "blocked": "이용 제한"}.get(u["status"], u["status"])),
             html.escape("무기한(관리자)" if is_admin(u) else expiry_text(u)),
+            html.escape({"light": "화이트", "dark": "다크", "auto": "자동(기기 설정)"}.get(u["theme"], "고르지 않음")),
             html.escape(u["nickname"] or "", quote=True))
         return _page("내 정보", body)
+
+    @r.post("/gate/theme")
+    async def theme_save(request: Request):
+        """화면이 부르는 저장 주소: 본문 {"theme":"auto|light|dark"}. 로그인·승인된 본인 계정에만 저장."""
+        u = session_user(request)
+        if not u or u["status"] != "approved":
+            return JSONResponse({"ok": False}, status_code=401)
+        try:
+            data = json.loads((await request.body() or b"{}")[:200])
+            t = data.get("theme") if isinstance(data, dict) else None
+        except Exception:
+            t = None
+        if not set_theme(u["id"], t):
+            return JSONResponse({"ok": False, "reason": "bad theme"}, status_code=400)
+        return JSONResponse({"ok": True, "theme": t})
 
     @r.post("/gate/nickname")
     async def nickname_change(request: Request):
