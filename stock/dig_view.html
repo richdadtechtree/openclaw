@@ -45,6 +45,13 @@
   .empty{text-align:center;color:var(--sub);padding:60px 16px}
   .note{color:var(--sub);font-size:12px;text-align:center}
 
+  /* ── 사이트 탭 메뉴: 신문 요약 ↔ 경제 공부(디그). /slack 화면에도 같은 모양이 있다 ── */
+  .sitenav{display:flex;gap:6px;flex-wrap:wrap;flex-basis:100%}
+  .sitenav a{display:inline-flex;align-items:center;padding:6px 14px;border-radius:999px;font-size:14px;font-weight:600;
+             color:var(--sub);text-decoration:none;border:1px solid var(--line);background:var(--card)}
+  .sitenav a:hover{color:var(--ink)}
+  .sitenav a[aria-current="page"]{background:var(--blue);color:var(--card);border-color:var(--blue);cursor:default}
+
   /* ── 인쇄/PDF 용 ──────────────────────────────────────────────
      다크를 골라 둬도 종이엔 늘 흰 바탕·진한 글씨. 도구줄은 빼고, 소제목·사진·요약 상자가 쪽 경계에서 잘리지 않게 한다.
      (서버의 PDF 만들기와 브라우저 Ctrl+P 가 같은 규칙을 쓴다) */
@@ -64,6 +71,10 @@
 </head>
 <body>
 <div class="top">
+  <nav class="sitenav" aria-label="페이지 이동">
+    <a href="/slack">📰 신문 요약</a>
+    <a href="/dig" aria-current="page">📚 경제 공부 (디그)</a>
+  </nav>
   <h1>📚 경제 공부 (디그)</h1>
   <button id="prev" title="이전 호">‹</button>
   <select id="sel" aria-label="날짜 선택"></select>

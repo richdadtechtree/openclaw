@@ -1,4 +1,4 @@
-// 경제 공부(디그) 화면 검사 (실제 Chromium): 화이트/다크/자동 테마 + ⤓ PDF 받기.
+// 경제 공부(디그) 화면 검사 (실제 Chromium): 화이트/다크/자동 테마 + ⤓ PDF 받기 + /slack ↔ /dig 탭 이동.
 // 개발 환경 전용. 서버(app.py)를 먼저 띄워 두고 주소를 넘긴다:
 //   DIG_URL=http://127.0.0.1:8000 node scripts/test_dig_view.js     (npm i playwright 필요)
 // 캐시(~/.openclaw/dig_cache)에 호가 1개 이상 있어야 한다.
@@ -59,6 +59,27 @@ const ok = (n, c) => { console.log((c ? '  OK  ' : ' FAIL ') + n); if (!c) fails
     await p.emulateMedia({ media: 'print' });
     ok('인쇄할 땐 도구줄 숨김', (await p.evaluate(() => getComputedStyle(document.querySelector('.top')).display)) === 'none');
     ok('인쇄할 땐 다크여도 흰 바탕', (await bg(p)) === 'rgb(255, 255, 255)');
+    await ctx.close();
+  }
+  console.log('[페이지 이동 · /slack ↔ /dig]');
+  for (const [w, label] of [[1000, 'PC'], [390, '폰 390px']]) {
+    const ctx = await b.newContext({ viewport: { width: w, height: 800 } });
+    const p = await ctx.newPage(); const errs = [];
+    p.on('pageerror', e => { if (!/setting 'disabled'/.test(e.message)) errs.push(e.message); });   // /slack 의 기존 글자크기 오류는 별개
+    await p.goto(BASE + '/dig'); await p.waitForSelector('.card');
+    ok(label + ' · /dig 에 탭 2개(신문 요약·경제 공부), 지금 페이지 표시', await p.locator('.sitenav a').count() === 2
+       && (await p.getAttribute('.sitenav a[aria-current="page"]', 'href')) === '/dig');
+    ok(label + ' · /dig 가로 넘침 없음', !(await p.evaluate(() => document.documentElement.scrollWidth > innerWidth)));
+    await Promise.all([p.waitForURL('**/slack'), p.click('.sitenav a[href="/slack"]')]);
+    await p.waitForSelector('#datepick');
+    ok(label + ' · 탭을 누르면 /slack 으로 이동', new URL(p.url()).pathname === '/slack');
+    ok(label + ' · /slack 에도 같은 탭 2개, 지금 페이지 표시', await p.locator('.sitenav a').count() === 2
+       && (await p.getAttribute('.sitenav a[aria-current="page"]', 'href')) === '/slack');
+    ok(label + ' · /slack 가로 넘침 없음', !(await p.evaluate(() => document.documentElement.scrollWidth > innerWidth)));
+    await Promise.all([p.waitForURL('**/dig'), p.click('.sitenav a[href="/dig"]')]);
+    await p.waitForSelector('.card');
+    ok(label + ' · 돌아오면 /dig 에서 호가 그대로 열림', new URL(p.url()).pathname === '/dig' && await p.locator('h2.title').count() > 0);
+    ok(label + ' · JS 오류 없음', errs.length === 0); if (errs.length) console.log(errs);
     await ctx.close();
   }
   await b.close();
