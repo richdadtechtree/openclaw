@@ -10,8 +10,8 @@
   * 비밀번호는 코드에 쓰지 않는다 → .env 의 DIG_GMAIL_USER / DIG_GMAIL_APP_PASSWORD.
 
 사용
-  python3 dig_mail.py                    # 새 메일 가져와 캐시 (cron 용)
-  python3 dig_mail.py --days 60          # 더 먼 과거까지
+  python3 dig_mail.py                    # 최근 60일 새 메일 가져와 캐시 (cron 용, 이미 받은 호는 건너뜀)
+  python3 dig_mail.py --days 365         # 더 먼 과거까지(처음 한 번 채우기)
   python3 dig_mail.py --from-html 파일    # 서버 없이 HTML 파일로 파서만 시험(JSON 출력)
   python3 dig_mail.py --list             # 캐시된 목록
 """
@@ -31,6 +31,7 @@ from urllib.parse import urlparse
 KST = timezone(timedelta(hours=9))
 CACHE_DIR = os.path.expanduser(os.getenv("DIG_CACHE_DIR", "~/.openclaw/dig_cache"))
 DIG_SENDER = os.getenv("DIG_SENDER", "dig@mk.co.kr")
+DEFAULT_DAYS = int(os.getenv("DIG_DAYS", "60"))        # 자동 수집이 되돌아보는 기간(서버가 한동안 멈춰도 빠진 호를 메움)
 
 # 본문이 아닌 링크(공유·구독·앱 설치·설문 등)는 화면에 링크로 안 살린다.
 _JUNK_HOSTS = ("facebook.com", "twitter.com", "x.com", "play.google.com", "apps.apple.com",
@@ -312,7 +313,7 @@ def save_issue(issue):
     return path
 
 
-def fetch_new(days=14, user=None, password=None):
+def fetch_new(days=DEFAULT_DAYS, user=None, password=None):
     """Gmail 에서 최근 N일 디그 메일을 받아 캐시. 반환: (저장한 날짜 목록, 건너뛴 개수)."""
     user = user or os.getenv("DIG_GMAIL_USER", "")
     password = (password or os.getenv("DIG_GMAIL_APP_PASSWORD", "")).replace(" ", "")
@@ -407,7 +408,7 @@ def main(argv):
             print(i["id"], i["title"], i["tags"])
         return 0
     _load_env()
-    days = int(argv[argv.index("--days") + 1]) if "--days" in argv else 14
+    days = int(argv[argv.index("--days") + 1]) if "--days" in argv else DEFAULT_DAYS
     try:
         saved, skipped = fetch_new(days)
     except Exception as e:
