@@ -572,8 +572,10 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
              color:var(--muted);text-decoration:none;border:1px solid var(--line-strong);background:var(--surface)}
   .sitenav a:hover{color:var(--ink)}
   .sitenav a[aria-current="page"]{background:var(--accent);color:var(--surface);border-color:var(--accent);cursor:default}
-  .sitenav a.who{margin-left:auto;background:transparent;border-color:transparent;font-weight:500;font-size:13px}
+  .themeslot{margin-left:auto;display:inline-flex;align-items:center}
+  .sitenav a.who{margin-left:8px;background:transparent;border-color:transparent;font-weight:500;font-size:13px}
   .sitenav a.logout,.sitenav a.adminlink{padding:5px 12px;font-size:13px}
+  .themeslot .themectl button{padding:5px 12px}
   @media print{.sitenav{display:none}}
 
   .sitefoot{max-width:1120px;margin:0 auto;padding:18px 20px 40px;text-align:center;font-size:13px;color:var(--muted)}
@@ -585,6 +587,7 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   <nav class="sitenav" aria-label="페이지 이동">
     <a href="/economy" aria-current="page">📰 신문 요약</a>
     <a href="/dig">📚 경제 공부 (디그)</a>
+    <span class="themeslot" id="themeslot"></span>
     <!--GATE_WHO-->
   </nav>
   <header class="mast">
@@ -1426,7 +1429,10 @@ function render(){
   tb.appendChild(chip("all","전체",msgs.length,null));
   ["bot","user","unknown"].forEach(k=>{if(counts[k])tb.appendChild(chip(k,cat(k).label,counts[k],cat(k).color))});
   const right=document.createElement("div"); right.className="tb-right";
-  right.append(themeCtl(), fontCtl());       // 오른쪽 끝: ☀/🌙 밝기 · 가− 100% 가+  (보기 방식은 '글+지면' 하나뿐 — 2026-09-24)
+  right.append(fontCtl());
+  // 화이트/다크는 맨 위 탭 줄 오른쪽으로(2026-10-23). 갱신 때마다 다시 그리므로 비우고 넣는다(중복 방지)
+  { const slot=document.getElementById("themeslot"); if(slot){ slot.innerHTML=""; slot.appendChild(themeCtl()); } else right.prepend(themeCtl()); }
+  // 툴바 오른쪽 끝: 가− 100% 가+  (보기 방식은 '글+지면' 하나뿐 — 2026-09-24)
   tb.appendChild(right);
   syncChips();
   const feed=document.getElementById("feed");feed.innerHTML="";
@@ -2619,8 +2625,8 @@ function syncTheme(){
 }
 function themeCtl(){
   const g=document.createElement("div");
-  g.className="fontctl themectl"; g.setAttribute("role","group"); g.setAttribute("aria-label","화면 밝기");
-  g.innerHTML='<button data-t="light" title="밝은 화면">☀ 밝게</button><button data-t="dark" title="어두운 화면">🌙 어둡게</button>';
+  g.className="fontctl themectl"; g.setAttribute("role","group"); g.setAttribute("aria-label","화이트·다크 모드");
+  g.innerHTML='<button data-t="light" title="화이트 모드">☀ 화이트</button><button data-t="dark" title="다크 모드">🌙 다크</button>';
   g.querySelectorAll("button").forEach(b=>b.onclick=()=>{
     document.documentElement.dataset.theme=b.dataset.t; lsSet(THEME_KEY,b.dataset.t); syncTheme();
   });
