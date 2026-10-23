@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>경제 공부 (디그)</title>
+<style>
+  /* 색은 한곳(:root)에 모으고, 어두운 화면(prefers-color-scheme)이면 값만 바꾼다 */
+  :root{--bg:#f6f7f9;--card:#fff;--ink:#1c2230;--sub:#5b6577;--line:#e3e7ee;--blue:#2f7be0;--soft:#eaf2fd;--fs:1}
+  @media (prefers-color-scheme:dark){
+    :root{--bg:#12151b;--card:#1b2029;--ink:#e8ebf1;--sub:#9aa5b8;--line:#2b3340;--blue:#6aa6f5;--soft:#1f2c40}
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:Pretendard,"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+       line-height:1.75;word-break:keep-all}   /* keep-all: 한국어 낱말 중간에서 줄바꿈 안 함 */
+  .top{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line);
+       display:flex;gap:8px;align-items:center;padding:10px 16px;flex-wrap:wrap}
+  .top h1{font-size:16px;margin:0;flex:1;white-space:nowrap}
+  select,button{font:inherit;font-size:14px;color:var(--ink);background:var(--card);
+       border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer}
+  button:disabled{opacity:.4;cursor:default}
+  main{max-width:760px;margin:0 auto;padding:16px 16px 80px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+        padding:22px 20px;margin-bottom:16px;font-size:calc(16px*var(--fs))}
+  .date{color:var(--sub);font-size:13px}
+  .tags{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 0}
+  .tag{background:var(--soft);color:var(--blue);border-radius:999px;padding:2px 10px;font-size:13px}
+  h2.sec{font-size:13px;letter-spacing:.04em;color:var(--blue);margin:0 0 4px}
+  h2.title{font-size:calc(22px*var(--fs));line-height:1.4;margin:0 0 14px}
+  h3{font-size:calc(18px*var(--fs));color:var(--blue);margin:26px 0 6px}
+  p{margin:0 0 14px}
+  b{font-weight:700}
+  img{max-width:100%;height:auto;border-radius:10px;display:block;margin:12px auto}
+  .cap{color:var(--sub);font-size:calc(13px*var(--fs));text-align:center;margin:-6px 0 14px}
+  .sum{background:var(--soft);border-radius:12px;padding:14px 16px;margin:20px 0}
+  .sum h4{margin:0 0 6px;font-size:14px;color:var(--blue)}
+  .sum ol{margin:0;padding-left:20px}
+  .sum li{margin:4px 0}
+  .pick{border-top:1px solid var(--line);padding-top:16px;margin-top:16px}
+  .pick h3{margin-top:0;color:var(--ink)}
+  a{color:var(--blue)}
+  .empty{text-align:center;color:var(--sub);padding:60px 16px}
+  .note{color:var(--sub);font-size:12px;text-align:center}
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>📚 경제 공부 (디그)</h1>
+  <button id="prev" title="이전 호">‹</button>
+  <select id="sel" aria-label="날짜 선택"></select>
+  <button id="next" title="다음 호">›</button>
+  <button id="fm" title="글자 작게">가−</button>
+  <button id="fp" title="글자 크게">가+</button>
+  <button id="rf" title="Gmail 에서 새 메일 확인">↻</button>
+</div>
+<main id="main"><div class="empty">불러오는 중…</div></main>
+
+<script>
+// ── 작은 도우미 ──────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+// 요소 만들기. 글자는 textContent 로만 넣는다(메일 내용이 HTML 로 해석되는 것을 막는 안전장치).
+function el(tag, cls, text){ const e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; }
+function safeUrl(u){ return /^https?:\/\//i.test(u||'') ? u : ''; }
+
+let items = [], cur = '';
+
+// ── 글자 크기: 사용자가 고른 배율만 이 브라우저에 기억 (저장소가 막혀도 동작) ──
+const FS=[.9,1,1.1,1.25,1.4]; let fi=1;
+try{ const s=parseInt(localStorage.getItem('dig.fs')); if(s>=0&&s<FS.length) fi=s; }catch(e){}
+function applyFs(){ document.documentElement.style.setProperty('--fs',FS[fi]);
+  try{localStorage.setItem('dig.fs',fi);}catch(e){}
+  $('fm').disabled=fi===0; $('fp').disabled=fi===FS.length-1; }
+
+// ── 한 호 그리기 ─────────────────────────────────────────────
+function render(d){
+  const main=$('main'); main.textContent='';
+  const card=el('div','card'); main.appendChild(card);
+  card.appendChild(el('div','date', d.date_text || d.id));
+  if(d.tags){ const t=el('div','tags'); d.tags.split(/\s+/).forEach(x=>t.appendChild(el('span','tag',x))); card.appendChild(t); }
+  let sumBox=null, olEl=null, box=card;
+  for(const b of d.blocks){
+    if(b.k==='sec'){
+      if(b.text==='3줄 요약'){ sumBox=el('div','sum'); sumBox.appendChild(el('h4',null,'3줄 요약')); olEl=el('ol'); sumBox.appendChild(olEl); box.appendChild(sumBox); continue; }
+      sumBox=null; olEl=null;
+      if(b.text==='뉴스픽'){ box=el('div','card'); main.appendChild(box); }
+      box.appendChild(el('h2','sec',b.text));
+    } else if(b.k==='title'){
+      sumBox=null;
+      // 뉴스픽 항목 제목은 구분선 + 작은 제목, 오늘의 디깅 제목은 큰 제목
+      if(box!==card){ const w=el('div','pick'); w.appendChild(el('h3',null,b.text)); box.appendChild(w); box=box; box._cur=w; }
+      else box.appendChild(el('h2','title',b.text));
+    } else if(b.k==='h'){ (box._cur||box).appendChild(el('h3',null,b.text));
+    } else if(b.k==='sum'){ if(olEl) olEl.appendChild(el('li',null,b.text)); else (box._cur||box).appendChild(el('p',null,b.text));
+    } else if(b.k==='cap'){ (box._cur||box).appendChild(el('div','cap',b.text));
+    } else if(b.k==='img'){ const u=safeUrl(b.src); if(u){ const i=el('img'); i.src=u; i.loading='lazy'; i.alt=''; i.referrerPolicy='no-referrer'; (box._cur||box).appendChild(i);}
+    } else if(b.k==='p'){
+      const p=el('p');
+      for(const s of b.parts){
+        const u=safeUrl(s.a); let n;
+        if(u){ n=el('a',null,s.t); n.href=u; n.target='_blank'; n.rel='noopener noreferrer'; } else n=document.createTextNode(s.t);
+        if(s.b){ const bb=el('b'); bb.appendChild(n); n=bb; }
+        p.appendChild(n);
+      }
+      (box._cur||box).appendChild(p);
+    }
+  }
+  main.appendChild(el('div','note','매일경제 「디그」 뉴스레터 · 개인 열람용 · 받은 시각 '+(d.sent||'').replace('T',' ')));
+  window.scrollTo(0,0);
+}
+
+// ── 목록 / 이동 ──────────────────────────────────────────────
+function syncNav(){ const i=items.findIndex(x=>x.id===cur);
+  $('prev').disabled = i<0 || i>=items.length-1;   // 목록은 최신순 → 오른쪽 끝이 가장 옛날
+  $('next').disabled = i<=0; }
+async function open(id){
+  cur=id; $('sel').value=id; syncNav();
+  try{
+    const r=await fetch('/api/dig/item?id='+encodeURIComponent(id)); const j=await r.json();
+    if(!j.ok) throw new Error(j.reason||'없음');
+    render(j.issue); history.replaceState(null,'','?id='+id);
+  }catch(e){ $('main').textContent=''; $('main').appendChild(el('div','empty','이 호를 불러오지 못했어요: '+e.message)); }
+}
+async function loadList(keep){
+  try{
+    const j=await (await fetch('/api/dig/list')).json(); items=j.items||[];
+  }catch(e){ items=[]; }
+  const sel=$('sel'); sel.textContent='';
+  items.forEach(x=>{ const o=el('option',null,x.id+'  '+(x.title||'').slice(0,28)); o.value=x.id; sel.appendChild(o); });
+  if(!items.length){
+    $('main').textContent='';
+    const m=el('div','empty','아직 받은 디그가 없어요.\n서버에서 python3 dig_mail.py 로 Gmail 연결을 확인하세요.'); m.style.whiteSpace='pre-line'; $('main').appendChild(m); syncNav(); return; }
+  const want=new URLSearchParams(location.search).get('id');
+  const pick=(keep&&cur)||(items.some(x=>x.id===want)?want:items[0].id);
+  open(pick);
+}
+
+$('sel').onchange=e=>open(e.target.value);
+$('prev').onclick=()=>{ const i=items.findIndex(x=>x.id===cur); if(i>=0&&i<items.length-1) open(items[i+1].id); };
+$('next').onclick=()=>{ const i=items.findIndex(x=>x.id===cur); if(i>0) open(items[i-1].id); };
+$('fm').onclick=()=>{ if(fi>0){fi--;applyFs();} };
+$('fp').onclick=()=>{ if(fi<FS.length-1){fi++;applyFs();} };
+$('rf').onclick=async()=>{
+  $('rf').disabled=true;
+  try{ await fetch('/api/dig/refresh',{method:'POST'}); }catch(e){}
+  setTimeout(()=>{ loadList(true); $('rf').disabled=false; }, 6000);   // 메일 받는 시간을 잠깐 기다린 뒤 목록 갱신
+};
+document.addEventListener('keydown',e=>{ if(e.target.tagName==='SELECT') return;
+  if(e.key==='ArrowLeft') $('prev').click(); if(e.key==='ArrowRight') $('next').click(); });
+
+applyFs(); loadList(false);
+</script>
+</body>
+</html>
