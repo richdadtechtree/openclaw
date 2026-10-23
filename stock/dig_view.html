@@ -5,11 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>경제 공부 (디그)</title>
 <style>
-  /* 색은 한곳(:root)에 모으고, 어두운 화면(prefers-color-scheme)이면 값만 바꾼다 */
-  :root{--bg:#f6f7f9;--card:#fff;--ink:#1c2230;--sub:#5b6577;--line:#e3e7ee;--blue:#2f7be0;--soft:#eaf2fd;--fs:1}
-  @media (prefers-color-scheme:dark){
-    :root{--bg:#12151b;--card:#1b2029;--ink:#e8ebf1;--sub:#9aa5b8;--line:#2b3340;--blue:#6aa6f5;--soft:#1f2c40}
+  /* 색은 한곳(:root)에 모은다. 테마 3가지:
+     자동(기기 설정을 따름) / 화이트(data-theme="light") / 다크(data-theme="dark") */
+  :root{--bg:#f6f7f9;--card:#fff;--ink:#1c2230;--sub:#5b6577;--line:#e3e7ee;--blue:#2f7be0;--soft:#eaf2fd;--fs:1;color-scheme:light}
+  @media (prefers-color-scheme:dark){   /* 자동일 때만(화이트를 골랐으면 건드리지 않음) */
+    :root:not([data-theme="light"]){--bg:#12151b;--card:#1b2029;--ink:#e8ebf1;--sub:#9aa5b8;--line:#2b3340;--blue:#6aa6f5;--soft:#1f2c40;color-scheme:dark}
   }
+  :root[data-theme="dark"]{--bg:#12151b;--card:#1b2029;--ink:#e8ebf1;--sub:#9aa5b8;--line:#2b3340;--blue:#6aa6f5;--soft:#1f2c40;color-scheme:dark}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);
        font-family:Pretendard,"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
@@ -52,6 +54,7 @@
   <button id="next" title="다음 호">›</button>
   <button id="fm" title="글자 작게">가−</button>
   <button id="fp" title="글자 크게">가+</button>
+  <button id="th" title="화면 색: 자동 → 화이트 → 다크">🌓 자동</button>
   <button id="rf" title="Gmail 에서 새 메일 확인">↻</button>
 </div>
 <main id="main"><div class="empty">불러오는 중…</div></main>
@@ -71,6 +74,17 @@ try{ const s=parseInt(localStorage.getItem('dig.fs')); if(s>=0&&s<FS.length) fi=
 function applyFs(){ document.documentElement.style.setProperty('--fs',FS[fi]);
   try{localStorage.setItem('dig.fs',fi);}catch(e){}
   $('fm').disabled=fi===0; $('fp').disabled=fi===FS.length-1; }
+
+// ── 화면 색(테마): 자동 → 화이트 → 다크 순으로 돌아가며 고른다. 고른 값만 이 브라우저에 기억 ──
+const THEMES=[['auto','🌓 자동'],['light','☀️ 화이트'],['dark','🌙 다크']]; let ti=0;
+try{ const s=localStorage.getItem('dig.theme'); const k=THEMES.findIndex(t=>t[0]===s); if(k>=0) ti=k; }catch(e){}
+function applyTheme(){
+  const [v,label]=THEMES[ti];
+  if(v==='auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme',v);
+  $('th').textContent=label;
+  try{ localStorage.setItem('dig.theme',v); }catch(e){}
+}
+$('th').onclick=()=>{ ti=(ti+1)%THEMES.length; applyTheme(); };
 
 // ── 한 호 그리기 ─────────────────────────────────────────────
 function render(d){
@@ -148,7 +162,7 @@ $('rf').onclick=async()=>{
 document.addEventListener('keydown',e=>{ if(e.target.tagName==='SELECT') return;
   if(e.key==='ArrowLeft') $('prev').click(); if(e.key==='ArrowRight') $('next').click(); });
 
-applyFs(); loadList(false);
+applyFs(); applyTheme(); loadList(false);
 </script>
 </body>
 </html>
