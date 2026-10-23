@@ -44,6 +44,22 @@
   a{color:var(--blue)}
   .empty{text-align:center;color:var(--sub);padding:60px 16px}
   .note{color:var(--sub);font-size:12px;text-align:center}
+
+  /* ── 인쇄/PDF 용 ──────────────────────────────────────────────
+     다크를 골라 둬도 종이엔 늘 흰 바탕·진한 글씨. 도구줄은 빼고, 소제목·사진·요약 상자가 쪽 경계에서 잘리지 않게 한다.
+     (서버의 PDF 만들기와 브라우저 Ctrl+P 가 같은 규칙을 쓴다) */
+  @media print{
+    :root,:root[data-theme="dark"],:root:not([data-theme="light"]){
+      --bg:#fff;--card:#fff;--ink:#111;--sub:#555;--line:#ddd;--blue:#1f5fbf;--soft:#eef4fc;color-scheme:light}
+    .top{display:none}
+    main{max-width:none;padding:0}
+    .card{border:none;border-radius:0;padding:0;margin:0 0 18px}
+    h2.title{break-after:avoid}
+    h3{break-after:avoid}
+    img,.cap,.sum,.pick h3{break-inside:avoid}
+    img{max-height:230mm;width:auto}
+    a{color:inherit;text-decoration:none}
+  }
 </style>
 </head>
 <body>
@@ -54,6 +70,7 @@
   <button id="next" title="다음 호">›</button>
   <button id="fm" title="글자 작게">가−</button>
   <button id="fp" title="글자 크게">가+</button>
+  <button id="pdf" title="이 호를 PDF 파일로 받기">⤓ PDF</button>
   <button id="th" title="화면 색: 자동 → 화이트 → 다크">🌓 자동</button>
   <button id="rf" title="Gmail 에서 새 메일 확인">↻</button>
 </div>
@@ -67,6 +84,8 @@ function el(tag, cls, text){ const e=document.createElement(tag); if(cls) e.clas
 function safeUrl(u){ return /^https?:\/\//i.test(u||'') ? u : ''; }
 
 let items = [], cur = '';
+// ?print=1 : 서버가 PDF 를 만들려고 이 화면을 열었을 때. 사진을 바로 받고, 고른 테마를 저장소에 쓰지 않는다.
+const PRINT = new URLSearchParams(location.search).has('print');
 
 // ── 글자 크기: 사용자가 고른 배율만 이 브라우저에 기억 (저장소가 막혀도 동작) ──
 const FS=[.9,1,1.1,1.25,1.4]; let fi=1;
@@ -82,8 +101,23 @@ function applyTheme(){
   const [v,label]=THEMES[ti];
   if(v==='auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme',v);
   $('th').textContent=label;
-  try{ localStorage.setItem('dig.theme',v); }catch(e){}
+  if(!PRINT) try{ localStorage.setItem('dig.theme',v); }catch(e){}
 }
+// ── PDF 받기: 서버가 만든 파일을 받아 저장. 실패하면 브라우저 인쇄창(PDF로 저장 가능)으로 대신한다 ──
+$('pdf').onclick=async()=>{
+  if(!cur) return;
+  const b=$('pdf'), old=b.textContent; b.disabled=true; b.textContent='만드는 중…';
+  try{
+    const r=await fetch('/api/dig/pdf?id='+encodeURIComponent(cur));
+    if(!r.ok){ let m=''; try{ m=(await r.json()).reason; }catch(e){} throw new Error(m||('오류 '+r.status)); }
+    const url=URL.createObjectURL(await r.blob());
+    const a=document.createElement('a'); a.href=url; a.download='dig_'+cur+'.pdf';
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),10000);
+  }catch(e){
+    if(confirm('서버에서 PDF 를 만들지 못했어요.\n('+e.message+')\n\n대신 브라우저 인쇄창을 열까요? (인쇄창에서 "PDF로 저장"을 고르세요)')) window.print();
+  }finally{ b.disabled=false; b.textContent=old; }
+};
+
 $('th').onclick=()=>{ ti=(ti+1)%THEMES.length; applyTheme(); };
 
 // ── 한 호 그리기 ─────────────────────────────────────────────
@@ -107,7 +141,7 @@ function render(d){
     } else if(b.k==='h'){ (box._cur||box).appendChild(el('h3',null,b.text));
     } else if(b.k==='sum'){ if(olEl) olEl.appendChild(el('li',null,b.text)); else (box._cur||box).appendChild(el('p',null,b.text));
     } else if(b.k==='cap'){ (box._cur||box).appendChild(el('div','cap',b.text));
-    } else if(b.k==='img'){ const u=safeUrl(b.src); if(u){ const i=el('img'); i.src=u; i.loading='lazy'; i.alt=''; i.referrerPolicy='no-referrer'; (box._cur||box).appendChild(i);}
+    } else if(b.k==='img'){ const u=safeUrl(b.src); if(u){ const i=el('img'); i.src=u; i.loading=PRINT?'eager':'lazy'; i.alt=''; i.referrerPolicy='no-referrer'; (box._cur||box).appendChild(i);}
     } else if(b.k==='p'){
       const p=el('p');
       for(const s of b.parts){
@@ -121,6 +155,7 @@ function render(d){
   }
   main.appendChild(el('div','note','매일경제 「디그」 뉴스레터 · 개인 열람용 · 받은 시각 '+(d.sent||'').replace('T',' ')));
   window.scrollTo(0,0);
+  document.body.dataset.ready='1';   // 글을 다 그렸다는 신호(서버의 PDF 만들기가 이걸 기다린다)
 }
 
 // ── 목록 / 이동 ──────────────────────────────────────────────

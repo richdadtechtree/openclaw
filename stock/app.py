@@ -530,6 +530,23 @@ def dig_item(id: str = ""):
     return JSONResponse({"ok": True, "issue": d})
 
 
+@app.get("/api/dig/pdf")
+def dig_pdf(id: str = ""):
+    """그 호를 PDF 파일로 내려준다(처음 한 번은 만드는 데 몇 초, 이후엔 저장해 둔 것)."""
+    if _dig is None:
+        return JSONResponse(status_code=503, content={"ok": False, "reason": "dig 모듈 없음"})
+    try:
+        import dig_pdf as _dp
+        path = _dp.get_pdf(id)
+    except Exception as e:
+        print("[dig] PDF 만들기 실패: %r" % e)
+        return JSONResponse(status_code=500, content={"ok": False, "reason": "PDF 를 만들지 못했어요: %s" % str(e)[:120]})
+    if not path:
+        return JSONResponse(status_code=404, content={"ok": False, "reason": "그날 디그가 없습니다"})
+    # 파일 이름은 영문만(한글은 일부 브라우저가 바꿔 버림)
+    return FileResponse(path, media_type="application/pdf", filename="dig_%s.pdf" % id)
+
+
 @app.post("/api/dig/refresh")
 def dig_refresh(background_tasks: BackgroundTasks):
     """지금 Gmail 에서 새 디그 메일 받기. 60초 안에 또 누르면 무시(연타 방지)."""
