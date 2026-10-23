@@ -33,6 +33,7 @@
    그림이 그려지기 전에 붙여야 깜빡이지 않아서 맨 앞에서 먼저 정한다. */
 try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") document.documentElement.dataset.theme=t; }catch(e){}
 </script>
+<!--GATE_THEME-->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
   :root {
@@ -2623,12 +2624,19 @@ function syncTheme(){
   const t=curTheme();
   document.querySelectorAll(".themectl button").forEach(b=>b.setAttribute("aria-pressed", b.dataset.t===t?"true":"false"));
 }
+// 계정에 저장(2026-10-23): 로그인한 계정마다 고른 모드를 기억 → 다른 기기·브라우저에서도 같은 모드. 실패해도 화면은 그대로 동작.
+function saveThemeToAccount(t){
+  try{ fetch("/gate/theme",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({theme:t}),keepalive:true}).catch(()=>{}); }catch(e){}
+}
+// 계정에 아직 저장된 값이 없고 이 브라우저에 예전 선택이 있으면 한 번 올려 준다(옮겨 담기)
+try{ if(!window.__GATE_THEME){ const o=localStorage.getItem(THEME_KEY); if(o==="light"||o==="dark") saveThemeToAccount(o); } }catch(e){}
 function themeCtl(){
   const g=document.createElement("div");
   g.className="fontctl themectl"; g.setAttribute("role","group"); g.setAttribute("aria-label","화이트·다크 모드");
   g.innerHTML='<button data-t="light" title="화이트 모드">☀ 화이트</button><button data-t="dark" title="다크 모드">🌙 다크</button>';
   g.querySelectorAll("button").forEach(b=>b.onclick=()=>{
     document.documentElement.dataset.theme=b.dataset.t; lsSet(THEME_KEY,b.dataset.t); syncTheme();
+    saveThemeToAccount(b.dataset.t);
   });
   setTimeout(syncTheme);
   return g;

@@ -70,6 +70,11 @@ def make_app():
         from fastapi.responses import HTMLResponse
         return HTMLResponse(gate.who_html(request) + "|" + gate.footer_html(request))
 
+    @app.get("/themehead", include_in_schema=False)
+    def themehead(request: Request):
+        from fastapi.responses import HTMLResponse
+        return HTMLResponse(gate.theme_head(request))
+
     return app
 
 
@@ -173,8 +178,8 @@ with gate._db() as con:
     cons = con.execute("SELECT * FROM consents").fetchall()
 check("동의 이력 1건", len(cons) == 1 and "privacy" in cons[0]["items"])
 check("이미 동의한 사람이 로그인하면 바로 입장", client(app).get("/gate/login").status_code == 200 and login(client(app)).headers["location"] == "/economy")
-check("DB 에 이메일·전화·실명 같은 열이 없음(최소 수집, 닉네임 관련 열만 추가)",
-      {r["name"] for r in gate._db().execute("PRAGMA table_info(users)")} == {"id", "provider", "provider_uid", "nickname", "status", "consent_version", "consent_at", "created_at", "last_login_at", "is_admin", "expires_at", "nick_set", "nick_key"})
+check("DB 에 이메일·전화·실명 같은 열이 없음(최소 수집, 닉네임·화면 모드 열만 추가)",
+      {r["name"] for r in gate._db().execute("PRAGMA table_info(users)")} == {"id", "provider", "provider_uid", "nickname", "status", "consent_version", "consent_at", "created_at", "last_login_at", "is_admin", "expires_at", "nick_set", "nick_key", "theme"})
 
 print("[누가 로그인했는지 화면에 표시]")
 cg = client(make_app()); login(cg, provider="google", uid="w-1", nick="누리"); cg.post("/gate/consent", content=agree_for(cg), headers=FORM)
@@ -385,7 +390,7 @@ os.environ["GATE_AUTO_DAYS"] = "0"
 _, bid = mk_user("google", "auto-2", "무기한사용자")
 check("체험 기간을 안 쓰면(기본) 무기한", gate.get_user(bid)["expires_at"] is None)
 check("처리방침에 '이용 기한'이 운영자가 부여하는 정보로 명시", "이용 기한" in client(app_adm).get("/privacy").text and "운영자가 부여하는 정보" in client(app_adm).get("/privacy").text)
-check("처리방침 버전이 올라가 예전 동의자는 다시 동의해야 함", gate.POLICY_VERSION == "2026-10-23.4")
+check("처리방침 버전이 올라가 예전 동의자는 다시 동의해야 함", gate.POLICY_VERSION == "2026-10-23.5")
 
 print("[예전 DB 이어 쓰기(서버에 이미 있는 가입자 보호)]")
 import sqlite3 as _sq  # noqa: E402
@@ -521,6 +526,30 @@ check("동의 후 입장", c.get("/economy").status_code == 200)
 old = gate.POLICY_VERSION; gate.POLICY_VERSION = "2099-01-01"
 check("버전이 바뀌면 다시 동의해야 함", c.get("/economy").status_code == 302 and "consent" in c.get("/economy").headers["location"])
 gate.POLICY_VERSION = old
+
+print("[계정별 화면 모드 저장]")
+app_t = make_app()
+ct = client(app_t); login(ct, uid="t-1", nick="테마닉"); ct.post("/gate/consent", content=agree_for(ct), headers=FORM)
+tj = {"content-type": "application/json"}
+check("처음엔 저장된 모드가 없어 머리글이 비어 있음(브라우저 기억/기기 설정을 따름)", ct.get("/themehead").text == "")
+r = ct.post("/gate/theme", content='{"theme":"dark"}', headers=tj)
+check("다크 저장", r.status_code == 200 and r.json() == {"ok": True, "theme": "dark"})
+th = ct.get("/themehead").text
+check("저장한 모드가 머리글 스크립트로 먼저 적용됨", 'window.__GATE_THEME="dark"' in th and 'setAttribute("data-theme"' in th)
+check("다른 기기(새 브라우저)에서 같은 계정으로 로그인해도 같은 모드", (lambda c2: (login(c2, uid="t-1", nick="테마닉"), 'window.__GATE_THEME="dark"' in c2.get("/themehead").text)[1])(client(app_t)))
+other = client(app_t); login(other, uid="t-2", nick="다른닉"); other.post("/gate/consent", content=agree_for(other), headers=FORM)
+check("다른 계정에는 영향 없음", other.get("/themehead").text == "")
+check("자동(기기 설정)·화이트도 저장", ct.post("/gate/theme", content='{"theme":"auto"}', headers=tj).status_code == 200 and '__GATE_THEME="auto"' in ct.get("/themehead").text
+      and ct.post("/gate/theme", content='{"theme":"light"}', headers=tj).status_code == 200 and '__GATE_THEME="light"' in ct.get("/themehead").text)
+for bad in ('{"theme":"<script>"}', '{"theme":1}', '[]', 'not json', ''):
+    check("엉뚱한 값은 거부하고 기존 값 유지: %r" % bad, ct.post("/gate/theme", content=bad, headers=tj).status_code == 400 and '__GATE_THEME="light"' in ct.get("/themehead").text)
+check("로그인 안 한 사람은 저장 불가(401)", client(app_t).post("/gate/theme", content='{"theme":"dark"}', headers=tj).status_code == 401)
+check("다른 사이트에서 보낸 요청은 거부", ct.post("/gate/theme", content='{"theme":"dark"}', headers={**tj, "sec-fetch-site": "cross-site"}).status_code == 403)
+check("내 정보 화면에 화면 모드 표시", "화이트" in ct.get("/gate/account").text)
+with gate._db() as con:
+    con.execute("UPDATE users SET theme='<img src=x onerror=1>' WHERE nickname='테마닉'")
+check("DB 에 이상한 값이 있어도 머리글에 나오지 않음(허용 목록만)", ct.get("/themehead").text == "")
+check("처리방침에 화면 모드 저장 명시", "화면 모드" in ct.get("/privacy").text)
 
 print("[서버 내부 열쇠 (PDF 만들기용)]")
 c = client(make_app())
