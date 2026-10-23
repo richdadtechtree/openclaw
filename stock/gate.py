@@ -26,6 +26,7 @@
 """
 import base64
 import hashlib
+import ipaddress
 import hmac
 import html
 import json
@@ -49,6 +50,9 @@ POLICY_EFFECTIVE = "2026-10-23"        # 처리방침에 보이는 시행일
 
 COOKIE_SESSION = "gate_sess"          # ⚠️ PT 대시보드(Flask)의 'session' 쿠키와 같은 도메인에서 겹치지 않게 이름을 다르게
 COOKIE_STATE = "gate_state"
+COOKIE_IPADM = "gate_ipadm"        # 서버 IP 로 들어온 관리자 전용 쿠키(도메인 접속에서는 쓰이지 않음)
+IPADM_HOURS = 12                   # IP 관리자 모드 유효 시간(연장 없음)
+IPADM_MIN_PW = 12                  # 이보다 짧은 비밀번호는 쓰지 않는다(추측 공격 방지)
 SESSION_DAYS = 365                    # 로그인 유지 기간(마지막으로 쓴 뒤 1년). 한 번 로그인·승인되면 계속 쓰는 한 다시 로그인할 일이 없다
 RENEW_AFTER_DAYS = 7                  # 쓸 때마다가 아니라 7일에 한 번만 기간을 새로 늘린다(불필요한 쿠키 재발급 방지)
 STATE_MINUTES = 10
@@ -400,6 +404,82 @@ def set_admin(uid, flag):
         return con.execute("UPDATE users SET is_admin=0 WHERE id=?", (uid,)).rowcount
 
 
+# ───────────────────── 서버 IP 접속 (관리자 비밀번호) ─────────────────────
+# 도메인 없이 http://서버IP:8000 또는 https://서버IP 로 들어오면(Host 가 IP 주소) 구글·카카오 로그인은 쓸 수 없다
+# (구글은 도메인 필수). 대신 .env 의 GATE_IP_ADMIN_PASSWORD 를 아는 사람만 '관리자 모드'로 입장시킨다.
+#   · 도메인 접속은 지금처럼 구글/카카오 · IP 접속은 이 비밀번호만 (서로 섞이지 않음)
+#   · 비밀번호가 없거나 12자 미만이면 IP 접속은 통째로 막힘
+#   · 틀리면 5번째에 15분 잠금, 맞아도 12시간 뒤 자동 로그아웃(연장 없음), 비밀번호를 바꾸면 기존 로그인 모두 무효
+_ip_fail = {}        # {접속자: [연속 실패 횟수, 잠금 해제 시각]}  (서버가 다시 켜지면 초기화)
+
+
+def host_only(request):
+    h = (request.headers.get("host", "") or "").strip()
+    if h.startswith("["):
+        return h[1:h.find("]")] if "]" in h else h
+    return h.rsplit(":", 1)[0] if h.count(":") == 1 else h
+
+
+def is_ip_host(request):
+    """주소창의 호스트가 숫자 IP(예: 158.179.162.52, [::1])인가. 도메인이면 False."""
+    try:
+        ipaddress.ip_address(host_only(request))
+        return True
+    except ValueError:
+        return False
+
+
+def ip_password():
+    return _env("GATE_IP_ADMIN_PASSWORD")
+
+
+def ip_enabled():
+    return len(ip_password()) >= IPADM_MIN_PW
+
+
+def _ipadm_ver():
+    """비밀번호가 바뀌면 값이 달라져 예전 로그인 쿠키가 모두 무효가 된다(비밀번호 자체는 쿠키에 들어가지 않는다)."""
+    return hashlib.sha256(_secret() + b"|ipadm|" + ip_password().encode()).hexdigest()[:20]
+
+
+def ip_admin_ok(request):
+    if not (ip_enabled() and is_ip_host(request)):
+        return False
+    p = _unsign(request.cookies.get(COOKIE_IPADM, ""))
+    return bool(p and p.get("k") == "ipadm" and hmac.compare_digest(str(p.get("v", "")), _ipadm_ver()))
+
+
+def _client_key(request):
+    ip = request.client.host if request.client else "?"
+    if ip in ("127.0.0.1", "::1"):                      # nginx 뒤라면 실제 접속자는 X-Forwarded-For 에 있다
+        ip = (request.headers.get("x-forwarded-for", "").split(",")[0].strip() or ip)
+    return ip[:64]
+
+
+def ip_lock_left(key):
+    st = _ip_fail.get(key)
+    return max(0, int(st[1] - time.time())) if st else 0
+
+
+def ip_note(key, ok):
+    if ok:
+        _ip_fail.pop(key, None)
+        return
+    if len(_ip_fail) > 500:                             # 메모리가 커지지 않게 지난 기록 정리
+        now = time.time()
+        for k in [k for k, v in _ip_fail.items() if v[1] < now]:
+            _ip_fail.pop(k, None)
+    st = _ip_fail.setdefault(key, [0, 0])
+    st[0] += 1
+    if st[0] >= 5:
+        st[0], st[1] = 0, time.time() + 15 * 60
+
+
+def ip_pseudo_admin():
+    """IP 관리자 모드로 /gate/admin 을 쓸 때 쓰는 가짜 관리자(회원 번호 0 = 실제 가입자와 겹치지 않음)."""
+    return {"id": 0, "nickname": "IP 관리자", "is_admin": 1}
+
+
 def _csrf(uid):
     """관리 화면의 버튼이 '이 관리자가 이 화면에서 누른 것'임을 확인하는 표(다른 사이트가 몰래 누르게 하는 공격 방지)."""
     return hmac.new(_secret(), ("csrf:%d" % int(uid)).encode(), hashlib.sha256).hexdigest()[:32]
@@ -639,11 +719,34 @@ def login_html(nxt, c):
 </div>""" % (html.escape(note), btns)
 
 
+_IP_MSG = {"bad": "비밀번호가 맞지 않아요.", "locked": "실패가 많아 잠시 잠겼어요. 15분 뒤에 다시 시도해 주세요.",
+           "off": "IP 접속이 꺼져 있어요. 서버 .env 의 GATE_IP_ADMIN_PASSWORD(12자 이상)를 설정해야 해요."}
+
+
+def ip_login_html(request, nxt, m=""):
+    plain = not (request.url.scheme == "https" or request.headers.get("x-forwarded-proto", "") == "https")
+    warn = ('<p class="warn">⚠️ 이 연결은 암호화되지 않았어요(http). 비밀번호가 그대로 오갈 수 있으니 믿을 수 있는 네트워크에서만 쓰세요.</p>'
+            if plain else "")
+    msg = ('<p class="warn">%s</p>' % html.escape(_IP_MSG[m])) if m in _IP_MSG else ""
+    return ('<div class="card"><h1>🔑 관리자 로그인 (IP 접속)</h1>'
+            '<p class="sub">서버 IP 주소로 들어온 경우에는 관리자 비밀번호로만 입장할 수 있어요. 일반 이용자는 도메인 주소로 들어와 구글/카카오로 로그인해 주세요.</p>'
+            '%s%s<form method="post" action="/gate/ip-login"><input type="hidden" name="next" value="%s">'
+            '<input class="txt" type="password" name="password" autocomplete="current-password" required autofocus aria-label="관리자 비밀번호" placeholder="관리자 비밀번호">'
+            '<button class="btn primary" type="submit">입장</button></form>'
+            '<p class="sub">입장하면 12시간 동안 유지되고, 그 뒤엔 자동으로 로그아웃돼요.</p></div>') % (msg, warn, html.escape(nxt, quote=True)) + _foot()
+
+
 def who_html(request=None):
     """화면 맨 위 탭 오른쪽에 '길동 님 · 구글' 처럼 지금 어느 계정으로 들어왔는지 보여 준다(누르면 내 정보).
     잠금이 꺼져 있거나 로그인 정보가 없으면(예: 서버 내부 PDF 만들기) 빈 글."""
     if request is None or not cfg()["enabled"]:
         return ""
+    if is_ip_host(request):
+        if not ip_admin_ok(request):
+            return ""
+        return ('<a class="who" href="/gate/admin" title="서버 IP 로 들어온 관리자 모드(12시간)">🔑 IP 관리자 모드</a>'
+                '<a class="adminlink" href="/gate/admin" title="가입자 보기·승인·차단">🛠 관리</a>'
+                '<a class="logout" href="/gate/ip-logout">로그아웃</a>')
     try:
         u = session_user(request)
     except Exception:
@@ -663,6 +766,8 @@ def footer_html(request=None):
     """/slack·/dig 맨 아래에 끼워 넣는 링크(처리방침은 항상 쉽게 찾을 수 있어야 한다). 잠금이 꺼져 있으면 빈 글."""
     if not cfg()["enabled"]:
         return ""
+    if request is not None and is_ip_host(request):
+        return '<footer class="sitefoot"><a href="/privacy">개인정보 처리방침</a> · <a href="/gate/ip-logout">로그아웃</a></footer>'
     return ('<footer class="sitefoot"><a href="/privacy">개인정보 처리방침</a> · <a href="/gate/account">내 정보·탈퇴</a>'
             ' · <a href="/gate/logout">로그아웃</a></footer>')
 
@@ -798,9 +903,16 @@ def _check(request):
     sent = request.headers.get("x-gate-internal", "")
     if key and sent and hmac.compare_digest(sent, key):
         return None
-    user = session_user(request)
     api = _is_api(path)
     nxt = urllib.parse.quote(safe_next(path + (("?" + request.url.query) if request.url.query else ""), "/economy"))
+    if is_ip_host(request):                              # 서버 IP 로 들어온 경우: 관리자 비밀번호로만 입장
+        if ip_admin_ok(request):
+            return None
+        if not ip_enabled():
+            return JSONResponse({"ok": False, "reason": "ip_off"}, status_code=403) if api else _page(
+                "IP 접속 꺼짐", '<div class="card"><h1>IP 주소로는 접속할 수 없어요</h1><p class="sub">도메인 주소로 들어와 주세요.</p></div>' + _foot(), 403)
+        return JSONResponse({"ok": False, "reason": "ip_login"}, status_code=401) if api else RedirectResponse("/gate/ip-login?next=" + nxt, 302)
+    user = session_user(request)
     if not user:
         return JSONResponse({"ok": False, "reason": "login"}, status_code=401) if api else RedirectResponse("/gate/login?next=" + nxt, 302)
     if user["status"] == "blocked":
@@ -849,6 +961,12 @@ def install(app):
         if request.method not in ("GET", "HEAD", "OPTIONS") and request.headers.get("sec-fetch-site", "") == "cross-site" \
                 and (request.url.path.startswith("/gate/") or _is_gated(request.url.path)):
             return JSONResponse({"ok": False, "reason": "cross-site"}, status_code=403)
+        if cfg()["enabled"] and is_ip_host(request) and request.url.path.startswith("/gate/") \
+                and request.url.path not in ("/gate/ip-login", "/gate/ip-logout", "/gate/admin", "/gate/admin/act", "/gate/privacy"):
+            # IP 접속에서는 구글/카카오 로그인·가입·내 정보가 의미 없다 → 관리자 비밀번호 화면으로
+            if request.method in ("GET", "HEAD"):
+                return RedirectResponse("/gate/ip-login", 302)
+            return JSONResponse({"ok": False, "reason": "ip"}, status_code=403)
         if cfg()["enabled"] and _is_gated(request.url.path):
             deny = _check(request)
             if deny is not None:
@@ -872,6 +990,50 @@ def install(app):
     @r.get("/gate/privacy")
     def privacy2():
         return RedirectResponse("/privacy", 302)
+
+    @r.get("/gate/ip-login")
+    def ip_login_page(request: Request, next: str = "", m: str = ""):
+        if not cfg()["enabled"]:
+            return _off()
+        if not is_ip_host(request):
+            return _nope()                                # 도메인에서는 이 화면이 없는 것처럼
+        nxt = safe_next(next)
+        if ip_admin_ok(request):
+            return RedirectResponse(nxt, 302)
+        return _page("관리자 로그인", ip_login_html(request, nxt, m))
+
+    @r.post("/gate/ip-login")
+    async def ip_login_post(request: Request):
+        import asyncio
+        if not cfg()["enabled"]:
+            return _off()
+        if not is_ip_host(request):
+            return _nope()
+        f = _form(await request.body())
+        nxt = safe_next(f.get("next", ""))
+        key = _client_key(request)
+        if not ip_enabled():
+            return RedirectResponse("/gate/ip-login?m=off", 303)
+        if ip_lock_left(key):
+            return RedirectResponse("/gate/ip-login?m=locked&next=" + urllib.parse.quote(nxt), 303)
+        good = hmac.compare_digest(f.get("password", "").encode(), ip_password().encode())
+        ip_note(key, good)
+        if not good:
+            print("[gate] ⚠️ IP 관리자 로그인 실패 (접속자 %s)" % key)
+            await asyncio.sleep(1)                         # 연달아 시도하는 속도를 늦춘다
+            return RedirectResponse("/gate/ip-login?m=bad&next=" + urllib.parse.quote(nxt), 303)
+        print("[gate] IP 관리자 로그인 성공 (접속자 %s)" % key)
+        resp = RedirectResponse(nxt, 303)
+        https = request.url.scheme == "https" or request.headers.get("x-forwarded-proto", "") == "https"
+        resp.set_cookie(COOKIE_IPADM, _sign({"k": "ipadm", "v": _ipadm_ver()}, IPADM_HOURS * 3600),
+                        max_age=IPADM_HOURS * 3600, httponly=True, secure=https, samesite="strict", path="/")
+        return resp
+
+    @r.get("/gate/ip-logout")
+    def ip_logout():
+        resp = RedirectResponse("/gate/ip-login", 302)
+        resp.delete_cookie(COOKIE_IPADM, path="/")
+        return resp
 
     @r.get("/gate/login")
     def login(request: Request, next: str = ""):
@@ -1036,6 +1198,8 @@ def install(app):
         return _page("없는 페이지", '<div class="card"><h1>페이지를 찾을 수 없어요</h1></div>', 404)
 
     def _admin_user(request):
+        if is_ip_host(request):                          # IP 접속은 비밀번호로 들어온 관리자 모드만
+            return ip_pseudo_admin() if ip_admin_ok(request) else None
         u = session_user(request)
         return u if is_admin(u) else None            # 관리자가 아니면 '없는 페이지'처럼 보이게(존재 자체를 알리지 않음)
 
@@ -1127,6 +1291,9 @@ def cli(argv):
         print("[%s] 구글  GATE_GOOGLE_CLIENT_ID / GATE_GOOGLE_CLIENT_SECRET" % ok(c["google"]))
         print("[%s] 카카오 GATE_KAKAO_REST_KEY (선택: GATE_KAKAO_CLIENT_SECRET)" % ok(c["kakao"]))
         print("[%s] PRIVACY_OPERATOR / PRIVACY_CONTACT  (처리방침의 보호책임자 — 법적 필수)" % ok(c["operator"] and c["contact"]))
+        pw = ip_password()
+        print("[%s] GATE_IP_ADMIN_PASSWORD   (서버 IP 로 접속할 때 쓰는 관리자 비밀번호, %d자 이상) — 지금 %s" % (
+            ok(len(pw) >= IPADM_MIN_PW), IPADM_MIN_PW, ("설정됨(%d자)" % len(pw)) if pw else "없음 → IP 접속은 막혀 있음"))
         print("     승인 방식 GATE_APPROVAL = %s  (auto=로그인+동의만 / manual=운영자 승인 필요)" % c["approval"])
         print("     https 여부 = %s %s" % (c["https"], "" if c["https"] else "  ⚠️ 구글 로그인은 https 도메인이 필수"))
         print("\n⇒ 잠금 상태: %s" % ("켜짐" if c["enabled"] else "꺼짐(열린 상태)"))
