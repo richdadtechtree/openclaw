@@ -573,6 +573,9 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   .sitenav a:hover{color:var(--ink)}
   .sitenav a[aria-current="page"]{background:var(--accent);color:var(--surface);border-color:var(--accent);cursor:default}
   @media print{.sitenav{display:none}}
+
+  .sitefoot{max-width:1120px;margin:0 auto;padding:18px 20px 40px;text-align:center;font-size:13px;color:var(--muted)}
+  .sitefoot a{color:var(--muted)} @media print{.sitefoot{display:none}}
 </style>
 </head>
 <body class="paper">
@@ -619,6 +622,7 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
 </div>
 
 <!-- 신문 사진 넘겨 보기. 썸네일을 누르면 열린다. -->
+<!--GATE_FOOT-->
 <div class="lb" id="lb" hidden role="dialog" aria-modal="true" aria-label="신문 사진 보기">
   <div class="lb-bar">
     <span class="lb-count" id="lb-count"></span><span class="lb-native" id="lb-native"></span>
