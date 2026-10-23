@@ -335,17 +335,37 @@ def set_status(uid, status):
 
 
 # ───────────────────────── 소셜 로그인(구글·카카오) ─────────────────────────
+class LoginServerError(Exception):
+    """구글·카카오 서버가 거절했을 때. 거절 이유(오류 번호)를 서버 기록에 남기려고 응답 본문을 함께 담는다."""
+
+
+def _fail_text(url, e):
+    """HTTP 오류 → '주소 → 상태번호 + 상대 서버가 알려 준 이유'. (예: KOE010 = 카카오 클라이언트 시크릿 불일치)
+    ⚠️ 주소의 ? 뒤(인가 코드 등)와 보낸 값(키·시크릿)은 기록하지 않는다 — 응답 본문만 남긴다."""
+    try:
+        body = e.read().decode("utf-8", "replace")[:300]
+    except Exception:
+        body = ""
+    return "%s → HTTP %s %s" % (url.split("?")[0], getattr(e, "code", "?"), body)
+
+
 def _post_form(url, data, timeout=15):
     req = urllib.request.Request(url, data=urllib.parse.urlencode(data).encode(),
                                  headers={"Content-Type": "application/x-www-form-urlencoded"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        raise LoginServerError(_fail_text(url, e)) from None
 
 
 def _get_json(url, token, timeout=15):
     req = urllib.request.Request(url, headers={"Authorization": "Bearer " + token})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        raise LoginServerError(_fail_text(url, e)) from None
 
 
 def redirect_uri(provider):
@@ -797,7 +817,7 @@ def install(app):
         try:
             uid, nick = identity_from_code(provider, code)
         except Exception as e:
-            print("[gate] %s 로그인 실패: %r" % (provider, e))
+            print("[gate] %s 로그인 실패: %s: %s" % (provider, type(e).__name__, e))
             return _page("로그인 실패", '<div class="card"><h1>로그인 서버와 연결하지 못했어요</h1><p>잠시 후 다시 시도해 주세요.</p>'
                          '<a class="btn primary" href="/gate/login">다시 로그인</a></div>' + _foot(), 502)
         user = upsert_login(provider, uid, nick)

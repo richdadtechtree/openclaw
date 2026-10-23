@@ -25,6 +25,7 @@ os.environ.update({
     "GATE_KAKAO_REST_KEY": "kkey", "GATE_APPROVAL": "auto",
     "PRIVACY_OPERATOR": "홍길동", "PRIVACY_CONTACT": "op@example.test"})
 import gate  # noqa: E402
+_orig_identity = gate.identity_from_code      # 아래 시험들이 가짜로 바꾸므로 진짜 함수를 따로 보관
 
 fails = []
 
@@ -331,6 +332,34 @@ try:
     check("두 번 열어도 오류 없음", gate._db().execute("SELECT COUNT(*) FROM users").fetchone()[0] == 1)
 finally:
     os.environ["GATE_DIR"] = _keep
+
+print("[로그인 서버가 거절했을 때: 이유가 서버 기록에 남음]")
+import contextlib  # noqa: E402
+import io as _io  # noqa: E402
+import urllib.error as _ue  # noqa: E402
+import urllib.request as _ur  # noqa: E402
+_real_urlopen = _ur.urlopen
+
+
+def _boom(req, timeout=15):
+    raise _ue.HTTPError(req.full_url, 401, "Unauthorized", {}, _io.BytesIO(b'{"error":"invalid_client","error_description":"Bad client credentials","error_code":"KOE010"}'))
+
+
+gate.identity_from_code = _orig_identity
+_ur.urlopen = _boom
+try:
+    cz = client(make_app())
+    st = urllib.parse.parse_qs(urllib.parse.urlparse(cz.get("/gate/kakao/start").headers["location"]).query)["state"][0]
+    buf = _io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        r = cz.get("/gate/kakao/callback?code=SECRETCODE&state=" + st)
+    logged = buf.getvalue()
+finally:
+    _ur.urlopen = _real_urlopen
+check("카카오가 거절하면 사용자에게는 안내 화면(502)", r.status_code == 502 and "연결하지 못했어요" in r.text)
+check("서버 기록에 거절 이유(KOE010)와 어느 단계인지가 남음", "KOE010" in logged and "kauth.kakao.com/oauth/token" in logged and "HTTP 401" in logged)
+check("기록에 키·시크릿·인가 코드는 남지 않음", all(x not in logged for x in ("kkey", "gsec", "SECRETCODE")))
+check("화면에는 내부 오류 내용이 새지 않음", "KOE010" not in r.text and "kauth" not in r.text)
 
 print("[내 정보·탈퇴]")
 acc = c.get("/gate/account").text
