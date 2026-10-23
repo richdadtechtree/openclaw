@@ -206,6 +206,36 @@ c3 = client(make_app()); login(c3, uid="late-1", nick="나중사람"); c3.post("
 check("전환 뒤 가입한 사람은 승인 대기", c3.get("/slack").headers["location"] == "/gate/pending")
 os.environ["GATE_APPROVAL"] = "auto"
 
+print("[로그인 유지: 한 번 로그인·승인되면 계속]")
+import time as _t  # noqa: E402
+c = client(make_app()); r = login(c, uid="keep-1", nick="오래쓰는사람")
+check("로그인 쿠키 유효기간이 1년(365일)", "Max-Age=31536000" in r.headers["set-cookie"])
+c.post("/gate/consent", content=AGREE, headers=FORM)
+uid = gate._unsign(c.cookies.get("gate_sess"))["uid"]
+check("방금 발급된 쿠키는 매 요청마다 갈아 끼우지 않음", "set-cookie" not in c.get("/slack/data").headers)
+old_tok = gate._sign({"uid": uid, "iat": int(_t.time()) - 10 * 86400}, 86400 * 355)      # 10일 전에 발급, 아직 355일 남음
+c2 = client(make_app()); c2.cookies.set("gate_sess", old_tok)
+r = c2.get("/slack/data")
+check("10일 지난 쿠키로 쓰면 기간이 1년으로 자동 연장", r.status_code == 200 and "Max-Age=31536000" in r.headers.get("set-cookie", ""))
+check("연장된 쿠키도 같은 사용자", gate._unsign(r.cookies.get("gate_sess"))["uid"] == uid)
+legacy = gate._sign({"uid": uid}, 86400)                                                   # 예전 방식(iat 없음) 쿠키도 이어서 사용 + 연장
+c3 = client(make_app()); c3.cookies.set("gate_sess", legacy)
+r = c3.get("/slack/data")
+check("예전 쿠키(발급시각 없음)도 정상 사용되고 1년짜리 새 쿠키로 교체", r.status_code == 200 and "gate_sess=" in r.headers.get("set-cookie", "") and "Max-Age=31536000" in r.headers["set-cookie"])
+check("1년 안 쓰고 만료되면 로그인 필요", client(make_app()).get("/slack/data", headers={"cookie": "gate_sess=" + gate._sign({"uid": uid}, -5)}).status_code == 401)
+gate.cli(["block", str(uid)])
+c4 = client(make_app()); c4.cookies.set("gate_sess", old_tok)
+r = c4.get("/slack/data")
+check("차단된 사용자는 연장도 입장도 안 됨", r.status_code == 403 and "set-cookie" not in r.headers)
+gate.cli(["approve", str(uid)])
+c5 = client(make_app()); c5.cookies.set("gate_sess", old_tok)
+r = c5.get("/gate/logout")
+check("로그아웃 응답은 쿠키를 지움(연장하지 않음)", "Max-Age=0" in r.headers.get("set-cookie", "") and "Max-Age=31536000" not in r.headers.get("set-cookie", ""))
+gate.delete_user(uid)
+c6 = client(make_app()); c6.cookies.set("gate_sess", old_tok)
+r = c6.get("/slack/data")
+check("탈퇴한 사용자의 옛 쿠키는 연장 없이 거부", r.status_code == 401 and "set-cookie" not in r.headers)
+
 print("[처리방침 문구가 바뀐 경우]")
 c = client(make_app()); login(c, uid="v-1"); c.post("/gate/consent", content=AGREE, headers=FORM)
 check("동의 후 입장", c.get("/slack").status_code == 200)
