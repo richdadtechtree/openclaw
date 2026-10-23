@@ -193,6 +193,7 @@
     - 보충 설명(`nextMark`: 다음 표지를 6줄까지 미리 봄) → 다음 표지가 **아직 안 나온 WHY/HOW** 이거나 출처 줄이면 같은 기사 안의
       `.brf-detail`(라벨 굵게, WHAT·WHY 본문 첫머리에 맞춤). 다음 표지가 WHAT 이면 그 줄은 진짜 새 기사 제목.
     - 검증: `test_viewer_list.js` 에 4항목 추가(PC·폰) + paper·font·json·match·hide·nav·zoom·pan·mark 통과.
+  - ❌ **(2026-10-23 사용자 요청으로 이 기능 전부 제거 — 버튼·다시 보기·`/slack/hide`·`/slack/unhide`·`test_viewer_hide.js`. `/slack/data` 는 이제 항상 그날 전부를 준다. 서버에 남은 `~/.openclaw/slack_hidden.json` 은 더는 안 읽으니 지워도 무방)**
   - 🧹 **2026-09-24: 웹 '지금까지 것 숨기기'** — "GPT 에서 새로 전송할 테니 오늘 올라간 기사 전부 지워줘(웹사이트)".
     - 웹은 슬랙 채널을 그대로 읽어 보여주므로 '웹에서만 지우기' = **그 시각까지 올라온 것은 안 보내기**.
       `stock/app.py`: `/slack/hide?date=` 가 `~/.openclaw/slack_hidden.json` 에 `{날짜: 지금시각}` 기록,
