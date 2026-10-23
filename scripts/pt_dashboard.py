@@ -91,6 +91,24 @@ app.config.update(
     SESSION_COOKIE_SECURE=(os.environ.get("PT_COOKIE_SECURE", "1") != "0"),
     PERMANENT_SESSION_LIFETIME=timedelta(days=30),
 )
+# 주소 접두어(2026-10-23 요청: https://도메인/pt/ 로 열기). nginx 는 /pt/... 를 그대로 넘기고,
+# 아래 미들웨어가 /pt 를 떼어 기존 라우트(/, /api/...)가 그대로 동작한다. 접두어 없는 옛 주소도 계속 동작.
+PFX = "/" + os.environ.get("PT_PREFIX", "pt").strip("/") if os.environ.get("PT_PREFIX", "pt").strip("/") else ""
+
+
+class _StripPrefix:
+    def __init__(self, wsgi, prefix):
+        self.wsgi, self.prefix = wsgi, prefix
+
+    def __call__(self, environ, start_response):
+        path = environ.get("PATH_INFO", "")
+        if self.prefix and (path == self.prefix or path.startswith(self.prefix + "/")):
+            environ["PATH_INFO"] = path[len(self.prefix):] or "/"
+        return self.wsgi(environ, start_response)
+
+
+app.wsgi_app = _StripPrefix(app.wsgi_app, PFX)
+
 # nginx 등 리버스 프록시 뒤에서 원래 scheme/host 를 살려 redirect_uri 를 정확히 계산.
 try:
     from werkzeug.middleware.proxy_fix import ProxyFix
@@ -174,7 +192,7 @@ def _require_login():
 @app.route("/auth/start")
 def auth_start():
     if not AUTH_ENABLED:
-        return redirect("/")
+        return redirect(PFX + "/")
     state = secrets.token_urlsafe(24)
     session["oauth_state"] = state
     params = {
@@ -193,7 +211,7 @@ def auth_start():
 @app.route("/auth/callback")
 def auth_callback():
     if not AUTH_ENABLED:
-        return redirect("/")
+        return redirect(PFX + "/")
     if request.args.get("error"):
         return _auth_error("구글 로그인이 취소되었습니다.")
     state = request.args.get("state")
@@ -230,13 +248,13 @@ def auth_callback():
     session.permanent = True
     session["user"] = {"email": email, "name": info.get("name"),
                        "picture": info.get("picture")}
-    return redirect(_safe_next(session.pop("next", "/")))
+    return redirect(PFX + _safe_next(session.pop("next", "/")))
 
 
 @app.route("/logout")
 def logout():
     session.clear()
-    return redirect("/")
+    return redirect(PFX + "/")
 
 
 @app.route("/healthz")
@@ -467,7 +485,7 @@ tr:hover td { background: var(--card2); }
   <div style="display:flex;align-items:center;gap:12px">
     {% if auth_user %}
     <span style="font-size:12px;color:var(--muted)">👤 {{ auth_user }}</span>
-    <a href="/logout" style="font-size:12px;color:var(--muted);text-decoration:none;border:1px solid var(--border);border-radius:6px;padding:5px 10px">로그아웃</a>
+    <a href="{{ pfx }}/logout" style="font-size:12px;color:var(--muted);text-decoration:none;border:1px solid var(--border);border-radius:6px;padding:5px 10px">로그아웃</a>
     {% endif %}
     <div class="date-badge" id="now-badge">--</div>
   </div>
@@ -665,6 +683,8 @@ tr:hover td { background: var(--card2); }
 </div>
 
 <script>
+const BASE = {{ pfx|tojson }};   // 주소 접두어(/pt). API 호출 주소 앞에 붙인다
+
 function showTab(name) {
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
@@ -673,7 +693,7 @@ function showTab(name) {
 }
 
 async function loadData() {
-  const r = await fetch('/api/summary');
+  const r = await fetch(BASE+'/api/summary');
   const d = await r.json();
 
   if (d.ai_report) {
@@ -725,7 +745,7 @@ async function loadData() {
 
   // 전체 운동
   const ab = document.getElementById('all-workouts-body');
-  const wr = await fetch('/api/workouts'); const wd = await wr.json();
+  const wr = await fetch(BASE+'/api/workouts'); const wd = await wr.json();
   wd.forEach(w => {
     window.cacheWorkouts[w.id] = w;
     const tr=document.createElement('tr');
@@ -738,7 +758,7 @@ async function loadData() {
 
   // 식단
   const db2 = document.getElementById('diet-body');
-  const dr = await fetch('/api/diet'); const dd = await dr.json();
+  const dr = await fetch(BASE+'/api/diet'); const dd = await dr.json();
   dd.forEach(d2 => {
     window.cacheDiet[d2.id] = d2;
     const tr=document.createElement('tr');
@@ -751,7 +771,7 @@ async function loadData() {
 
   // 바이탈
   const vb = document.getElementById('vitals-body');
-  const vr = await fetch('/api/vitals'); const vd = await vr.json();
+  const vr = await fetch(BASE+'/api/vitals'); const vd = await vr.json();
   const condMap = {excellent:'최고',good:'좋음',fair:'보통',tired:'피곤',poor:'나쁨',terrible:'최악'};
   vd.forEach(v => {
     window.cacheVitals[v.id] = v;
@@ -790,13 +810,13 @@ function closeModal(type) {
   document.getElementById('modal-'+type).classList.remove('open');
 }
 async function submitForm(type, data) {
-  const r = await fetch('/api/add/'+type, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  const r = await fetch(BASE+'/api/add/'+type, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
   if ((await r.json()).ok) { closeModal(type); location.reload(); }
   else alert('저장 실패');
 }
 async function deleteRecord(type, id) {
   if (!confirm('정말 이 기록을 삭제하시겠습니까?')) return;
-  const r = await fetch('/api/delete/' + type + '/' + id, {method: 'POST'});
+  const r = await fetch(BASE+'/api/delete/' + type + '/' + id, {method: 'POST'});
   if ((await r.json()).ok) location.reload();
   else alert('삭제 실패');
 }
@@ -865,7 +885,7 @@ async function submitEditForm(type) {
       alcohol: document.getElementById('ev-alcohol').value
     };
   }
-  const r = await fetch('/api/edit/' + type + '/' + id, {
+  const r = await fetch(BASE+'/api/edit/' + type + '/' + id, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(data)
@@ -887,8 +907,8 @@ function setTrendRange(days) {
 
 async function loadTrendCharts() {
   const [vr, pr] = await Promise.all([
-    fetch('/api/vitals/trend?days=' + trendRangeDays),
-    fetch('/api/diet/protein-trend?days=' + trendRangeDays),
+    fetch(BASE+'/api/vitals/trend?days=' + trendRangeDays),
+    fetch(BASE+'/api/diet/protein-trend?days=' + trendRangeDays),
   ]);
   const rows = await vr.json();
   const proteinRows = await pr.json();
@@ -1002,7 +1022,7 @@ function renderTrendChart(wrapId, pts, color, unit) {
 
 // 풀업 PR 로드
 async function loadPullupPR() {
-  const r = await fetch('/api/pullup-pr');
+  const r = await fetch(BASE+'/api/pullup-pr');
   const d = await r.json();
   document.getElementById('pullup-pr').textContent = d.pr ?? '-';
   document.getElementById('pullup-pr-date').textContent = d.pr ? `개 (${d.pr_date})` : '기록 없음';
@@ -1013,7 +1033,7 @@ async function loadPullupPR() {
 
 // 브리핑 로드
 async function loadBriefings() {
-  const r = await fetch('/api/briefings');
+  const r = await fetch(BASE+'/api/briefings');
   const items = await r.json();
   const el = document.getElementById('briefings-list');
   if (!items.length) { el.innerHTML = '<div class="empty-state">브리핑이 없습니다</div>'; return; }
@@ -1038,7 +1058,7 @@ async function searchBriefings() {
   if (q) params.set('q', q);
   if (type) params.set('type', type);
   if (bfSelectedDate) params.set('date', bfSelectedDate);
-  const r = await fetch('/api/briefings/search?' + params.toString());
+  const r = await fetch(BASE+'/api/briefings/search?' + params.toString());
   const items = await r.json();
 
   const badge = document.getElementById('bf-date-filter-badge');
@@ -1070,7 +1090,7 @@ async function renderBfCalendar() {
   const monthStr = `${y}-${String(m+1).padStart(2,'0')}`;
   document.getElementById('bf-cal-label').textContent = `${y}년 ${m+1}월`;
 
-  const r = await fetch('/api/briefings/dates?month=' + monthStr);
+  const r = await fetch(BASE+'/api/briefings/dates?month=' + monthStr);
   const d = await r.json();
   const bdates = new Set(d.dates || []);
 
@@ -1113,12 +1133,12 @@ function downloadBriefings() {
   if (start) params.set('start', start);
   if (end) params.set('end', end);
   if (type) params.set('type', type);
-  window.location.href = '/api/briefings/export?' + params.toString();
+  window.location.href = BASE + '/api/briefings/export?' + params.toString();
 }
 
 // 챌린지 & 보상 로드
 async function loadChallenges() {
-  const r = await fetch('/api/challenges');
+  const r = await fetch(BASE+'/api/challenges');
   const d = await r.json();
   const w = d.workout || {}, s = d.sober || {};
 
@@ -1149,7 +1169,7 @@ async function loadChallenges() {
 // 챌린지 달성 축하 팝업 — 종국이가 슬랙으로 축하하는 것과 같은 마일스톤을 웹에서도 보여준다.
 let achievementQueue = [];
 async function loadAchievements() {
-  const r = await fetch('/api/achievements/unseen');
+  const r = await fetch(BASE+'/api/achievements/unseen');
   achievementQueue = await r.json();
   showNextAchievement();
 }
@@ -1166,7 +1186,7 @@ async function ackNextAchievement() {
   document.getElementById('modal-achievement').classList.remove('open');
   if (a) {
     try {
-      await fetch('/api/achievements/ack', {
+      await fetch(BASE+'/api/achievements/ack', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ids: [a.id]})
       });
@@ -1300,7 +1320,7 @@ setTrendRange(90);
 @app.route("/")
 def index():
     auth_user = session.get("user", {}).get("email") if AUTH_ENABLED else None
-    return render_template_string(HTML, auth_user=auth_user)
+    return render_template_string(HTML, auth_user=auth_user, pfx=PFX)
 
 
 @app.route("/api/summary")
