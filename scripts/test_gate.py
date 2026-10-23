@@ -551,6 +551,84 @@ with gate._db() as con:
 check("DB 에 이상한 값이 있어도 머리글에 나오지 않음(허용 목록만)", ct.get("/themehead").text == "")
 check("처리방침에 화면 모드 저장 명시", "화면 모드" in ct.get("/privacy").text)
 
+print("[서버 IP 접속: 관리자 비밀번호]")
+IPPW = "Correct-Horse-9-Staple"
+def ipclient(app, base="http://203.0.113.5:8000"):
+    return TestClient(app, base_url=base, follow_redirects=False)
+app_ip = make_app()
+os.environ.pop("GATE_IP_ADMIN_PASSWORD", None)
+ci = ipclient(app_ip)
+r = ci.get("/economy")
+check("비밀번호를 안 정하면 IP 접속은 통째로 막힘(403)", r.status_code == 403 and "IP" in r.text)
+check("그때 데이터 주소도 403(JSON)", ci.get("/economy/data").status_code == 403 and ci.get("/api/dig/item").status_code == 403)
+os.environ["GATE_IP_ADMIN_PASSWORD"] = "short-pw"
+check("12자 미만 비밀번호는 쓰지 않음(여전히 막힘)", ipclient(app_ip).get("/economy").status_code == 403)
+os.environ["GATE_IP_ADMIN_PASSWORD"] = IPPW
+ci = ipclient(app_ip)
+r = ci.get("/economy")
+check("IP 로 /economy → 관리자 로그인 화면으로", r.status_code == 302 and r.headers["location"].startswith("/gate/ip-login"))
+check("IP 로 데이터 주소 → 401", ci.get("/economy/data").status_code == 401 and ci.get("/api/news/today").status_code == 401 and ci.get("/dig").status_code == 302)
+page = ci.get("/gate/ip-login")
+check("로그인 화면: 비밀번호 칸 + http 경고", page.status_code == 200 and 'type="password"' in page.text and "암호화되지 않았어요" in page.text)
+check("https 로 열면 경고 없음", "암호화되지 않았어요" not in ipclient(app_ip, "https://203.0.113.5").get("/gate/ip-login").text)
+check("도메인에서는 IP 로그인 화면이 없는 것처럼(404)", client(app_ip).get("/gate/ip-login").status_code == 404)
+check("IP 접속에서 구글/카카오 로그인 주소는 IP 로그인으로 보냄", ci.get("/gate/login").headers["location"] == "/gate/ip-login"
+      and ci.get("/gate/google/start").headers["location"] == "/gate/ip-login" and ci.get("/gate/account").headers["location"] == "/gate/ip-login")
+check("IP 접속에서 쓰기 요청(/gate/theme 등)은 403", ci.post("/gate/theme", content='{"theme":"dark"}', headers=tj).status_code == 403)
+FORMD = {"content-type": "application/x-www-form-urlencoded"}
+r = ci.post("/gate/ip-login", content="password=wrong-password-123&next=%2Feconomy", headers=FORMD)
+check("틀린 비밀번호는 거부(쿠키 없음)", r.status_code == 303 and "m=bad" in r.headers["location"] and "gate_ipadm" not in r.headers.get("set-cookie", ""))
+check("아직 입장 못 함", ci.get("/economy").status_code == 302)
+r = ci.post("/gate/ip-login", content="password=" + IPPW + "&next=%2Feconomy", headers=FORMD)
+ck = r.headers.get("set-cookie", "")
+check("맞는 비밀번호 → 입장(303) + 12시간 쿠키(HttpOnly·Strict)", r.status_code == 303 and r.headers["location"] == "/economy"
+      and "gate_ipadm=" in ck and "HttpOnly" in ck and "SameSite=strict" in ck.replace("samesite", "SameSite") and "Max-Age=43200" in ck)
+check("http 이므로 Secure 표시는 없음(있으면 http 에서 쿠키가 안 붙음)", "secure" not in ck.lower())
+check("입장 후 페이지·데이터 주소 모두 열림", ci.get("/economy").status_code == 200 and ci.get("/economy/data").status_code == 200
+      and ci.get("/dig").status_code == 200 and ci.get("/api/dig/item").status_code == 200)
+check("쿠키 값에 비밀번호가 들어 있지 않음", IPPW not in ck and IPPW not in str(ci.cookies))
+check("위쪽 표시: IP 관리자 모드 + 관리 + 로그아웃", all(x in ci.get("/who").text for x in ("IP 관리자 모드", "/gate/admin", "/gate/ip-logout")))
+# 쿠키를 도메인 접속으로 가져가도 소용없음
+cd = client(app_ip); cd.cookies.set("gate_ipadm", ci.cookies.get("gate_ipadm"))
+check("IP 쿠키를 도메인 접속에 붙여도 통과 못 함", cd.get("/economy").status_code == 302 and "/gate/login" in cd.get("/economy").headers["location"])
+check("도메인에서 보낸 가짜 Host: 숫자 IP 로 바꿔도 비밀번호 없이는 못 들어감", ipclient(app_ip).get("/economy").status_code == 302)
+check("옛 /slack 주소도 IP 접속에서 똑같이 잠김", ipclient(app_ip).get("/slack").status_code == 302 and ipclient(app_ip).get("/slack/data").status_code == 401)
+r = ci.get("/gate/admin")
+check("IP 관리자 모드에서 가입자 관리 화면 열림", r.status_code == 200 and "가입자" in r.text)
+check("도메인에서 같은 쿠키로는 관리 화면이 없는 것처럼(404)", cd.get("/gate/admin").status_code == 404)
+check("비밀번호 없는 IP 접속자에겐 관리 화면이 없는 것처럼(404)", ipclient(app_ip).get("/gate/admin").status_code == 404)
+tk = _re.search(r'name="csrf" value="([0-9a-f]+)"', r.text)
+victim_c, victim = mk_user("google", "ip-victim", "대상자")
+if tk:
+    r2 = ci.post("/gate/admin/act", content="uid=%d&action=block&csrf=%s" % (victim, tk.group(1)), headers=FORMD)
+    check("IP 관리자 모드로 차단 처리 가능", r2.status_code == 303 and gate.get_user(victim)["status"] == "blocked")
+    r2 = ci.post("/gate/admin/act", content="uid=%d&action=approve&csrf=%s" % (victim, "0" * 32), headers=FORMD)
+    check("확인표가 틀리면 처리 안 됨", r2.status_code == 400 and gate.get_user(victim)["status"] == "blocked")
+else:
+    check("관리 화면에 확인표가 있음", False)
+r = ci.get("/gate/ip-logout")
+check("로그아웃하면 다시 잠김", r.status_code == 302 and ci.get("/economy").status_code == 302)
+# 비밀번호를 바꾸면 기존 로그인은 모두 무효
+cj = ipclient(app_ip); cj.post("/gate/ip-login", content="password=" + IPPW + "&next=%2Feconomy", headers=FORMD)
+check("(준비) 다시 입장", cj.get("/economy").status_code == 200)
+os.environ["GATE_IP_ADMIN_PASSWORD"] = IPPW + "-new"
+check("비밀번호를 바꾸면 예전 로그인 쿠키는 즉시 무효", cj.get("/economy").status_code == 302)
+os.environ["GATE_IP_ADMIN_PASSWORD"] = IPPW
+# 연속 실패 잠금
+ck5 = ipclient(app_ip); gate._ip_fail.clear()
+for i in range(5):
+    ck5.post("/gate/ip-login", content="password=nope-nope-nope-%d" % i, headers=FORMD)
+r = ck5.post("/gate/ip-login", content="password=" + IPPW, headers=FORMD)
+check("5번 틀리면 잠겨서, 맞는 비밀번호도 잠시 거부", "m=locked" in r.headers["location"] and "gate_ipadm" not in r.headers.get("set-cookie", ""))
+gate._ip_fail.clear()
+check("잠금이 풀리면 다시 입장 가능", "gate_ipadm" in ck5.post("/gate/ip-login", content="password=" + IPPW, headers=FORMD).headers.get("set-cookie", ""))
+check("다른 사이트에서 날아온 로그인 시도는 거부", ipclient(app_ip).post("/gate/ip-login", content="password=" + IPPW, headers={**FORMD, "sec-fetch-site": "cross-site"}).status_code == 403)
+check("로그인 뒤 이동 주소는 우리 화면만(열린 리디렉션 차단)", ipclient(app_ip).post("/gate/ip-login", content="password=" + IPPW + "&next=https%3A%2F%2Fevil.com", headers=FORMD).headers["location"] == "/economy")
+check("서버 내부 열쇠(PDF 만들기)는 그대로 통과", ipclient(app_ip, "http://127.0.0.1:8000").get("/dig", headers={"x-gate-internal": gate.internal_key()}).status_code == 200)
+check("IPv6 주소 호스트도 IP 로 판정", ipclient(app_ip, "http://[::1]:8000").get("/economy").status_code == 302 and gate.is_ip_host(type("R", (), {"headers": {"host": "[2001:db8::1]:8000"}})()))
+check("도메인 호스트는 IP 로 오인하지 않음", not gate.is_ip_host(type("R", (), {"headers": {"host": "mystatus-btr.duckdns.org"}})()) and not gate.is_ip_host(type("R", (), {"headers": {"host": ""}})()))
+os.environ.pop("GATE_IP_ADMIN_PASSWORD", None)
+
 print("[서버 내부 열쇠 (PDF 만들기용)]")
 c = client(make_app())
 key = gate.internal_key()
