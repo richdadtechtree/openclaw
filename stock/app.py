@@ -34,7 +34,7 @@ except Exception as _gate_err:
     @app.middleware("http")
     async def _gate_failsafe(request, call_next):
         p = request.url.path
-        if p in ("/slack", "/dig") or p.startswith(("/slack/", "/dig/", "/api/dig/", "/api/news/")):
+        if p in ("/economy", "/slack", "/dig") or p.startswith(("/economy/", "/slack/", "/dig/", "/api/dig/", "/api/news/")):
             from fastapi.responses import JSONResponse as _J
             return _J({"ok": False, "reason": "로그인 모듈 오류 — 운영자에게 알려 주세요"}, status_code=503)
         return await call_next(request)
@@ -319,7 +319,15 @@ def _read_slack_log(date):
     return merged
 
 
-@app.get("/slack", response_class=HTMLResponse)
+@app.get("/slack")
+def slack_old_address(request: Request):
+    """옛 주소(/slack) → 새 주소(/economy). 즐겨찾기가 깨지지 않게 넘겨 준다(쿼리 유지)."""
+    from fastapi.responses import RedirectResponse
+    q = request.url.query
+    return RedirectResponse("/economy" + ("?" + q if q else ""), 302)
+
+
+@app.get("/economy", response_class=HTMLResponse)
 def slack_view(request: Request):
     """슬랙 데일리 다이제스트 실시간 뷰어 페이지."""
     try:
@@ -330,7 +338,8 @@ def slack_view(request: Request):
         return HTMLResponse("<h1>slack 뷰어 로드 실패</h1><pre>%s</pre>" % e, status_code=500)
 
 
-@app.get("/slack/data")
+@app.get("/economy/data")
+@app.get("/slack/data")  # 옛 주소도 계속 응답(이미 열려 있던 화면용)
 def slack_data(date: str = ""):
     """그날 슬랙 발신 로그 JSON. date 미지정 시 오늘(KST)."""
     if not date:

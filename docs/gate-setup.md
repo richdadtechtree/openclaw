@@ -1,9 +1,9 @@
 # 로그인 잠금(구글·카카오) 켜는 법
 
-`/slack`(신문 요약) · `/dig`(경제 공부)를 **구글 또는 카카오 로그인 + 개인정보 동의**를 마친 사람만 보게 합니다.
+`/economy`(신문 요약, 옛 `/slack` 주소는 자동으로 넘겨 줌) · `/dig`(경제 공부)를 **구글 또는 카카오 로그인 + 개인정보 동의**를 마친 사람만 보게 합니다.
 코드는 `stock/gate.py`. **설정이 덜 되어 있으면 잠금이 꺼진 채(열린 채) 유지**되므로, 코드를 먼저 반영해도 갑자기 못 들어가는 일은 없습니다.
 
-잠그는 주소: `/slack`, `/slack/*`, `/dig`, `/dig/*`, `/api/dig/*`, `/api/news/*`  
+잠그는 주소: `/economy`, `/economy/*`, `/slack`, `/slack/*`, `/dig`, `/dig/*`, `/api/dig/*`, `/api/news/*`  
 그대로 두는 주소: 주가 대시보드 `/` 와 나머지 `/api/*`
 
 > 왜 `http://158.179.162.52:8000` 으로는 로그인을 못 하나요?  
@@ -68,7 +68,7 @@ PT 대시보드 설정 파일(보통 `/etc/nginx/sites-enabled/` 아래, `server
 
 ```nginx
     # 신문 요약·경제 공부·로그인 화면 → stock 앱(8000)
-    location ~ ^/(slack|dig|gate|privacy)(/|$) {
+    location ~ ^/(economy|slack|dig|gate|privacy)(/|$) {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -95,7 +95,7 @@ PT 대시보드의 로그인 쿠키(`session`)와 겹치지 않도록 이쪽 쿠
 `.env` 를 바꾸거나 `app.py` 가 바뀌면 stock 웹 서버를 다시 켜야 합니다. 켜질 때 로그에
 `[gate] 잠금 켜짐 · 승인 방식=auto · 제공자=google,kakao` 가 찍히면 성공입니다.
 
-확인: **시크릿(비공개) 창**에서 `https://mystatus-btr.duckdns.org/slack` → 로그인 화면이 나와야 합니다.
+확인: **시크릿(비공개) 창**에서 `https://mystatus-btr.duckdns.org/economy` → 로그인 화면이 나와야 합니다.
 
 ## 6. 나중에 '승인제'로 바꾸기
 
@@ -117,7 +117,7 @@ python3 ~/.openclaw/stock/gate.py delete 12      # 정보 삭제(요청 시)
 이메일은 받지 않으므로 "이메일이 ○○이면 관리자"는 쓸 수 없습니다. 대신 **관리자 계정으로 로그인한 뒤 서버에서 한 번 지정**합니다.
 
 ```bash
-# 1) 관리자로 쓸 계정(예: bbonoyo@gmail.com 의 구글 계정)으로 https://mystatus-btr.duckdns.org/slack 에 로그인·동의
+# 1) 관리자로 쓸 계정(예: bbonoyo@gmail.com 의 구글 계정)으로 https://mystatus-btr.duckdns.org/economy 에 로그인·동의
 # 2) https://mystatus-btr.duckdns.org/gate/account 에서 '회원 번호' 확인 (또는 서버에서 python3 ~/.openclaw/stock/gate.py list)
 python3 ~/.openclaw/stock/gate.py admin 1        # 1 = 회원 번호
 # 3) 화면을 새로고침하면 맨 위에 '🛠 관리' 링크가 보입니다

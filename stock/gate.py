@@ -1,6 +1,6 @@
 """로그인(구글·카카오) + 개인정보 동의 + 승인 게이트 (2026-10-23 사용자 요청).
 
-잠그는 곳: /slack(신문 요약) · /dig(경제 공부) 와 그 화면이 쓰는 /api/news/* · /api/dig/* · /slack/* 주소.
+잠그는 곳: /economy(신문 요약, 옛 /slack 은 넘겨 줌) · /dig(경제 공부) 와 그 화면이 쓰는 /api/news/* · /api/dig/* · /slack/* 주소.
           (주가 대시보드 '/' 와 나머지는 그대로 둔다)
 
 흐름
@@ -167,10 +167,10 @@ def _unsign(token):
         return None
 
 
-_NEXT_OK = re.compile(r"^/(slack|dig)(/[A-Za-z0-9_\-./]*)?(\?[A-Za-z0-9_\-=&%.]*)?$")
+_NEXT_OK = re.compile(r"^/(economy|slack|dig)(/[A-Za-z0-9_\-./]*)?(\?[A-Za-z0-9_\-=&%.]*)?$")
 
 
-def safe_next(target, default="/slack"):
+def safe_next(target, default="/economy"):
     """로그인 뒤 돌아갈 곳. 우리 두 화면 주소만 허용(다른 사이트로 보내는 '열린 리디렉션' 차단)."""
     t = (target or "").strip()
     return t if _NEXT_OK.match(t) and "//" not in t and "\\" not in t else default
@@ -733,17 +733,17 @@ def admin_html(me, rows, counts, flt, msg, d=""):
 <div class="tablewrap"><table><tr><th>번호</th><th>이름·방식</th><th>상태</th><th>이용 기한</th><th>가입·접속</th><th>동의</th><th>처리</th></tr>%s</table></div>
 <p class="sub">기한은 그 날짜의 밤 12시까지 쓸 수 있어요(기한이 지나면 로그인해도 '이용 기간 종료'가 보이고, 관리자가 기한을 늘리면 바로 다시 쓸 수 있어요).
 차단하면 쿠키가 남아 있어도 바로 이용할 수 없고, 삭제하면 정보와 동의 기록이 모두 지워져요. 관리자 지정·해제는 서버에서 <code>gate.py admin/unadmin 번호</code> 로만 할 수 있어요.</p>
-<p><a class="btn primary" href="/slack">📰 신문 요약</a></p></div>
+<p><a class="btn primary" href="/economy">📰 신문 요약</a></p></div>
 <div class="foot"><a href="/gate/account">내 정보</a> · <a href="/gate/logout">로그아웃</a> · <a href="/privacy">개인정보 처리방침</a></div>""" % (
         html.escape(disp(me)), flash, note, tabs, trs)
 
 
 def _is_gated(path):
-    return (path in ("/slack", "/dig") or path.startswith(("/slack/", "/dig/", "/api/dig/", "/api/news/")))
+    return (path in ("/economy", "/slack", "/dig") or path.startswith(("/economy/", "/slack/", "/dig/", "/api/dig/", "/api/news/")))
 
 
 def _is_api(path):
-    return path.startswith(("/api/", "/slack/"))
+    return path.startswith(("/api/", "/economy/", "/slack/"))
 
 
 def _cookie_args(max_age):
@@ -774,7 +774,7 @@ def _check(request):
         return None
     user = session_user(request)
     api = _is_api(path)
-    nxt = urllib.parse.quote(safe_next(path + (("?" + request.url.query) if request.url.query else ""), "/slack"))
+    nxt = urllib.parse.quote(safe_next(path + (("?" + request.url.query) if request.url.query else ""), "/economy"))
     if not user:
         return JSONResponse({"ok": False, "reason": "login"}, status_code=401) if api else RedirectResponse("/gate/login?next=" + nxt, 302)
     if user["status"] == "blocked":
@@ -928,7 +928,7 @@ def install(app):
         if not u:
             return RedirectResponse("/gate/login", 302)
         if u["status"] == "approved" and u["consent_version"] == POLICY_VERSION and u["nick_set"]:
-            return RedirectResponse("/slack", 302)
+            return RedirectResponse("/economy", 302)
         return _page("승인 대기", '<div class="card"><h1>⏳ 승인을 기다리고 있어요</h1><p>%s 님, 가입은 끝났고 운영자가 승인하면 이용할 수 있어요.</p>'
                      '<p class="sub">승인되면 이 화면을 새로고침하세요.</p></div><div class="foot"><a href="/gate/logout">로그아웃</a> · <a href="/privacy">처리방침</a></div>'
                      % html.escape(disp(u)))
@@ -939,7 +939,7 @@ def install(app):
             return _off()
         u = session_user(request)
         if not u:
-            return RedirectResponse("/gate/login?next=/slack", 302)
+            return RedirectResponse("/gate/login?next=/economy", 302)
         note = ('<p class="note">닉네임을 바꿨어요.</p>' if m == "nick_ok" else
                 ('<p class="warn">%s</p>' % html.escape(NICK_MSG[m])) if m in NICK_MSG else "")
         prov = {"google": "구글", "kakao": "카카오"}.get(u["provider"], u["provider"])
@@ -950,7 +950,7 @@ def install(app):
 <h2>닉네임 바꾸기</h2>
 <form method="post" action="/gate/nickname"><input class="txt" type="text" name="nickname" value="%s" maxlength="20" required autocomplete="off" aria-label="새 닉네임">
 <button class="btn primary" type="submit">닉네임 변경</button></form>
-<p><a class="btn primary" href="/slack">📰 신문 요약</a><a class="btn primary" href="/dig">📚 경제 공부 (디그)</a></p>
+<p><a class="btn primary" href="/economy">📰 신문 요약</a><a class="btn primary" href="/dig">📚 경제 공부 (디그)</a></p>
 <h2>탈퇴 (정보 삭제)</h2><p class="sub">누르면 저장된 모든 정보와 동의 기록이 즉시 삭제되며 되돌릴 수 없어요.</p>
 <form method="post" action="/gate/delete"><label class="chk"><input type="checkbox" name="confirm" value="1"><span>내 정보를 삭제하고 탈퇴합니다.</span></label>
 <button class="btn danger" type="submit">탈퇴하고 정보 삭제</button></form></div>
