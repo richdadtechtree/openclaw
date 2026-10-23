@@ -75,18 +75,24 @@ def client(app):
 
 
 def fake_identity(uid="g-1", nick="길동"):
-    gate.identity_from_code = lambda provider, code: (uid, nick)
+    gate.identity_from_code = lambda provider, code: uid          # 이름은 받지 않는다(닉네임은 가입 화면에서 직접 입력)
 
 
 def login(c, provider="google", uid="g-1", nick="길동", nxt="/slack"):
     """시작 → (가짜) 콜백까지 진행. 콜백 응답을 돌려준다."""
     fake_identity(uid, nick)
+    c._nick = nick                                                # 가입(동의) 때 입력할 닉네임
     s = c.get("/gate/%s/start?next=%s" % (provider, urllib.parse.quote(nxt)))
     state = urllib.parse.parse_qs(urllib.parse.urlparse(s.headers["location"]).query)["state"][0]
     return c.get("/gate/%s/callback?code=abc&state=%s" % (provider, state))
 
 
 AGREE = "agree_privacy=1&agree_age=1&agree_notice=1&next=%2Fslack"
+
+
+def agree_for(cl, nick=None):
+    """동의 3칸 + 닉네임을 채운 가입 본문."""
+    return AGREE + "&nickname=" + urllib.parse.quote(nick or getattr(cl, "_nick", None) or "닉네임")
 FORM = {"content-type": "application/x-www-form-urlencoded"}
 
 print("[작은 부품]")
@@ -122,9 +128,9 @@ print("[소셜 로그인 시작]")
 g = c.get("/gate/google/start?next=/dig").headers["location"]
 q = urllib.parse.parse_qs(urllib.parse.urlparse(g).query)
 check("구글 주소로 보내고 redirect_uri 가 우리 https 주소", g.startswith("https://accounts.google.com/") and q["redirect_uri"] == ["https://example.test/gate/google/callback"])
-check("구글: 이메일 범위를 요청하지 않음(최소 수집)", q["scope"] == ["openid profile"] and "email" not in g)
+check("구글: 이름·이메일을 요청하지 않음(openid 만)", q["scope"] == ["openid"] and "email" not in g and "profile" not in g)
 k = urllib.parse.parse_qs(urllib.parse.urlparse(c.get("/gate/kakao/start").headers["location"]).query)
-check("카카오: 닉네임만 요청", k["scope"] == ["profile_nickname"] and k["redirect_uri"] == ["https://example.test/gate/kakao/callback"])
+check("카카오: 닉네임·이메일 등 아무 정보도 요청하지 않음(scope 없음)", "scope" not in k and k["redirect_uri"] == ["https://example.test/gate/kakao/callback"])
 check("상태 쿠키는 HttpOnly·Secure·SameSite=Lax", all(x in c.get("/gate/google/start").headers["set-cookie"] for x in ("HttpOnly", "Secure", "SameSite=lax")))
 
 print("[콜백 보안]")
@@ -154,7 +160,7 @@ check("동의 화면: 수집항목·목적·보유기간·거부권 표시", all
 check("동의 화면: 필수 3칸(개인정보·만14세·이용안내)", all(x in cp for x in ("agree_privacy", "agree_age", "agree_notice")))
 check("일부만 체크하면 거부(400)", c.post("/gate/consent", content="agree_privacy=1&next=%2Fslack", headers=FORM).status_code == 400)
 check("거부되면 아직 못 들어감", c.get("/slack").status_code == 302)
-check("3칸 모두 체크하면 통과", c.post("/gate/consent", content=AGREE, headers=FORM).status_code == 303)
+check("3칸 모두 체크하면 통과", c.post("/gate/consent", content=agree_for(c), headers=FORM).status_code == 303)
 check("이제 /slack 열림", c.get("/slack").status_code == 200 and c.get("/slack/data").status_code == 200)
 check("이제 /dig·API 열림", c.get("/dig").status_code == 200 and c.get("/api/dig/item").status_code == 200 and c.post("/api/dig/refresh").status_code == 200)
 check("잠긴 응답은 공용 캐시 금지(private)", "private" in c.get("/slack/data").headers.get("cache-control", ""))
@@ -163,20 +169,21 @@ with gate._db() as con:
     cons = con.execute("SELECT * FROM consents").fetchall()
 check("동의 이력 1건", len(cons) == 1 and "privacy" in cons[0]["items"])
 check("이미 동의한 사람이 로그인하면 바로 입장", client(app).get("/gate/login").status_code == 200 and login(client(app)).headers["location"] == "/slack")
-check("DB 에 이메일·전화 같은 열이 없음(최소 수집)",
-      {r["name"] for r in gate._db().execute("PRAGMA table_info(users)")} == {"id", "provider", "provider_uid", "nickname", "status", "consent_version", "consent_at", "created_at", "last_login_at", "is_admin", "expires_at"})
+check("DB 에 이메일·전화·실명 같은 열이 없음(최소 수집, 닉네임 관련 열만 추가)",
+      {r["name"] for r in gate._db().execute("PRAGMA table_info(users)")} == {"id", "provider", "provider_uid", "nickname", "status", "consent_version", "consent_at", "created_at", "last_login_at", "is_admin", "expires_at", "nick_set", "nick_key"})
 
 print("[누가 로그인했는지 화면에 표시]")
-cg = client(make_app()); login(cg, provider="google", uid="w-1", nick="길동"); cg.post("/gate/consent", content=AGREE, headers=FORM)
+cg = client(make_app()); login(cg, provider="google", uid="w-1", nick="누리"); cg.post("/gate/consent", content=agree_for(cg), headers=FORM)
 w = cg.get("/who").text
-check("구글로 들어오면 '길동 님 · 구글'이 보임", "길동 님 · 구글" in w and 'href="/gate/account"' in w)
-ck = client(make_app()); login(ck, provider="kakao", uid="w-2", nick="카카오닉"); ck.post("/gate/consent", content=AGREE, headers=FORM)
+check("구글로 들어오면 '누리 님 · 구글'이 보임(직접 정한 닉네임)", "누리 님 · 구글" in w and 'href="/gate/account"' in w)
+ck = client(make_app()); login(ck, provider="kakao", uid="w-2", nick="카카오닉"); ck.post("/gate/consent", content=agree_for(ck), headers=FORM)
 check("카카오로 들어오면 '카카오닉 님 · 카카오'가 보임", "카카오닉 님 · 카카오" in ck.get("/who").text)
 check("로그아웃 버튼이 맨 위에 보임", 'class="logout" href="/gate/logout"' in w)
 check("관리자가 아니면 '관리' 링크가 없음", "adminlink" not in w)
 check("로그인 안 한 요청에는 이름이 안 보임", gate.who_html(None) == "" and "님 ·" not in client(make_app()).get("/who").text)
-cx = client(make_app()); login(cx, uid="w-3", nick="<b onmouseover=1>x</b>"); cx.post("/gate/consent", content=AGREE, headers=FORM)
-check("이름 속 HTML 은 이스케이프되어 표시", "<b onmouseover" not in cx.get("/who").text and "&lt;b" in cx.get("/who").text)
+cx = client(make_app()); login(cx, uid="w-3", nick="엑스"); cx.post("/gate/consent", content=agree_for(cx), headers=FORM)
+gate._db().execute("UPDATE users SET nickname=? WHERE provider_uid='w-3'", ("<b onmouseover=1>x</b>",)).connection.commit()   # 가정: 저장된 값이 이상한 경우
+check("(혹시 저장된 값이 이상해도) 이름 속 HTML 은 이스케이프되어 표시", "<b onmouseover" not in cx.get("/who").text and "&lt;b" in cx.get("/who").text)
 
 print("[관리자 화면: 가입자 보기·승인·차단]")
 import re as _re  # noqa: E402
@@ -185,7 +192,7 @@ import re as _re  # noqa: E402
 def mk_user(provider, uid, nick, consent=True):
     cl = client(app_adm); login(cl, provider=provider, uid=uid, nick=nick)
     if consent:
-        cl.post("/gate/consent", content=AGREE, headers=FORM)
+        cl.post("/gate/consent", content=agree_for(cl), headers=FORM)
     return cl, gate._unsign(cl.cookies.get("gate_sess"))["uid"]
 
 
@@ -199,7 +206,7 @@ def act(cl, uid, action, csrf, extra=""):
 
 
 app_adm = make_app()
-adm, adm_id = mk_user("google", "adm-1", "운영자")
+adm, adm_id = mk_user("google", "adm-1", "대표")
 user_c, user_id = mk_user("kakao", "usr-1", "일반인")
 check("관리자 지정 전: 일반 가입자는 /gate/admin 이 '없는 페이지'(404)", user_c.get("/gate/admin").status_code == 404 and adm.get("/gate/admin").status_code == 404)
 check("로그인 안 한 사람도 404(존재를 알리지 않음)", client(app_adm).get("/gate/admin").status_code == 404)
@@ -230,8 +237,9 @@ check("승인 대기 필터에는 이용 가능한 사람이 안 나옴", "일�
 gate.cli(["block", str(user_id)])
 check("차단 필터에 차단된 사람이 나옴", "일반인" in adm.get("/gate/admin?f=blocked").text)
 gate.cli(["approve", str(user_id)])
-x_c, x_id = mk_user("google", "xss-1", "<img src=x onerror=alert(1)>")
-check("관리 화면에서도 이름 속 HTML 은 글자로만 표시", "<img src=x" not in adm.get("/gate/admin").text and "&lt;img" in adm.get("/gate/admin").text)
+x_c, x_id = mk_user("google", "xss-1", "엑스에스")
+gate._db().execute("UPDATE users SET nickname=? WHERE id=?", ("<img src=x onerror=alert(1)>", x_id)).connection.commit()
+check("관리 화면에서도 (이상한 값이 저장돼 있어도) 이름 속 HTML 은 글자로만 표시", "<img src=x" not in adm.get("/gate/admin").text and "&lt;img" in adm.get("/gate/admin").text)
 check("삭제: 사용자와 동의 기록이 지워짐", act(adm, x_id, "delete", tok).status_code == 303 and gate.get_user(x_id) is None
       and not gate._db().execute("SELECT * FROM consents WHERE user_id=?", (x_id,)).fetchall())
 check("삭제된 사람의 쿠키는 즉시 무효", x_c.get("/slack/data").status_code == 401)
@@ -245,9 +253,69 @@ gate.cli(["unadmin", str(adm_id)])
 check("관리자에서 빼면 화면이 다시 404", adm.get("/gate/admin").status_code == 404 and adm.post("/gate/admin/act", content="uid=%d&action=block&csrf=%s" % (user_id, tok), headers=FORM).status_code == 404)
 check("내 정보 화면에 회원 번호", ">%d<" % user_id in user_c.get("/gate/account").text)
 
+print("[가입할 때 닉네임 입력]")
+cn = client(make_app()); login(cn, uid="n-1", nick="처음닉")
+un = gate.get_user(gate._unsign(cn.cookies.get("gate_sess"))["uid"])
+check("로그인만 한 상태에서는 이름(닉네임)이 비어 있음 — 구글·카카오 이름을 저장하지 않음", un["nickname"] is None and un["nick_set"] == 0)
+cp = cn.get("/gate/consent?next=/slack").text
+check("가입 화면에 닉네임 입력 칸·안내(실명·전화번호·이메일 금지)가 있음", 'name="nickname"' in cp and "실명" in cp and "운영자에게만" in cp)
+check("가입 화면의 수집 항목에 구글·카카오 이름은 받지 않는다고 안내", "이름·이메일은 받지 않아요" in cp)
+check("닉네임 없이 동의만 하면 거부(400)하고 입장 불가", cn.post("/gate/consent", content=AGREE + "&nickname=", headers=FORM).status_code == 400 and cn.get("/slack/data").status_code == 403)
+bad = {"한 글자": "가", "너무 김": "가" * 21, "특수문자": "나<b>x", "이메일 모양": "me@mail.com", "전화번호 모양": "010 1234 5678", "숫자만 길게": "20260101abc12345678", "기호만": "..__--", "예약어": "관리자", "예약어(영문 대소문자)": "ADMIN", "예약어(공백 끼움)": "운 영 자"}
+for label, bn in bad.items():
+    r = cn.post("/gate/consent", content=agree_for(cn, bn), headers=FORM)
+    check("닉네임 거부 — " + label, r.status_code == 400 and gate.get_user(un["id"])["nick_set"] == 0)
+r = cn.post("/gate/consent", content=agree_for(cn, "<b>나쁜</b>"), headers=FORM)
+check("거부된 화면에도 입력값은 이스케이프되어 되돌려 줌(XSS 방지)", "<b>나쁜</b>" not in r.text and "&lt;b&gt;" in r.text and "한글·영문·숫자" in r.text)
+r = cn.post("/gate/consent", content=agree_for(cn, "me@mail.com"), headers=FORM)
+check("닉네임이 거부돼도 체크해 둔 동의 칸 3개는 그대로 유지", all('name="%s" value="1" checked' % k in r.text for k in ("agree_privacy", "agree_age", "agree_notice")))
+r = cn.post("/gate/consent", content="agree_privacy=1&nickname=" + urllib.parse.quote("임시"), headers=FORM)
+check("동의 칸이 모자라 거부돼도 체크한 칸과 입력한 닉네임은 유지", 'name="agree_privacy" value="1" checked' in r.text and 'name="agree_age" value="1">' in r.text and 'value="임시"' in r.text)
+r = cn.post("/gate/consent", content=agree_for(cn, "  처음   닉  "), headers=FORM)
+check("올바른 닉네임이면 가입 완료(앞뒤·중복 공백은 정리)", r.status_code == 303 and gate.get_user(un["id"])["nickname"] == "처음 닉" and gate.get_user(un["id"])["nick_set"] == 1)
+check("이후 위쪽·내 정보에 입력한 닉네임이 표시", "처음 닉 님 · 구글" in cn.get("/who").text and "처음 닉" in cn.get("/gate/account").text)
+cd2 = client(make_app()); login(cd2, uid="n-2", nick="x")
+r = cd2.post("/gate/consent", content=agree_for(cd2, "처음닉"), headers=FORM)
+check("다른 사람이 쓰는 닉네임은 거부(공백 차이도 같은 것으로 봄)", r.status_code == 400 and "이미 사용 중" in r.text)
+r = cd2.post("/gate/consent", content=agree_for(cd2, "Nuri2"), headers=FORM)
+check("사용 가능한 닉네임이면 가입 완료(대소문자 섞인 'Nuri2')", r.status_code == 303 and gate.get_user(gate._unsign(cd2.cookies.get("gate_sess"))["uid"])["nickname"] == "Nuri2")
+ce3 = client(make_app()); login(ce3, uid="n-3", nick="x")
+cc = ce3.post("/gate/consent", content=agree_for(ce3, "NURI2"), headers=FORM)
+check("대소문자만 다른 닉네임('nuri2' vs 'NURI2')은 중복", cc.status_code == 400 and "이미 사용 중" in cc.text)
+check("관리자 본인은 예약어 닉네임도 쓸 수 있음", gate.validate_nickname("관리자", admin=True)[0] is True)
+check("자기 자신의 기존 닉네임은 중복으로 보지 않음", gate.validate_nickname("처음 닉", exclude_uid=un["id"]) == (True, "처음 닉"))
+gate._db().execute("UPDATE users SET nick_set=0 WHERE id=?", (un["id"],)).connection.commit()
+check("닉네임이 비어 있는(예전) 사용자는 동의가 돼 있어도 입장 전에 가입 화면으로", cn.get("/slack").status_code == 302 and "/gate/consent" in cn.get("/slack").headers["location"] and cn.get("/slack/data").status_code == 403)
+gate._db().execute("UPDATE users SET nick_set=1 WHERE id=?", (un["id"],)).connection.commit()
+print("[닉네임 바꾸기]")
+check("내 정보에 닉네임 변경 칸", 'action="/gate/nickname"' in cn.get("/gate/account").text)
+r = cn.post("/gate/nickname", content="nickname=" + urllib.parse.quote("새로운닉"), headers=FORM)
+check("닉네임 변경 성공", r.status_code == 303 and "m=nick_ok" in r.headers["location"] and gate.get_user(un["id"])["nickname"] == "새로운닉" and "닉네임을 바꿨어요" in cn.get(r.headers["location"]).text)
+r = cn.post("/gate/nickname", content="nickname=" + urllib.parse.quote("nuri2"), headers=FORM)
+check("남이 쓰는 닉네임으로는 변경 불가", "m=dup" in r.headers["location"] and gate.get_user(un["id"])["nickname"] == "새로운닉" and "이미 사용 중" in cn.get(r.headers["location"]).text)
+r = cn.post("/gate/nickname", content="nickname=a%40b.com", headers=FORM)
+check("이메일 모양으로는 변경 불가", "m=chars" in r.headers["location"] and gate.get_user(un["id"])["nickname"] == "새로운닉")
+check("로그인 안 한 사람의 닉네임 변경은 로그인 화면으로", client(make_app()).post("/gate/nickname", content="nickname=abc", headers=FORM).status_code == 302)
+check("다른 사이트발 닉네임 변경 요청은 거부", cn.post("/gate/nickname", content="nickname=" + urllib.parse.quote("해킹닉"), headers=dict(FORM, **{"sec-fetch-site": "cross-site"})).status_code == 403 and gate.get_user(un["id"])["nickname"] == "새로운닉")
+check("잘못된 m 값은 화면에 반사되지 않음", "<script>" not in cn.get("/gate/account?m=<script>").text)
+print("[구글·카카오에서 이름을 받지 않음]")
+_pf, _gj = gate._post_form, gate._get_json
+gate.identity_from_code = _orig_identity
+gate._post_form = lambda url, data, timeout=15: {"access_token": "tok"}
+gate._get_json = lambda url, token, timeout=15: ({"sub": "g-sub-1", "name": "홍길동", "given_name": "길동", "email": "real@mail.com", "picture": "http://x"} if "google" in url else
+                                               {"id": 987654, "kakao_account": {"profile": {"nickname": "실명입니다"}, "email": "real@kakao.com"}})
+try:
+    gid, kid = gate.identity_from_code("google", "c"), gate.identity_from_code("kakao", "c")
+finally:
+    gate._post_form, gate._get_json = _pf, _gj
+check("구글 응답에 이름·이메일이 들어 있어도 고유번호만 사용", gid == "g-sub-1" and isinstance(gid, str))
+check("카카오 응답에 닉네임·이메일이 들어 있어도 회원번호만 사용", kid == "987654")
+u_real = gate.upsert_login("google", "g-sub-1")
+check("가입 처리에 이름을 쓰지 않음(닉네임 비어 있음)", u_real["nickname"] is None and u_real["nick_set"] == 0)
+
 print("[이용 기한: 승인할 때 정하고, 지나면 막힘]")
 import datetime as _dt  # noqa: E402
-adm2, adm2_id = mk_user("google", "adm-2", "운영자2")
+adm2, adm2_id = mk_user("google", "adm-2", "대표둘")
 gate.cli(["admin", str(adm2_id)])
 tok2 = token_of(adm2)
 plus = gate._add_days
@@ -313,7 +381,7 @@ os.environ["GATE_AUTO_DAYS"] = "0"
 _, bid = mk_user("google", "auto-2", "무기한사용자")
 check("체험 기간을 안 쓰면(기본) 무기한", gate.get_user(bid)["expires_at"] is None)
 check("처리방침에 '이용 기한'이 운영자가 부여하는 정보로 명시", "이용 기한" in client(app_adm).get("/privacy").text and "운영자가 부여하는 정보" in client(app_adm).get("/privacy").text)
-check("처리방침 버전이 올라가 예전 동의자는 다시 동의해야 함", gate.POLICY_VERSION == "2026-10-23.3")
+check("처리방침 버전이 올라가 예전 동의자는 다시 동의해야 함", gate.POLICY_VERSION == "2026-10-23.4")
 
 print("[예전 DB 이어 쓰기(서버에 이미 있는 가입자 보호)]")
 import sqlite3 as _sq  # noqa: E402
@@ -327,8 +395,9 @@ _con.commit(); _con.close()
 os.environ["GATE_DIR"] = _old
 try:
     row = gate._db().execute("SELECT * FROM users WHERE provider_uid='old-7'").fetchone()
-    check("예전 DB 에 관리자·기한 열이 자동으로 추가되고 가입자 정보는 그대로(기한 없음=무기한)",
-          row["nickname"] == "예전가입자" and row["status"] == "approved" and row["is_admin"] == 0 and row["expires_at"] is None and not gate.is_expired(row))
+    check("예전 DB 에 새 열이 자동으로 추가되고 가입 상태는 그대로(기한 없음=무기한)",
+          row["status"] == "approved" and row["is_admin"] == 0 and row["expires_at"] is None and not gate.is_expired(row) and row["nick_set"] == 0)
+    check("예전에 저장된 구글·카카오 이름(실명일 수 있음)은 지워짐 — 닉네임을 새로 정할 때까지 비어 있음", row["nickname"] is None and row["nick_key"] is None)
     check("두 번 열어도 오류 없음", gate._db().execute("SELECT COUNT(*) FROM users").fetchone()[0] == 1)
 finally:
     os.environ["GATE_DIR"] = _keep
@@ -374,7 +443,7 @@ check("다른 사용자의 정보는 건드리지 않음", gate._db().execute("S
 check("탈퇴 뒤 옛 쿠키로는 못 들어감", c.get("/slack").status_code == 302)
 
 print("[다른 사이트에서 온 요청]")
-c = client(make_app()); login(c); c.post("/gate/consent", content=AGREE, headers=FORM)
+c = client(make_app()); login(c); c.post("/gate/consent", content=agree_for(c), headers=FORM)
 check("다른 사이트발 POST 거부(CSRF)", c.post("/api/dig/refresh", headers={"sec-fetch-site": "cross-site"}).status_code == 403
       and c.post("/gate/delete", content="confirm=1", headers=dict(FORM, **{"sec-fetch-site": "cross-site"})).status_code == 403)
 check("같은 사이트 POST 는 정상", c.post("/api/dig/refresh", headers={"sec-fetch-site": "same-origin"}).status_code == 200)
@@ -382,14 +451,15 @@ r = login(client(make_app()), nxt="https://evil.com")
 check("로그인 뒤 외부 주소로 안 튕김", "evil" not in r.headers["location"])
 
 print("[이름에 악성 글자]")
-c = client(make_app()); login(c, uid="x-9", nick="<script>alert(1)</script>"); c.post("/gate/consent", content=AGREE, headers=FORM)
+c = client(make_app()); login(c, uid="x-9", nick="스크립트"); c.post("/gate/consent", content=agree_for(c), headers=FORM)
+gate._db().execute("UPDATE users SET nickname=? WHERE provider_uid='x-9'", ("<script>alert(1)</script>",)).connection.commit()
 acc = c.get("/gate/account").text
-check("닉네임 속 HTML 이 글자로만 표시(XSS 방지)", "<script>alert(1)</script>" not in acc and "&lt;script&gt;" in acc)
+check("(혹시 저장된 값이 이상해도) 내 정보에서 HTML 이 글자로만 표시(XSS 방지)", "<script>alert(1)</script>" not in acc and "&lt;script&gt;" in acc)
 
 print("[승인 방식 manual (나중 단계)]")
 os.environ["GATE_APPROVAL"] = "manual"
 app = make_app(); c = client(app)
-r = login(c, uid="new-1", nick="새사람"); c.post("/gate/consent", content=AGREE, headers=FORM)
+r = login(c, uid="new-1", nick="새사람"); c.post("/gate/consent", content=agree_for(c), headers=FORM)
 check("가입은 되지만 '승인 대기'", gate.get_user(gate._unsign(c.cookies.get("gate_sess"))["uid"])["status"] == "pending")
 check("승인 전: 화면은 대기 페이지로, 데이터는 403", c.get("/slack").headers["location"] == "/gate/pending" and c.get("/slack/data").status_code == 403)
 check("대기 페이지 표시", "승인을 기다리고" in c.get("/gate/pending").text)
@@ -403,11 +473,11 @@ os.environ["GATE_APPROVAL"] = "auto"
 
 print("[auto 로 가입한 사람은 manual 로 바꿔도 유지]")
 os.environ["GATE_APPROVAL"] = "auto"
-c = client(make_app()); login(c, uid="old-1", nick="먼저온사람"); c.post("/gate/consent", content=AGREE, headers=FORM)
+c = client(make_app()); login(c, uid="old-1", nick="먼저온사람"); c.post("/gate/consent", content=agree_for(c), headers=FORM)
 os.environ["GATE_APPROVAL"] = "manual"
 c2 = client(make_app()); r = login(c2, uid="old-1", nick="먼저온사람")
 check("이미 승인된 사람은 manual 전환 뒤 다시 로그인해도 바로 입장", r.headers["location"] == "/slack" and c2.get("/slack").status_code == 200)
-c3 = client(make_app()); login(c3, uid="late-1", nick="나중사람"); c3.post("/gate/consent", content=AGREE, headers=FORM)
+c3 = client(make_app()); login(c3, uid="late-1", nick="나중사람"); c3.post("/gate/consent", content=agree_for(c3), headers=FORM)
 check("전환 뒤 가입한 사람은 승인 대기", c3.get("/slack").headers["location"] == "/gate/pending")
 os.environ["GATE_APPROVAL"] = "auto"
 
@@ -415,7 +485,7 @@ print("[로그인 유지: 한 번 로그인·승인되면 계속]")
 import time as _t  # noqa: E402
 c = client(make_app()); r = login(c, uid="keep-1", nick="오래쓰는사람")
 check("로그인 쿠키 유효기간이 1년(365일)", "Max-Age=31536000" in r.headers["set-cookie"])
-c.post("/gate/consent", content=AGREE, headers=FORM)
+c.post("/gate/consent", content=agree_for(c), headers=FORM)
 uid = gate._unsign(c.cookies.get("gate_sess"))["uid"]
 check("방금 발급된 쿠키는 매 요청마다 갈아 끼우지 않음", "set-cookie" not in c.get("/slack/data").headers)
 old_tok = gate._sign({"uid": uid, "iat": int(_t.time()) - 10 * 86400}, 86400 * 355)      # 10일 전에 발급, 아직 355일 남음
@@ -442,7 +512,7 @@ r = c6.get("/slack/data")
 check("탈퇴한 사용자의 옛 쿠키는 연장 없이 거부", r.status_code == 401 and "set-cookie" not in r.headers)
 
 print("[처리방침 문구가 바뀐 경우]")
-c = client(make_app()); login(c, uid="v-1"); c.post("/gate/consent", content=AGREE, headers=FORM)
+c = client(make_app()); login(c, uid="v-1", nick="버전닉"); c.post("/gate/consent", content=agree_for(c), headers=FORM)
 check("동의 후 입장", c.get("/slack").status_code == 200)
 old = gate.POLICY_VERSION; gate.POLICY_VERSION = "2099-01-01"
 check("버전이 바뀌면 다시 동의해야 함", c.get("/slack").status_code == 302 and "consent" in c.get("/slack").headers["location"])

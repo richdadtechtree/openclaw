@@ -8,7 +8,8 @@
   승인 방식  GATE_APPROVAL=auto   : 로그인 + 동의만 하면 바로 입장 (지금)
              GATE_APPROVAL=manual : 가입하면 '승인 대기' → 운영자가 `python3 gate.py approve <번호>` 해야 입장 (나중에)
 
-개인정보 최소 수집: 소셜 로그인 고유번호 + 닉네임/이름만 저장한다(이메일은 아예 요청하지 않음).
+개인정보 최소 수집: 소셜 로그인 고유번호 + **가입할 때 이용자가 직접 정한 닉네임**만 저장한다.
+구글·카카오에는 이름·이메일·프로필을 아예 요청하지 않는다(구글 scope=openid 만, 카카오 scope 없음) — 실명이 서버에 들어올 길이 없다.
 이용 기한: 승인할 때 관리자가 기한(무기한·7일·30일·90일·1년·날짜 지정)을 정할 수 있다. 기한이 지나면(그 날 자정까지 사용 가능) 로그인해도 '이용 기간 종료' 화면이 나오고,
           관리자가 기한을 바꾸면 곧바로 다시 쓸 수 있다. 자동 승인(auto)일 때 신규 가입자에게 체험 기간을 주려면 .env 에 GATE_AUTO_DAYS=14 처럼 적는다(기본 0 = 무기한).
 관리자: 이메일을 받지 않으므로 '이메일이 ○○이면 관리자'를 쓸 수 없다. 그 계정으로 로그인한 뒤 서버에서 `gate.py admin 회원번호` 로 한 번 지정한다
@@ -34,6 +35,7 @@ import secrets
 import sqlite3
 import sys
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -42,7 +44,7 @@ from datetime import datetime, timedelta, timezone
 KST = timezone(timedelta(hours=9))
 
 # 처리방침·동의 문구를 고치면 이 날짜를 바꾼다 → 모든 사용자가 새 문구에 다시 동의해야 입장한다.
-POLICY_VERSION = "2026-10-23.3"      # 동의 기록에 남는 버전(문구를 고칠 때마다 올린다)
+POLICY_VERSION = "2026-10-23.4"      # 동의 기록에 남는 버전(문구를 고칠 때마다 올린다)
 POLICY_EFFECTIVE = "2026-10-23"        # 처리방침에 보이는 시행일
 
 COOKIE_SESSION = "gate_sess"          # ⚠️ PT 대시보드(Flask)의 'session' 쿠키와 같은 도메인에서 겹치지 않게 이름을 다르게
@@ -200,9 +202,13 @@ def _db():
     con.row_factory = sqlite3.Row
     con.executescript(_SCHEMA)
     have = {r["name"] for r in con.execute("PRAGMA table_info(users)")}
-    for col, ddl in (("is_admin", "INTEGER NOT NULL DEFAULT 0"), ("expires_at", "TEXT")):       # 예전에 만든 DB 도 가입자 정보를 그대로 둔 채 이어서 쓴다
+    for col, ddl in (("is_admin", "INTEGER NOT NULL DEFAULT 0"), ("expires_at", "TEXT"),
+                     ("nick_set", "INTEGER NOT NULL DEFAULT 0"), ("nick_key", "TEXT")):       # 예전에 만든 DB 도 가입자 정보를 그대로 둔 채 이어서 쓴다
         if col not in have:
             con.execute("ALTER TABLE users ADD COLUMN %s %s" % (col, ddl))
+    con.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_users_nick ON users(nick_key)")          # 같은 닉네임 중복 방지(NULL 은 여러 개 가능)
+    # 예전에 구글·카카오가 알려 줘서 저장된 이름(실명일 수 있음)은 지운다 — 이제는 이용자가 직접 정한 닉네임(nick_set=1)만 보관한다.
+    con.execute("UPDATE users SET nickname=NULL, nick_key=NULL WHERE nick_set=0 AND nickname IS NOT NULL")
     con.commit()
     if fresh:
         try:
@@ -212,9 +218,44 @@ def _db():
     return con
 
 
-def _clean_name(s):
-    s = re.sub(r"[\x00-\x1f\x7f]", "", str(s or "")).strip()
-    return s[:40] or "이름 없음"
+_NICK_RE = re.compile(r"^[0-9A-Za-z가-힣ㄱ-ㅎㅏ-ㅣ_.\- ]{2,20}$")
+_RESERVED = {"관리자", "운영자", "운영진", "관리", "운영", "admin", "administrator", "root", "system", "시스템", "openclaw", "뚜떵또", "운영자님", "관리자님"}
+NICK_MSG = {"len": "닉네임은 2~20자로 입력해 주세요.",
+            "chars": "닉네임에는 한글·영문·숫자·공백과 _ - . 만 쓸 수 있어요.",
+            "alnum": "글자나 숫자가 하나 이상 있어야 해요.",
+            "digits": "전화번호처럼 긴 숫자(8자리 이상)는 닉네임으로 쓸 수 없어요.",
+            "reserved": "사용할 수 없는 닉네임이에요.",
+            "dup": "이미 사용 중인 닉네임이에요. 다른 닉네임을 입력해 주세요."}
+
+
+def nick_key(n):
+    """중복 검사용 키: 대소문자·공백 차이를 무시(예: 'Nuri'와 'nuri', '누 리'와 '누리'는 같은 닉네임)."""
+    return unicodedata.normalize("NFC", n).casefold().replace(" ", "")
+
+
+def validate_nickname(raw, admin=False, exclude_uid=None):
+    """닉네임 검사. 맞으면 (True, 다듬은 닉네임), 아니면 (False, 이유 코드: NICK_MSG 의 키).
+    실명·전화번호·이메일이 닉네임으로 들어오는 것을 막는다(허용 글자 제한 + 긴 숫자 거부 + '@' 불가)."""
+    n = re.sub(r"\s+", " ", unicodedata.normalize("NFC", str(raw or ""))).strip()
+    if not 2 <= len(n) <= 20:
+        return False, "len"
+    if not _NICK_RE.match(n):
+        return False, "chars"
+    if not re.search(r"[0-9A-Za-z가-힣ㄱ-ㅎㅏ-ㅣ]", n):
+        return False, "alnum"
+    if re.search(r"\d{8,}", n.replace(" ", "").replace("-", "").replace(".", "").replace("_", "")):
+        return False, "digits"
+    if not admin and nick_key(n) in {nick_key(x) for x in _RESERVED}:
+        return False, "reserved"          # 운영자·관리자를 사칭하는 이름 금지(관리자 본인은 가능)
+    with _db() as con:
+        if con.execute("SELECT 1 FROM users WHERE nick_key=? AND id<>?", (nick_key(n), exclude_uid or -1)).fetchone():
+            return False, "dup"
+    return True, n
+
+
+def disp(u):
+    """화면에 보여 줄 이름 = 이용자가 정한 닉네임(아직 없으면 안내 글)."""
+    return u["nickname"] if u["nickname"] else "(닉네임 미설정)"
 
 
 def _today():
@@ -269,18 +310,19 @@ def expiry_text(u):
     return ("만료됨 (%s)" % e) if is_expired(u) else "%s까지" % e
 
 
-def upsert_login(provider, uid, nickname):
-    """소셜 로그인에 성공했을 때: 처음이면 가입(승인 방식에 따라 상태 결정), 아니면 닉네임·최근 로그인만 갱신."""
+def upsert_login(provider, uid):
+    """소셜 로그인에 성공했을 때: 처음이면 가입(승인 방식에 따라 상태 결정, 닉네임은 동의 화면에서 직접 입력), 아니면 최근 로그인만 갱신.
+    구글·카카오가 알려 주는 이름은 받지도 저장하지도 않는다."""
     with _db() as con:
         row = con.execute("SELECT * FROM users WHERE provider=? AND provider_uid=?", (provider, str(uid))).fetchone()
         if row:
-            con.execute("UPDATE users SET nickname=?, last_login_at=? WHERE id=?", (_clean_name(nickname), _now(), row["id"]))
+            con.execute("UPDATE users SET last_login_at=? WHERE id=?", (_now(), row["id"]))
         else:
             status = "approved" if cfg()["approval"] == "auto" else "pending"
             auto_days = _env("GATE_AUTO_DAYS", "0")
             exp = _add_days(auto_days) if status == "approved" and auto_days.isdigit() and 0 < int(auto_days) <= 3650 else None     # 체험 기간(기본 무기한)
-            con.execute("INSERT INTO users(provider,provider_uid,nickname,status,expires_at,created_at,last_login_at) VALUES(?,?,?,?,?,?,?)",
-                        (provider, str(uid), _clean_name(nickname), status, exp, _now(), _now()))
+            con.execute("INSERT INTO users(provider,provider_uid,status,expires_at,created_at,last_login_at) VALUES(?,?,?,?,?,?)",
+                        (provider, str(uid), status, exp, _now(), _now()))
         return con.execute("SELECT * FROM users WHERE provider=? AND provider_uid=?", (provider, str(uid))).fetchone()
 
 
@@ -292,11 +334,25 @@ def get_user(uid):
         return None
 
 
-def record_consent(uid, items):
-    with _db() as con:
-        con.execute("INSERT INTO consents(user_id,version,items,agreed_at) VALUES(?,?,?,?)",
-                    (uid, POLICY_VERSION, json.dumps(items, ensure_ascii=False), _now()))
-        con.execute("UPDATE users SET consent_version=?, consent_at=? WHERE id=?", (POLICY_VERSION, _now(), uid))
+def record_consent(uid, items, nickname=None):
+    """동의 기록 + (처음 가입이면) 직접 정한 닉네임을 한꺼번에 저장. 동시에 같은 닉네임을 고른 경우 ValueError('dup')."""
+    try:
+        with _db() as con:
+            con.execute("INSERT INTO consents(user_id,version,items,agreed_at) VALUES(?,?,?,?)",
+                        (uid, POLICY_VERSION, json.dumps(items, ensure_ascii=False), _now()))
+            con.execute("UPDATE users SET consent_version=?, consent_at=? WHERE id=?", (POLICY_VERSION, _now(), uid))
+            if nickname is not None:
+                con.execute("UPDATE users SET nickname=?, nick_key=?, nick_set=1 WHERE id=?", (nickname, nick_key(nickname), uid))
+    except sqlite3.IntegrityError:
+        raise ValueError("dup") from None
+
+
+def set_nickname(uid, nickname):
+    try:
+        with _db() as con:
+            return con.execute("UPDATE users SET nickname=?, nick_key=?, nick_set=1 WHERE id=?", (nickname, nick_key(nickname), uid)).rowcount
+    except sqlite3.IntegrityError:
+        raise ValueError("dup") from None
 
 
 def delete_user(uid):
@@ -375,25 +431,25 @@ def redirect_uri(provider):
 def authorize_url(provider, state):
     c = cfg()
     if provider == "google":
-        # openid + profile 만: 고유번호(sub)와 이름. ⚠️ email 범위는 일부러 요청하지 않는다(최소 수집).
+        # openid 만: 고유번호(sub)뿐. ⚠️ 이름(profile)·이메일(email)은 요청하지 않는다 — 닉네임은 이용자가 직접 정한다(최소 수집).
         q = {"client_id": _env("GATE_GOOGLE_CLIENT_ID"), "redirect_uri": redirect_uri("google"), "response_type": "code",
-             "scope": "openid profile", "state": state, "prompt": "select_account"}
+             "scope": "openid", "state": state, "prompt": "select_account"}
         return "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(q)
     if provider == "kakao":
-        q = {"client_id": _env("GATE_KAKAO_REST_KEY"), "redirect_uri": redirect_uri("kakao"), "response_type": "code",
-             "scope": "profile_nickname", "state": state}
+        # scope 를 보내지 않는다 → 카카오 회원번호(id)만 받고 닉네임·이메일 등은 요청하지 않는다.
+        q = {"client_id": _env("GATE_KAKAO_REST_KEY"), "redirect_uri": redirect_uri("kakao"), "response_type": "code", "state": state}
         return "https://kauth.kakao.com/oauth/authorize?" + urllib.parse.urlencode(q)
     raise ValueError(provider)
 
 
 def identity_from_code(provider, code):
-    """인가 코드 → (고유번호, 닉네임). 네트워크 호출이라 시험에서는 이 함수를 가짜로 바꾼다."""
+    """인가 코드 → 고유번호(문자열). 이름 등은 받지 않는다. 네트워크 호출이라 시험에서는 이 함수를 가짜로 바꾼다."""
     if provider == "google":
         tok = _post_form("https://oauth2.googleapis.com/token", {
             "code": code, "client_id": _env("GATE_GOOGLE_CLIENT_ID"), "client_secret": _env("GATE_GOOGLE_CLIENT_SECRET"),
             "redirect_uri": redirect_uri("google"), "grant_type": "authorization_code"})
         info = _get_json("https://openidconnect.googleapis.com/v1/userinfo", tok["access_token"])
-        return info["sub"], info.get("name") or info.get("given_name") or "구글 사용자"
+        return str(info["sub"])
     if provider == "kakao":
         data = {"grant_type": "authorization_code", "client_id": _env("GATE_KAKAO_REST_KEY"),
                 "redirect_uri": redirect_uri("kakao"), "code": code}
@@ -401,8 +457,7 @@ def identity_from_code(provider, code):
             data["client_secret"] = _env("GATE_KAKAO_CLIENT_SECRET")
         tok = _post_form("https://kauth.kakao.com/oauth/token", data)
         info = _get_json("https://kapi.kakao.com/v2/user/me", tok["access_token"])
-        prof = (info.get("kakao_account") or {}).get("profile") or {}
-        return str(info["id"]), prof.get("nickname") or (info.get("properties") or {}).get("nickname") or "카카오 사용자"
+        return str(info["id"])
     raise ValueError(provider)
 
 
@@ -425,6 +480,7 @@ label.chk{display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px s
 label.chk input{margin-top:5px;width:18px;height:18px;flex:none}
 .warn{color:var(--red);font-weight:700} a{color:var(--blue)} .foot{text-align:center;font-size:13px;color:var(--sub);margin-top:18px}
 ul{padding-left:20px;margin:0 0 12px} li{margin:3px 0}
+input.txt{width:100%;font:inherit;font-size:16px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);margin:4px 0 6px}
 main.wide{max-width:1000px}
 .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch} .tablewrap table{min-width:640px;margin:0}
 .tablewrap th,.tablewrap td{width:auto;white-space:nowrap}
@@ -454,7 +510,7 @@ def expired_html(u):
 <p>%s 님의 이용 기한은 <b>%s</b>까지였어요. 계속 이용하려면 운영자에게 기한 연장을 요청해 주세요.</p>
 <p class="sub">%s · 연장되면 이 화면을 새로고침하면 바로 이용할 수 있어요.</p>
 <a class="btn primary" href="/gate/account">내 정보 보기</a><a class="btn danger" href="/gate/logout">로그아웃</a></div>%s""" % (
-        html.escape(u["nickname"] or ""), html.escape((u["expires_at"] or "")[:10]), contact, _foot())
+        html.escape(disp(u)), html.escape((u["expires_at"] or "")[:10]), contact, _foot())
 
 
 def _foot():
@@ -477,11 +533,12 @@ def privacy_html():
 
 <h2>1. 처리하는 개인정보 항목과 목적</h2>
 <table>
-<tr><th>항목</th><td>소셜 로그인(구글 또는 카카오)이 알려 주는 <b>고유 식별번호</b>, <b>이름(닉네임)</b>, 가입 시각·최근 접속 시각, 동의 이력</td></tr>
+<tr><th>항목</th><td>소셜 로그인(구글 또는 카카오)이 알려 주는 <b>고유 식별번호</b>, 가입할 때 이용자가 직접 정한 <b>닉네임</b>, 가입 시각·최근 접속 시각, 동의 이력</td></tr>
 <tr><th>목적</th><td>이용자 확인(본인 계정 식별), 서비스 이용 권한·기한 관리(승인 여부와 이용 기한 확인), 부정 이용 방지</td></tr>
 <tr><th>운영자가 부여하는 정보</th><td><b>승인 상태</b>와 <b>이용 기한</b>(운영자가 정한 경우)은 이용자가 입력하는 것이 아니라 운영자가 계정에 기록하는 정보이며, 가입자 관리 화면에서 운영자만 볼 수 있습니다.</td></tr>
 <tr><th>자동 생성 정보</th><td>웹서버 <b>접속 기록</b>(접속 IP 주소, 접속 시각, 요청한 주소)이 서비스 이용 중 자동으로 남습니다. 목적은 안정적 운영과 부정 이용 방지입니다.</td></tr>
-<tr><th>수집하지 않는 것</th><td>이메일, 전화번호, 주소, 생년월일, 성별, 프로필 사진, 비밀번호는 <b>수집하지 않습니다.</b></td></tr>
+<tr><th>닉네임 공개 범위</th><td>닉네임은 본인 화면과 가입자 관리 화면(운영자 전용)에만 표시되며 다른 이용자에게는 공개되지 않습니다. 언제든 내 정보 화면에서 바꿀 수 있습니다.</td></tr>
+<tr><th>수집하지 않는 것</th><td>실명, 이메일, 전화번호, 주소, 생년월일, 성별, 프로필 사진, 비밀번호는 <b>수집하지 않습니다.</b> 구글·카카오에는 이름·이메일·프로필 정보를 요청하지 않으며 저장하지도 않습니다. 닉네임에는 실명·전화번호·이메일을 쓰지 않도록 안내하고, 전화번호나 이메일처럼 보이는 값은 입력할 수 없게 막습니다.</td></tr>
 </table>
 
 <h2>2. 보유 및 이용 기간</h2>
@@ -511,27 +568,33 @@ def privacy_html():
 </div>%(foot)s""" % {"ver": POLICY_VERSION, "eff": POLICY_EFFECTIVE, "op": op, "ct": ct, "foot": _foot(), "logdays": html.escape(_env("PRIVACY_LOG_DAYS", "14"))}
 
 
-def consent_html(nickname, nxt, error=""):
+def consent_html(nick_value, nxt, error="", checks=()):
+    ck = lambda name: " checked" if name in checks else ""        # 거부돼서 다시 보여 줄 때 이미 체크한 칸은 그대로 둔다
     err = '<p class="warn">%s</p>' % html.escape(error) if error else ""
     return """
-<div class="card"><h1>가입 동의</h1>
-<p class="sub">%(name)s 님, 이용하기 전에 아래 내용을 확인하고 동의해 주세요.</p>%(err)s
+<div class="card"><h1>가입</h1>
+<p class="sub">닉네임을 정하고, 아래 내용을 확인한 뒤 동의해 주세요.</p>%(err)s
 <form method="post" action="/gate/consent">
 <input type="hidden" name="next" value="%(next)s">
+<h2>닉네임 (필수)</h2>
+<input class="txt" type="text" name="nickname" value="%(name)s" maxlength="20" required autocomplete="off" placeholder="예: 경제공부하는곰" aria-label="닉네임">
+<p class="sub">2~20자, 한글·영문·숫자·공백과 _ - . 만 쓸 수 있어요. 이 이름이 화면에 표시되고 운영자에게만 보여요(다른 이용자에게는 공개되지 않아요).
+<b>실명·전화번호·이메일은 쓰지 마세요.</b> 나중에 내 정보 화면에서 바꿀 수 있어요.</p>
 <h2>개인정보 수집·이용 동의 (필수)</h2>
 <table>
-<tr><th>수집 항목</th><td>소셜 로그인 고유 식별번호, 이름(닉네임)</td></tr>
+<tr><th>수집 항목</th><td>소셜 로그인 고유 식별번호, 위에서 직접 입력한 닉네임 (구글·카카오의 이름·이메일은 받지 않아요)</td></tr>
 <tr><th>이용 목적</th><td>이용자 확인, 서비스 이용 권한·기한 관리, 부정 이용 방지</td></tr>
 <tr><th>보유 기간</th><td>탈퇴 시까지 (탈퇴하면 즉시 삭제)</td></tr>
 <tr><th>동의 거부 권리</th><td>동의하지 않을 수 있으며, 이 경우 서비스를 이용할 수 없습니다.</td></tr>
 </table>
-<label class="chk"><input type="checkbox" name="agree_privacy" value="1"><span><b>[필수]</b> 개인정보 수집·이용에 동의합니다. (<a href="/privacy" target="_blank">처리방침 보기</a>)</span></label>
-<label class="chk"><input type="checkbox" name="agree_age" value="1"><span><b>[필수]</b> 만 14세 이상입니다.</span></label>
-<label class="chk"><input type="checkbox" name="agree_notice" value="1"><span><b>[필수]</b> 이 서비스의 기사·뉴스레터 내용은 <b>개인 학습용</b>이며, 저작권이 원 저작자에게 있어 <b>복사·재배포하지 않겠습니다.</b></span></label>
+<label class="chk"><input type="checkbox" name="agree_privacy" value="1"%(c1)s><span><b>[필수]</b> 개인정보 수집·이용에 동의합니다. (<a href="/privacy" target="_blank">처리방침 보기</a>)</span></label>
+<label class="chk"><input type="checkbox" name="agree_age" value="1"%(c2)s><span><b>[필수]</b> 만 14세 이상입니다.</span></label>
+<label class="chk"><input type="checkbox" name="agree_notice" value="1"%(c3)s><span><b>[필수]</b> 이 서비스의 기사·뉴스레터 내용은 <b>개인 학습용</b>이며, 저작권이 원 저작자에게 있어 <b>복사·재배포하지 않겠습니다.</b></span></label>
 <button class="btn primary" type="submit">동의하고 시작하기</button>
 </form></div>
 <div class="foot"><a href="/gate/logout">동의하지 않고 로그아웃</a></div>""" % {
-        "name": html.escape(nickname or ""), "next": html.escape(nxt, quote=True), "err": err}
+        "name": html.escape((nick_value or "")[:40], quote=True), "next": html.escape(nxt, quote=True), "err": err,
+        "c1": ck("agree_privacy"), "c2": ck("agree_age"), "c3": ck("agree_notice")}
 
 
 def login_html(nxt, c):
@@ -564,7 +627,7 @@ def who_html(request=None):
     prov = {"google": "구글", "kakao": "카카오"}.get(u["provider"], u["provider"])
     dl = days_left(u) if not is_admin(u) else None
     left = (" · 오늘까지" if dl == 0 else " · 기한 D-%d" % dl) if dl is not None and 0 <= dl <= 7 else ""     # 곧 끝나면 미리 알려 준다
-    out = '<a class="who" href="/gate/account" title="내 정보">%s 님 · %s%s</a>' % (html.escape(u["nickname"] or ""), html.escape(prov), left)
+    out = '<a class="who" href="/gate/account" title="내 정보">%s 님 · %s%s</a>' % (html.escape(disp(u)), html.escape(prov), left)
     if is_admin(u):
         out += '<a class="adminlink" href="/gate/admin" title="가입자 보기·승인·차단">🛠 관리</a>'
     return out + '<a class="logout" href="/gate/logout">로그아웃</a>'
@@ -650,7 +713,7 @@ def admin_html(me, rows, counts, flt, msg, d=""):
             return html.escape((t or "")[5:16].replace("T", " "))
         trs += ("<tr><td>%d</td><td><b>%s</b>%s<div class='sub'>%s</div></td><td><span class='%s'>%s</span></td><td>%s</td>"
                 "<td class='sub'>가입 %s<br>접속 %s</td><td>%s</td><td class='act'>%s</td></tr>"
-                % (u["id"], html.escape(u["nickname"] or ""), " 🛠" if u["is_admin"] else "", html.escape(prov), cls, label, html.escape(term_cell),
+                % (u["id"], html.escape(disp(u)), " 🛠" if u["is_admin"] else "", html.escape(prov), cls, label, html.escape(term_cell),
                    _short(u["created_at"]), _short(u["last_login_at"]), consent, acts))
     if not trs:
         trs = '<tr><td colspan="7" class="sub">해당하는 가입자가 없어요.</td></tr>'
@@ -672,7 +735,7 @@ def admin_html(me, rows, counts, flt, msg, d=""):
 차단하면 쿠키가 남아 있어도 바로 이용할 수 없고, 삭제하면 정보와 동의 기록이 모두 지워져요. 관리자 지정·해제는 서버에서 <code>gate.py admin/unadmin 번호</code> 로만 할 수 있어요.</p>
 <p><a class="btn primary" href="/slack">📰 신문 요약</a></p></div>
 <div class="foot"><a href="/gate/account">내 정보</a> · <a href="/gate/logout">로그아웃</a> · <a href="/privacy">개인정보 처리방침</a></div>""" % (
-        html.escape(me["nickname"] or ""), flash, note, tabs, trs)
+        html.escape(disp(me)), flash, note, tabs, trs)
 
 
 def _is_gated(path):
@@ -717,7 +780,7 @@ def _check(request):
     if user["status"] == "blocked":
         return JSONResponse({"ok": False, "reason": "blocked"}, status_code=403) if api else _page(
             "이용 제한", '<div class="card"><h1>이용이 제한되었어요</h1><p>문의: 운영자에게 연락해 주세요.</p></div>' + _foot(), 403)
-    if user["consent_version"] != POLICY_VERSION:
+    if user["consent_version"] != POLICY_VERSION or not user["nick_set"]:
         return JSONResponse({"ok": False, "reason": "consent"}, status_code=403) if api else RedirectResponse("/gate/consent?next=" + nxt, 302)
     if user["status"] != "approved":
         return JSONResponse({"ok": False, "reason": "pending"}, status_code=403) if api else RedirectResponse("/gate/pending", 302)
@@ -791,7 +854,7 @@ def install(app):
             return _off()
         nxt = safe_next(next)
         u = session_user(request)
-        if u and u["consent_version"] == POLICY_VERSION and u["status"] == "approved":
+        if u and u["consent_version"] == POLICY_VERSION and u["nick_set"] and u["status"] == "approved":
             return _page("이용 기간 종료", expired_html(u), 403) if is_expired(u) else RedirectResponse(nxt, 302)
         return _page("로그인", login_html(nxt, c) + _foot())
 
@@ -815,14 +878,14 @@ def install(app):
             return _page("로그인 실패", '<div class="card"><h1>로그인하지 못했어요</h1><p>보안 확인에 실패했거나 로그인을 취소하셨어요. 다시 시도해 주세요.</p>'
                          '<a class="btn primary" href="/gate/login">다시 로그인</a></div>' + _foot(), 400)
         try:
-            uid, nick = identity_from_code(provider, code)
+            uid = identity_from_code(provider, code)
         except Exception as e:
             print("[gate] %s 로그인 실패: %s: %s" % (provider, type(e).__name__, e))
             return _page("로그인 실패", '<div class="card"><h1>로그인 서버와 연결하지 못했어요</h1><p>잠시 후 다시 시도해 주세요.</p>'
                          '<a class="btn primary" href="/gate/login">다시 로그인</a></div>' + _foot(), 502)
-        user = upsert_login(provider, uid, nick)
+        user = upsert_login(provider, uid)
         nxt = safe_next(st.get("n"))
-        dest = nxt if user["consent_version"] == POLICY_VERSION else "/gate/consent?next=" + urllib.parse.quote(nxt)
+        dest = nxt if (user["consent_version"] == POLICY_VERSION and user["nick_set"]) else "/gate/consent?next=" + urllib.parse.quote(nxt)
         resp = RedirectResponse(dest, 302)
         resp.set_cookie(COOKIE_SESSION, _session_token(user["id"]), **_cookie_args(SESSION_DAYS * 86400))
         resp.delete_cookie(COOKIE_STATE, path="/")
@@ -835,7 +898,7 @@ def install(app):
         u = session_user(request)
         if not u:
             return RedirectResponse("/gate/login?next=" + urllib.parse.quote(safe_next(next)), 302)
-        return _page("가입 동의", consent_html(u["nickname"], safe_next(next)))
+        return _page("가입", consent_html(u["nickname"] if u["nick_set"] else "", safe_next(next)))
 
     @r.post("/gate/consent")
     async def consent_post(request: Request):
@@ -846,9 +909,17 @@ def install(app):
         nxt = safe_next(f.get("next"))
         if not u:
             return RedirectResponse("/gate/login?next=" + urllib.parse.quote(nxt), 302)
-        if not (f.get("agree_privacy") and f.get("agree_age") and f.get("agree_notice")):
-            return _page("가입 동의", consent_html(u["nickname"], nxt, "필수 항목 3개에 모두 동의해야 이용할 수 있어요."), 400)
-        record_consent(u["id"], ["privacy(필수)", "age14(필수)", "notice(필수)"])
+        typed = f.get("nickname", "")
+        done = {k for k in ("agree_privacy", "agree_age", "agree_notice") if f.get(k)}       # 이미 체크한 칸
+        if len(done) < 3:
+            return _page("가입", consent_html(typed, nxt, "필수 항목 3개에 모두 동의해야 이용할 수 있어요.", done), 400)
+        ok, res = validate_nickname(typed, admin=bool(u["is_admin"]), exclude_uid=u["id"])
+        if not ok:
+            return _page("가입", consent_html(typed, nxt, NICK_MSG[res], done), 400)
+        try:
+            record_consent(u["id"], ["privacy(필수)", "age14(필수)", "notice(필수)", "nickname"], res)
+        except ValueError:                         # 동시에 같은 닉네임을 고른 드문 경우
+            return _page("가입", consent_html(typed, nxt, NICK_MSG["dup"], done), 400)
         return RedirectResponse(nxt if u["status"] == "approved" else "/gate/pending", 303)
 
     @r.get("/gate/pending")
@@ -856,34 +927,55 @@ def install(app):
         u = session_user(request)
         if not u:
             return RedirectResponse("/gate/login", 302)
-        if u["status"] == "approved" and u["consent_version"] == POLICY_VERSION:
+        if u["status"] == "approved" and u["consent_version"] == POLICY_VERSION and u["nick_set"]:
             return RedirectResponse("/slack", 302)
         return _page("승인 대기", '<div class="card"><h1>⏳ 승인을 기다리고 있어요</h1><p>%s 님, 가입은 끝났고 운영자가 승인하면 이용할 수 있어요.</p>'
                      '<p class="sub">승인되면 이 화면을 새로고침하세요.</p></div><div class="foot"><a href="/gate/logout">로그아웃</a> · <a href="/privacy">처리방침</a></div>'
-                     % html.escape(u["nickname"] or ""))
+                     % html.escape(disp(u)))
 
     @r.get("/gate/account")
-    def account(request: Request):
+    def account(request: Request, m: str = ""):
         if not cfg()["enabled"]:
             return _off()
         u = session_user(request)
         if not u:
             return RedirectResponse("/gate/login?next=/slack", 302)
+        note = ('<p class="note">닉네임을 바꿨어요.</p>' if m == "nick_ok" else
+                ('<p class="warn">%s</p>' % html.escape(NICK_MSG[m])) if m in NICK_MSG else "")
         prov = {"google": "구글", "kakao": "카카오"}.get(u["provider"], u["provider"])
         body = """<div class="card"><h1>내 정보</h1>
-<table><tr><th>회원 번호</th><td>%d</td></tr><tr><th>이름(닉네임)</th><td>%s</td></tr><tr><th>로그인 방식</th><td>%s</td></tr>
+%s<table><tr><th>회원 번호</th><td>%d</td></tr><tr><th>닉네임</th><td>%s</td></tr><tr><th>로그인 방식</th><td>%s</td></tr>
 <tr><th>가입 시각</th><td>%s</td></tr><tr><th>동의 시각</th><td>%s (처리방침 %s)</td></tr><tr><th>상태</th><td>%s</td></tr><tr><th>이용 기한</th><td>%s</td></tr></table>
-<p class="sub">저장된 정보는 위가 전부예요(이메일 등은 저장하지 않습니다).</p>
+<p class="sub">저장된 정보는 위가 전부예요(실명·이메일 등은 저장하지 않습니다).</p>
+<h2>닉네임 바꾸기</h2>
+<form method="post" action="/gate/nickname"><input class="txt" type="text" name="nickname" value="%s" maxlength="20" required autocomplete="off" aria-label="새 닉네임">
+<button class="btn primary" type="submit">닉네임 변경</button></form>
 <p><a class="btn primary" href="/slack">📰 신문 요약</a><a class="btn primary" href="/dig">📚 경제 공부 (디그)</a></p>
 <h2>탈퇴 (정보 삭제)</h2><p class="sub">누르면 저장된 모든 정보와 동의 기록이 즉시 삭제되며 되돌릴 수 없어요.</p>
 <form method="post" action="/gate/delete"><label class="chk"><input type="checkbox" name="confirm" value="1"><span>내 정보를 삭제하고 탈퇴합니다.</span></label>
 <button class="btn danger" type="submit">탈퇴하고 정보 삭제</button></form></div>
 <div class="foot"><a href="/gate/logout">로그아웃</a> · <a href="/privacy">개인정보 처리방침</a></div>""" % (
-            u["id"], html.escape(u["nickname"] or ""), html.escape(prov), html.escape(u["created_at"] or ""),
+            note, u["id"], html.escape(disp(u)), html.escape(prov), html.escape(u["created_at"] or ""),
             html.escape(u["consent_at"] or "-"), html.escape(u["consent_version"] or "-"),
             html.escape({"approved": "이용 가능", "pending": "승인 대기", "blocked": "이용 제한"}.get(u["status"], u["status"])),
-            html.escape("무기한(관리자)" if is_admin(u) else expiry_text(u)))
+            html.escape("무기한(관리자)" if is_admin(u) else expiry_text(u)),
+            html.escape(u["nickname"] or "", quote=True))
         return _page("내 정보", body)
+
+    @r.post("/gate/nickname")
+    async def nickname_change(request: Request):
+        u = session_user(request)
+        if not u:
+            return RedirectResponse("/gate/login", 302)
+        f = _form(await request.body())
+        ok, res = validate_nickname(f.get("nickname", ""), admin=bool(u["is_admin"]), exclude_uid=u["id"])
+        if not ok:
+            return RedirectResponse("/gate/account?m=" + res, 303)
+        try:
+            set_nickname(u["id"], res)
+        except ValueError:
+            return RedirectResponse("/gate/account?m=dup", 303)
+        return RedirectResponse("/gate/account?m=nick_ok", 303)
 
     @r.post("/gate/delete")
     async def delete(request: Request):
@@ -976,7 +1068,7 @@ def install(app):
 def _print_users(rows):
     print("%-4s %-7s %-9s %-22s %-20s %-14s %-12s %s" % ("번호", "방식", "상태", "닉네임", "가입", "이용기한", "동의버전", "관리자"))
     for u in rows:
-        print("%-4s %-7s %-9s %-22s %-20s %-14s %-12s %s" % (u["id"], u["provider"], u["status"], (u["nickname"] or "")[:20], u["created_at"],
+        print("%-4s %-7s %-9s %-22s %-20s %-14s %-12s %s" % (u["id"], u["provider"], u["status"], (u["nickname"] or "-")[:20], u["created_at"],
                                                             ("만료 " + u["expires_at"][:10]) if is_expired(u) else ((u["expires_at"] or "")[:10] or "무기한"),
                                                             u["consent_version"] or "-", "★" if u["is_admin"] else ""))
     if not rows:
