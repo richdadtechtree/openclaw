@@ -50,7 +50,7 @@ python3 ~/.openclaw/stock/gate.py check
 4. **OAuth 동의 화면**: 사용자 유형 *외부*, 앱 이름·지원 이메일·개발자 연락처 입력,
    **개인정보처리방침 링크** = `https://mystatus-btr.duckdns.org/privacy`
 5. 동의 화면 **게시 상태를 '프로덕션'으로**(테스트 상태면 등록한 테스트 사용자만 로그인됨)
-- 요청하는 범위는 `openid profile` 뿐입니다(이메일 요청 안 함, 구글의 민감 범위 심사 불필요).
+- 요청하는 범위는 `openid` 뿐입니다(이메일·이름 요청 안 함, 구글의 민감 범위 심사 불필요). 이름은 가입할 때 사용자가 직접 입력한 **닉네임**을 씁니다.
 - 구글이 `duckdns.org` 같은 공유 도메인에 대해 경고를 띄우면 그 문구를 알려 주세요.
 
 ## 3. 카카오 로그인 키 만들기
@@ -58,7 +58,7 @@ python3 ~/.openclaw/stock/gate.py check
 1. https://developers.kakao.com → **내 애플리케이션 → 앱 만들기**
 2. **앱 키 → REST API 키**를 `.env` 의 `GATE_KAKAO_REST_KEY` 에 넣기
 3. **카카오 로그인 → 활성화 ON**, **Redirect URI** 에 `https://mystatus-btr.duckdns.org/gate/kakao/callback` 등록
-4. **동의항목 → 닉네임(profile_nickname)** 설정. 이메일 등은 설정하지 않습니다(최소 수집).
+4. 동의항목은 설정하지 않아도 됩니다(닉네임은 가입 화면에서 직접 입력, 최소 수집).
 5. (선택) **보안 → Client Secret 사용 ON** 으로 했다면 그 값을 `.env` 의 `GATE_KAKAO_CLIENT_SECRET` 에 추가
 
 ## 4. nginx 에 두 화면 연결 (이미 PT 대시보드가 쓰는 server 블록 안에)
