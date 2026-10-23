@@ -21,6 +21,32 @@ load_dotenv()
 
 app = FastAPI(title="Stock Briefing Dashboard API")
 
+# ── 로그인·동의 게이트 (2026-10-23) ─────────────────────────────────────────
+# /slack·/dig 와 그 데이터 주소를 구글/카카오 로그인 + 개인정보 동의로 잠근다(상세: gate.py).
+# ⚠️ 모듈이 망가졌을 때 잠긴 화면이 '그냥 열려 버리면' 안 된다 → 설치 실패 시 그 주소들만 503 으로 막는다(대시보드 '/' 는 그대로).
+try:
+    import gate as _gate
+    _gate.install(app)
+except Exception as _gate_err:
+    _gate = None
+    print("[gate] ⚠️ 로드 실패 → 잠긴 주소를 모두 막습니다: %r" % (_gate_err,))
+
+    @app.middleware("http")
+    async def _gate_failsafe(request, call_next):
+        p = request.url.path
+        if p in ("/slack", "/dig") or p.startswith(("/slack/", "/dig/", "/api/dig/", "/api/news/")):
+            from fastapi.responses import JSONResponse as _J
+            return _J({"ok": False, "reason": "로그인 모듈 오류 — 운영자에게 알려 주세요"}, status_code=503)
+        return await call_next(request)
+
+
+def _with_gate_footer(html_text):
+    """화면 아래 '개인정보 처리방침 · 내 정보·탈퇴 · 로그아웃' 링크(잠금이 켜져 있을 때만)."""
+    try:
+        return html_text.replace("<!--GATE_FOOT-->", _gate.footer_html() if _gate else "")
+    except Exception:
+        return html_text.replace("<!--GATE_FOOT-->", "")
+
 # Ensure templates and static directories exist
 os.makedirs("templates", exist_ok=True)
 os.makedirs("static", exist_ok=True)
@@ -297,7 +323,7 @@ def slack_view():
     try:
         p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "slack_digest_live.html")
         with open(p, encoding="utf-8") as f:
-            return HTMLResponse(f.read())
+            return HTMLResponse(_with_gate_footer(f.read()))
     except Exception as e:
         return HTMLResponse("<h1>slack 뷰어 로드 실패</h1><pre>%s</pre>" % e, status_code=500)
 
@@ -448,7 +474,7 @@ def dig_view():
     try:
         p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dig_view.html")
         with open(p, encoding="utf-8") as f:
-            return HTMLResponse(f.read())
+            return HTMLResponse(_with_gate_footer(f.read()))
     except Exception as e:
         return HTMLResponse("<h1>dig 뷰어 로드 실패</h1><pre>%s</pre>" % e, status_code=500)
 

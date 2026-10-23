@@ -22,6 +22,14 @@ def _base_url():
     return "http://%s:%s" % (host, os.getenv("PORT", "8000"))
 
 
+def _internal_key():
+    try:
+        import gate
+        return gate.internal_key()
+    except Exception:
+        return None
+
+
 def pdf_path(issue_id):
     return os.path.join(PDF_DIR, issue_id + ".pdf")
 
@@ -53,7 +61,15 @@ def get_pdf(issue_id, base_url=None):
                 kw["executable_path"] = CHROMIUM_PATH
             browser = p.chromium.launch(**kw)
             try:
-                page = browser.new_page()
+                context = browser.new_context()
+                key = _internal_key()
+                if key:
+                    # 로그인 잠금이 켜져 있으면 서버 내부 열쇠를 '우리 서버로 가는 요청에만' 붙인다.
+                    # ⚠️ new_context(extra_http_headers=…) 는 사진 서버(stibee) 같은 외부 요청에도 붙어 열쇠가 새므로 쓰지 않는다.
+                    origin = (base_url or _base_url()).rstrip("/") + "/"
+                    context.route(lambda url: url.startswith(origin),
+                                  lambda route: route.continue_(headers={**route.request.headers, "x-gate-internal": key}))
+                page = context.new_page()
                 page.goto("%s/dig?id=%s&print=1" % (base_url or _base_url(), issue_id),
                           wait_until="domcontentloaded", timeout=30000)
                 page.wait_for_selector("body[data-ready='1']", timeout=30000)   # 글이 다 그려진 뒤

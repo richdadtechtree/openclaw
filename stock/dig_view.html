@@ -52,13 +52,16 @@
   .sitenav a:hover{color:var(--ink)}
   .sitenav a[aria-current="page"]{background:var(--blue);color:var(--card);border-color:var(--blue);cursor:default}
 
+  .sitefoot{max-width:760px;margin:0 auto;padding:0 16px 40px;text-align:center;font-size:13px;color:var(--sub)}
+  .sitefoot a{color:var(--sub)}
+
   /* ── 인쇄/PDF 용 ──────────────────────────────────────────────
      다크를 골라 둬도 종이엔 늘 흰 바탕·진한 글씨. 도구줄은 빼고, 소제목·사진·요약 상자가 쪽 경계에서 잘리지 않게 한다.
      (서버의 PDF 만들기와 브라우저 Ctrl+P 가 같은 규칙을 쓴다) */
   @media print{
     :root,:root[data-theme="dark"],:root:not([data-theme="light"]){
       --bg:#fff;--card:#fff;--ink:#111;--sub:#555;--line:#ddd;--blue:#1f5fbf;--soft:#eef4fc;color-scheme:light}
-    .top{display:none}
+    .top,.sitefoot{display:none}
     main{max-width:none;padding:0}
     .card{border:none;border-radius:0;padding:0;margin:0 0 18px}
     h2.title{break-after:avoid}
@@ -86,6 +89,7 @@
   <button id="rf" title="Gmail 에서 새 메일 확인">↻</button>
 </div>
 <main id="main"><div class="empty">불러오는 중…</div></main>
+<!--GATE_FOOT-->
 
 <script>
 // ── 작은 도우미 ──────────────────────────────────────────────
