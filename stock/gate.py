@@ -9,6 +9,8 @@
              GATE_APPROVAL=manual : 가입하면 '승인 대기' → 운영자가 `python3 gate.py approve <번호>` 해야 입장 (나중에)
 
 개인정보 최소 수집: 소셜 로그인 고유번호 + 닉네임/이름만 저장한다(이메일은 아예 요청하지 않음).
+관리자: 이메일을 받지 않으므로 '이메일이 ○○이면 관리자'를 쓸 수 없다. 그 계정으로 로그인한 뒤 서버에서 `gate.py admin 회원번호` 로 한 번 지정한다
+        (웹에서는 관리자 권한을 줄 수 없음). 관리자는 /gate/admin 에서 가입자 목록을 보고 승인·차단·차단 해제·삭제할 수 있다.
 저장 위치: ~/.openclaw/secret/gate/  (secret/ 은 git 이 절대 올리지 않는 폴더 — 서명 열쇠·사용자 DB 보호)
 
 안전장치
@@ -17,7 +19,7 @@
   * 쿠키 HttpOnly + SameSite=Lax + (https 일 때) Secure, 다른 사이트에서 온 POST 는 거부, 로그인 후 이동 주소는 안전한 것만.
   * 서버 내부 작업(PDF 만들기)은 내부 열쇠 헤더로만 통과 — nginx 뒤에선 모든 요청이 127.0.0.1 로 보이므로 '로컬이면 통과' 는 쓰지 않는다.
 
-운영 명령: python3 gate.py check | list | pending | approve N | block N | unblock N | delete N | stats
+운영 명령: python3 gate.py check | list | pending | approve N | block N | unblock N | delete N | stats | admin N | unadmin N
 """
 import base64
 import hashlib
@@ -195,6 +197,9 @@ def _db():
     con = sqlite3.connect(path, timeout=10)
     con.row_factory = sqlite3.Row
     con.executescript(_SCHEMA)
+    if "is_admin" not in {r["name"] for r in con.execute("PRAGMA table_info(users)")}:
+        con.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")     # 예전에 만든 DB 도 그대로 이어서 쓴다
+        con.commit()
     if fresh:
         try:
             os.chmod(path, 0o600)
@@ -241,6 +246,23 @@ def delete_user(uid):
     with _db() as con:
         con.execute("DELETE FROM consents WHERE user_id=?", (uid,))
         con.execute("DELETE FROM users WHERE id=?", (uid,))
+
+
+def is_admin(u):
+    """승인된 관리자인가. 관리자 지정은 서버에서 `gate.py admin N` 으로만 한다(웹에서 권한을 주는 길은 없음)."""
+    return bool(u and u["is_admin"] and u["status"] == "approved")
+
+
+def set_admin(uid, flag):
+    with _db() as con:
+        if flag:        # 관리자는 항상 승인된 상태여야 한다(차단된 채 관리자로 남는 모순 방지)
+            return con.execute("UPDATE users SET is_admin=1, status='approved' WHERE id=?", (uid,)).rowcount
+        return con.execute("UPDATE users SET is_admin=0 WHERE id=?", (uid,)).rowcount
+
+
+def _csrf(uid):
+    """관리 화면의 버튼이 '이 관리자가 이 화면에서 누른 것'임을 확인하는 표(다른 사이트가 몰래 누르게 하는 공격 방지)."""
+    return hmac.new(_secret(), ("csrf:%d" % int(uid)).encode(), hashlib.sha256).hexdigest()[:32]
 
 
 def set_status(uid, status):
@@ -319,13 +341,24 @@ label.chk{display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px s
 label.chk input{margin-top:5px;width:18px;height:18px;flex:none}
 .warn{color:var(--red);font-weight:700} a{color:var(--blue)} .foot{text-align:center;font-size:13px;color:var(--sub);margin-top:18px}
 ul{padding-left:20px;margin:0 0 12px} li{margin:3px 0}
+main.wide{max-width:1000px}
+.tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch} .tablewrap table{min-width:640px;margin:0}
+.tablewrap th,.tablewrap td{width:auto;white-space:nowrap}   /* 내 정보 화면용 첫 칸 30% 규칙을 관리 표에는 쓰지 않음 · 날짜가 여러 줄로 꺾이지 않게 */
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 14px}
+.tabs a{padding:6px 14px;border:1px solid var(--line);border-radius:999px;text-decoration:none;font-size:14px;color:var(--sub)}
+.tabs a.on{background:var(--blue);border-color:var(--blue);color:#fff}
+.b-ok{color:#12a150;font-weight:700}.b-wait{color:#b8730f;font-weight:700}.b-block{color:var(--red);font-weight:700}
+form.inl{display:inline;margin:0}
+.mini{font:inherit;font-size:13px;padding:4px 10px;margin:2px 3px 2px 0;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer}
+.mini.go{border-color:var(--blue);color:var(--blue)}.mini.stop{border-color:var(--red);color:var(--red)}
+.note{background:rgba(127,127,127,.1);border-radius:10px;padding:10px 14px;margin:10px 0;font-size:14px}
 """
 
 
-def _page(title, body, status=200):
+def _page(title, body, status=200, wide=False):
     from fastapi.responses import HTMLResponse
     doc = ('<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-           '<title>%s</title><style>%s</style></head><body><main>%s</main></body></html>') % (html.escape(title), _CSS, body)
+           '<title>%s</title><style>%s</style></head><body><main%s>%s</main></body></html>') % (html.escape(title), _CSS, ' class="wide"' if wide else "", body)
     return HTMLResponse(doc, status_code=status, headers={"Cache-Control": "no-store"})
 
 
@@ -433,7 +466,10 @@ def who_html(request=None):
     if not u:
         return ""
     prov = {"google": "구글", "kakao": "카카오"}.get(u["provider"], u["provider"])
-    return '<a class="who" href="/gate/account" title="내 정보">%s 님 · %s</a>' % (html.escape(u["nickname"] or ""), html.escape(prov))
+    out = '<a class="who" href="/gate/account" title="내 정보">%s 님 · %s</a>' % (html.escape(u["nickname"] or ""), html.escape(prov))
+    if is_admin(u):
+        out += '<a class="adminlink" href="/gate/admin" title="가입자 보기·승인·차단">🛠 관리</a>'
+    return out + '<a class="logout" href="/gate/logout">로그아웃</a>'
 
 
 def footer_html(request=None):
@@ -445,6 +481,63 @@ def footer_html(request=None):
 
 
 # ───────────────────────── 라우터·중간 문지기 ─────────────────────────
+_ADMIN_MSG = {"approve": "승인했어요.", "block": "차단했어요.", "unblock": "차단을 풀고 승인했어요.", "delete": "그 사람의 정보를 삭제했어요.",
+              "admin": "관리자는 이 화면에서 바꿀 수 없어요.", "none": "그런 사용자가 없어요."}
+_STATUS_KO = {"approved": ("이용 가능", "b-ok"), "pending": ("승인 대기", "b-wait"), "blocked": ("차단", "b-block")}
+
+
+def _admin_btn(uid, action, label, cls, csrf, flt, confirm_text=""):
+    oc = ' onsubmit="return confirm(\'%s\')"' % confirm_text if confirm_text else ""
+    return ('<form method="post" action="/gate/admin/act" class="inl"%s><input type="hidden" name="uid" value="%d">'
+            '<input type="hidden" name="action" value="%s"><input type="hidden" name="csrf" value="%s">'
+            '<input type="hidden" name="f" value="%s"><button class="mini %s" type="submit">%s</button></form>'
+            % (oc, uid, action, csrf, html.escape(flt, quote=True), cls, label))
+
+
+def admin_html(me, rows, counts, flt, msg):
+    c = cfg()
+    csrf = _csrf(me["id"])
+    tabs = ""
+    for key, label in (("", "전체"), ("pending", "승인 대기"), ("approved", "이용 가능"), ("blocked", "차단")):
+        n = sum(counts.values()) if key == "" else counts.get(key, 0)
+        tabs += '<a href="/gate/admin%s" class="%s">%s %d</a>' % (("?f=" + key) if key else "", "on" if key == flt else "", label, n)
+    trs = ""
+    for u in rows:
+        label, cls = _STATUS_KO.get(u["status"], (u["status"], ""))
+        prov = {"google": "구글", "kakao": "카카오"}.get(u["provider"], u["provider"])
+        consent = "✔" if u["consent_version"] == POLICY_VERSION else ("재동의 필요" if u["consent_version"] else "동의 전")
+        if u["is_admin"]:
+            acts = '<span class="sub">관리자</span>'
+        else:
+            acts = ""
+            if u["status"] == "pending":
+                acts += _admin_btn(u["id"], "approve", "승인", "go", csrf, flt)
+            if u["status"] == "blocked":
+                acts += _admin_btn(u["id"], "unblock", "차단 해제", "go", csrf, flt)
+            if u["status"] != "blocked":
+                acts += _admin_btn(u["id"], "block", "차단", "stop", csrf, flt, "이 사람을 차단할까요? 바로 이용할 수 없게 됩니다.")
+            acts += _admin_btn(u["id"], "delete", "삭제", "stop", csrf, flt, "이 사람의 정보를 완전히 삭제할까요? 되돌릴 수 없습니다.")
+        trs += ("<tr><td>%d</td><td>%s%s</td><td>%s</td><td><span class='%s'>%s</span></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
+                % (u["id"], html.escape(u["nickname"] or ""), " 🛠" if u["is_admin"] else "", html.escape(prov), cls, label,
+                   html.escape((u["created_at"] or "")[:16].replace("T", " ")), html.escape((u["last_login_at"] or "")[:16].replace("T", " ")),
+                   consent, acts))
+    if not trs:
+        trs = '<tr><td colspan="8" class="sub">해당하는 가입자가 없어요.</td></tr>'
+    note = ('지금은 <b>가입하면 바로 이용 가능</b>(auto)입니다. 승인제로 바꾸려면 서버 .env 의 <code>GATE_APPROVAL=manual</code> 후 재시작하세요.'
+            if c["approval"] == "auto" else
+            '지금은 <b>관리자 승인 후 이용</b>(manual)입니다. 새 가입자는 "승인 대기"로 들어와요.')
+    flash = '<div class="note">%s</div>' % html.escape(_ADMIN_MSG[msg]) if msg in _ADMIN_MSG else ""
+    return """<div class="card"><h1>🛠 가입자 관리</h1>
+<p class="sub">%s 님(관리자) · 이름과 로그인 방식·가입일 외의 개인정보는 저장하지 않아요.</p>%s
+<div class="note">%s</div>
+<div class="tabs">%s</div>
+<div class="tablewrap"><table><tr><th>번호</th><th>이름</th><th>방식</th><th>상태</th><th>가입</th><th>최근 접속</th><th>동의</th><th>처리</th></tr>%s</table></div>
+<p class="sub">차단하면 쿠키가 남아 있어도 바로 이용할 수 없고, 삭제하면 정보와 동의 기록이 모두 지워져요. 관리자 지정·해제는 서버에서 <code>gate.py admin/unadmin 번호</code> 로만 할 수 있어요.</p>
+<p><a class="btn primary" href="/slack">📰 신문 요약</a></p></div>
+<div class="foot"><a href="/gate/account">내 정보</a> · <a href="/gate/logout">로그아웃</a> · <a href="/privacy">개인정보 처리방침</a></div>""" % (
+        html.escape(me["nickname"] or ""), flash, note, tabs, trs)
+
+
 def _is_gated(path):
     return (path in ("/slack", "/dig") or path.startswith(("/slack/", "/dig/", "/api/dig/", "/api/news/")))
 
@@ -639,7 +732,7 @@ def install(app):
             return RedirectResponse("/gate/login?next=/slack", 302)
         prov = {"google": "구글", "kakao": "카카오"}.get(u["provider"], u["provider"])
         body = """<div class="card"><h1>내 정보</h1>
-<table><tr><th>이름(닉네임)</th><td>%s</td></tr><tr><th>로그인 방식</th><td>%s</td></tr>
+<table><tr><th>회원 번호</th><td>%d</td></tr><tr><th>이름(닉네임)</th><td>%s</td></tr><tr><th>로그인 방식</th><td>%s</td></tr>
 <tr><th>가입 시각</th><td>%s</td></tr><tr><th>동의 시각</th><td>%s (처리방침 %s)</td></tr><tr><th>상태</th><td>%s</td></tr></table>
 <p class="sub">저장된 정보는 위가 전부예요(이메일 등은 저장하지 않습니다).</p>
 <p><a class="btn primary" href="/slack">📰 신문 요약</a><a class="btn primary" href="/dig">📚 경제 공부 (디그)</a></p>
@@ -647,7 +740,7 @@ def install(app):
 <form method="post" action="/gate/delete"><label class="chk"><input type="checkbox" name="confirm" value="1"><span>내 정보를 삭제하고 탈퇴합니다.</span></label>
 <button class="btn danger" type="submit">탈퇴하고 정보 삭제</button></form></div>
 <div class="foot"><a href="/gate/logout">로그아웃</a> · <a href="/privacy">개인정보 처리방침</a></div>""" % (
-            html.escape(u["nickname"] or ""), html.escape(prov), html.escape(u["created_at"] or ""),
+            u["id"], html.escape(u["nickname"] or ""), html.escape(prov), html.escape(u["created_at"] or ""),
             html.escape(u["consent_at"] or "-"), html.escape(u["consent_version"] or "-"),
             html.escape({"approved": "이용 가능", "pending": "승인 대기", "blocked": "이용 제한"}.get(u["status"], u["status"])))
         return _page("내 정보", body)
@@ -665,6 +758,55 @@ def install(app):
         resp.delete_cookie(COOKIE_SESSION, path="/")
         return resp
 
+    def _nope():
+        return _page("없는 페이지", '<div class="card"><h1>페이지를 찾을 수 없어요</h1></div>', 404)
+
+    def _admin_user(request):
+        u = session_user(request)
+        return u if is_admin(u) else None            # 관리자가 아니면 '없는 페이지'처럼 보이게(존재 자체를 알리지 않음)
+
+    @r.get("/gate/admin")
+    def admin_page(request: Request, f: str = "", m: str = ""):
+        if not cfg()["enabled"]:
+            return _off()
+        me = _admin_user(request)
+        if not me:
+            return _nope()
+        flt = f if f in ("pending", "approved", "blocked") else ""
+        with _db() as con:
+            rows = con.execute("SELECT * FROM users %s ORDER BY id DESC" % ("WHERE status=?" if flt else ""), (flt,) if flt else ()).fetchall()
+            counts = {st: n for st, n in con.execute("SELECT status, COUNT(*) FROM users GROUP BY status")}
+        return _page("가입자 관리", admin_html(me, rows, counts, flt, m), wide=True)
+
+    @r.post("/gate/admin/act")
+    async def admin_act(request: Request):
+        me = _admin_user(request)
+        if not me:
+            return _nope()
+        f = _form(await request.body())
+        if not hmac.compare_digest(f.get("csrf", ""), _csrf(me["id"])):
+            return _page("요청 오류", '<div class="card"><h1>확인에 실패했어요</h1><p>관리 화면을 새로고침한 뒤 다시 눌러 주세요.</p>'
+                         '<a class="btn primary" href="/gate/admin">관리 화면으로</a></div>', 400)
+        flt = f.get("f") if f.get("f") in ("pending", "approved", "blocked") else ""
+        action = f.get("action", "")
+        t = get_user(f["uid"]) if f.get("uid", "").isdigit() else None
+        if not t:
+            code = "none"
+        elif t["is_admin"]:
+            code = "admin"                               # 관리자끼리·자기 자신은 이 화면에서 못 건드림(실수로 잠그는 사고 방지)
+        elif action == "approve" or action == "unblock":
+            set_status(t["id"], "approved")
+            code = action
+        elif action == "block":
+            set_status(t["id"], "blocked")
+            code = "block"
+        elif action == "delete":
+            delete_user(t["id"])
+            code = "delete"
+        else:
+            code = "none"
+        return RedirectResponse("/gate/admin?%sm=%s" % (("f=" + flt + "&") if flt else "", code), 303)
+
     @r.get("/gate/logout")
     def logout():
         resp = RedirectResponse("/gate/login", 302)
@@ -676,9 +818,10 @@ def install(app):
 
 # ───────────────────────── 운영 명령 ─────────────────────────
 def _print_users(rows):
-    print("%-4s %-7s %-9s %-22s %-20s %s" % ("번호", "방식", "상태", "닉네임", "가입", "동의버전"))
+    print("%-4s %-7s %-9s %-22s %-20s %-12s %s" % ("번호", "방식", "상태", "닉네임", "가입", "동의버전", "관리자"))
     for u in rows:
-        print("%-4s %-7s %-9s %-22s %-20s %s" % (u["id"], u["provider"], u["status"], (u["nickname"] or "")[:20], u["created_at"], u["consent_version"] or "-"))
+        print("%-4s %-7s %-9s %-22s %-20s %-12s %s" % (u["id"], u["provider"], u["status"], (u["nickname"] or "")[:20], u["created_at"],
+                                                      u["consent_version"] or "-", "★" if u["is_admin"] else ""))
     if not rows:
         print("(없음)")
 
@@ -720,6 +863,10 @@ def cli(argv):
             return 0
         n = set_status(uid, "blocked" if cmd == "block" else "approved")
         print(("처리했어요: %d → %s" % (uid, "blocked" if cmd == "block" else "approved")) if n else "그런 번호가 없어요: %d" % uid)
+        return 0 if n else 1
+    if cmd in ("admin", "unadmin") and len(argv) > 1 and argv[1].isdigit():
+        n = set_admin(int(argv[1]), cmd == "admin")
+        print(("%s: %s 번" % ("관리자로 지정했어요" if cmd == "admin" else "관리자에서 뺐어요", argv[1])) if n else "그런 번호가 없어요: %s" % argv[1])
         return 0 if n else 1
     print(__doc__.split("운영 명령:")[-1].strip())
     return 2
