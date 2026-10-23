@@ -38,11 +38,13 @@ from datetime import datetime, timedelta, timezone
 KST = timezone(timedelta(hours=9))
 
 # 처리방침·동의 문구를 고치면 이 날짜를 바꾼다 → 모든 사용자가 새 문구에 다시 동의해야 입장한다.
-POLICY_VERSION = "2026-10-23"
+POLICY_VERSION = "2026-10-23.2"      # 동의 기록에 남는 버전(문구를 고칠 때마다 올린다)
+POLICY_EFFECTIVE = "2026-10-23"        # 처리방침에 보이는 시행일
 
 COOKIE_SESSION = "gate_sess"          # ⚠️ PT 대시보드(Flask)의 'session' 쿠키와 같은 도메인에서 겹치지 않게 이름을 다르게
 COOKIE_STATE = "gate_state"
-SESSION_DAYS = 30
+SESSION_DAYS = 365                    # 로그인 유지 기간(마지막으로 쓴 뒤 1년). 한 번 로그인·승인되면 계속 쓰는 한 다시 로그인할 일이 없다
+RENEW_AFTER_DAYS = 7                  # 쓸 때마다가 아니라 7일에 한 번만 기간을 새로 늘린다(불필요한 쿠키 재발급 방지)
 STATE_MINUTES = 10
 
 _env_loaded = False
@@ -342,7 +344,7 @@ def privacy_html():
     ct = _ph(c["contact"], "연락처(이메일)를 .env 의 PRIVACY_CONTACT 에 입력하세요")
     return """
 <div class="card"><h1>개인정보 처리방침</h1>
-<p class="sub">시행일 %(ver)s · 버전 %(ver)s</p>
+<p class="sub">시행일 %(eff)s · 버전 %(ver)s</p>
 <p>「경제 공부 · 신문 요약」 서비스(이하 '서비스')는 「개인정보 보호법」에 따라 이용자의 개인정보를 보호하고 아래와 같이 처리합니다.</p>
 
 <h2>1. 처리하는 개인정보 항목과 목적</h2>
@@ -365,7 +367,7 @@ def privacy_html():
 <li><b>동의를 거부할 권리가 있으며</b>, 동의하지 않으면 서비스를 이용할 수 없습니다(로그인 확인 외의 불이익은 없습니다).</li></ul>
 
 <h2>5. 쿠키(자동 수집 장치)</h2>
-<p>로그인 상태를 유지하기 위한 서명된 세션 쿠키 1개(<code>gate_sess</code>, 최대 30일)만 사용하며, 광고·추적 목적의 쿠키는 쓰지 않습니다. 브라우저 설정에서 쿠키를 막을 수 있으나 그러면 로그인이 유지되지 않습니다.</p>
+<p>로그인 상태를 유지하기 위한 서명된 세션 쿠키 1개(<code>gate_sess</code>, 마지막 이용 후 최대 1년 — 이용할 때마다 연장되며 로그아웃·탈퇴 시 즉시 삭제)만 사용하며, 광고·추적 목적의 쿠키는 쓰지 않습니다. 브라우저 설정에서 쿠키를 막을 수 있으나 그러면 로그인이 유지되지 않습니다.</p>
 
 <h2>6. 안전성 확보 조치</h2>
 <ul><li>암호화된 연결(HTTPS)로만 로그인하며, 세션 쿠키는 변조 방지 서명을 합니다.</li>
@@ -377,7 +379,7 @@ def privacy_html():
 
 <h2>8. 처리방침의 변경</h2>
 <p>내용이 바뀌면 시행일과 버전을 갱신하고, 다시 로그인할 때 변경된 내용에 대한 동의를 새로 받습니다.</p>
-</div>%(foot)s""" % {"ver": POLICY_VERSION, "op": op, "ct": ct, "foot": _foot(), "logdays": html.escape(_env("PRIVACY_LOG_DAYS", "14"))}
+</div>%(foot)s""" % {"ver": POLICY_VERSION, "eff": POLICY_EFFECTIVE, "op": op, "ct": ct, "foot": _foot(), "logdays": html.escape(_env("PRIVACY_LOG_DAYS", "14"))}
 
 
 def consent_html(nickname, nxt, error=""):
@@ -440,6 +442,11 @@ def _cookie_args(max_age):
     return dict(max_age=max_age, httponly=True, secure=cfg()["https"], samesite="lax", path="/")
 
 
+def _session_token(uid):
+    """로그인 쿠키 값: 사용자 번호 + 발급 시각(iat). 1년 유효."""
+    return _sign({"uid": uid, "iat": int(time.time())}, SESSION_DAYS * 86400)
+
+
 def session_user(request):
     p = _unsign(request.cookies.get(COOKIE_SESSION, ""))
     return get_user(p["uid"]) if p and "uid" in p else None
@@ -472,6 +479,20 @@ def _check(request):
     return None
 
 
+def _renew_session(request, resp):
+    """로그인 상태로 쓰는 중이면 쿠키 기간을 다시 1년으로 늘린다(7일에 한 번).
+    승인된 사용자에게만 — 탈퇴·차단·승인 취소된 사람의 쿠키는 연장하지 않는다. 로그아웃·탈퇴 응답은 건너뛴다."""
+    path = request.url.path
+    if not cfg()["enabled"] or path in ("/gate/logout", "/gate/delete") or not (_is_gated(path) or path.startswith("/gate/")):
+        return
+    p = _unsign(request.cookies.get(COOKIE_SESSION, ""))
+    if not p or "uid" not in p or time.time() - int(p.get("iat", 0)) < RENEW_AFTER_DAYS * 86400:
+        return
+    u = get_user(p["uid"])
+    if u and u["status"] == "approved":
+        resp.set_cookie(COOKIE_SESSION, _session_token(u["id"]), **_cookie_args(SESSION_DAYS * 86400))
+
+
 def install(app):
     """app.py 에서 한 번 부른다: 문지기 + /gate/* /privacy 화면을 붙인다."""
     from fastapi import APIRouter, Request
@@ -497,6 +518,7 @@ def install(app):
             if deny is not None:
                 return deny
         resp = await call_next(request)
+        _renew_session(request, resp)
         if _is_gated(request.url.path) and cfg()["enabled"]:
             # 공용 캐시(프록시)에 로그인한 사람의 내용이 남지 않게. 브라우저 자체 캐시(사진 등)는 그대로 허용.
             resp.headers.setdefault("Cache-Control", "private")
@@ -555,7 +577,7 @@ def install(app):
         nxt = safe_next(st.get("n"))
         dest = nxt if user["consent_version"] == POLICY_VERSION else "/gate/consent?next=" + urllib.parse.quote(nxt)
         resp = RedirectResponse(dest, 302)
-        resp.set_cookie(COOKIE_SESSION, _sign({"uid": user["id"]}, SESSION_DAYS * 86400), **_cookie_args(SESSION_DAYS * 86400))
+        resp.set_cookie(COOKIE_SESSION, _session_token(user["id"]), **_cookie_args(SESSION_DAYS * 86400))
         resp.delete_cookie(COOKIE_STATE, path="/")
         return resp
 
