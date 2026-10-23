@@ -542,7 +542,7 @@ def dig_refresh(background_tasks: BackgroundTasks):
 
     def _run():
         try:
-            _dig.fetch_new(days=14)
+            _dig.fetch_new()
         except Exception as e:
             print("[dig] 새로고침 실패: %s" % e)
     background_tasks.add_task(_run)
