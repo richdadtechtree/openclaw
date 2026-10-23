@@ -572,6 +572,8 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
              color:var(--muted);text-decoration:none;border:1px solid var(--line-strong);background:var(--surface)}
   .sitenav a:hover{color:var(--ink)}
   .sitenav a[aria-current="page"]{background:var(--accent);color:var(--surface);border-color:var(--accent);cursor:default}
+  .sitenav a.who{margin-left:auto;background:transparent;border-color:transparent;font-weight:500;font-size:13px}
+  .sitenav a.logout,.sitenav a.adminlink{padding:5px 12px;font-size:13px}
   @media print{.sitenav{display:none}}
 
   .sitefoot{max-width:1120px;margin:0 auto;padding:18px 20px 40px;text-align:center;font-size:13px;color:var(--muted)}
@@ -583,6 +585,7 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   <nav class="sitenav" aria-label="페이지 이동">
     <a href="/slack" aria-current="page">📰 신문 요약</a>
     <a href="/dig">📚 경제 공부 (디그)</a>
+    <!--GATE_WHO-->
   </nav>
   <header class="mast">
     <div class="eyebrow"><span class="label">오늘 신문 요약</span><span class="live"><span class="pulse"></span>LIVE</span></div>

@@ -12,7 +12,7 @@ import urllib.parse
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "stock"))
 try:
-    from fastapi import FastAPI
+    from fastapi import FastAPI, Request
     from fastapi.testclient import TestClient
 except Exception as e:                                   # 개발 환경에 없으면 조용히 건너뜀
     print("건너뜀(fastapi/httpx 없음): %s" % e)
@@ -60,6 +60,11 @@ def make_app():
 
     @app.get("/")
     def dash(): return {"page": "dashboard"}
+
+    @app.get("/who", include_in_schema=False)
+    def who(request: Request):
+        from fastapi.responses import HTMLResponse
+        return HTMLResponse(gate.who_html(request) + "|" + gate.footer_html(request))
 
     return app
 
@@ -158,14 +163,114 @@ with gate._db() as con:
 check("동의 이력 1건", len(cons) == 1 and "privacy" in cons[0]["items"])
 check("이미 동의한 사람이 로그인하면 바로 입장", client(app).get("/gate/login").status_code == 200 and login(client(app)).headers["location"] == "/slack")
 check("DB 에 이메일·전화 같은 열이 없음(최소 수집)",
-      {r["name"] for r in gate._db().execute("PRAGMA table_info(users)")} == {"id", "provider", "provider_uid", "nickname", "status", "consent_version", "consent_at", "created_at", "last_login_at"})
+      {r["name"] for r in gate._db().execute("PRAGMA table_info(users)")} == {"id", "provider", "provider_uid", "nickname", "status", "consent_version", "consent_at", "created_at", "last_login_at", "is_admin"})
+
+print("[누가 로그인했는지 화면에 표시]")
+cg = client(make_app()); login(cg, provider="google", uid="w-1", nick="길동"); cg.post("/gate/consent", content=AGREE, headers=FORM)
+w = cg.get("/who").text
+check("구글로 들어오면 '길동 님 · 구글'이 보임", "길동 님 · 구글" in w and 'href="/gate/account"' in w)
+ck = client(make_app()); login(ck, provider="kakao", uid="w-2", nick="카카오닉"); ck.post("/gate/consent", content=AGREE, headers=FORM)
+check("카카오로 들어오면 '카카오닉 님 · 카카오'가 보임", "카카오닉 님 · 카카오" in ck.get("/who").text)
+check("로그아웃 버튼이 맨 위에 보임", 'class="logout" href="/gate/logout"' in w)
+check("관리자가 아니면 '관리' 링크가 없음", "adminlink" not in w)
+check("로그인 안 한 요청에는 이름이 안 보임", gate.who_html(None) == "" and "님 ·" not in client(make_app()).get("/who").text)
+cx = client(make_app()); login(cx, uid="w-3", nick="<b onmouseover=1>x</b>"); cx.post("/gate/consent", content=AGREE, headers=FORM)
+check("이름 속 HTML 은 이스케이프되어 표시", "<b onmouseover" not in cx.get("/who").text and "&lt;b" in cx.get("/who").text)
+
+print("[관리자 화면: 가입자 보기·승인·차단]")
+import re as _re  # noqa: E402
+
+
+def mk_user(provider, uid, nick, consent=True):
+    cl = client(app_adm); login(cl, provider=provider, uid=uid, nick=nick)
+    if consent:
+        cl.post("/gate/consent", content=AGREE, headers=FORM)
+    return cl, gate._unsign(cl.cookies.get("gate_sess"))["uid"]
+
+
+def token_of(cl, page_text=None):
+    html_ = page_text or cl.get("/gate/admin").text
+    return _re.search(r'name="csrf" value="([0-9a-f]{32})"', html_).group(1)
+
+
+def act(cl, uid, action, csrf, extra=""):
+    return cl.post("/gate/admin/act", content="uid=%d&action=%s&csrf=%s%s" % (uid, action, csrf, extra), headers=FORM)
+
+
+app_adm = make_app()
+adm, adm_id = mk_user("google", "adm-1", "운영자")
+user_c, user_id = mk_user("kakao", "usr-1", "일반인")
+check("관리자 지정 전: 일반 가입자는 /gate/admin 이 '없는 페이지'(404)", user_c.get("/gate/admin").status_code == 404 and adm.get("/gate/admin").status_code == 404)
+check("로그인 안 한 사람도 404(존재를 알리지 않음)", client(app_adm).get("/gate/admin").status_code == 404)
+check("서버 명령으로 관리자 지정", gate.cli(["admin", str(adm_id)]) == 0)
+check("지정 뒤에는 위쪽에 '🛠 관리' 링크", "adminlink" in adm.get("/who").text and "adminlink" not in user_c.get("/who").text)
+pg = adm.get("/gate/admin")
+check("관리자는 가입자 목록을 봄(이름·방식·상태)", pg.status_code == 200 and "일반인" in pg.text and "카카오" in pg.text and "이용 가능" in pg.text)
+check("일반 가입자는 여전히 404", user_c.get("/gate/admin").status_code == 404)
+tok = token_of(adm, pg.text)
+check("일반 가입자가 관리 버튼을 직접 보내도 아무 일 없음(404, 상태 그대로)",
+      user_c.post("/gate/admin/act", content="uid=%d&action=block&csrf=%s" % (user_id, tok), headers=FORM).status_code == 404 and gate.get_user(user_id)["status"] == "approved")
+check("확인표(csrf)가 틀리면 거부(400)", act(adm, user_id, "block", "0" * 32).status_code == 400 and gate.get_user(user_id)["status"] == "approved")
+check("다른 사이트발 관리 요청은 거부", adm.post("/gate/admin/act", content="uid=%d&action=block&csrf=%s" % (user_id, tok),
+                                      headers=dict(FORM, **{"sec-fetch-site": "cross-site"})).status_code == 403 and gate.get_user(user_id)["status"] == "approved")
+r = act(adm, user_id, "block", tok)
+check("차단: 목록으로 돌아오고 상태가 blocked", r.status_code == 303 and "m=block" in r.headers["location"] and gate.get_user(user_id)["status"] == "blocked")
+check("차단된 사람은 로그인 쿠키가 있어도 즉시 못 씀", user_c.get("/slack/data").status_code == 403)
+check("차단 안내 문구가 화면에 표시", "차단했어요" in adm.get(r.headers["location"]).text)
+check("차단 해제(승인)로 다시 이용 가능", act(adm, user_id, "unblock", tok).status_code == 303 and user_c.get("/slack/data").status_code == 200)
+check("관리자는 자기 자신을 차단·삭제할 수 없음(잠금 사고 방지)",
+      "m=admin" in act(adm, adm_id, "block", tok).headers["location"] and "m=admin" in act(adm, adm_id, "delete", tok).headers["location"]
+      and gate.get_user(adm_id)["status"] == "approved")
+check("없는 번호는 안내만", "m=none" in act(adm, 99999, "block", tok).headers["location"])
+check("모르는 동작은 무시", "m=none" in act(adm, user_id, "makeadmin", tok).headers["location"] and not gate.get_user(user_id)["is_admin"])
+check("웹에서는 관리자 권한을 줄 수 없음(is_admin 변경 시도 무시)", not gate.get_user(user_id)["is_admin"])
+f1 = adm.get("/gate/admin?f=pending").text
+check("승인 대기 필터에는 이용 가능한 사람이 안 나옴", "일반인" not in f1)
+gate.cli(["block", str(user_id)])
+check("차단 필터에 차단된 사람이 나옴", "일반인" in adm.get("/gate/admin?f=blocked").text)
+gate.cli(["approve", str(user_id)])
+x_c, x_id = mk_user("google", "xss-1", "<img src=x onerror=alert(1)>")
+check("관리 화면에서도 이름 속 HTML 은 글자로만 표시", "<img src=x" not in adm.get("/gate/admin").text and "&lt;img" in adm.get("/gate/admin").text)
+check("삭제: 사용자와 동의 기록이 지워짐", act(adm, x_id, "delete", tok).status_code == 303 and gate.get_user(x_id) is None
+      and not gate._db().execute("SELECT * FROM consents WHERE user_id=?", (x_id,)).fetchall())
+check("삭제된 사람의 쿠키는 즉시 무효", x_c.get("/slack/data").status_code == 401)
+os.environ["GATE_APPROVAL"] = "manual"
+n_c, n_id = mk_user("kakao", "new-2", "새가입자")
+check("승인제에서 새 가입자는 승인 대기", gate.get_user(n_id)["status"] == "pending" and n_c.get("/slack/data").status_code == 403)
+check("관리 화면 '승인 대기' 탭에 보이고 승인 버튼이 있음", "새가입자" in adm.get("/gate/admin?f=pending").text and 'value="approve"' in adm.get("/gate/admin?f=pending").text)
+check("승인하면 바로 입장", act(adm, n_id, "approve", tok, "&f=pending").status_code == 303 and n_c.get("/slack/data").status_code == 200)
+os.environ["GATE_APPROVAL"] = "auto"
+gate.cli(["unadmin", str(adm_id)])
+check("관리자에서 빼면 화면이 다시 404", adm.get("/gate/admin").status_code == 404 and adm.post("/gate/admin/act", content="uid=%d&action=block&csrf=%s" % (user_id, tok), headers=FORM).status_code == 404)
+check("내 정보 화면에 회원 번호", ">%d<" % user_id in user_c.get("/gate/account").text)
+
+print("[예전 DB 이어 쓰기(서버에 이미 있는 가입자 보호)]")
+import sqlite3 as _sq  # noqa: E402
+_keep = os.environ["GATE_DIR"]
+_old = tempfile.mkdtemp(prefix="gateold_")
+_con = _sq.connect(os.path.join(_old, "gate.sqlite"))
+_con.executescript("""CREATE TABLE users(id INTEGER PRIMARY KEY AUTOINCREMENT, provider TEXT NOT NULL, provider_uid TEXT NOT NULL, nickname TEXT,
+  status TEXT NOT NULL DEFAULT 'pending', consent_version TEXT, consent_at TEXT, created_at TEXT NOT NULL, last_login_at TEXT, UNIQUE(provider, provider_uid));
+  INSERT INTO users(provider,provider_uid,nickname,status,consent_version,created_at) VALUES('google','old-7','예전가입자','approved','2026-10-23.2','2026-10-23T10:00:00');""")
+_con.commit(); _con.close()
+os.environ["GATE_DIR"] = _old
+try:
+    row = gate._db().execute("SELECT * FROM users WHERE provider_uid='old-7'").fetchone()
+    check("예전 DB 에 관리자 열이 자동으로 추가되고 가입자 정보는 그대로", row["nickname"] == "예전가입자" and row["status"] == "approved" and row["is_admin"] == 0)
+    check("두 번 열어도 오류 없음", gate._db().execute("SELECT COUNT(*) FROM users").fetchone()[0] == 1)
+finally:
+    os.environ["GATE_DIR"] = _keep
 
 print("[내 정보·탈퇴]")
 acc = c.get("/gate/account").text
 check("내 정보에 닉네임 표시", "길동" in acc)
-check("확인 체크 없이 탈퇴 누르면 안 지워짐", c.post("/gate/delete", content="", headers=FORM).status_code == 303 and gate.get_user(1) is not None)
+me = gate._unsign(c.cookies.get("gate_sess"))["uid"]                 # 이 시험의 사용자(다른 시험이 만든 사용자와 섞이지 않게 번호로 구분)
+others = gate._db().execute("SELECT COUNT(*) FROM users WHERE id<>?", (me,)).fetchone()[0]
+check("확인 체크 없이 탈퇴 누르면 안 지워짐", c.post("/gate/delete", content="", headers=FORM).status_code == 303 and gate.get_user(me) is not None)
 r = c.post("/gate/delete", content="confirm=1", headers=FORM)
-check("탈퇴하면 사용자·동의 기록이 모두 삭제", r.status_code == 200 and gate.get_user(1) is None and not gate._db().execute("SELECT * FROM consents").fetchall())
+check("탈퇴하면 그 사용자와 동의 기록이 모두 삭제", r.status_code == 200 and gate.get_user(me) is None
+      and not gate._db().execute("SELECT * FROM consents WHERE user_id=?", (me,)).fetchall())
+check("다른 사용자의 정보는 건드리지 않음", gate._db().execute("SELECT COUNT(*) FROM users WHERE id<>?", (me,)).fetchone()[0] == others)
 check("탈퇴 뒤 옛 쿠키로는 못 들어감", c.get("/slack").status_code == 302)
 
 print("[다른 사이트에서 온 요청]")
