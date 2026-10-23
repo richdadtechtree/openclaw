@@ -421,7 +421,22 @@ def login_html(nxt, c):
 </div>""" % (html.escape(note), btns)
 
 
-def footer_html():
+def who_html(request=None):
+    """화면 맨 위 탭 오른쪽에 '길동 님 · 구글' 처럼 지금 어느 계정으로 들어왔는지 보여 준다(누르면 내 정보).
+    잠금이 꺼져 있거나 로그인 정보가 없으면(예: 서버 내부 PDF 만들기) 빈 글."""
+    if request is None or not cfg()["enabled"]:
+        return ""
+    try:
+        u = session_user(request)
+    except Exception:
+        u = None
+    if not u:
+        return ""
+    prov = {"google": "구글", "kakao": "카카오"}.get(u["provider"], u["provider"])
+    return '<a class="who" href="/gate/account" title="내 정보">%s 님 · %s</a>' % (html.escape(u["nickname"] or ""), html.escape(prov))
+
+
+def footer_html(request=None):
     """/slack·/dig 맨 아래에 끼워 넣는 링크(처리방침은 항상 쉽게 찾을 수 있어야 한다). 잠금이 꺼져 있으면 빈 글."""
     if not cfg()["enabled"]:
         return ""

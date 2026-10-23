@@ -4,7 +4,7 @@ import time
 from datetime import datetime
 
 import uvicorn
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI, BackgroundTasks, Request
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
@@ -40,12 +40,14 @@ except Exception as _gate_err:
         return await call_next(request)
 
 
-def _with_gate_footer(html_text):
-    """화면 아래 '개인정보 처리방침 · 내 정보·탈퇴 · 로그아웃' 링크(잠금이 켜져 있을 때만)."""
+def _with_gate_footer(html_text, request=None):
+    """화면 아래 '개인정보 처리방침 · 내 정보·탈퇴 · 로그아웃' 링크 + 맨 위 '이름 님 · 구글/카카오'(잠금이 켜져 있을 때만)."""
     try:
-        return html_text.replace("<!--GATE_FOOT-->", _gate.footer_html() if _gate else "")
+        foot = _gate.footer_html(request) if _gate else ""
+        who = _gate.who_html(request) if _gate else ""
     except Exception:
-        return html_text.replace("<!--GATE_FOOT-->", "")
+        foot = who = ""
+    return html_text.replace("<!--GATE_FOOT-->", foot).replace("<!--GATE_WHO-->", who)
 
 # Ensure templates and static directories exist
 os.makedirs("templates", exist_ok=True)
@@ -318,12 +320,12 @@ def _read_slack_log(date):
 
 
 @app.get("/slack", response_class=HTMLResponse)
-def slack_view():
+def slack_view(request: Request):
     """슬랙 데일리 다이제스트 실시간 뷰어 페이지."""
     try:
         p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "slack_digest_live.html")
         with open(p, encoding="utf-8") as f:
-            return HTMLResponse(_with_gate_footer(f.read()))
+            return HTMLResponse(_with_gate_footer(f.read(), request))
     except Exception as e:
         return HTMLResponse("<h1>slack 뷰어 로드 실패</h1><pre>%s</pre>" % e, status_code=500)
 
@@ -469,12 +471,12 @@ _dig_refresh_at = [0.0]
 
 
 @app.get("/dig", response_class=HTMLResponse)
-def dig_view():
+def dig_view(request: Request):
     """디그 뉴스레터 열람 페이지."""
     try:
         p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dig_view.html")
         with open(p, encoding="utf-8") as f:
-            return HTMLResponse(_with_gate_footer(f.read()))
+            return HTMLResponse(_with_gate_footer(f.read(), request))
     except Exception as e:
         return HTMLResponse("<h1>dig 뷰어 로드 실패</h1><pre>%s</pre>" % e, status_code=500)
 

@@ -12,7 +12,7 @@ import urllib.parse
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "stock"))
 try:
-    from fastapi import FastAPI
+    from fastapi import FastAPI, Request
     from fastapi.testclient import TestClient
 except Exception as e:                                   # 개발 환경에 없으면 조용히 건너뜀
     print("건너뜀(fastapi/httpx 없음): %s" % e)
@@ -60,6 +60,11 @@ def make_app():
 
     @app.get("/")
     def dash(): return {"page": "dashboard"}
+
+    @app.get("/who", include_in_schema=False)
+    def who(request: Request):
+        from fastapi.responses import HTMLResponse
+        return HTMLResponse(gate.who_html(request) + "|" + gate.footer_html(request))
 
     return app
 
@@ -160,12 +165,26 @@ check("이미 동의한 사람이 로그인하면 바로 입장", client(app).ge
 check("DB 에 이메일·전화 같은 열이 없음(최소 수집)",
       {r["name"] for r in gate._db().execute("PRAGMA table_info(users)")} == {"id", "provider", "provider_uid", "nickname", "status", "consent_version", "consent_at", "created_at", "last_login_at"})
 
+print("[누가 로그인했는지 화면에 표시]")
+cg = client(make_app()); login(cg, provider="google", uid="w-1", nick="길동"); cg.post("/gate/consent", content=AGREE, headers=FORM)
+w = cg.get("/who").text
+check("구글로 들어오면 '길동 님 · 구글'이 보임", "길동 님 · 구글" in w and 'href="/gate/account"' in w)
+ck = client(make_app()); login(ck, provider="kakao", uid="w-2", nick="카카오닉"); ck.post("/gate/consent", content=AGREE, headers=FORM)
+check("카카오로 들어오면 '카카오닉 님 · 카카오'가 보임", "카카오닉 님 · 카카오" in ck.get("/who").text)
+check("로그인 안 한 요청에는 이름이 안 보임", gate.who_html(None) == "" and "님 ·" not in client(make_app()).get("/who").text)
+cx = client(make_app()); login(cx, uid="w-3", nick="<b onmouseover=1>x</b>"); cx.post("/gate/consent", content=AGREE, headers=FORM)
+check("이름 속 HTML 은 이스케이프되어 표시", "<b onmouseover" not in cx.get("/who").text and "&lt;b" in cx.get("/who").text)
+
 print("[내 정보·탈퇴]")
 acc = c.get("/gate/account").text
 check("내 정보에 닉네임 표시", "길동" in acc)
-check("확인 체크 없이 탈퇴 누르면 안 지워짐", c.post("/gate/delete", content="", headers=FORM).status_code == 303 and gate.get_user(1) is not None)
+me = gate._unsign(c.cookies.get("gate_sess"))["uid"]                 # 이 시험의 사용자(다른 시험이 만든 사용자와 섞이지 않게 번호로 구분)
+others = gate._db().execute("SELECT COUNT(*) FROM users WHERE id<>?", (me,)).fetchone()[0]
+check("확인 체크 없이 탈퇴 누르면 안 지워짐", c.post("/gate/delete", content="", headers=FORM).status_code == 303 and gate.get_user(me) is not None)
 r = c.post("/gate/delete", content="confirm=1", headers=FORM)
-check("탈퇴하면 사용자·동의 기록이 모두 삭제", r.status_code == 200 and gate.get_user(1) is None and not gate._db().execute("SELECT * FROM consents").fetchall())
+check("탈퇴하면 그 사용자와 동의 기록이 모두 삭제", r.status_code == 200 and gate.get_user(me) is None
+      and not gate._db().execute("SELECT * FROM consents WHERE user_id=?", (me,)).fetchall())
+check("다른 사용자의 정보는 건드리지 않음", gate._db().execute("SELECT COUNT(*) FROM users WHERE id<>?", (me,)).fetchone()[0] == others)
 check("탈퇴 뒤 옛 쿠키로는 못 들어감", c.get("/slack").status_code == 302)
 
 print("[다른 사이트에서 온 요청]")
