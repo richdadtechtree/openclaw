@@ -490,6 +490,65 @@ def news_editorial(date: str = ""):
         return JSONResponse({"ok": False, "items": [], "error": str(e)[:200]})
 
 
+# ── 매일경제 '디그(Dig)' 경제 뉴스레터 (2026-10-23 사용자 요청) ─────────────────────
+# Gmail 로 오는 디그 메일을 dig_mail.py 가 파싱해 ~/.openclaw/dig_cache/<날짜>.json 에 쌓는다.
+# 웹은 그 캐시만 읽는다 → Gmail 이 끊겨도 화면은 그대로.
+try:
+    import dig_mail as _dig
+except Exception as _e:                              # 모듈 문제가 대시보드 전체를 막지 않게
+    _dig = None
+    print("[dig] dig_mail 로드 실패: %s" % _e)
+
+_dig_refresh_at = [0.0]
+
+
+@app.get("/dig", response_class=HTMLResponse)
+def dig_view():
+    """디그 뉴스레터 열람 페이지."""
+    try:
+        p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dig_view.html")
+        with open(p, encoding="utf-8") as f:
+            return HTMLResponse(f.read())
+    except Exception as e:
+        return HTMLResponse("<h1>dig 뷰어 로드 실패</h1><pre>%s</pre>" % e, status_code=500)
+
+
+@app.get("/api/dig/list")
+def dig_list():
+    if _dig is None:
+        return JSONResponse(status_code=503, content={"ok": False, "items": []})
+    return JSONResponse({"ok": True, "items": _dig.list_issues()})
+
+
+@app.get("/api/dig/item")
+def dig_item(id: str = ""):
+    if _dig is None:
+        return JSONResponse(status_code=503, content={"ok": False})
+    d = _dig.get_issue(id)
+    if not d:
+        return JSONResponse(status_code=404, content={"ok": False, "reason": "그날 디그가 아직 없습니다"})
+    return JSONResponse({"ok": True, "issue": d})
+
+
+@app.post("/api/dig/refresh")
+def dig_refresh(background_tasks: BackgroundTasks):
+    """지금 Gmail 에서 새 디그 메일 받기. 60초 안에 또 누르면 무시(연타 방지)."""
+    if _dig is None:
+        return JSONResponse(status_code=503, content={"ok": False})
+    now = time.time()
+    if now - _dig_refresh_at[0] < 60:
+        return JSONResponse({"ok": True, "started": False, "reason": "방금 확인했습니다"})
+    _dig_refresh_at[0] = now
+
+    def _run():
+        try:
+            _dig.fetch_new(days=14)
+        except Exception as e:
+            print("[dig] 새로고침 실패: %s" % e)
+    background_tasks.add_task(_run)
+    return JSONResponse({"ok": True, "started": True})
+
+
 @app.get("/api/news/zip")
 def news_zip(date: str = "", what: str = "photos"):
     """그날 사진을 한 번에 받는 ZIP. what=all 이면 PDF 도 함께."""
