@@ -163,7 +163,7 @@ with gate._db() as con:
 check("동의 이력 1건", len(cons) == 1 and "privacy" in cons[0]["items"])
 check("이미 동의한 사람이 로그인하면 바로 입장", client(app).get("/gate/login").status_code == 200 and login(client(app)).headers["location"] == "/slack")
 check("DB 에 이메일·전화 같은 열이 없음(최소 수집)",
-      {r["name"] for r in gate._db().execute("PRAGMA table_info(users)")} == {"id", "provider", "provider_uid", "nickname", "status", "consent_version", "consent_at", "created_at", "last_login_at", "is_admin"})
+      {r["name"] for r in gate._db().execute("PRAGMA table_info(users)")} == {"id", "provider", "provider_uid", "nickname", "status", "consent_version", "consent_at", "created_at", "last_login_at", "is_admin", "expires_at"})
 
 print("[누가 로그인했는지 화면에 표시]")
 cg = client(make_app()); login(cg, provider="google", uid="w-1", nick="길동"); cg.post("/gate/consent", content=AGREE, headers=FORM)
@@ -244,6 +244,76 @@ gate.cli(["unadmin", str(adm_id)])
 check("관리자에서 빼면 화면이 다시 404", adm.get("/gate/admin").status_code == 404 and adm.post("/gate/admin/act", content="uid=%d&action=block&csrf=%s" % (user_id, tok), headers=FORM).status_code == 404)
 check("내 정보 화면에 회원 번호", ">%d<" % user_id in user_c.get("/gate/account").text)
 
+print("[이용 기한: 승인할 때 정하고, 지나면 막힘]")
+import datetime as _dt  # noqa: E402
+adm2, adm2_id = mk_user("google", "adm-2", "운영자2")
+gate.cli(["admin", str(adm2_id)])
+tok2 = token_of(adm2)
+plus = gate._add_days
+yday = (gate.datetime.now(gate.KST) - gate.timedelta(days=1)).strftime("%Y-%m-%d")
+check("기한 입력 해석: 무기한 / 일수 / 날짜", gate.parse_term("none") == (True, None) and gate.parse_term("30") == (True, plus(30))
+      and gate.parse_term("custom", plus(5)) == (True, plus(5)) and gate.parse_term(plus(9)) == (True, plus(9)))
+check("기한 입력 거부: 지난 날짜·엉뚱한 글자·음수·너무 큰 수·없는 날짜·10년 넘는 날짜·빈 날짜",
+      all(gate.parse_term(*a) == (False, None) for a in (("custom", yday), ("abc",), ("-5",), ("99999",), ("custom", "2026-13-45"), ("custom", ""), ("2099-01-01",), ("0",))))
+os.environ["GATE_APPROVAL"] = "manual"
+px, pid = mk_user("kakao", "term-1", "기한테스트")
+check("승인제에서 새 가입자는 승인 대기, 기한 없음", gate.get_user(pid)["status"] == "pending" and gate.get_user(pid)["expires_at"] is None)
+page = adm2.get("/gate/admin?f=pending").text
+check("승인 대기 줄에 '기한을 고르는 칸 + 승인 버튼'이 있음", 'name="term"' in page and 'value="30"' in page and 'value="custom"' in page and 'name="until"' in page)
+r = act(adm2, pid, "approve", tok2, "&term=30")
+check("30일로 승인: 기한이 오늘+30일로 저장", r.status_code == 303 and gate.get_user(pid)["status"] == "approved" and gate.get_user(pid)["expires_at"] == plus(30))
+check("승인 안내 문구에 기한이 날짜로 표시", plus(30) in adm2.get(r.headers["location"]).text)
+check("기한 안에서는 정상 이용, 위쪽에 D-표시는 아직 없음(30일 남음)", px.get("/slack/data").status_code == 200 and "D-" not in px.get("/who").text)
+check("내 정보에 이용 기한 표시", plus(30) in px.get("/gate/account").text)
+gate.set_access(pid, "approved", plus(3))
+check("3일 남으면 위쪽에 '기한 D-3' 표시", "기한 D-3" in px.get("/who").text)
+gate.set_access(pid, "approved", plus(0))
+check("오늘이 마지막 날이면 '오늘까지' 표시하고 오늘은 아직 이용 가능", "오늘까지" in px.get("/who").text and px.get("/slack/data").status_code == 200)
+old_cookie = gate._sign({"uid": pid, "iat": int(_dt.datetime.now().timestamp()) - 10 * 86400}, 86400 * 355)
+gate.set_access(pid, "approved", yday)
+r = px.get("/slack/data")
+check("기한이 지나면 데이터 주소는 403(expired)", r.status_code == 403 and r.json().get("reason") == "expired")
+r = px.get("/slack")
+check("기한이 지나면 화면은 '이용 기간이 끝났어요' 안내(403)", r.status_code == 403 and "이용 기간이 끝났어요" in r.text and yday in r.text)
+check("로그인 화면으로 와도 같은 안내(무한 돌림 방지)", "이용 기간이 끝났어요" in px.get("/gate/login").text)
+cx = client(app_adm); cx.cookies.set("gate_sess", old_cookie)
+check("기한이 지난 사람의 로그인 쿠키는 연장되지 않음", "set-cookie" not in cx.get("/slack/data").headers)
+ap = adm2.get("/gate/admin").text
+check("관리 화면: '기한 만료' 탭에 1명, 줄에 '만료됨' 표시", "기한 만료 1" in ap and "만료됨 (%s)" % yday in ap)
+check("만료 탭에는 만료된 사람이 나오고 '이용 가능' 탭에는 안 나옴", "기한테스트" in adm2.get("/gate/admin?f=expired").text and "기한테스트" not in adm2.get("/gate/admin?f=approved").text)
+check("만료된 줄에는 '기한 변경' 칸이 있음", 'value="term"' in adm2.get("/gate/admin?f=expired").text)
+r = act(adm2, pid, "term", tok2, "&term=")
+check("'기한 선택…' 그대로 누르면 거부하고 기한은 그대로(실수로 무기한 방지)", "m=badterm" in r.headers["location"] and gate.get_user(pid)["expires_at"] == yday)
+r = act(adm2, pid, "term", tok2, "&term=custom&until=" + yday)
+check("지난 날짜로는 기한을 못 바꿈", "m=baddate" in r.headers["location"] and gate.get_user(pid)["expires_at"] == yday)
+r = act(adm2, pid, "term", tok2, "&term=custom&until=" + plus(10))
+check("날짜 지정으로 기한을 늘리면 바로 다시 이용 가능", "m=term" in r.headers["location"] and gate.get_user(pid)["expires_at"] == plus(10) and px.get("/slack/data").status_code == 200)
+r = act(adm2, pid, "term", tok2, "&term=none")
+check("무기한으로 바꾸기", gate.get_user(pid)["expires_at"] is None and "무기한" in adm2.get(r.headers["location"]).text)
+gate.cli(["block", str(pid)])
+r = act(adm2, pid, "term", tok2, "&term=7")
+check("차단된 사람의 기한은 바꿀 수 없음(먼저 차단 해제)", "m=badstate" in r.headers["location"] and gate.get_user(pid)["expires_at"] is None)
+r = act(adm2, pid, "unblock", tok2, "&term=90")
+check("차단 해제할 때도 기한을 정할 수 있음", gate.get_user(pid)["status"] == "approved" and gate.get_user(pid)["expires_at"] == plus(90))
+r = act(adm2, pid, "approve", tok2, "&term=abc")
+check("이상한 기한 값은 거부", "m=baddate" in r.headers["location"] and gate.get_user(pid)["expires_at"] == plus(90))
+check("안내 문구로 되돌려 보여 주는 날짜는 날짜 모양일 때만(글자 반사 방지)", "<script>" not in adm2.get("/gate/admin?m=approve&d=<script>alert(1)</script>").text)
+gate._db().execute("UPDATE users SET expires_at=? WHERE id=?", (yday, adm2_id)).connection.commit()
+gate.cli(["admin", str(adm2_id)])
+check("관리자는 기한이 없고 기한으로 잠기지 않음", gate.get_user(adm2_id)["expires_at"] is None and adm2.get("/gate/admin").status_code == 200)
+check("서버 명령: approve 번호 일수", gate.cli(["approve", str(pid), "45"]) == 0 and gate.get_user(pid)["expires_at"] == plus(45))
+check("서버 명령: approve 번호 날짜", gate.cli(["approve", str(pid), plus(20)]) == 0 and gate.get_user(pid)["expires_at"] == plus(20))
+check("서버 명령: 잘못된 기한은 거부하고 그대로", gate.cli(["approve", str(pid), "2000-01-01"]) == 2 and gate.get_user(pid)["expires_at"] == plus(20))
+check("서버 명령: approve 번호 none = 무기한", gate.cli(["approve", str(pid), "none"]) == 0 and gate.get_user(pid)["expires_at"] is None)
+os.environ["GATE_APPROVAL"] = "auto"; os.environ["GATE_AUTO_DAYS"] = "14"
+_, aid = mk_user("google", "auto-1", "체험사용자")
+check("자동 승인 + 체험 기간 설정(GATE_AUTO_DAYS=14)이면 새 가입자는 14일 뒤까지", gate.get_user(aid)["status"] == "approved" and gate.get_user(aid)["expires_at"] == plus(14))
+os.environ["GATE_AUTO_DAYS"] = "0"
+_, bid = mk_user("google", "auto-2", "무기한사용자")
+check("체험 기간을 안 쓰면(기본) 무기한", gate.get_user(bid)["expires_at"] is None)
+check("처리방침에 '이용 기한'이 운영자가 부여하는 정보로 명시", "이용 기한" in client(app_adm).get("/privacy").text and "운영자가 부여하는 정보" in client(app_adm).get("/privacy").text)
+check("처리방침 버전이 올라가 예전 동의자는 다시 동의해야 함", gate.POLICY_VERSION == "2026-10-23.3")
+
 print("[예전 DB 이어 쓰기(서버에 이미 있는 가입자 보호)]")
 import sqlite3 as _sq  # noqa: E402
 _keep = os.environ["GATE_DIR"]
@@ -256,7 +326,8 @@ _con.commit(); _con.close()
 os.environ["GATE_DIR"] = _old
 try:
     row = gate._db().execute("SELECT * FROM users WHERE provider_uid='old-7'").fetchone()
-    check("예전 DB 에 관리자 열이 자동으로 추가되고 가입자 정보는 그대로", row["nickname"] == "예전가입자" and row["status"] == "approved" and row["is_admin"] == 0)
+    check("예전 DB 에 관리자·기한 열이 자동으로 추가되고 가입자 정보는 그대로(기한 없음=무기한)",
+          row["nickname"] == "예전가입자" and row["status"] == "approved" and row["is_admin"] == 0 and row["expires_at"] is None and not gate.is_expired(row))
     check("두 번 열어도 오류 없음", gate._db().execute("SELECT COUNT(*) FROM users").fetchone()[0] == 1)
 finally:
     os.environ["GATE_DIR"] = _keep
