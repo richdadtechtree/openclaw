@@ -9,6 +9,8 @@
              GATE_APPROVAL=manual : 가입하면 '승인 대기' → 운영자가 `python3 gate.py approve <번호>` 해야 입장 (나중에)
 
 개인정보 최소 수집: 소셜 로그인 고유번호 + 닉네임/이름만 저장한다(이메일은 아예 요청하지 않음).
+이용 기한: 승인할 때 관리자가 기한(무기한·7일·30일·90일·1년·날짜 지정)을 정할 수 있다. 기한이 지나면(그 날 자정까지 사용 가능) 로그인해도 '이용 기간 종료' 화면이 나오고,
+          관리자가 기한을 바꾸면 곧바로 다시 쓸 수 있다. 자동 승인(auto)일 때 신규 가입자에게 체험 기간을 주려면 .env 에 GATE_AUTO_DAYS=14 처럼 적는다(기본 0 = 무기한).
 관리자: 이메일을 받지 않으므로 '이메일이 ○○이면 관리자'를 쓸 수 없다. 그 계정으로 로그인한 뒤 서버에서 `gate.py admin 회원번호` 로 한 번 지정한다
         (웹에서는 관리자 권한을 줄 수 없음). 관리자는 /gate/admin 에서 가입자 목록을 보고 승인·차단·차단 해제·삭제할 수 있다.
 저장 위치: ~/.openclaw/secret/gate/  (secret/ 은 git 이 절대 올리지 않는 폴더 — 서명 열쇠·사용자 DB 보호)
@@ -19,7 +21,7 @@
   * 쿠키 HttpOnly + SameSite=Lax + (https 일 때) Secure, 다른 사이트에서 온 POST 는 거부, 로그인 후 이동 주소는 안전한 것만.
   * 서버 내부 작업(PDF 만들기)은 내부 열쇠 헤더로만 통과 — nginx 뒤에선 모든 요청이 127.0.0.1 로 보이므로 '로컬이면 통과' 는 쓰지 않는다.
 
-운영 명령: python3 gate.py check | list | pending | approve N | block N | unblock N | delete N | stats | admin N | unadmin N
+운영 명령: python3 gate.py check | list | pending | approve N | block N | unblock N | delete N | stats | admin N | unadmin N | approve N [일수|YYYY-MM-DD|none]
 """
 import base64
 import hashlib
@@ -40,7 +42,7 @@ from datetime import datetime, timedelta, timezone
 KST = timezone(timedelta(hours=9))
 
 # 처리방침·동의 문구를 고치면 이 날짜를 바꾼다 → 모든 사용자가 새 문구에 다시 동의해야 입장한다.
-POLICY_VERSION = "2026-10-23.2"      # 동의 기록에 남는 버전(문구를 고칠 때마다 올린다)
+POLICY_VERSION = "2026-10-23.3"      # 동의 기록에 남는 버전(문구를 고칠 때마다 올린다)
 POLICY_EFFECTIVE = "2026-10-23"        # 처리방침에 보이는 시행일
 
 COOKIE_SESSION = "gate_sess"          # ⚠️ PT 대시보드(Flask)의 'session' 쿠키와 같은 도메인에서 겹치지 않게 이름을 다르게
@@ -197,9 +199,11 @@ def _db():
     con = sqlite3.connect(path, timeout=10)
     con.row_factory = sqlite3.Row
     con.executescript(_SCHEMA)
-    if "is_admin" not in {r["name"] for r in con.execute("PRAGMA table_info(users)")}:
-        con.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")     # 예전에 만든 DB 도 그대로 이어서 쓴다
-        con.commit()
+    have = {r["name"] for r in con.execute("PRAGMA table_info(users)")}
+    for col, ddl in (("is_admin", "INTEGER NOT NULL DEFAULT 0"), ("expires_at", "TEXT")):       # 예전에 만든 DB 도 가입자 정보를 그대로 둔 채 이어서 쓴다
+        if col not in have:
+            con.execute("ALTER TABLE users ADD COLUMN %s %s" % (col, ddl))
+    con.commit()
     if fresh:
         try:
             os.chmod(path, 0o600)
@@ -213,6 +217,58 @@ def _clean_name(s):
     return s[:40] or "이름 없음"
 
 
+def _today():
+    return datetime.now(KST).strftime("%Y-%m-%d")
+
+
+def _add_days(n):
+    return (datetime.now(KST) + timedelta(days=int(n))).strftime("%Y-%m-%d")
+
+
+def valid_date(t):
+    try:
+        datetime.strptime(t, "%Y-%m-%d")
+        return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", t))
+    except Exception:
+        return False
+
+
+def parse_term(term, until=""):
+    """관리자 화면·서버 명령의 기한 입력 → (올바른가, 'YYYY-MM-DD' 또는 None=무기한).
+    none=무기한 / 숫자=오늘부터 그 일수(최대 10년) / custom(+until) 또는 날짜 글자 = 그 날짜까지(오늘 이후, 10년 이내)."""
+    t = (term or "").strip()
+    if t in ("none", "무기한"):
+        return True, None
+    if t.isdigit() and 1 <= int(t) <= 3650:
+        return True, _add_days(t)
+    if t == "custom":
+        t = (until or "").strip()
+    if valid_date(t) and _today() <= t <= _add_days(3650):
+        return True, t
+    return False, None
+
+
+def is_expired(u):
+    """승인은 됐지만 이용 기한이 지났나(기한 날짜의 밤 12시까지 쓸 수 있다)."""
+    e = (u["expires_at"] or "")[:10]
+    return bool(u["status"] == "approved" and e and _today() > e)
+
+
+def days_left(u):
+    """남은 일수(오늘이면 0). 기한이 없으면 None."""
+    e = (u["expires_at"] or "")[:10]
+    if not e or not valid_date(e):
+        return None
+    return (datetime.strptime(e, "%Y-%m-%d").date() - datetime.now(KST).date()).days
+
+
+def expiry_text(u):
+    e = (u["expires_at"] or "")[:10]
+    if not e:
+        return "무기한"
+    return ("만료됨 (%s)" % e) if is_expired(u) else "%s까지" % e
+
+
 def upsert_login(provider, uid, nickname):
     """소셜 로그인에 성공했을 때: 처음이면 가입(승인 방식에 따라 상태 결정), 아니면 닉네임·최근 로그인만 갱신."""
     with _db() as con:
@@ -221,8 +277,10 @@ def upsert_login(provider, uid, nickname):
             con.execute("UPDATE users SET nickname=?, last_login_at=? WHERE id=?", (_clean_name(nickname), _now(), row["id"]))
         else:
             status = "approved" if cfg()["approval"] == "auto" else "pending"
-            con.execute("INSERT INTO users(provider,provider_uid,nickname,status,created_at,last_login_at) VALUES(?,?,?,?,?,?)",
-                        (provider, str(uid), _clean_name(nickname), status, _now(), _now()))
+            auto_days = _env("GATE_AUTO_DAYS", "0")
+            exp = _add_days(auto_days) if status == "approved" and auto_days.isdigit() and 0 < int(auto_days) <= 3650 else None     # 체험 기간(기본 무기한)
+            con.execute("INSERT INTO users(provider,provider_uid,nickname,status,expires_at,created_at,last_login_at) VALUES(?,?,?,?,?,?,?)",
+                        (provider, str(uid), _clean_name(nickname), status, exp, _now(), _now()))
         return con.execute("SELECT * FROM users WHERE provider=? AND provider_uid=?", (provider, str(uid))).fetchone()
 
 
@@ -256,13 +314,19 @@ def is_admin(u):
 def set_admin(uid, flag):
     with _db() as con:
         if flag:        # 관리자는 항상 승인된 상태여야 한다(차단된 채 관리자로 남는 모순 방지)
-            return con.execute("UPDATE users SET is_admin=1, status='approved' WHERE id=?", (uid,)).rowcount
+            return con.execute("UPDATE users SET is_admin=1, status='approved', expires_at=NULL WHERE id=?", (uid,)).rowcount     # 관리자는 기한으로 잠기지 않음
         return con.execute("UPDATE users SET is_admin=0 WHERE id=?", (uid,)).rowcount
 
 
 def _csrf(uid):
     """관리 화면의 버튼이 '이 관리자가 이 화면에서 누른 것'임을 확인하는 표(다른 사이트가 몰래 누르게 하는 공격 방지)."""
     return hmac.new(_secret(), ("csrf:%d" % int(uid)).encode(), hashlib.sha256).hexdigest()[:32]
+
+
+def set_access(uid, status, expires):
+    """승인 상태와 이용 기한을 함께 바꾼다(expires=None 이면 무기한)."""
+    with _db() as con:
+        return con.execute("UPDATE users SET status=?, expires_at=? WHERE id=?", (status, expires, uid)).rowcount
 
 
 def set_status(uid, status):
@@ -324,7 +388,7 @@ def identity_from_code(provider, code):
 
 # ───────────────────────── 화면(HTML) ─────────────────────────
 _CSS = """
-:root{--bg:#f6f7f9;--card:#fff;--ink:#1c2230;--sub:#5b6577;--line:#e3e7ee;--blue:#2f7be0;--red:#c0392b}
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1c2230;--sub:#5b6577;--line:#e3e7ee;--blue:#2f7be0;--red:#c0392b;color-scheme:light dark}
 @media (prefers-color-scheme:dark){:root{--bg:#12151b;--card:#1b2029;--ink:#e8ebf1;--sub:#9aa5b8;--line:#2b3340;--blue:#6aa6f5;--red:#ff7b6b}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:Pretendard,"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;line-height:1.7;word-break:keep-all}
@@ -343,13 +407,14 @@ label.chk input{margin-top:5px;width:18px;height:18px;flex:none}
 ul{padding-left:20px;margin:0 0 12px} li{margin:3px 0}
 main.wide{max-width:1000px}
 .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch} .tablewrap table{min-width:640px;margin:0}
-.tablewrap th,.tablewrap td{width:auto;white-space:nowrap}   /* 내 정보 화면용 첫 칸 30% 규칙을 관리 표에는 쓰지 않음 · 날짜가 여러 줄로 꺾이지 않게 */
+.tablewrap th,.tablewrap td{width:auto;white-space:nowrap}
+.tablewrap td.act{white-space:normal;min-width:270px}.tablewrap td.act div{margin:1px 0}   /* 내 정보 화면용 첫 칸 30% 규칙을 관리 표에는 쓰지 않음 · 날짜가 여러 줄로 꺾이지 않게 */
 .tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 14px}
 .tabs a{padding:6px 14px;border:1px solid var(--line);border-radius:999px;text-decoration:none;font-size:14px;color:var(--sub)}
 .tabs a.on{background:var(--blue);border-color:var(--blue);color:#fff}
 .b-ok{color:#12a150;font-weight:700}.b-wait{color:#b8730f;font-weight:700}.b-block{color:var(--red);font-weight:700}
 form.inl{display:inline;margin:0}
-.mini{font:inherit;font-size:13px;padding:4px 10px;margin:2px 3px 2px 0;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer}
+.mini{font:inherit;font-size:13px;padding:4px 8px;margin:2px 3px 2px 0;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
 .mini.go{border-color:var(--blue);color:var(--blue)}.mini.stop{border-color:var(--red);color:var(--red)}
 .note{background:rgba(127,127,127,.1);border-radius:10px;padding:10px 14px;margin:10px 0;font-size:14px}
 """
@@ -360,6 +425,16 @@ def _page(title, body, status=200, wide=False):
     doc = ('<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
            '<title>%s</title><style>%s</style></head><body><main%s>%s</main></body></html>') % (html.escape(title), _CSS, ' class="wide"' if wide else "", body)
     return HTMLResponse(doc, status_code=status, headers={"Cache-Control": "no-store"})
+
+
+def expired_html(u):
+    c = cfg()
+    contact = ("문의: " + html.escape(c["contact"])) if c["contact"] else "운영자에게 문의해 주세요."
+    return """<div class="card"><h1>⏰ 이용 기간이 끝났어요</h1>
+<p>%s 님의 이용 기한은 <b>%s</b>까지였어요. 계속 이용하려면 운영자에게 기한 연장을 요청해 주세요.</p>
+<p class="sub">%s · 연장되면 이 화면을 새로고침하면 바로 이용할 수 있어요.</p>
+<a class="btn primary" href="/gate/account">내 정보 보기</a><a class="btn danger" href="/gate/logout">로그아웃</a></div>%s""" % (
+        html.escape(u["nickname"] or ""), html.escape((u["expires_at"] or "")[:10]), contact, _foot())
 
 
 def _foot():
@@ -383,7 +458,8 @@ def privacy_html():
 <h2>1. 처리하는 개인정보 항목과 목적</h2>
 <table>
 <tr><th>항목</th><td>소셜 로그인(구글 또는 카카오)이 알려 주는 <b>고유 식별번호</b>, <b>이름(닉네임)</b>, 가입 시각·최근 접속 시각, 동의 이력</td></tr>
-<tr><th>목적</th><td>이용자 확인(본인 계정 식별), 서비스 이용 권한 관리(승인 여부 확인), 부정 이용 방지</td></tr>
+<tr><th>목적</th><td>이용자 확인(본인 계정 식별), 서비스 이용 권한·기한 관리(승인 여부와 이용 기한 확인), 부정 이용 방지</td></tr>
+<tr><th>운영자가 부여하는 정보</th><td><b>승인 상태</b>와 <b>이용 기한</b>(운영자가 정한 경우)은 이용자가 입력하는 것이 아니라 운영자가 계정에 기록하는 정보이며, 가입자 관리 화면에서 운영자만 볼 수 있습니다.</td></tr>
 <tr><th>자동 생성 정보</th><td>웹서버 <b>접속 기록</b>(접속 IP 주소, 접속 시각, 요청한 주소)이 서비스 이용 중 자동으로 남습니다. 목적은 안정적 운영과 부정 이용 방지입니다.</td></tr>
 <tr><th>수집하지 않는 것</th><td>이메일, 전화번호, 주소, 생년월일, 성별, 프로필 사진, 비밀번호는 <b>수집하지 않습니다.</b></td></tr>
 </table>
@@ -425,7 +501,7 @@ def consent_html(nickname, nxt, error=""):
 <h2>개인정보 수집·이용 동의 (필수)</h2>
 <table>
 <tr><th>수집 항목</th><td>소셜 로그인 고유 식별번호, 이름(닉네임)</td></tr>
-<tr><th>이용 목적</th><td>이용자 확인, 서비스 이용 권한 관리, 부정 이용 방지</td></tr>
+<tr><th>이용 목적</th><td>이용자 확인, 서비스 이용 권한·기한 관리, 부정 이용 방지</td></tr>
 <tr><th>보유 기간</th><td>탈퇴 시까지 (탈퇴하면 즉시 삭제)</td></tr>
 <tr><th>동의 거부 권리</th><td>동의하지 않을 수 있으며, 이 경우 서비스를 이용할 수 없습니다.</td></tr>
 </table>
@@ -466,7 +542,9 @@ def who_html(request=None):
     if not u:
         return ""
     prov = {"google": "구글", "kakao": "카카오"}.get(u["provider"], u["provider"])
-    out = '<a class="who" href="/gate/account" title="내 정보">%s 님 · %s</a>' % (html.escape(u["nickname"] or ""), html.escape(prov))
+    dl = days_left(u) if not is_admin(u) else None
+    left = (" · 오늘까지" if dl == 0 else " · 기한 D-%d" % dl) if dl is not None and 0 <= dl <= 7 else ""     # 곧 끝나면 미리 알려 준다
+    out = '<a class="who" href="/gate/account" title="내 정보">%s 님 · %s%s</a>' % (html.escape(u["nickname"] or ""), html.escape(prov), left)
     if is_admin(u):
         out += '<a class="adminlink" href="/gate/admin" title="가입자 보기·승인·차단">🛠 관리</a>'
     return out + '<a class="logout" href="/gate/logout">로그아웃</a>'
@@ -481,9 +559,20 @@ def footer_html(request=None):
 
 
 # ───────────────────────── 라우터·중간 문지기 ─────────────────────────
-_ADMIN_MSG = {"approve": "승인했어요.", "block": "차단했어요.", "unblock": "차단을 풀고 승인했어요.", "delete": "그 사람의 정보를 삭제했어요.",
-              "admin": "관리자는 이 화면에서 바꿀 수 없어요.", "none": "그런 사용자가 없어요."}
-_STATUS_KO = {"approved": ("이용 가능", "b-ok"), "pending": ("승인 대기", "b-wait"), "blocked": ("차단", "b-block")}
+_ADMIN_MSG = {"approve": "승인했어요.", "block": "차단했어요.", "unblock": "차단을 풀고 승인했어요.", "term": "이용 기한을 바꿨어요.",
+              "delete": "그 사람의 정보를 삭제했어요.", "admin": "관리자는 이 화면에서 바꿀 수 없어요.", "none": "그런 사용자가 없어요.",
+              "baddate": "날짜를 확인해 주세요(오늘 이후, 10년 이내).", "badterm": "변경할 기한을 먼저 골라 주세요.", "badstate": "승인된 사람만 기한을 바꿀 수 있어요."}
+_FILTERS = ("pending", "approved", "expired", "blocked")
+_TERM_OPTS = (("none", "무기한"), ("7", "7일"), ("30", "30일"), ("90", "90일"), ("365", "1년"), ("custom", "날짜 지정"))
+
+
+def user_cat(u):
+    """관리 화면 분류: blocked / pending / expired(승인됐지만 기한 지남) / approved."""
+    if u["status"] == "blocked":
+        return "blocked"
+    if u["status"] != "approved":
+        return "pending"
+    return "expired" if is_expired(u) else "approved"
 
 
 def _admin_btn(uid, action, label, cls, csrf, flt, confirm_text=""):
@@ -494,45 +583,73 @@ def _admin_btn(uid, action, label, cls, csrf, flt, confirm_text=""):
             % (oc, uid, action, csrf, html.escape(flt, quote=True), cls, label))
 
 
-def admin_html(me, rows, counts, flt, msg):
+def _term_form(uid, action, label, csrf, flt, placeholder=False):
+    """기한을 고르고 누르는 버튼(승인 / 차단 해제 / 기한 변경). placeholder=True 면 '기한 선택…'이 먼저 보여
+    실수로 무기한이 되는 것을 막는다(기한 변경에서 사용)."""
+    opts = ('<option value="">기한 선택…</option>' if placeholder else "") + "".join(
+        '<option value="%s"%s>%s</option>' % (v, " selected" if (v == "none" and not placeholder) else "", t) for v, t in _TERM_OPTS)
+    return ('<form method="post" action="/gate/admin/act" class="inl"><input type="hidden" name="uid" value="%d">'
+            '<input type="hidden" name="action" value="%s"><input type="hidden" name="csrf" value="%s"><input type="hidden" name="f" value="%s">'
+            '<select name="term" class="mini" onchange="this.form.until.style.display=this.value==\'custom\'?\'inline-block\':\'none\'">%s</select>'
+            '<input type="date" name="until" class="mini" style="display:none"><button class="mini go" type="submit">%s</button></form>'
+            % (uid, action, csrf, html.escape(flt, quote=True), opts, label))
+
+
+def admin_html(me, rows, counts, flt, msg, d=""):
     c = cfg()
     csrf = _csrf(me["id"])
     tabs = ""
-    for key, label in (("", "전체"), ("pending", "승인 대기"), ("approved", "이용 가능"), ("blocked", "차단")):
-        n = sum(counts.values()) if key == "" else counts.get(key, 0)
+    for key, label in (("", "전체"), ("pending", "승인 대기"), ("approved", "이용 가능"), ("expired", "기한 만료"), ("blocked", "차단")):
+        n = len(rows) if key == "" else counts.get(key, 0)
         tabs += '<a href="/gate/admin%s" class="%s">%s %d</a>' % (("?f=" + key) if key else "", "on" if key == flt else "", label, n)
     trs = ""
     for u in rows:
-        label, cls = _STATUS_KO.get(u["status"], (u["status"], ""))
+        cat = user_cat(u)
+        label, cls = {"approved": ("이용 가능", "b-ok"), "pending": ("승인 대기", "b-wait"), "expired": ("기한 만료", "b-block"), "blocked": ("차단", "b-block")}[cat]
         prov = {"google": "구글", "kakao": "카카오"}.get(u["provider"], u["provider"])
         consent = "✔" if u["consent_version"] == POLICY_VERSION else ("재동의 필요" if u["consent_version"] else "동의 전")
+        dl = days_left(u)
         if u["is_admin"]:
+            term_cell = "무기한"
             acts = '<span class="sub">관리자</span>'
         else:
+            term_cell = expiry_text(u) + ((" (D-%d)" % dl) if (dl is not None and 0 <= dl <= 7 and cat == "approved") else "")
             acts = ""
-            if u["status"] == "pending":
-                acts += _admin_btn(u["id"], "approve", "승인", "go", csrf, flt)
-            if u["status"] == "blocked":
-                acts += _admin_btn(u["id"], "unblock", "차단 해제", "go", csrf, flt)
-            if u["status"] != "blocked":
-                acts += _admin_btn(u["id"], "block", "차단", "stop", csrf, flt, "이 사람을 차단할까요? 바로 이용할 수 없게 됩니다.")
-            acts += _admin_btn(u["id"], "delete", "삭제", "stop", csrf, flt, "이 사람의 정보를 완전히 삭제할까요? 되돌릴 수 없습니다.")
-        trs += ("<tr><td>%d</td><td>%s%s</td><td>%s</td><td><span class='%s'>%s</span></td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
-                % (u["id"], html.escape(u["nickname"] or ""), " 🛠" if u["is_admin"] else "", html.escape(prov), cls, label,
-                   html.escape((u["created_at"] or "")[:16].replace("T", " ")), html.escape((u["last_login_at"] or "")[:16].replace("T", " ")),
-                   consent, acts))
+            if cat == "pending":
+                acts += _term_form(u["id"], "approve", "승인", csrf, flt)
+            elif cat == "blocked":
+                acts += _term_form(u["id"], "unblock", "차단 해제(승인)", csrf, flt)
+            else:
+                acts += _term_form(u["id"], "term", "기한 변경", csrf, flt, placeholder=True)
+            btns = ""
+            if cat != "blocked":
+                btns += _admin_btn(u["id"], "block", "차단", "stop", csrf, flt, "이 사람을 차단할까요? 바로 이용할 수 없게 됩니다.")
+            btns += _admin_btn(u["id"], "delete", "삭제", "stop", csrf, flt, "이 사람의 정보를 완전히 삭제할까요? 되돌릴 수 없습니다.")
+            acts = '<div>%s</div><div>%s</div>' % (acts, btns)
+        def _short(t):          # 2026-10-23T21:47:12 → 10-23 21:47 (표가 옆으로 길어지지 않게)
+            return html.escape((t or "")[5:16].replace("T", " "))
+        trs += ("<tr><td>%d</td><td><b>%s</b>%s<div class='sub'>%s</div></td><td><span class='%s'>%s</span></td><td>%s</td>"
+                "<td class='sub'>가입 %s<br>접속 %s</td><td>%s</td><td class='act'>%s</td></tr>"
+                % (u["id"], html.escape(u["nickname"] or ""), " 🛠" if u["is_admin"] else "", html.escape(prov), cls, label, html.escape(term_cell),
+                   _short(u["created_at"]), _short(u["last_login_at"]), consent, acts))
     if not trs:
-        trs = '<tr><td colspan="8" class="sub">해당하는 가입자가 없어요.</td></tr>'
-    note = ('지금은 <b>가입하면 바로 이용 가능</b>(auto)입니다. 승인제로 바꾸려면 서버 .env 의 <code>GATE_APPROVAL=manual</code> 후 재시작하세요.'
+        trs = '<tr><td colspan="7" class="sub">해당하는 가입자가 없어요.</td></tr>'
+    auto_days = _env("GATE_AUTO_DAYS", "0")
+    note = ('지금은 <b>가입하면 바로 이용 가능</b>(auto)입니다%s. 승인제로 바꾸려면 서버 .env 의 <code>GATE_APPROVAL=manual</code> 후 재시작하세요.'
+            % ((" · 새 가입자 체험 기간 %s일" % html.escape(auto_days)) if auto_days.isdigit() and int(auto_days) > 0 else "")
             if c["approval"] == "auto" else
-            '지금은 <b>관리자 승인 후 이용</b>(manual)입니다. 새 가입자는 "승인 대기"로 들어와요.')
-    flash = '<div class="note">%s</div>' % html.escape(_ADMIN_MSG[msg]) if msg in _ADMIN_MSG else ""
+            '지금은 <b>관리자 승인 후 이용</b>(manual)입니다. 새 가입자는 "승인 대기"로 들어와요. 승인할 때 이용 기한을 함께 정할 수 있어요.')
+    extra = ""
+    if msg in ("approve", "unblock", "term"):
+        extra = " 이용 기한: %s." % ("무기한" if d == "none" else (html.escape(d) + "까지" if d else "무기한"))
+    flash = '<div class="note">%s%s</div>' % (html.escape(_ADMIN_MSG[msg]), extra) if msg in _ADMIN_MSG else ""
     return """<div class="card"><h1>🛠 가입자 관리</h1>
 <p class="sub">%s 님(관리자) · 이름과 로그인 방식·가입일 외의 개인정보는 저장하지 않아요.</p>%s
 <div class="note">%s</div>
 <div class="tabs">%s</div>
-<div class="tablewrap"><table><tr><th>번호</th><th>이름</th><th>방식</th><th>상태</th><th>가입</th><th>최근 접속</th><th>동의</th><th>처리</th></tr>%s</table></div>
-<p class="sub">차단하면 쿠키가 남아 있어도 바로 이용할 수 없고, 삭제하면 정보와 동의 기록이 모두 지워져요. 관리자 지정·해제는 서버에서 <code>gate.py admin/unadmin 번호</code> 로만 할 수 있어요.</p>
+<div class="tablewrap"><table><tr><th>번호</th><th>이름·방식</th><th>상태</th><th>이용 기한</th><th>가입·접속</th><th>동의</th><th>처리</th></tr>%s</table></div>
+<p class="sub">기한은 그 날짜의 밤 12시까지 쓸 수 있어요(기한이 지나면 로그인해도 '이용 기간 종료'가 보이고, 관리자가 기한을 늘리면 바로 다시 쓸 수 있어요).
+차단하면 쿠키가 남아 있어도 바로 이용할 수 없고, 삭제하면 정보와 동의 기록이 모두 지워져요. 관리자 지정·해제는 서버에서 <code>gate.py admin/unadmin 번호</code> 로만 할 수 있어요.</p>
 <p><a class="btn primary" href="/slack">📰 신문 요약</a></p></div>
 <div class="foot"><a href="/gate/account">내 정보</a> · <a href="/gate/logout">로그아웃</a> · <a href="/privacy">개인정보 처리방침</a></div>""" % (
         html.escape(me["nickname"] or ""), flash, note, tabs, trs)
@@ -584,6 +701,8 @@ def _check(request):
         return JSONResponse({"ok": False, "reason": "consent"}, status_code=403) if api else RedirectResponse("/gate/consent?next=" + nxt, 302)
     if user["status"] != "approved":
         return JSONResponse({"ok": False, "reason": "pending"}, status_code=403) if api else RedirectResponse("/gate/pending", 302)
+    if is_expired(user):
+        return JSONResponse({"ok": False, "reason": "expired"}, status_code=403) if api else _page("이용 기간 종료", expired_html(user), 403)
     return None
 
 
@@ -597,7 +716,7 @@ def _renew_session(request, resp):
     if not p or "uid" not in p or time.time() - int(p.get("iat", 0)) < RENEW_AFTER_DAYS * 86400:
         return
     u = get_user(p["uid"])
-    if u and u["status"] == "approved":
+    if u and u["status"] == "approved" and not is_expired(u):
         resp.set_cookie(COOKIE_SESSION, _session_token(u["id"]), **_cookie_args(SESSION_DAYS * 86400))
 
 
@@ -653,7 +772,7 @@ def install(app):
         nxt = safe_next(next)
         u = session_user(request)
         if u and u["consent_version"] == POLICY_VERSION and u["status"] == "approved":
-            return RedirectResponse(nxt, 302)
+            return _page("이용 기간 종료", expired_html(u), 403) if is_expired(u) else RedirectResponse(nxt, 302)
         return _page("로그인", login_html(nxt, c) + _foot())
 
     @r.get("/gate/{provider}/start")
@@ -733,7 +852,7 @@ def install(app):
         prov = {"google": "구글", "kakao": "카카오"}.get(u["provider"], u["provider"])
         body = """<div class="card"><h1>내 정보</h1>
 <table><tr><th>회원 번호</th><td>%d</td></tr><tr><th>이름(닉네임)</th><td>%s</td></tr><tr><th>로그인 방식</th><td>%s</td></tr>
-<tr><th>가입 시각</th><td>%s</td></tr><tr><th>동의 시각</th><td>%s (처리방침 %s)</td></tr><tr><th>상태</th><td>%s</td></tr></table>
+<tr><th>가입 시각</th><td>%s</td></tr><tr><th>동의 시각</th><td>%s (처리방침 %s)</td></tr><tr><th>상태</th><td>%s</td></tr><tr><th>이용 기한</th><td>%s</td></tr></table>
 <p class="sub">저장된 정보는 위가 전부예요(이메일 등은 저장하지 않습니다).</p>
 <p><a class="btn primary" href="/slack">📰 신문 요약</a><a class="btn primary" href="/dig">📚 경제 공부 (디그)</a></p>
 <h2>탈퇴 (정보 삭제)</h2><p class="sub">누르면 저장된 모든 정보와 동의 기록이 즉시 삭제되며 되돌릴 수 없어요.</p>
@@ -742,7 +861,8 @@ def install(app):
 <div class="foot"><a href="/gate/logout">로그아웃</a> · <a href="/privacy">개인정보 처리방침</a></div>""" % (
             u["id"], html.escape(u["nickname"] or ""), html.escape(prov), html.escape(u["created_at"] or ""),
             html.escape(u["consent_at"] or "-"), html.escape(u["consent_version"] or "-"),
-            html.escape({"approved": "이용 가능", "pending": "승인 대기", "blocked": "이용 제한"}.get(u["status"], u["status"])))
+            html.escape({"approved": "이용 가능", "pending": "승인 대기", "blocked": "이용 제한"}.get(u["status"], u["status"])),
+            html.escape("무기한(관리자)" if is_admin(u) else expiry_text(u)))
         return _page("내 정보", body)
 
     @r.post("/gate/delete")
@@ -766,17 +886,21 @@ def install(app):
         return u if is_admin(u) else None            # 관리자가 아니면 '없는 페이지'처럼 보이게(존재 자체를 알리지 않음)
 
     @r.get("/gate/admin")
-    def admin_page(request: Request, f: str = "", m: str = ""):
+    def admin_page(request: Request, f: str = "", m: str = "", d: str = ""):
         if not cfg()["enabled"]:
             return _off()
         me = _admin_user(request)
         if not me:
             return _nope()
-        flt = f if f in ("pending", "approved", "blocked") else ""
+        flt = f if f in _FILTERS else ""
         with _db() as con:
-            rows = con.execute("SELECT * FROM users %s ORDER BY id DESC" % ("WHERE status=?" if flt else ""), (flt,) if flt else ()).fetchall()
-            counts = {st: n for st, n in con.execute("SELECT status, COUNT(*) FROM users GROUP BY status")}
-        return _page("가입자 관리", admin_html(me, rows, counts, flt, m), wide=True)
+            allrows = con.execute("SELECT * FROM users ORDER BY id DESC").fetchall()
+        counts = {}
+        for u in allrows:
+            counts[user_cat(u)] = counts.get(user_cat(u), 0) + 1
+        rows = [u for u in allrows if (not flt or user_cat(u) == flt)]
+        dd = d if (d == "none" or valid_date(d)) else ""        # 화면에 되돌려 보여 주는 값은 날짜 모양일 때만(임의 글자 반사 방지)
+        return _page("가입자 관리", admin_html(me, rows, counts, flt, m, dd), wide=True)
 
     @r.post("/gate/admin/act")
     async def admin_act(request: Request):
@@ -787,16 +911,27 @@ def install(app):
         if not hmac.compare_digest(f.get("csrf", ""), _csrf(me["id"])):
             return _page("요청 오류", '<div class="card"><h1>확인에 실패했어요</h1><p>관리 화면을 새로고침한 뒤 다시 눌러 주세요.</p>'
                          '<a class="btn primary" href="/gate/admin">관리 화면으로</a></div>', 400)
-        flt = f.get("f") if f.get("f") in ("pending", "approved", "blocked") else ""
+        flt = f.get("f") if f.get("f") in _FILTERS else ""
         action = f.get("action", "")
         t = get_user(f["uid"]) if f.get("uid", "").isdigit() else None
+        exp_note = ""
         if not t:
             code = "none"
         elif t["is_admin"]:
             code = "admin"                               # 관리자끼리·자기 자신은 이 화면에서 못 건드림(실수로 잠그는 사고 방지)
-        elif action == "approve" or action == "unblock":
-            set_status(t["id"], "approved")
-            code = action
+        elif action in ("approve", "unblock", "term"):
+            term = f.get("term", "")
+            if action == "term" and not term:
+                code = "badterm"                         # '기한 선택…' 그대로 눌렀을 때 — 실수로 무기한이 되지 않게
+            elif action == "term" and t["status"] != "approved":
+                code = "badstate"
+            else:
+                ok, exp = parse_term(term or "none", f.get("until", ""))
+                if not ok:
+                    code = "baddate"
+                else:
+                    set_access(t["id"], "approved" if action != "term" else t["status"], exp)
+                    code, exp_note = action, exp or "none"
         elif action == "block":
             set_status(t["id"], "blocked")
             code = "block"
@@ -805,7 +940,8 @@ def install(app):
             code = "delete"
         else:
             code = "none"
-        return RedirectResponse("/gate/admin?%sm=%s" % (("f=" + flt + "&") if flt else "", code), 303)
+        qs = ("f=" + flt + "&" if flt else "") + "m=" + code + (("&d=" + exp_note) if exp_note else "")
+        return RedirectResponse("/gate/admin?" + qs, 303)
 
     @r.get("/gate/logout")
     def logout():
@@ -818,10 +954,11 @@ def install(app):
 
 # ───────────────────────── 운영 명령 ─────────────────────────
 def _print_users(rows):
-    print("%-4s %-7s %-9s %-22s %-20s %-12s %s" % ("번호", "방식", "상태", "닉네임", "가입", "동의버전", "관리자"))
+    print("%-4s %-7s %-9s %-22s %-20s %-14s %-12s %s" % ("번호", "방식", "상태", "닉네임", "가입", "이용기한", "동의버전", "관리자"))
     for u in rows:
-        print("%-4s %-7s %-9s %-22s %-20s %-12s %s" % (u["id"], u["provider"], u["status"], (u["nickname"] or "")[:20], u["created_at"],
-                                                      u["consent_version"] or "-", "★" if u["is_admin"] else ""))
+        print("%-4s %-7s %-9s %-22s %-20s %-14s %-12s %s" % (u["id"], u["provider"], u["status"], (u["nickname"] or "")[:20], u["created_at"],
+                                                            ("만료 " + u["expires_at"][:10]) if is_expired(u) else ((u["expires_at"] or "")[:10] or "무기한"),
+                                                            u["consent_version"] or "-", "★" if u["is_admin"] else ""))
     if not rows:
         print("(없음)")
 
@@ -861,6 +998,14 @@ def cli(argv):
             delete_user(uid)
             print("삭제했어요: %d" % uid)
             return 0
+        if cmd in ("approve", "unblock") and len(argv) > 2:          # 기한: 일수 | YYYY-MM-DD | none
+            ok, exp = parse_term(argv[2])
+            if not ok:
+                print("기한을 확인해 주세요: 일수(예 30) / 날짜(예 2026-12-31, 오늘 이후·10년 이내) / none")
+                return 2
+            n = set_access(uid, "approved", exp)
+            print(("처리했어요: %d → approved (기한 %s)" % (uid, exp or "무기한")) if n else "그런 번호가 없어요: %d" % uid)
+            return 0 if n else 1
         n = set_status(uid, "blocked" if cmd == "block" else "approved")
         print(("처리했어요: %d → %s" % (uid, "blocked" if cmd == "block" else "approved")) if n else "그런 번호가 없어요: %d" % uid)
         return 0 if n else 1
