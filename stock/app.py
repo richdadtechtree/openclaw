@@ -345,11 +345,37 @@ def slack_view(request: Request):
 
 @app.get("/economy/data")
 @app.get("/slack/data")  # 옛 주소도 계속 응답(이미 열려 있던 화면용)
-def slack_data(date: str = ""):
-    """그날 슬랙 발신 로그 JSON. date 미지정 시 오늘(KST)."""
+def slack_data(date: str = "", edition: str = ""):
+    """그날 슬랙 발신 로그 JSON. date 미지정 시 오늘(KST).
+    edition=online 이면 온라인신문 요약(09·18시, slack_logs/online/) — 2026-10-27 사용자 요청."""
     if not date:
         date = _dt_now().strftime("%Y-%m-%d")
+    if edition == "online":
+        return JSONResponse({"date": date, "edition": "online", "messages": _read_online_log(date)})
     return JSONResponse({"date": date, "messages": _read_slack_log(date)})
+
+
+def _read_online_log(date):
+    """온라인신문 요약 로그(slack_logs/online/DATE.jsonl). 슬랙 API 는 섞지 않는다."""
+    if not _re.fullmatch(r"\d{4}-\d\d-\d\d", date or ""):
+        return []
+    path = os.path.join(_SLACK_LOG_DIR, "online", "%s.jsonl" % date)
+    out = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    r = _json.loads(line)
+                except Exception:
+                    continue
+                text = _clean_slack_text(r.get("text", ""))
+                if text:
+                    out.append({"ts": r.get("ts", ""), "source": r.get("source", "unknown"),
+                                "kind": r.get("kind", "text"), "text": text, "room": "gpt"})
+    except OSError:
+        return []
+    out.sort(key=lambda m: m["ts"])
+    return out
 
 
 def _dt_now():
