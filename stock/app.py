@@ -5,7 +5,7 @@ from datetime import datetime
 
 import uvicorn
 from fastapi import FastAPI, BackgroundTasks, Request
-from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
@@ -470,6 +470,41 @@ def news_editorial(date: str = ""):
         return JSONResponse(_mk_ed.get_editorials(date))
     except Exception as e:
         return JSONResponse({"ok": False, "items": [], "error": str(e)[:200]})
+
+
+# ── AI 오디오 브리핑 (2026-10-27 사용자 요청: NotebookLM 오디오 오버뷰를 신문 요약 화면에서 재생) ──
+try:
+    import news_podcast as _pod
+except Exception:                                   # 모듈 문제가 페이지 전체를 막지 않게
+    _pod = None
+
+
+@app.get("/api/news/podcast")
+def news_podcast(date: str = ""):
+    """그날 오디오 브리핑 정보(제목·크기·재생 주소). 없으면 ok:false — 화면은 칸을 숨긴다."""
+    if _pod is None:
+        return JSONResponse(status_code=503, content={"ok": False})
+    return JSONResponse(_pod.info(date), headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/news/podcast/audio")
+def news_podcast_audio(request: Request, date: str = ""):
+    """오디오 파일(m4a). 서버 starlette(0.37)의 FileResponse 는 Range 를 모르므로 직접 206 으로 잘라 준다
+    — 아이폰 사파리는 Range 없이는 재생을 못 하고, 앞뒤 넘기기도 이걸로 된다."""
+    path = _pod.audio_path(date) if _pod else None
+    if not path:
+        return JSONResponse(status_code=404, content={"ok": False, "reason": "그날 오디오가 없습니다"})
+    rng = _pod.byte_range(request.headers.get("range"), os.path.getsize(path))
+    if rng is None:
+        return FileResponse(path, media_type="audio/mp4", headers={"Accept-Ranges": "bytes"})
+    if rng is False:
+        return Response(status_code=416, headers={"Content-Range": "bytes */%d" % os.path.getsize(path)})
+    start, end, size = rng
+    with open(path, "rb") as f:
+        f.seek(start)
+        body = f.read(end - start + 1)
+    return Response(body, status_code=206, media_type="audio/mp4",
+                    headers={"Accept-Ranges": "bytes", "Content-Range": "bytes %d-%d/%d" % (start, end, size)})
 
 
 # ── 매일경제 '디그(Dig)' 경제 뉴스레터 (2026-10-23 사용자 요청) ─────────────────────
