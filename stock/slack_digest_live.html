@@ -244,6 +244,9 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   .news-note{font-size:12.5px;color:var(--muted);margin-top:10px;line-height:1.6}
   .news-note a{color:var(--accent-bright);text-decoration:none}
   .news.waiting{border-style:dashed;box-shadow:none}
+  .pod[hidden]{display:none}
+  .pod .news-head{margin-bottom:9px}
+  .pod-audio{display:block;width:100%;height:40px}
   @media (max-width:520px){
     .news{padding:13px 14px 14px;border-radius:12px}
     .news-grid{grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px}
@@ -615,6 +618,15 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
     <div class="news-note" id="news-note"></div>
   </section>
 
+  <!-- 2026-10-27 사용자 요청: 그날 요약으로 만든 NotebookLM 오디오 오버뷰(팟캐스트)를 바로 듣는 칸 -->
+  <section class="news pod" id="pod" hidden aria-labelledby="pod-h">
+    <div class="news-head">
+      <span class="news-kicker" id="pod-h"><span class="ico">🎧</span>오늘의 AI 오디오 브리핑</span>
+      <span class="news-sub" id="pod-sub"></span>
+    </div>
+    <audio class="pod-audio" id="pod-audio" controls preload="none"></audio>
+  </section>
+
   <div class="toolbar" id="toolbar"></div>
   <main class="feed" id="feed"></main>
   <!-- 2026-10-20 사용자 요청: 매일경제 사설을 맨 아래 늘 (서버 stock/mk_editorial.py → /api/news/editorial) -->
@@ -624,7 +636,7 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   </section>
   <footer>
     <span id="foot-count">—</span>
-    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-22e</span></span>
+    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-27a</span></span>
   </footer>
 </div>
 
@@ -1521,8 +1533,27 @@ document.addEventListener("click",e=>{
   const body=document.getElementById("mk-ed-b"+b.dataset.k), open=!body.classList.contains("open");
   body.classList.toggle("open",open); b.textContent=open?"접기":"전문 펼치기"; b.setAttribute("aria-expanded",String(open));
 });
+/* ── AI 오디오 브리핑 (2026-10-27) — NotebookLM 오디오 오버뷰. 그날 파일이 없으면 칸을 숨긴다.
+   오디오는 아침 요약 게시 뒤 10~20분 뒤에 생기므로, 없을 땐 3분마다 다시 확인한다.
+   재생 중에는 src 를 건드리지 않는다(20초 자동 갱신이 재생을 끊지 않게). */
+const POD={date:"",at:0,ok:false};
+async function loadPodcast(){
+  const sec=document.getElementById("pod"); if(!sec) return;
+  if(POD.date===state.date && (POD.ok || Date.now()-POD.at < 3*60000)) return;
+  POD.date=state.date; POD.at=Date.now();
+  let d=null;
+  try{ const r=await fetch(`/api/news/podcast?date=${state.date}`,{cache:"no-store"}); d=await r.json(); }catch(_){ d=null; }
+  if(POD.date!==state.date) return;                    // 그새 날짜를 바꿨다
+  const au=document.getElementById("pod-audio");
+  POD.ok=!!(d&&d.ok&&d.url);
+  if(!POD.ok){ au.pause(); au.removeAttribute("src"); au.load(); sec.hidden=true; return; }
+  if(au.getAttribute("src")!==d.url){ au.src=d.url; }
+  document.getElementById("pod-sub").textContent=[d.title, "NotebookLM", mb(d.bytes)].filter(Boolean).join(" · ");
+  sec.hidden=false;
+}
 async function loadNews(){
   loadEditorial();
+  loadPodcast();
   const box=document.getElementById("news");
   if(!box) return;
   let d=null;
