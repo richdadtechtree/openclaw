@@ -74,6 +74,10 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   h1.date{font-size:clamp(27px,6vw,38px);font-weight:800;letter-spacing:-.02em;margin:14px 0 6px;line-height:1.12;text-wrap:balance;font-variant-numeric:tabular-nums}
   .lede{color:var(--muted);font-size:15px;margin:0 0 16px;max-width:52ch}
   .datebar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+  .edtog{display:inline-flex;gap:0;margin:0 0 12px;border:1px solid var(--line-strong);border-radius:10px;overflow:hidden;background:var(--surface)}
+  .edtog button{font-family:var(--sans);font-size:14px;font-weight:700;color:var(--muted);background:transparent;border:0;padding:8px 16px;cursor:pointer}
+  .edtog button+button{border-left:1px solid var(--line-strong)}
+  .edtog button[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
   .datebar input[type=date]{font-family:var(--mono);font-size:13px;color:var(--ink);background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;padding:6px 10px}
   .btn{font-family:var(--sans);font-size:13px;font-weight:600;color:var(--muted);background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;padding:6px 12px;cursor:pointer}
   .btn:hover{color:var(--ink);border-color:var(--accent)}
@@ -595,9 +599,14 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
     <!--GATE_WHO-->
   </nav>
   <header class="mast">
-    <div class="eyebrow"><span class="label">오늘 신문 요약</span><span class="live"><span class="pulse"></span>LIVE</span></div>
+    <div class="eyebrow"><span class="label" id="ed-label">오늘 신문 요약</span><span class="live"><span class="pulse"></span>LIVE</span></div>
     <h1 class="date" id="date">불러오는 중…</h1>
     <p class="lede">쉽게 보는 오늘 뉴스</p>
+    <!-- 2026-10-27 사용자 요청: 종이신문(아침 지면) / 온라인신문(네이버 경제 주요 기사, 9시·18시) 고르기 -->
+    <div class="edtog" id="edtog" role="group" aria-label="신문 종류">
+      <button type="button" data-ed="paper" aria-pressed="true">📰 종이신문</button>
+      <button type="button" data-ed="online" aria-pressed="false">🌐 온라인신문</button>
+    </div>
     <div class="datebar">
       <input type="date" id="datepick" aria-label="날짜 선택">
       <button class="btn" id="today">오늘</button>
@@ -636,7 +645,7 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   </section>
   <footer>
     <span id="foot-count">—</span>
-    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-27a</span></span>
+    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-27b</span></span>
   </footer>
 </div>
 
@@ -1398,13 +1407,27 @@ const hhmm=iso=>{const m=(iso||"").match(/T(\d{2}):(\d{2})/);return m?`${m[1]}:$
 function krDate(d){const[y,mo,da]=d.split("-").map(Number);const w=["일","월","화","수","목","금","토"][new Date(Date.UTC(y,mo-1,da)).getUTCDay()];return `${y}년 ${mo}월 ${da}일 (${w})`}
 function todayKST(){const n=new Date(Date.now()+9*3600*1000);return n.toISOString().slice(0,10)}
 
-const state={date:todayKST(),active:new Set(),data:{date:todayKST(),messages:[]}};
+const state={date:todayKST(),active:new Set(),data:{date:todayKST(),messages:[]},edition:initEdition()};
+/* 종이신문/온라인신문 (2026-10-27). 주소 ?edition=online 이 먼저, 없으면 이 브라우저가 마지막에 고른 것. */
+function initEdition(){
+  const q=new URLSearchParams(location.search).get("edition");
+  if(q==="online"||q==="paper") return q;
+  try{ return localStorage.getItem("digest.edition")==="online"?"online":"paper"; }catch(e){ return "paper"; }
+}
+function syncEdition(){
+  const on=state.edition==="online";
+  document.querySelectorAll("#edtog button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.ed===state.edition)));
+  document.getElementById("ed-label").textContent=on?"온라인 신문 요약 · 9시·18시":"오늘 신문 요약";
+}
 
 async function load(){
+  const ed=state.edition;
   try{
-    const r=await fetch(`/economy/data?date=${state.date}`,{cache:"no-store"});
+    const r=await fetch(`/economy/data?date=${state.date}`+(ed==="online"?"&edition=online":""),{cache:"no-store"});
     if(!r.ok) throw new Error("HTTP "+r.status);
-    state.data=await r.json();
+    const d=await r.json();
+    if(ed!==state.edition) return;                     // 그새 종이/온라인을 바꿨다
+    state.data=d;
     document.getElementById("updated").textContent="마지막 갱신 "+new Date().toTimeString().slice(0,8);
   }catch(e){
     document.getElementById("updated").textContent="갱신 실패 — 재시도 중";
@@ -1452,7 +1475,9 @@ function render(){
   if(msgs.length){const bd=document.createElement("div");bd.className="daybreak";bd.textContent="오래된순";feed.appendChild(bd)}
   const shown=msgs.filter(m=>state.active.size===0||state.active.has(CATS[m.source]?m.source:"unknown"));
   if(!shown.length){
-    feed.insertAdjacentHTML("beforeend",'<div class="empty"><div class="big">아직 표시할 메시지가 없어요</div>이 날짜에 #gpt 채널에 올라온 대화가 없습니다.</div>');
+    feed.insertAdjacentHTML("beforeend",state.edition==="online"
+      ?'<div class="empty"><div class="big">아직 온라인신문 요약이 없어요</div>네이버 경제 주요 기사 5개를 매일 9시·18시에 요약해 올립니다.</div>'
+      :'<div class="empty"><div class="big">아직 표시할 메시지가 없어요</div>이 날짜에 #gpt 채널에 올라온 대화가 없습니다.</div>');
   }
   shown.forEach(m=>{
     const c=cat(m.source);const el=document.createElement("article");
@@ -1552,6 +1577,12 @@ async function loadPodcast(){
   sec.hidden=false;
 }
 async function loadNews(){
+  if(state.edition==="online"){                        // 온라인신문엔 지면 원본·오디오·사설 칸이 없다
+    ["news","pod","mk-ed"].forEach(id=>{ const el=document.getElementById(id); if(el) el.hidden=true; });
+    const au=document.getElementById("pod-audio"); if(au) au.pause();
+    ED.at=0; POD.date="";                              // 종이신문으로 돌아오면 다시 그리게
+    return;
+  }
   loadEditorial();
   loadPodcast();
   const box=document.getElementById("news");
@@ -2857,7 +2888,7 @@ if(/[?&]diag=1/.test(location.search)){
 
 function decorate(force){
   const feed=document.getElementById("feed"); if(!feed) return;
-  const paper=viewMode()==="paper";
+  const paper=viewMode()==="paper" && state.edition!=="online";   // 온라인신문엔 지면 사진이 없다(2026-10-27)
   const imgs=(newsState.date===state.date && newsState.images)||[];
   const sig=[paper,feedVer,state.date,!!(PT.data&&PT.date===state.date),imgs.map(i=>i.name).join(","),JSON.stringify(allLinks()[state.date]||{})].join("|");
   if(!force && sig===lastDecor) return;
@@ -3105,6 +3136,14 @@ document.getElementById("news-refresh").addEventListener("click",async(e)=>{
   newsState.busy=false; b.disabled=false; b.textContent="↻ 받아오기";
 });
 
+document.getElementById("edtog").addEventListener("click",e=>{
+  const b=e.target.closest("button[data-ed]"); if(!b || b.dataset.ed===state.edition) return;
+  state.edition=b.dataset.ed;
+  try{ localStorage.setItem("digest.edition",state.edition); }catch(_){}
+  state.data={date:state.date,messages:[]};            // 다른 신문 글이 잠깐 남아 보이지 않게
+  syncEdition(); load(); loadNews();
+});
+syncEdition();
 document.getElementById("datepick").addEventListener("change",e=>{state.date=e.target.value;load();loadNews()});
 document.getElementById("today").addEventListener("click",()=>{state.date=todayKST();load();loadNews()});
 
