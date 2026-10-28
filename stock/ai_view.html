@@ -45,6 +45,10 @@
   .gn h2 a:hover{text-decoration:underline}
   .gn .dom{color:var(--sub);font-size:13px;font-weight:400}
   .gn p{margin:6px 0 8px;color:var(--sub);font-size:calc(14.5px*var(--fs))}
+  .gn .desc{cursor:pointer;border-radius:8px}
+  .gn .desc:hover{color:var(--ink)}
+  .gn .desc .tog{color:var(--blue);font-size:13px;white-space:nowrap}
+  .gn .desc.open{white-space:pre-line;color:var(--ink)}
   a{color:var(--blue)}
   .empty{text-align:center;color:var(--sub);padding:60px 16px;white-space:pre-line}
   .note{color:var(--sub);font-size:12px;text-align:center}
@@ -145,11 +149,33 @@ function threadCard(t){
   c.appendChild(link('Threads에서 보기 ↗', t.url, 'more'));
   return c;
 }
+// 요약 앞부분을 누르면 GeekNews 본문 전체를 받아 그 자리에 펼친다(다시 누르면 접힘). 받은 본문은 이 화면에서 기억한다.
+// 5분마다 다시 그려도 펼쳐 둔 글은 펼친 채로 둔다.
+const fullText={}, opened=new Set();
+function geekDesc(g){
+  const p=el('p','desc'); p.tabIndex=0; p.setAttribute('role','button'); p.setAttribute('aria-expanded','false');
+  const show=(text,open,tog)=>{ p.textContent=text+' '; p.appendChild(el('span','tog',tog)); p.classList.toggle('open',open);
+    p.setAttribute('aria-expanded',String(open)); if(open) opened.add(g.id); else opened.delete(g.id); };
+  if(opened.has(g.id)&&fullText[g.id]) show(fullText[g.id],true,'▴ 접기'); else show(g.desc,false,'▾ 펼치기');
+  const toggle=async()=>{
+    if(p.classList.contains('open')){ show(g.desc,false,'▾ 펼치기'); return; }
+    if(!fullText[g.id]){
+      show(g.desc,false,'불러오는 중…');
+      let d; try{ d=await (await fetch('/api/ai/topic?id='+encodeURIComponent(g.id))).json(); }catch(e){ d={}; }
+      if(!d.ok){ show(g.desc,false,'· 본문을 못 불러왔어요(다시 누르기)'); return; }
+      fullText[g.id]=d.text;
+    }
+    show(fullText[g.id],true,'▴ 접기');
+  };
+  p.onclick=e=>{ if(!getSelection().toString()) toggle(); };     // 글자를 드래그해 고를 땐 안 접힘
+  p.onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); toggle(); } };
+  return p;
+}
 function geekCard(g){
   const c=el('article','card gn');
   const h=el('h2'); h.appendChild(link(g.title, g.url)); if(g.domain){ h.appendChild(document.createTextNode(' ')); h.appendChild(el('span','dom','('+g.domain+')')); }
   c.appendChild(h);
-  if(g.desc) c.appendChild(el('p',null,g.desc));
+  if(g.desc) c.appendChild(geekDesc(g));
   const m=el('div','meta');
   m.appendChild(el('span',null,when(g.at)));
   m.appendChild(el('span',null,'· '+g.points+'점'));

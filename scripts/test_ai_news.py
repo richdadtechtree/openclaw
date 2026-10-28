@@ -61,6 +61,13 @@ def main():
               and a["comments"] == 2 and a["topic"] == "https://news.hada.io/topic?id=36136", a)
         check("① 원문 없는 글은 토론 주소", g[1]["url"] == "https://news.hada.io/topic?id=36130" and g[1]["comments"] == 0)
 
+        page = ("<p>머리</p><div class=topic_contents><div><section id='topic_contents' class='article-content'><ul>\n"
+                "<li>첫 <strong>굵게</strong> &amp; 끝</li>\n<li>둘째\n<ul>\n<li>안쪽</li>\n</ul>\n</li>\n</ul>"
+                "<p>문단 <code>x</code></p></section></div></div>")
+        check("⑤ 본문: 목록·안쪽 목록 들여쓰기·문단", ai.parse_topic(page) == "• 첫 굵게 & 끝\n• 둘째\n  • 안쪽\n\n문단 x",
+              repr(ai.parse_topic(page)))
+        check("⑤ 본문 칸 없음·잘못된 번호", ai.parse_topic("<p>x</p>") == "" and ai.topic("1;rm")["ok"] is False)
+
         groups = [[post("A", 100, "첫 글 🧵"), post("A1", 101, "1/ 이어서", media=True), post("X", 102, "남의 답글", user="other")],
                   [post("B", 200, "새 글")], [post("A", 100, "첫 글 🧵")], [post("Z", 300, "남의 글", user="other")]]
         t = ai.parse_threads(groups)

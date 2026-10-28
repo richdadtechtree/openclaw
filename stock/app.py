@@ -640,6 +640,14 @@ def ai_feed(src: str = "threads"):
     return JSONResponse(_ai.feed(src), headers={"Cache-Control": "no-store"})
 
 
+@app.get("/api/ai/topic")
+def ai_topic(id: str = ""):
+    """GeekNews 글 본문(카드의 요약을 누르면 펼친다)."""
+    if _ai is None:
+        return JSONResponse(status_code=503, content={"ok": False})
+    return JSONResponse(_ai.topic(id))
+
+
 @app.post("/api/ai/refresh")
 def ai_refresh(background_tasks: BackgroundTasks, src: str = "threads"):
     """지금 새 글 받기. 출처마다 60초 안에 또 누르면 무시(연타 방지 — Threads 는 크로미움을 띄운다)."""
