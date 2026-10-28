@@ -593,6 +593,39 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
 
   .sitefoot{max-width:1120px;margin:0 auto;padding:18px 20px 40px;text-align:center;font-size:13px;color:var(--muted)}
   .sitefoot a{color:var(--muted)} @media print{.sitefoot{display:none}}
+  /* ══ 2026-10-28 가독성 (사용자 요청: "종이·온라인 모두 가독성 좋게, 한줄 요약은 굵고 크게") ═══════════════
+     ① 기사마다 구분선·여백 ② 넓은 화면에서 한 줄이 너무 길지 않게(약 46글자폭) ③ HOW 항목은 둘째 줄이 꼬리표 아래로
+     말려 들지 않게 매달린 들여쓰기 ④ '오늘의 한줄 요약'은 번호 달린 큰 글씨 상자. 위 규칙을 덮어쓴다(되돌릴 땐 이 묶음만 지움). */
+  .card .meta:empty{display:none}
+  .brf-art + .brf-art:not(.has-side){border-top:1px solid var(--line);padding-top:26px}
+  .brf-art{margin-bottom:28px}
+  .brf-art:not(.has-side){max-width:46em}
+  .brf-title{font-size:calc(20px*var(--fs));margin-bottom:14px}
+  .brf-kv{font-size:calc(16px*var(--fs));line-height:1.85;margin:.7em 0}
+  .brf-kv[data-k="WHAT"] .v{font-weight:600;color:var(--ink)}
+  .brf-bul{display:flex;gap:.55em;align-items:flex-start;margin:.55em 0 .55em calc(52px*var(--fs) + 14px);
+           font-size:calc(15.5px*var(--fs));line-height:1.8}
+  .brf-bul .bu{flex:none;color:var(--c-how);font-weight:800}
+  .brf-bul .bt{flex:1;min-width:0}
+  .brf-bul .brf-tagx{margin-right:6px}
+  .brf-tail{margin:2px 0;padding:22px 24px 20px;border-radius:16px;max-width:46em;
+            background:color-mix(in srgb,var(--accent-bright) 9%,var(--surface));
+            border:1px solid color-mix(in srgb,var(--accent-bright) 28%,transparent)}
+  .brf-tail .tl{font-size:calc(20px*var(--fs));font-weight:800;letter-spacing:-.02em;margin:0 0 14px;color:var(--accent)}
+  .brf-tail ol{list-style:none;margin:0;padding:0;counter-reset:tl}
+  .brf-tail li{counter-increment:tl;display:flex;gap:12px;align-items:flex-start;margin:0 0 .85em;
+               font-size:calc(17.5px*var(--fs));font-weight:650;line-height:1.75;letter-spacing:-.012em;color:var(--ink)}
+  .brf-tail li:last-child{margin-bottom:0}
+  .brf-tail li::before{content:counter(tl);flex:none;min-width:1.6em;height:1.6em;margin-top:.12em;border-radius:999px;
+               display:inline-flex;align-items:center;justify-content:center;font-size:.78em;font-weight:800;
+               color:var(--surface);background:var(--accent-bright)}
+  @media (max-width:520px){
+    .brf-bul{margin-left:0}
+    .brf-title{font-size:calc(18px*var(--fs))}
+    .brf-kv{font-size:calc(15.5px*var(--fs))}
+    .brf-tail{padding:18px 16px 16px}
+    .brf-tail li{font-size:calc(16.5px*var(--fs))}
+  }
 </style>
 </head>
 <body class="paper">
@@ -653,7 +686,7 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   </section>
   <footer>
     <span id="foot-count">—</span>
-    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-28c</span></span>
+    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-28d</span></span>
   </footer>
 </div>
 
@@ -1287,7 +1320,7 @@ function briefing(raw){
     // 번호 목록 안의 불릿(• …)은 방금 항목의 설명으로 붙인다
     if(inList && lastItem>=0 && (m=line.match(/^•\s*([\s\S]+)$/))){ addNote(m[1]); continue; }
     if(m=line.match(/^•\s*([\s\S]*)$/)){           // 그 밖의 불릿
-      open(); art+='<div class="brf-line">• '+tagged(m[1])+"</div>";
+      open(); art+='<div class="brf-line brf-bul"><span class="bu">•</span><span class="bt">'+tagged(m[1])+"</span></div>";   // 둘째 줄도 글 첫머리에 맞춤(2026-10-28)
       continue;
     }
 
@@ -1410,6 +1443,7 @@ function briefing(raw){
   flushChk();
   flush();
 
+  head=head.replace(/^\d{4}-\d\d-\d\d\s*/,"");      // 날짜는 화면 맨 위에 이미 크게 있다 → '09시 온라인신문' 같은 나머지만(2026-10-28)
   const html=(head?'<div class="brf-head">'+inline(head)+"</div>":"")+out.join("");
   return {html:html||mrkdwn(raw), part:part};
 }
@@ -1496,12 +1530,12 @@ function render(){
     const raw=bodyOf.get(m)||"";                    // 꼬리표·JSON 묶음을 뗀 사람이 읽는 글
     const txt=dropNotes(raw)||raw;                  // 안내문 줄을 걷어낸 본문(다 지워지면 원문 유지)
     // 신문 브리핑이면 전용 서식, 아니면 기존 그대로
-    const brf=isBriefing(txt)?briefing(txt):null;
-    const bodyHTML=brf?brf.html:mrkdwn(txt);
-    const partTag=(brf&&brf.part)?`<span class="kind">${brf.part}</span>`:``;
+    const tail=tailBox(txt);                        // '📌 오늘의 한줄 요약' 메시지는 큰 글씨 상자로(2026-10-28)
+    const brf=!tail&&isBriefing(txt)?briefing(txt):null;
+    const bodyHTML=tail||(brf?brf.html:mrkdwn(txt));
+    // 신문 요약 카드엔 '기타'·'1/5' 꼬리표를 달지 않는다(읽는 사람에게 의미가 없음 — 2026-10-28 사용자 요청)
     el.innerHTML=`<span class="time">${hhmm(m.ts)}</span><span class="node"></span>`+
-      `<div class="card"><div class="meta"><span class="tag">${c.label}</span>`+
-      partTag+
+      `<div class="card"><div class="meta">${brf||tail?``:`<span class="tag">${c.label}</span>`}`+
       (m.kind==="image"?`<span class="kind">이미지</span>`:``)+`</div>`+
       `<div class="body">${bodyHTML}</div></div>`;
     feed.appendChild(el);
@@ -1510,6 +1544,16 @@ function render(){
   seenKeys=new Set(msgs.map(msgKey));   // 다음 렌더 때 '새 것'을 가려내기 위한 기준
   feedVer++; decorate();                // 피드를 새로 그렸으면 '글+지면' 사진 칸도 다시 붙인다
   decorateFlows();                      // '연결 5가지' 를 기사 고리로(2026-10-20)
+}
+/* '오늘의 한줄 요약'(종이) · 'HH시 온라인 한줄 요약'(온라인) 메시지 → 번호 달린 큰 글씨 상자. 아니면 null.
+   모양: [신문요약 n/N] 머리줄(있으면 뗌) → '📌 …한줄 요약' 줄 → 흐름 문장들(한 줄에 하나). */
+function tailBox(t){
+  const L=String(t||"").replace(/\r/g,"").split("\n").map(l=>l.trim()).filter(Boolean);
+  if(L.length && /^\[[^\]]*신문\s*요약[^\]]*\]/.test(L[0])) L.shift();
+  if(L.length<2 || !/^📌\s*\S.*한\s*줄\s*요약\s*$/u.test(L[0])) return null;
+  const items=L.slice(1).filter(l=>!/^```/.test(l));
+  if(!items.length) return null;
+  return '<div class="brf-tail"><div class="tl">'+inline(L[0])+"</div><ol>"+items.map(l=>"<li><span>"+inline(l)+"</span></li>").join("")+"</ol></div>";
 }
 // 메시지 한 건을 구별하는 열쇠. ts 는 슬랙에서 메시지마다 고유하다.
 function msgKey(m){ return (m.ts||"")+"|"+(m.kind||""); }
