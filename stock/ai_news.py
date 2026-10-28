@@ -62,6 +62,67 @@ def parse_geeknews(page):
     return out
 
 
+def html_to_text(h):
+    """GeekNews 본문 HTML → 줄글(목록은 '• ', 안쪽 목록은 들여쓰기). 화면은 글자로만 그려 바깥 HTML 을 넣지 않는다."""
+    out, depth, pre = [], 0, False
+    for tok in re.split(r"(<[^>]+>)", h or ""):
+        if tok.startswith("<"):
+            t = re.match(r"</?\s*([a-zA-Z0-9]+)", tok)
+            t = t.group(1).lower() if t else ""
+            end = tok.startswith("</")
+            if t in ("ul", "ol"):
+                depth = max(depth - 1, 0) if end else depth + 1
+                if depth == (0 if end else 1):              # 맨 바깥 목록 앞뒤에만 줄을 띄운다
+                    out.append("\n")
+            elif t == "li" and not end:
+                out.append("\n" + "  " * max(depth - 1, 0) + "• ")
+            elif t == "pre":
+                pre = not end
+                out.append("\n")
+            elif t in ("p", "br", "div", "blockquote", "h1", "h2", "h3", "h4", "h5", "h6", "tr"):
+                out.append("\n")
+            continue
+        s = html.unescape(tok)
+        out.append(s if pre else re.sub(r"\s+", " ", s))
+    text = "\n".join(x.rstrip() for x in "".join(out).split("\n"))
+    text = re.sub(r"(?m)^ +(?!\s*• )", "", text)          # 목록이 아닌 줄의 앞 공백
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def parse_topic(page):
+    """news.hada.io/topic 화면 → 본문 글. 본문 칸이 없으면 ''."""
+    m = re.search(r"<section id='topic_contents'[^>]*>(.*?)</section>", page or "", re.S)
+    return html_to_text(m.group(1)) if m else ""
+
+
+def topic(tid):
+    """GeekNews 글 하나의 본문(누르면 펼치기용). 한 번 받은 글은 하루 동안 캐시에서 준다."""
+    tid = str(tid or "")
+    if not re.fullmatch(r"\d{1,9}", tid):
+        return {"ok": False, "reason": "잘못된 글 번호"}
+    p = os.path.join(CACHE_DIR, "topics", tid + ".json")
+    try:
+        with open(p, encoding="utf-8") as f:
+            d = json.load(f)
+        if time.time() - d.get("at", 0) < 86400:
+            return d
+    except (OSError, ValueError):
+        pass
+    try:
+        req = urllib.request.Request("https://news.hada.io/topic?id=" + tid,
+                                     headers={"User-Agent": UA, "Accept-Language": "ko-KR,ko;q=0.9"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            text = parse_topic(r.read().decode("utf-8", "replace"))
+    except Exception as e:
+        return {"ok": False, "reason": "본문을 받지 못함: %s" % str(e)[:100]}
+    d = {"ok": bool(text), "id": tid, "text": text, "at": int(time.time())}
+    if text:
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False)
+    return d
+
+
 def fetch_geeknews():
     req = urllib.request.Request(GEEK_URL, headers={"User-Agent": UA, "Accept-Language": "ko-KR,ko;q=0.9"})
     with urllib.request.urlopen(req, timeout=20) as r:
