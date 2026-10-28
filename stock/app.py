@@ -34,7 +34,7 @@ except Exception as _gate_err:
     @app.middleware("http")
     async def _gate_failsafe(request, call_next):
         p = request.url.path
-        if p in ("/economy", "/slack", "/dig") or p.startswith(("/economy/", "/slack/", "/dig/", "/api/dig/", "/api/news/")):
+        if p in ("/economy", "/slack", "/dig", "/ai") or p.startswith(("/economy/", "/slack/", "/dig/", "/api/dig/", "/api/news/", "/ai/", "/api/ai/")):
             from fastapi.responses import JSONResponse as _J
             return _J({"ok": False, "reason": "로그인 모듈 오류 — 운영자에게 알려 주세요"}, status_code=503)
         return await call_next(request)
@@ -608,6 +608,48 @@ def dig_refresh(background_tasks: BackgroundTasks):
         except Exception as e:
             print("[dig] 새로고침 실패: %s" % e)
     background_tasks.add_task(_run)
+    return JSONResponse({"ok": True, "started": True})
+
+
+# ── AI 소식 (2026-10-28 사용자 요청): Threads @choi.openai · GeekNews 새 글 ─────────────
+# ai_news.py 가 바깥 글을 ~/.openclaw/ai_news_cache/ 에 쌓고, 웹은 그 캐시만 읽는다(오래되면 뒤에서 새로 받음).
+try:
+    import ai_news as _ai
+except Exception as _e:                              # 모듈 문제가 대시보드 전체를 막지 않게
+    _ai = None
+    print("[ai] ai_news 로드 실패: %s" % _e)
+
+_ai_refresh_at = {}
+
+
+@app.get("/ai", response_class=HTMLResponse)
+def ai_view(request: Request):
+    """AI 소식 열람 페이지."""
+    try:
+        p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ai_view.html")
+        with open(p, encoding="utf-8") as f:
+            return HTMLResponse(_with_gate_footer(f.read(), request))
+    except Exception as e:
+        return HTMLResponse("<h1>AI 소식 뷰어 로드 실패</h1><pre>%s</pre>" % e, status_code=500)
+
+
+@app.get("/api/ai/feed")
+def ai_feed(src: str = "threads"):
+    if _ai is None:
+        return JSONResponse(status_code=503, content={"ok": False, "items": []})
+    return JSONResponse(_ai.feed(src), headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/ai/refresh")
+def ai_refresh(background_tasks: BackgroundTasks, src: str = "threads"):
+    """지금 새 글 받기. 출처마다 60초 안에 또 누르면 무시(연타 방지 — Threads 는 크로미움을 띄운다)."""
+    if _ai is None or src not in _ai.SOURCES:
+        return JSONResponse(status_code=503 if _ai is None else 400, content={"ok": False})
+    now = time.time()
+    if now - _ai_refresh_at.get(src, 0) < 60:
+        return JSONResponse({"ok": True, "started": False, "reason": "방금 확인했습니다"})
+    _ai_refresh_at[src] = now
+    background_tasks.add_task(_ai.refresh, src)
     return JSONResponse({"ok": True, "started": True})
 
 

@@ -1,6 +1,6 @@
 """로그인(구글·카카오) + 개인정보 동의 + 승인 게이트 (2026-10-23 사용자 요청).
 
-잠그는 곳: /economy(신문 요약, 옛 /slack 은 넘겨 줌) · /dig(경제 공부) 와 그 화면이 쓰는 /api/news/* · /api/dig/* · /slack/* 주소.
+잠그는 곳: /economy(신문 요약, 옛 /slack 은 넘겨 줌) · /dig(경제 공부) · /ai(AI 소식, 2026-10-28) 와 그 화면이 쓰는 /api/news/* · /api/dig/* · /api/ai/* · /slack/* 주소.
           (주가 대시보드 '/' 와 나머지는 그대로 둔다)
 
 흐름
@@ -171,7 +171,7 @@ def _unsign(token):
         return None
 
 
-_NEXT_OK = re.compile(r"^/(economy|slack|dig)(/[A-Za-z0-9_\-./]*)?(\?[A-Za-z0-9_\-=&%.]*)?$")
+_NEXT_OK = re.compile(r"^/(economy|slack|dig|ai)(/[A-Za-z0-9_\-./]*)?(\?[A-Za-z0-9_\-=&%.]*)?$")
 
 
 def safe_next(target, default="/economy"):
@@ -870,7 +870,7 @@ def admin_html(me, rows, counts, flt, msg, d=""):
 
 
 def _is_gated(path):
-    return (path in ("/economy", "/slack", "/dig") or path.startswith(("/economy/", "/slack/", "/dig/", "/api/dig/", "/api/news/")))
+    return (path in ("/economy", "/slack", "/dig", "/ai") or path.startswith(("/economy/", "/slack/", "/dig/", "/api/dig/", "/api/news/", "/ai/", "/api/ai/")))
 
 
 def _is_api(path):
@@ -1138,7 +1138,7 @@ def install(app):
 <h2>닉네임 바꾸기</h2>
 <form method="post" action="/gate/nickname"><input class="txt" type="text" name="nickname" value="%s" maxlength="20" required autocomplete="off" aria-label="새 닉네임">
 <button class="btn primary" type="submit">닉네임 변경</button></form>
-<p><a class="btn primary" href="/economy">📰 신문 요약</a><a class="btn primary" href="/dig">📚 경제 공부 (디그)</a></p>
+<p><a class="btn primary" href="/economy">📰 신문 요약</a><a class="btn primary" href="/dig">📚 경제 공부 (디그)</a><a class="btn primary" href="/ai">🤖 AI 소식</a></p>
 <h2>탈퇴 (정보 삭제)</h2><p class="sub">누르면 저장된 모든 정보와 동의 기록이 즉시 삭제되며 되돌릴 수 없어요.</p>
 <form method="post" action="/gate/delete"><label class="chk"><input type="checkbox" name="confirm" value="1"><span>내 정보를 삭제하고 탈퇴합니다.</span></label>
 <button class="btn danger" type="submit">탈퇴하고 정보 삭제</button></form></div>
