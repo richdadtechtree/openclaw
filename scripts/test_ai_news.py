@@ -103,6 +103,20 @@ def main():
         check("④ 오래되면 새로 받아 합침", r and r["items"][0]["title"] == "새로 온 글" and len(r["items"]) == 3 and not r["error"], r)
         check("④ 모르는 출처", ai.feed("x")["ok"] is False)
 
+        import io
+        import urllib.error
+
+        def gone(req, timeout=0):
+            raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, io.BytesIO(b""))
+        real = ai.urllib.request.urlopen
+        ai.urllib.request.urlopen = gone
+        try:
+            t = ai.topic("36200")
+        finally:
+            ai.urllib.request.urlopen = real
+        r = ai.feed("geeknews")
+        check("⑥ 지워진 글(404): gone 표시·목록에서 빠짐", t.get("gone") and [x["id"] for x in r["items"]] == ["36136", "36130"], (t, r))
+
     print("모두 통과" if ok_all else "실패 있음")
     return 0 if ok_all else 1
 

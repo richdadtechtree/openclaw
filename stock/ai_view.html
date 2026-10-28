@@ -162,6 +162,7 @@ function geekDesc(g){
     if(!fullText[g.id]){
       show(g.desc,false,'불러오는 중…');
       let d; try{ d=await (await fetch('/api/ai/topic?id='+encodeURIComponent(g.id))).json(); }catch(e){ d={}; }
+      if(d.gone){ show(g.desc,false,'· GeekNews에서 삭제된 글이에요'); p.onclick=p.onkeydown=null; p.style.cursor='default'; return; }
       if(!d.ok){ show(g.desc,false,'· 본문을 못 불러왔어요(다시 누르기)'); return; }
       fullText[g.id]=d.text;
     }
