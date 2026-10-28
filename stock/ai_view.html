@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--GATE_THEME-->
+<title>AI 소식</title>
+<style>
+  /* 2026-10-28 사용자 요청: Threads @choi.openai · GeekNews 새 글 모아 보기. 색·모양은 dig_view.html 과 같다.
+     테마 3가지: 자동(기기 설정을 따름) / 화이트(data-theme="light") / 다크(data-theme="dark") */
+  :root{--bg:#f6f7f9;--card:#fff;--ink:#1c2230;--sub:#5b6577;--line:#e3e7ee;--blue:#2f7be0;--soft:#eaf2fd;--fs:1;color-scheme:light}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){--bg:#12151b;--card:#1b2029;--ink:#e8ebf1;--sub:#9aa5b8;--line:#2b3340;--blue:#6aa6f5;--soft:#1f2c40;color-scheme:dark}
+  }
+  :root[data-theme="dark"]{--bg:#12151b;--card:#1b2029;--ink:#e8ebf1;--sub:#9aa5b8;--line:#2b3340;--blue:#6aa6f5;--soft:#1f2c40;color-scheme:dark}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:Pretendard,"Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+       line-height:1.75;word-break:keep-all;overflow-wrap:anywhere}
+  .top{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line);
+       display:flex;gap:8px;align-items:center;padding:10px 16px;flex-wrap:wrap}
+  .top h1{font-size:16px;margin:0;flex:1;white-space:nowrap}
+  button{font:inherit;font-size:14px;color:var(--ink);background:var(--card);
+       border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer}
+  button:disabled{opacity:.4;cursor:default}
+  .srcs{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .srcs button{border:0;border-radius:0;font-weight:600;color:var(--sub)}
+  .srcs button+button{border-left:1px solid var(--line)}
+  .srcs button[aria-pressed="true"]{background:var(--blue);color:var(--card)}
+  main{max-width:760px;margin:0 auto;padding:16px 16px 80px}
+  .status{color:var(--sub);font-size:13px;margin:0 0 12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .status .err{color:#c0392b}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+        padding:18px 20px;margin-bottom:14px;font-size:calc(16px*var(--fs))}
+  .meta{color:var(--sub);font-size:13px;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .meta a{color:var(--sub)}
+  .post{white-space:pre-line;margin:8px 0 0}
+  .post+.post{border-top:1px dashed var(--line);padding-top:12px;margin-top:12px}
+  .media{display:inline-block;margin-top:6px;font-size:13px;color:var(--sub)}
+  .more{display:inline-block;margin-top:12px;font-size:14px}
+  .fold{margin-top:10px}
+  .fold summary{cursor:pointer;color:var(--blue);font-size:14px}
+  .gn h2{font-size:calc(17px*var(--fs));line-height:1.45;margin:0 0 4px}
+  .gn h2 a{color:var(--ink);text-decoration:none}
+  .gn h2 a:hover{text-decoration:underline}
+  .gn .dom{color:var(--sub);font-size:13px;font-weight:400}
+  .gn p{margin:6px 0 8px;color:var(--sub);font-size:calc(14.5px*var(--fs))}
+  a{color:var(--blue)}
+  .empty{text-align:center;color:var(--sub);padding:60px 16px;white-space:pre-line}
+  .note{color:var(--sub);font-size:12px;text-align:center}
+
+  /* ── 사이트 탭 메뉴: 신문 요약 ↔ 경제 공부(디그) ↔ AI 소식. 다른 화면에도 같은 모양이 있다 ── */
+  .sitenav{display:flex;gap:6px;flex-wrap:wrap;flex-basis:100%}
+  .sitenav a{display:inline-flex;align-items:center;padding:6px 14px;border-radius:999px;font-size:14px;font-weight:600;
+             color:var(--sub);text-decoration:none;border:1px solid var(--line);background:var(--card)}
+  .sitenav a:hover{color:var(--ink)}
+  .sitenav a.who{margin-left:auto;background:transparent;border-color:transparent;font-weight:500;font-size:13px}
+  .sitenav a.logout,.sitenav a.adminlink{padding:5px 12px;font-size:13px}
+  .sitenav a[aria-current="page"]{background:var(--blue);color:var(--card);border-color:var(--blue);cursor:default}
+
+  .sitefoot{max-width:760px;margin:0 auto;padding:0 16px 40px;text-align:center;font-size:13px;color:var(--sub)}
+  .sitefoot a{color:var(--sub)}
+  @media (max-width:520px){ .top{position:static} .top h1{flex-basis:100%} .card{padding:15px 15px} }   /* 폰: 위 메뉴가 화면을 많이 가려서 따라오지 않게 */
+</style>
+</head>
+<body>
+<div class="top">
+  <nav class="sitenav" aria-label="페이지 이동">
+    <a href="/economy">📰 신문 요약</a>
+    <a href="/dig">📚 경제 공부 (디그)</a>
+    <a href="/ai" aria-current="page">🤖 AI 소식</a>
+    <!--GATE_WHO-->
+  </nav>
+  <h1>🤖 AI 소식</h1>
+  <span class="srcs" role="group" aria-label="출처">
+    <button data-src="threads" aria-pressed="true">🧵 Threads</button>
+    <button data-src="geeknews" aria-pressed="false">🧑‍💻 GeekNews</button>
+  </span>
+  <button id="fm" title="글자 작게">가−</button>
+  <button id="fp" title="글자 크게">가+</button>
+  <button id="th" title="화면 색: 자동 → 화이트 → 다크">🌓 자동</button>
+  <button id="rf" title="지금 새 글 받기">↻</button>
+</div>
+<main id="main"><div class="empty">불러오는 중…</div></main>
+<!--GATE_FOOT-->
+
+<script>
+// ── 작은 도우미 ──────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+// 요소 만들기. 글자는 textContent 로만 넣는다(바깥 글이 HTML 로 해석되는 것을 막는 안전장치).
+function el(tag, cls, text){ const e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; }
+function safeUrl(u){ return /^https?:\/\//i.test(u||'') ? u : ''; }
+function link(text, url, cls){ const a=el('a', cls||null, text); const u=safeUrl(url); if(u){ a.href=u; a.target='_blank'; a.rel='noopener noreferrer'; } return a; }
+const SRC={threads:{name:'Threads @choi.openai', home:'https://www.threads.com/@choi.openai'},
+           geeknews:{name:'GeekNews 새 글', home:'https://news.hada.io/new'}};
+// 시각: 한국시간으로 '10월 28일 (화) 12:00', 오늘·어제는 '오늘 12:00'
+function when(t){
+  const d=typeof t==='number'?new Date(t*1000):new Date(t); if(isNaN(d)) return '';
+  const k=s=>new Date(s.toLocaleString('en-US',{timeZone:'Asia/Seoul'}));
+  const x=k(d), now=k(new Date()), hm=String(x.getHours()).padStart(2,'0')+':'+String(x.getMinutes()).padStart(2,'0');
+  const day=Math.round((new Date(now.getFullYear(),now.getMonth(),now.getDate())-new Date(x.getFullYear(),x.getMonth(),x.getDate()))/864e5);
+  if(day===0) return '오늘 '+hm; if(day===1) return '어제 '+hm;
+  return (x.getMonth()+1)+'월 '+x.getDate()+'일 ('+'일월화수목금토'[x.getDay()]+') '+hm;
+}
+
+// ── 글자 크기·화면 색: 디그 화면과 같은 저장 이름(같은 브라우저면 같은 설정) ──
+const FS=[.9,1,1.1,1.25,1.4]; let fi=1;
+try{ const s=parseInt(localStorage.getItem('dig.fs')); if(s>=0&&s<FS.length) fi=s; }catch(e){}
+function applyFs(){ document.documentElement.style.setProperty('--fs',FS[fi]);
+  try{localStorage.setItem('dig.fs',fi);}catch(e){}
+  $('fm').disabled=fi===0; $('fp').disabled=fi===FS.length-1; }
+const THEMES=[['auto','🌓 자동'],['light','☀️ 화이트'],['dark','🌙 다크']]; let ti=0;
+try{ const s=window.__GATE_THEME||localStorage.getItem('dig.theme'); const k=THEMES.findIndex(t=>t[0]===s); if(k>=0) ti=k; }catch(e){}
+function saveThemeToAccount(t){ try{ fetch('/gate/theme',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({theme:t}),keepalive:true}).catch(()=>{}); }catch(e){} }
+function applyTheme(){
+  const [v,label]=THEMES[ti];
+  if(v==='auto') document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme',v);
+  $('th').textContent=label; try{ localStorage.setItem('dig.theme',v); }catch(e){}
+}
+
+// ── 고른 출처: 주소 ?src= 가 먼저, 없으면 이 브라우저가 마지막에 고른 것 ──
+let src='threads';
+try{ const q=new URLSearchParams(location.search).get('src'); const s=q||localStorage.getItem('ai.src'); if(SRC[s]) src=s; }catch(e){}
+
+// ── 그리기 ──────────────────────────────────────────────────
+function statusLine(d){
+  const s=el('div','status');
+  s.appendChild(link(SRC[src].name+' ↗', SRC[src].home));
+  if(d.fetched_at) s.appendChild(el('span',null,'· 받은 시각 '+when(d.fetched_at)));
+  if(d.refreshing) s.appendChild(el('span',null,'· 새 글 확인 중…'));
+  if(d.error) s.appendChild(el('span','err','· 최근 받기 실패: '+d.error));
+  return s;
+}
+function threadCard(t){
+  const c=el('article','card');
+  const m=el('div','meta'); m.appendChild(el('span',null,when(t.at))); if(t.posts.length>1) m.appendChild(el('span',null,'· 이어진 글 '+t.posts.length+'개'));
+  c.appendChild(m);
+  const add=(box,p)=>{ const d=el('div','post',p.text||'(글 없음)'); box.appendChild(d);
+    if(p.media){ const x=el('a','media','📷 사진·영상은 원문에서'); x.href=safeUrl(p.url); x.target='_blank'; x.rel='noopener noreferrer'; d.appendChild(el('br')); d.appendChild(x); } };
+  add(c,t.posts[0]);
+  if(t.posts.length>1){                               // 이어진 글(1/ 2/ …)은 접어 두었다가 펼친다
+    const f=el('details','fold'); f.appendChild(el('summary',null,'이어진 글 '+(t.posts.length-1)+'개 펼치기'));
+    t.posts.slice(1).forEach(p=>add(f,p)); c.appendChild(f);
+  }
+  c.appendChild(link('Threads에서 보기 ↗', t.url, 'more'));
+  return c;
+}
+function geekCard(g){
+  const c=el('article','card gn');
+  const h=el('h2'); h.appendChild(link(g.title, g.url)); if(g.domain){ h.appendChild(document.createTextNode(' ')); h.appendChild(el('span','dom','('+g.domain+')')); }
+  c.appendChild(h);
+  if(g.desc) c.appendChild(el('p',null,g.desc));
+  const m=el('div','meta');
+  m.appendChild(el('span',null,when(g.at)));
+  m.appendChild(el('span',null,'· '+g.points+'점'));
+  if(g.author) m.appendChild(el('span',null,'· '+g.author));
+  m.appendChild(document.createTextNode('·')); m.appendChild(link('댓글 '+g.comments+'개 · GeekNews에서 보기', g.topic));
+  c.appendChild(m);
+  return c;
+}
+function render(d){
+  const main=$('main'); main.textContent='';
+  main.appendChild(statusLine(d));
+  const items=d.items||[];
+  if(!items.length){ main.appendChild(el('div','empty', d.refreshing?'처음 글을 받는 중이에요. 잠시 뒤 다시 확인합니다.':'아직 받은 글이 없어요.'+(d.error?'\n('+d.error+')':''))); return; }
+  items.forEach(x=>main.appendChild(src==='threads'?threadCard(x):geekCard(x)));
+  main.appendChild(el('div','note', src==='threads'
+    ? 'Threads는 로그인 없이 최근 글 몇 개만 보여 줘서, 30분마다 받아 이곳에 쌓아 둡니다 · 개인 열람용'
+    : 'GeekNews(news.hada.io/new) 새 글 · 10분마다 확인 · 개인 열람용'));
+  document.body.dataset.ready='1';
+}
+
+let seq=0, again=null;
+async function load(){
+  const my=++seq; clearTimeout(again);
+  document.querySelectorAll('.srcs button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.src===src)));
+  let d;
+  try{ d=await (await fetch('/api/ai/feed?src='+src,{cache:'no-store'})).json(); }
+  catch(e){ d={items:[],error:'서버에 연결하지 못했어요'}; }
+  if(my!==seq) return;                                // 그새 출처를 바꿨다
+  render(d);
+  if(d.refreshing) again=setTimeout(load, src==='threads'?20000:8000);   // 뒤에서 받는 중이면 끝날 즈음 다시
+}
+
+document.querySelector('.srcs').onclick=e=>{
+  const b=e.target.closest('button[data-src]'); if(!b||b.dataset.src===src) return;
+  src=b.dataset.src; try{ localStorage.setItem('ai.src',src); }catch(_){}
+  history.replaceState(null,'','?src='+src); $('main').textContent=''; $('main').appendChild(el('div','empty','불러오는 중…')); load();
+};
+$('fm').onclick=()=>{ if(fi>0){fi--;applyFs();} };
+$('fp').onclick=()=>{ if(fi<FS.length-1){fi++;applyFs();} };
+$('th').onclick=()=>{ ti=(ti+1)%THEMES.length; applyTheme(); saveThemeToAccount(THEMES[ti][0]); };
+$('rf').onclick=async()=>{
+  $('rf').disabled=true;
+  try{ await fetch('/api/ai/refresh?src='+src,{method:'POST'}); }catch(e){}
+  setTimeout(()=>{ load(); $('rf').disabled=false; }, src==='threads'?15000:4000);   // 받는 시간을 잠깐 기다린 뒤
+};
+setInterval(()=>{ if(!document.hidden) load(); }, 5*60000);   // 열어 둔 채면 5분마다 새로 그림
+
+applyFs(); applyTheme(); load();
+</script>
+</body>
+</html>
