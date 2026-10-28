@@ -653,7 +653,7 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   </section>
   <footer>
     <span id="foot-count">—</span>
-    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-28b</span></span>
+    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-28c</span></span>
   </footer>
 </div>
 
@@ -1472,8 +1472,7 @@ function render(){
   
   const counts={};msgs.forEach(m=>{const k=CATS[m.source]?m.source:"unknown";counts[k]=(counts[k]||0)+1});
   const tb=document.getElementById("toolbar");tb.innerHTML="";
-  tb.appendChild(chip("all","전체",msgs.length,null));
-  ["bot","user","unknown"].forEach(k=>{if(counts[k])tb.appendChild(chip(k,cat(k).label,counts[k],cat(k).color))});
+  // 2026-10-28 사용자 요청: '전체·기타' 분류 칩은 의미가 없어 뺐다(늘 전체를 보여 준다). 가−/가+ 만 남긴다.
   const right=document.createElement("div"); right.className="tb-right";
   right.append(fontCtl());
   // 화이트/다크는 맨 위 탭 줄 오른쪽으로(2026-10-23). 갱신 때마다 다시 그리므로 비우고 넣는다(중복 방지)
@@ -1482,7 +1481,7 @@ function render(){
   tb.appendChild(right);
   syncChips();
   const feed=document.getElementById("feed");feed.innerHTML="";
-  if(msgs.length){const bd=document.createElement("div");bd.className="daybreak";bd.textContent="오래된순";feed.appendChild(bd)}
+  // '오래된순' 안내 줄도 의미가 없어 뺐다(2026-10-28 사용자 요청)
   const shown=msgs.filter(m=>state.active.size===0||state.active.has(CATS[m.source]?m.source:"unknown"));
   if(!shown.length){
     feed.insertAdjacentHTML("beforeend",state.edition==="online"
