@@ -506,18 +506,20 @@ except Exception:                                   # 모듈 문제가 페이지
 
 
 @app.get("/api/news/podcast")
-def news_podcast(date: str = ""):
-    """그날 오디오 브리핑 정보(제목·크기·재생 주소). 없으면 ok:false — 화면은 칸을 숨긴다."""
+def news_podcast(date: str = "", edition: str = ""):
+    """그날 오디오 브리핑 정보(제목·크기·재생 주소). 없으면 ok:false — 화면은 칸을 숨긴다.
+    edition=online 이면 온라인신문 시간대(09·18)별 목록 items(2026-10-28)."""
     if _pod is None:
         return JSONResponse(status_code=503, content={"ok": False})
-    return JSONResponse(_pod.info(date), headers={"Cache-Control": "no-store"})
+    data = _pod.online_info(date) if edition == "online" else _pod.info(date)
+    return JSONResponse(data, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/news/podcast/audio")
-def news_podcast_audio(request: Request, date: str = ""):
+def news_podcast_audio(request: Request, date: str = "", slot: str = ""):
     """오디오 파일(m4a). 서버 starlette(0.37)의 FileResponse 는 Range 를 모르므로 직접 206 으로 잘라 준다
     — 아이폰 사파리는 Range 없이는 재생을 못 하고, 앞뒤 넘기기도 이걸로 된다."""
-    path = _pod.audio_path(date) if _pod else None
+    path = _pod.audio_path(date, slot) if _pod else None   # slot: 온라인신문 09·18
     if not path:
         return JSONResponse(status_code=404, content={"ok": False, "reason": "그날 오디오가 없습니다"})
     rng = _pod.byte_range(request.headers.get("range"), os.path.getsize(path))

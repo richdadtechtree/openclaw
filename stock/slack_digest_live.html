@@ -251,6 +251,11 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   .pod[hidden]{display:none}
   .pod .news-head{margin-bottom:9px}
   .pod-audio{display:block;width:100%;height:40px}
+  .pod-slots{display:inline-flex;margin:0 0 9px;border:1px solid var(--line-strong);border-radius:8px;overflow:hidden}
+  .pod-slots[hidden]{display:none}
+  .pod-slots button{font-family:var(--sans);font-size:12.5px;font-weight:700;color:var(--muted);background:transparent;border:0;padding:5px 12px;cursor:pointer}
+  .pod-slots button+button{border-left:1px solid var(--line-strong)}
+  .pod-slots button[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
   @media (max-width:520px){
     .news{padding:13px 14px 14px;border-radius:12px}
     .news-grid{grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px}
@@ -630,9 +635,11 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   <!-- 2026-10-27 사용자 요청: 그날 요약으로 만든 NotebookLM 오디오 오버뷰(팟캐스트)를 바로 듣는 칸 -->
   <section class="news pod" id="pod" hidden aria-labelledby="pod-h">
     <div class="news-head">
-      <span class="news-kicker" id="pod-h"><span class="ico">🎧</span>오늘의 AI 오디오 브리핑</span>
+      <span class="news-kicker" id="pod-h"><span class="ico">🎧</span><span id="pod-t">오늘의 AI 오디오 브리핑</span></span>
       <span class="news-sub" id="pod-sub"></span>
     </div>
+    <!-- 2026-10-28: 온라인신문은 09시·18시 브리핑이 따로 있어 둘 다 있으면 고른다 -->
+    <div class="pod-slots" id="pod-slots" role="group" aria-label="브리핑 시간대" hidden></div>
     <audio class="pod-audio" id="pod-audio" controls preload="none"></audio>
   </section>
 
@@ -645,7 +652,7 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   </section>
   <footer>
     <span id="foot-count">—</span>
-    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-27b</span></span>
+    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-28</span></span>
   </footer>
 </div>
 
@@ -1559,28 +1566,49 @@ document.addEventListener("click",e=>{
   body.classList.toggle("open",open); b.textContent=open?"접기":"전문 펼치기"; b.setAttribute("aria-expanded",String(open));
 });
 /* ── AI 오디오 브리핑 (2026-10-27) — NotebookLM 오디오 오버뷰. 그날 파일이 없으면 칸을 숨긴다.
-   오디오는 아침 요약 게시 뒤 10~20분 뒤에 생기므로, 없을 땐 3분마다 다시 확인한다.
+   오디오는 요약 게시 뒤 10~20분 뒤에 생기므로, 없을 땐 3분마다 다시 확인한다.
+   온라인신문(2026-10-28)은 09시·18시 브리핑이 따로라, 있어도 3분마다 확인해 18시 것을 붙인다.
    재생 중에는 src 를 건드리지 않는다(20초 자동 갱신이 재생을 끊지 않게). */
-const POD={date:"",at:0,ok:false};
+const POD={key:"",at:0,ok:false,items:[],slot:"",picked:false};
 async function loadPodcast(){
   const sec=document.getElementById("pod"); if(!sec) return;
-  if(POD.date===state.date && (POD.ok || Date.now()-POD.at < 3*60000)) return;
-  POD.date=state.date; POD.at=Date.now();
-  let d=null;
-  try{ const r=await fetch(`/api/news/podcast?date=${state.date}`,{cache:"no-store"}); d=await r.json(); }catch(_){ d=null; }
-  if(POD.date!==state.date) return;                    // 그새 날짜를 바꿨다
+  const on=state.edition==="online", key=state.date+(on?":online":"");
   const au=document.getElementById("pod-audio");
-  POD.ok=!!(d&&d.ok&&d.url);
+  if(POD.key===key && ((POD.ok && !on) || Date.now()-POD.at < 3*60000)) return;
+  if(POD.key!==key){ au.pause(); POD.slot=""; POD.picked=false; }
+  POD.key=key; POD.at=Date.now();
+  let d=null;
+  try{ const r=await fetch(`/api/news/podcast?date=${state.date}`+(on?"&edition=online":""),{cache:"no-store"}); d=await r.json(); }catch(_){ d=null; }
+  if(POD.key!==key) return;                            // 그새 날짜·종이/온라인을 바꿨다
+  POD.items=on ? (d&&d.ok&&d.items||[]) : (d&&d.ok&&d.url ? [d] : []);
+  POD.ok=POD.items.length>0;
+  document.getElementById("pod-t").textContent=on ? "온라인신문 AI 오디오 브리핑" : "오늘의 AI 오디오 브리핑";
   if(!POD.ok){ au.pause(); au.removeAttribute("src"); au.load(); sec.hidden=true; return; }
-  if(au.getAttribute("src")!==d.url){ au.src=d.url; }
-  document.getElementById("pod-sub").textContent=[d.title, "NotebookLM", mb(d.bytes)].filter(Boolean).join(" · ");
+  // 고른 시간대가 없으면(또는 아직 안 골랐고 재생 중이 아니면) 가장 늦은 시간대
+  if(!POD.items.some(i=>i.slot===POD.slot) || (!POD.picked && au.paused)) POD.slot=POD.items[0].slot;
+  showPodcast();
   sec.hidden=false;
 }
+function showPodcast(){
+  const au=document.getElementById("pod-audio");
+  const it=POD.items.find(i=>i.slot===POD.slot)||POD.items[0];
+  if(au.getAttribute("src")!==it.url){ au.src=it.url; }
+  document.getElementById("pod-sub").textContent=[it.slot?it.slot+"시":"", it.title, "NotebookLM", mb(it.bytes)].filter(Boolean).join(" · ");
+  const box=document.getElementById("pod-slots");
+  box.hidden=POD.items.length<2;
+  box.innerHTML=POD.items.length<2 ? "" : POD.items.slice().reverse().map(i=>
+    `<button type="button" data-slot="${i.slot}" aria-pressed="${i.slot===it.slot}">${i.slot}시</button>`).join("");
+}
+document.getElementById("pod-slots").addEventListener("click",e=>{
+  const b=e.target.closest("button[data-slot]"); if(!b || b.dataset.slot===POD.slot) return;
+  document.getElementById("pod-audio").pause();
+  POD.slot=b.dataset.slot; POD.picked=true; showPodcast();
+});
 async function loadNews(){
-  if(state.edition==="online"){                        // 온라인신문엔 지면 원본·오디오·사설 칸이 없다
-    ["news","pod","mk-ed"].forEach(id=>{ const el=document.getElementById(id); if(el) el.hidden=true; });
-    const au=document.getElementById("pod-audio"); if(au) au.pause();
-    ED.at=0; POD.date="";                              // 종이신문으로 돌아오면 다시 그리게
+  if(state.edition==="online"){                        // 온라인신문엔 지면 원본·사설 칸이 없다(오디오는 시간대별로 있음)
+    ["news","mk-ed"].forEach(id=>{ const el=document.getElementById(id); if(el) el.hidden=true; });
+    ED.at=0;                                           // 종이신문으로 돌아오면 다시 그리게
+    loadPodcast();
     return;
   }
   loadEditorial();

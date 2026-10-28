@@ -7,6 +7,7 @@ test_news_podcast.py — stock/news_podcast.py(AI 오디오 브리핑 파일 찾
   ③ 파일이 없는 날짜는 ok:false, audio_path 는 None
   ④ 날짜 형식이 틀리면(경로 넘기기 포함) 파일을 찾지 않는다
   ⑤ Range 헤더 해석(아이폰 사파리 재생·앞뒤 넘기기용 206 응답)
+  ⑥ 온라인신문 시간대(09·18) 오디오: 늦은 시간대 먼저, 틀린 시간대는 안 찾음 (2026-10-28)
 실행: python3 scripts/test_news_podcast.py
 """
 import importlib
@@ -48,6 +49,19 @@ def main():
         check("③ 없는 날: ok:false", not pod.info("2026-10-25")["ok"] and pod.audio_path("2026-10-25") is None)
         bad = ["", "2026-13-01", "../2026-10-27", "2026-10-27/../../x", "2026-10-27.m4a"]
         check("④ 틀린 날짜는 None", all(pod.audio_path(b) is None and not pod.info(b)["ok"] for b in bad))
+
+        check("⑥ 온라인 없는 날: ok:false", pod.online_info("2026-10-27") == {"ok": False, "date": "2026-10-27", "items": []})
+        for slot, title in (("09", "아침 온라인"), ("18", "저녁 온라인")):
+            with open(os.path.join(d, "online-2026-10-27-%s.m4a" % slot), "wb") as f:
+                f.write(b"\0" * 100)
+            with open(os.path.join(d, "online-2026-10-27-%s.json" % slot), "w", encoding="utf-8") as f:
+                json.dump({"title": title}, f, ensure_ascii=False)
+        o = pod.online_info("2026-10-27")
+        check("⑥ 온라인: 18시 먼저·제목·주소", o["ok"] and [i["slot"] for i in o["items"]] == ["18", "09"]
+              and o["items"][0]["title"] == "저녁 온라인"
+              and o["items"][1]["url"] == "/api/news/podcast/audio?date=2026-10-27&slot=09")
+        check("⑥ 종이 정보는 온라인 파일과 섞이지 않음", pod.info("2026-10-27")["title"] == "코스피 6개월 최저")
+        check("⑥ 틀린 시간대는 None", all(pod.audio_path("2026-10-27", s) is None for s in ("12", "../09", "9")))
 
     br = pod.byte_range
     check("⑤ Range: 없음/모름 → 전체", br(None, 100) is None and br("items=0-1", 100) is None and br("bytes=-", 100) is None)

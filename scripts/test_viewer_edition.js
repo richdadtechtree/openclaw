@@ -2,7 +2,8 @@
  * test_viewer_edition.js — 신문 요약 화면 '📰 종이신문 / 🌐 온라인신문' 고르기 확인 (실제 Chromium) — 2026-10-27 사용자 요청
  *
  *   ① 처음엔 종이신문: 종이 요약 + 오디오 칸 + 사설 칸, 서버엔 edition 없이 묻는다
- *   ② 온라인신문을 누르면: edition=online 으로 다시 받아 온라인 요약만, 오디오·사설·원본 칸은 숨김
+ *   ② 온라인신문을 누르면: edition=online 으로 다시 받아 온라인 요약만, 사설·원본 칸은 숨김
+ *      오디오 칸은 온라인 브리핑으로 바뀌고(18시 먼저), 09시·18시 단추로 고른다 (2026-10-28)
  *   ③ 고른 것을 기억(새로고침해도 온라인) · 주소 ?edition=paper 가 우선
  *   ④ 온라인 요약이 없으면 '9시·18시' 안내
  *   ⑤ 폰 390px 에서 옆으로 안 넘친다
@@ -17,6 +18,8 @@ const PAPER = `[신문요약 1/1] ${D}\n\n1. 🔵 종이기사 제목가\n• �
 const ONLINE = `[신문요약 1/1] ${D} 09시 온라인신문\n\n1. 🔵 온라인기사 제목나\n• WHAT: 온라인 기사 내용.\n• WHY: 기사에 원인 언급 없음.\n• HOW:\n• [확정] 온라인 사실.\n• 원문: <https://n.news.naver.com/mnews/article/015/0000000002|한국경제>`;
 const ED = { ok: true, date: D, items: [{ title: '사설 제목', url: 'https://www.mk.co.kr/news/editorial/1', paras: ['문단.'] }] };
 let onlineMsgs = [ONLINE];
+let onlinePods = [{ ok: true, slot: '18', title: '저녁 온라인', bytes: 2048, url: '/api/news/podcast/audio?date=' + D + '&slot=18' },
+                  { ok: true, slot: '09', title: '아침 온라인', bytes: 2048, url: '/api/news/podcast/audio?date=' + D + '&slot=09' }];
 const asked = [];
 const srv = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x'), p = u.pathname;
@@ -28,7 +31,9 @@ const srv = http.createServer((req, res) => {
     return send('application/json', JSON.stringify({ date: D, messages: texts.map(t => ({ ts: D + 'T09:05:00+09:00', source: 'web', kind: 'text', text: t })) }));
   }
   if (p === '/api/news/editorial') return send('application/json', JSON.stringify(ED));
-  if (p === '/api/news/podcast') return send('application/json', JSON.stringify({ ok: true, date: D, title: '오늘 브리핑', bytes: 2048, url: '/api/news/podcast/audio?date=' + D }));
+  if (p === '/api/news/podcast') return send('application/json', JSON.stringify(u.searchParams.get('edition') === 'online'
+    ? { ok: onlinePods.length > 0, date: D, items: onlinePods }
+    : { ok: true, date: D, title: '오늘 브리핑', bytes: 2048, url: '/api/news/podcast/audio?date=' + D }));
   if (p === '/api/news/today') return send('application/json', JSON.stringify({ ok: true, ready: false, date: D }));
   res.writeHead(404); res.end();
 });
@@ -42,6 +47,8 @@ const srv = http.createServer((req, res) => {
   const look = page => page.evaluate(() => {
     const vis = id => { const el = document.getElementById(id); return !!el && !el.hidden && el.getBoundingClientRect().height > 0; };
     return { feed: document.getElementById('feed').textContent, pod: vis('pod'), ed: vis('mk-ed'),
+      podSrc: document.getElementById('pod-audio').getAttribute('src') || '', podSub: document.getElementById('pod-sub').textContent,
+      slots: [...document.querySelectorAll('#pod-slots button')].map(b => b.textContent + (b.getAttribute('aria-pressed') === 'true' ? '*' : '')),
       pressed: document.querySelector('#edtog [aria-pressed="true"]').dataset.ed, label: document.getElementById('ed-label').textContent };
   });
 
@@ -61,13 +68,21 @@ const srv = http.createServer((req, res) => {
   await page.waitForFunction(() => /온라인기사 제목나/.test(document.getElementById('feed').textContent));
   s = await look(page);
   check(!/종이기사/.test(s.feed), '온라인 요약만 보인다');
-  check(!s.pod && !s.ed && await page.evaluate(() => document.getElementById('news').hidden), '오디오·사설·원본 칸은 숨김');
+  check(!s.ed && await page.evaluate(() => document.getElementById('news').hidden), '사설·원본 칸은 숨김');
+  await page.waitForFunction(() => /slot=18/.test(document.getElementById('pod-audio').getAttribute('src') || ''));
+  s = await look(page);
+  check(s.pod && /18시 · 저녁 온라인/.test(s.podSub) && s.slots.join() === '09시,18시*', '오디오 칸은 온라인 18시 브리핑, 09시·18시 단추', `${s.podSub} [${s.slots}]`);
+  await page.click('#pod-slots button[data-slot="09"]');
+  s = await look(page);
+  check(/slot=09/.test(s.podSrc) && /09시 · 아침 온라인/.test(s.podSub) && s.slots.join() === '09시*,18시', '09시 단추를 누르면 아침 브리핑으로', s.podSrc);
   check(s.pressed === 'online' && /온라인/.test(s.label) && asked.includes('online'), '단추·제목 줄이 온라인으로, 서버엔 edition=online', s.label);
   await page.click('#edtog button[data-ed="paper"]');
   await page.waitForFunction(() => /종이기사 제목가/.test(document.getElementById('feed').textContent));
   await page.waitForSelector('#mk-ed:not([hidden])');
   await page.waitForSelector('#pod:not([hidden])');
-  check(true, '종이신문으로 돌아오면 오디오·사설 칸이 다시 보인다');
+  await page.waitForFunction(() => /audio\?date=[\d-]+$/.test(document.getElementById('pod-audio').getAttribute('src') || ''));
+  s = await look(page);
+  check(s.slots.length === 0 && /오늘 브리핑/.test(s.podSub), '종이신문으로 돌아오면 종이 오디오·사설 칸이 다시 보인다', s.podSub);
   await page.click('#edtog button[data-ed="online"]');
   await page.waitForFunction(() => /온라인기사/.test(document.getElementById('feed').textContent));
 
@@ -82,10 +97,14 @@ const srv = http.createServer((req, res) => {
 
   console.log('\n[④ 온라인 요약이 없을 때]');
   onlineMsgs = [];
+  onlinePods = [onlinePods[1]];
   page = await ctx.newPage();
   await page.goto(base + '/economy?edition=online');
   await page.waitForSelector('#feed .empty');
   check(/9시·18시/.test(await page.textContent('#feed .empty')), "'9시·18시에 올립니다' 안내");
+  await page.waitForSelector('#pod:not([hidden])');
+  s = await look(page);
+  check(/slot=09/.test(s.podSrc) && s.slots.length === 0, '온라인 오디오가 하나면 시간대 단추 없이 그것만', s.podSub);
   await page.close(); await ctx.close();
 
   console.log('\n[⑤ 폰]');
