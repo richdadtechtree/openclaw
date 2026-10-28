@@ -597,6 +597,9 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
      ① 기사마다 구분선·여백 ② 넓은 화면에서 한 줄이 너무 길지 않게(약 46글자폭) ③ HOW 항목은 둘째 줄이 꼬리표 아래로
      말려 들지 않게 매달린 들여쓰기 ④ '오늘의 한줄 요약'은 번호 달린 큰 글씨 상자. 위 규칙을 덮어쓴다(되돌릴 땐 이 묶음만 지움). */
   .card .meta:empty{display:none}
+  .brf-onhead{display:flex;flex-wrap:wrap;gap:2px 14px;align-items:baseline;max-width:46em;margin:0 0 26px;padding:10px 14px;
+              border-radius:12px;background:color-mix(in srgb,var(--muted) 8%,transparent);font-size:calc(13.5px*var(--fs));color:var(--muted);line-height:1.6}
+  .brf-onhead .t{font-weight:700;color:var(--ink);flex-basis:100%}
   .brf-art + .brf-art:not(.has-side){border-top:1px solid var(--line);padding-top:26px}
   .brf-art{margin-bottom:28px}
   .brf-art:not(.has-side){max-width:46em}
@@ -686,7 +689,7 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   </section>
   <footer>
     <span id="foot-count">—</span>
-    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-28d</span></span>
+    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-28e</span></span>
   </footer>
 </div>
 
@@ -1111,6 +1114,12 @@ function briefing(raw){
   // 슬랙 :emoji_code: 를 먼저 실제 이모지로 바꾼다 — 아래 카테고리/머리표 판별이
   // 🔴 같은 실제 이모지를 기준으로 하기 때문(코드 상태면 못 알아본다).
   const lines=emojify(raw.replace(/\r/g,"")).split("\n");
+  // 온라인신문 머리글(🕘 기준 시각 · 기사 범위 · 오전판 중복 제외, 2026-10-28) → 기사와 떨어진 작은 안내 상자로 따로 뺀다
+  let onHead="";
+  { const k=lines.findIndex(l=>/^\s*🕘\s*온라인 신문/u.test(l));
+    if(k>=0){ let e=k+1; while(e<lines.length && /^\s*(기사 범위\s*:|오전판에 게재된)/.test(lines[e])) e++;
+      const hl=lines.splice(k,e-k).map(l=>l.trim());
+      onHead='<div class="brf-onhead"><span class="t">'+inline(hl[0])+"</span>"+hl.slice(1).map(l=>'<span class="r">'+inline(l)+"</span>").join("")+"</div>"; } }
 
   // (1) 첫 줄에서 "…신문 브리핑" 까지만 남기고 (1/5)·검증 문구 등 뒷부분은 잘라낸다
   let head="";
@@ -1444,7 +1453,7 @@ function briefing(raw){
   flush();
 
   head=head.replace(/^\d{4}-\d\d-\d\d\s*/,"");      // 날짜는 화면 맨 위에 이미 크게 있다 → '09시 온라인신문' 같은 나머지만(2026-10-28)
-  const html=(head?'<div class="brf-head">'+inline(head)+"</div>":"")+out.join("");
+  const html=(head?'<div class="brf-head">'+inline(head)+"</div>":"")+onHead+out.join("");
   return {html:html||mrkdwn(raw), part:part};
 }
 const hhmm=iso=>{const m=(iso||"").match(/T(\d{2}):(\d{2})/);return m?`${m[1]}:${m[2]}`:""};
