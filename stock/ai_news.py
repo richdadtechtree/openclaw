@@ -17,6 +17,7 @@ import os
 import re
 import threading
 import time
+import urllib.error
 import urllib.request
 
 CACHE_DIR = os.environ.get("AI_NEWS_DIR") or os.path.expanduser("~/.openclaw/ai_news_cache")
@@ -95,6 +96,15 @@ def parse_topic(page):
     return html_to_text(m.group(1)) if m else ""
 
 
+def _gone_path(tid):
+    return os.path.join(CACHE_DIR, "topics", str(tid) + ".gone")
+
+
+def _mark_gone(tid):
+    os.makedirs(os.path.dirname(_gone_path(tid)), exist_ok=True)
+    open(_gone_path(tid), "w").close()
+
+
 def topic(tid):
     """GeekNews 글 하나의 본문(누르면 펼치기용). 한 번 받은 글은 하루 동안 캐시에서 준다."""
     tid = str(tid or "")
@@ -113,6 +123,11 @@ def topic(tid):
                                      headers={"User-Agent": UA, "Accept-Language": "ko-KR,ko;q=0.9"})
         with urllib.request.urlopen(req, timeout=15) as r:
             text = parse_topic(r.read().decode("utf-8", "replace"))
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            return {"ok": False, "reason": "본문을 받지 못함: %s" % str(e)[:100]}
+        _mark_gone(tid)                                  # GeekNews 에서 지운 글(2026-10-29 36169 확인) → 목록에서도 뺀다
+        return {"ok": False, "gone": True, "reason": "GeekNews에서 삭제된 글"}
     except Exception as e:
         return {"ok": False, "reason": "본문을 받지 못함: %s" % str(e)[:100]}
     d = {"ok": bool(text), "id": tid, "text": text, "at": int(time.time())}
@@ -264,7 +279,10 @@ def feed(src, background=True):
             refresh(src)
             d = _read(src)
         refreshing = background
-    return {"ok": bool(d.get("items")), "src": src, "items": d.get("items", []), "fetched_at": d.get("fetched_at", 0),
+    items = d.get("items", [])
+    if src == "geeknews":                                # 본문을 열다 삭제된 것으로 확인된 글은 빼고 보여 준다
+        items = [x for x in items if not os.path.exists(_gone_path(x["id"]))]
+    return {"ok": bool(items), "src": src, "items": items, "fetched_at": d.get("fetched_at", 0),
             "error": d.get("error", ""), "refreshing": refreshing or _locks[src].locked()}
 
 
