@@ -652,7 +652,7 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   </section>
   <footer>
     <span id="foot-count">—</span>
-    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-28</span></span>
+    <span>#gpt 채널 기준 · 20초마다 자동 갱신 · KST · <span id="build-tag" title="화면 버전(서버에 새 화면이 들어왔는지 확인용)">화면 10-28b</span></span>
   </footer>
 </div>
 
@@ -863,6 +863,8 @@ function isSecHead(l){
 
 function isBriefing(t){
   if(/•\s*(?:WHAT|What|WHY|Why|HOW|How)\s*[:：]/.test(t)) return true;
+  // 온라인신문 메시지는 기사 없는 상태 안내('새 기사 없음'·'수집 지연', 2026-10-28)도 같은 카드로 — [신문요약 n/N] 배지·JSON 꼬리 숨김
+  if(/^\s*\[신문\s*요약\s*\d+\s*\/\s*\d+\]\s*\S+\s+\d\d시 온라인신문/.test(t)) return true;
   // 불릿·콜론 없이 "WHAT …" / "제목 WHAT …" 으로 오는 새 형식(2026-09-24)도 브리핑
   if(/(?:^|\s)WHAT\s*[:：]?\s+\S/.test(t) && /(?:^|\s)(?:WHY|HOW)\s*[:：]?\s+\S/.test(t)) return true;
   // "…5가지 1. …" 묶음만 따로 온 메시지도 같은 서식(머리말 줄바꿈 + 번호 목록)으로
@@ -1483,7 +1485,7 @@ function render(){
   const shown=msgs.filter(m=>state.active.size===0||state.active.has(CATS[m.source]?m.source:"unknown"));
   if(!shown.length){
     feed.insertAdjacentHTML("beforeend",state.edition==="online"
-      ?'<div class="empty"><div class="big">아직 온라인신문 요약이 없어요</div>네이버 경제 주요 기사 5개를 매일 9시·18시에 요약해 올립니다.</div>'
+      ?'<div class="empty"><div class="big">아직 온라인신문 요약이 없어요</div>최근 12시간 안에 나온 네이버 경제 주요 기사를 매일 9시·18시에 최대 5개 요약해 올립니다.</div>'
       :'<div class="empty"><div class="big">아직 표시할 메시지가 없어요</div>이 날짜에 #gpt 채널에 올라온 대화가 없습니다.</div>');
   }
   shown.forEach(m=>{

@@ -7,6 +7,7 @@
  *   ③ 고른 것을 기억(새로고침해도 온라인) · 주소 ?edition=paper 가 우선
  *   ④ 온라인 요약이 없으면 '9시·18시' 안내
  *   ⑤ 폰 390px 에서 옆으로 안 넘친다
+ *   ⑥ 온라인 머리글(기준 시각·기사 범위)과 '새 기사 없음' 상태 메시지가 글로 보이고 기사 칸이 안 깨진다 (2026-10-28)
  * 실행: npm i playwright && node scripts/test_viewer_edition.js
  */
 const { chromium } = require('playwright');
@@ -15,7 +16,8 @@ const HTML = path.join(__dirname, '..', 'stock', 'slack_digest_live.html');
 const CHROME = process.env.PW_CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 const D = '2026-10-27';
 const PAPER = `[신문요약 1/1] ${D}\n\n1. 🔵 종이기사 제목가\n• 사진: 01\n• WHAT: 종이 기사 내용.\n• WHY: 기사에 원인 언급 없음.\n• HOW:\n• [확정] 종이 사실.\n• 원문: <https://n.news.naver.com/mnews/article/009/0000000001|매일경제>`;
-const ONLINE = `[신문요약 1/1] ${D} 09시 온라인신문\n\n1. 🔵 온라인기사 제목나\n• WHAT: 온라인 기사 내용.\n• WHY: 기사에 원인 언급 없음.\n• HOW:\n• [확정] 온라인 사실.\n• 원문: <https://n.news.naver.com/mnews/article/015/0000000002|한국경제>`;
+const HEAD = '🕘 온라인 신문 · 2026-10-27 09:00 기준 (한국시간)\n기사 범위: 2026-10-26 21:00 ~ 2026-10-27 09:00';
+const ONLINE = `[신문요약 1/1] ${D} 09시 온라인신문\n\n${HEAD}\n\n1. 🔵 온라인기사 제목나\n• WHAT: 온라인 기사 내용.\n• WHY: 기사에 원인 언급 없음.\n• HOW:\n• [확정] 온라인 사실.\n• 원문: <https://n.news.naver.com/mnews/article/015/0000000002|한국경제>`;
 const ED = { ok: true, date: D, items: [{ title: '사설 제목', url: 'https://www.mk.co.kr/news/editorial/1', paras: ['문단.'] }] };
 let onlineMsgs = [ONLINE];
 let onlinePods = [{ ok: true, slot: '18', title: '저녁 온라인', bytes: 2048, url: '/api/news/podcast/audio?date=' + D + '&slot=18' },
@@ -115,6 +117,21 @@ const srv = http.createServer((req, res) => {
   const over = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
   const tg = await page.evaluate(() => { const r = document.getElementById('edtog').getBoundingClientRect(); return { l: r.left, r: r.right }; });
   check(over <= 0 && tg.l >= 0 && tg.r <= 390, '폰에서 옆으로 안 넘치고 단추가 화면 안에', `넘침 ${over}px · ${Math.round(tg.l)}~${Math.round(tg.r)}`);
+  await page.close();
+
+  console.log('\n[⑥ 머리글·상태 메시지]');
+  page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await page.goto(base + '/economy?edition=online');
+  await page.waitForFunction(() => /온라인기사 제목나/.test(document.getElementById('feed').textContent));
+  let f = await page.evaluate(() => document.getElementById('feed').innerText);
+  check(/09:00 기준 \(한국시간\)/.test(f) && /기사 범위: 2026-10-26 21:00 ~ 2026-10-27 09:00/.test(f), '머리글이 보인다');
+  check(/온라인기사 제목나/.test(f) && /온라인 사실/.test(f) && f.indexOf('기사 범위') < f.indexOf('온라인기사 제목나'), '머리글 뒤 기사 칸이 그대로');
+  onlineMsgs = [`[신문요약 1/1] ${D} 18시 온라인신문\n\n${HEAD.replace('09:00 기준', '18:00 기준')}\n\n최근 12시간 내 새 기사 없음\n\n\`\`\`json\n{"status":"empty","articles":[]}\n\`\`\``];
+  await page.reload();
+  await page.waitForFunction(() => /새 기사 없음/.test(document.getElementById('feed').textContent));
+  f = await page.evaluate(() => document.getElementById('feed').innerText);
+  check(/최근 12시간 내 새 기사 없음/.test(f) && !/"status"/.test(f), "'최근 12시간 내 새 기사 없음' 상태 메시지(JSON 꼬리는 숨김)", f.slice(0, 120).replace(/\n/g, ' / '));
+
   await page.close();
 
   await browser.close(); srv.close();
