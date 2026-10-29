@@ -581,6 +581,10 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
 
   /* ── 사이트 탭 메뉴 (2026-10-23): 신문 요약 ↔ 경제 공부(디그). /dig 화면에도 같은 모양이 있다 ── */
   .sitenav{display:flex;gap:6px;flex-wrap:wrap;padding:14px 0 4px}
+  /* 2026-10-29 사용자 요청: 스크롤해도 맨 위 메뉴(신문 요약·디그·AI 소식)가 계속 보이게 → 화면 맨 위에 붙임.
+     아래 도구줄(.toolbar)은 메뉴 높이(--navh, 스크립트가 잼)만큼 내려 붙어 서로 겹치지 않는다. */
+  .sitenav{position:sticky;top:0;z-index:6;margin:0 -20px;padding:12px 20px 8px;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+  .toolbar{top:var(--navh,0px)}
   .sitenav a{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:999px;font-size:14px;font-weight:600;
              color:var(--muted);text-decoration:none;border:1px solid var(--line-strong);background:var(--surface)}
   .sitenav a:hover{color:var(--ink)}
@@ -681,6 +685,14 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   </section>
 
   <div class="toolbar" id="toolbar"></div>
+  <script>
+  /* 고정 메뉴 높이를 재서 --navh 로 알려 줌(폰에서 메뉴가 두 줄이 되거나 글자 크기가 바뀌어도 도구줄이 그 아래에 붙게) */
+  (function(){
+    const nav=document.querySelector(".sitenav"); if(!nav) return;
+    const set=()=>document.documentElement.style.setProperty("--navh", nav.offsetHeight+"px");
+    set(); if(window.ResizeObserver) new ResizeObserver(set).observe(nav); else addEventListener("resize", set);
+  })();
+  </script>
   <main class="feed" id="feed"></main>
   <!-- 2026-10-20 사용자 요청: 매일경제 사설을 맨 아래 늘 (서버 stock/mk_editorial.py → /api/news/editorial) -->
   <section class="mk-ed" id="mk-ed" hidden aria-labelledby="mk-ed-h">
