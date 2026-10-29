@@ -1063,6 +1063,18 @@ def install(app):
             return _off()
         st = _unsign(request.cookies.get(COOKIE_STATE, ""))
         if error or not code or not st or st.get("p") != provider or not hmac.compare_digest(str(st.get("s", "")), state):
+            # 이미 로그인된 사람이 '뒤로 가기'·앱 복원 등으로 옛 콜백 주소를 다시 연 경우 → 오류 대신 그대로 들여보낸다.
+            # (이번 code 는 쓰지 않고 기존 로그인 쿠키만 확인하므로 보안 확인을 건너뛰는 것이 아니다. 승인·기한은 도착한 화면이 다시 검사)
+            u = session_user(request)
+            if u:
+                nxt = safe_next((st or {}).get("n"))
+                dest = nxt if (u["consent_version"] == POLICY_VERSION and u["nick_set"]) else "/gate/consent?next=" + urllib.parse.quote(nxt)
+                resp = RedirectResponse(dest, 302)
+                resp.delete_cookie(COOKIE_STATE, path="/")
+                return resp
+            # 로그인도 안 돼 있고 시작 기록(상태 쿠키)도 없는 옛 주소 → 겁주는 오류 대신 로그인 화면으로
+            if not st and not error:
+                return RedirectResponse("/gate/login", 302)
             return _page("로그인 실패", '<div class="card"><h1>로그인하지 못했어요</h1><p>보안 확인에 실패했거나 로그인을 취소하셨어요. 다시 시도해 주세요.</p>'
                          '<a class="btn primary" href="/gate/login">다시 로그인</a></div>' + _foot(), 400)
         try:
