@@ -25,7 +25,7 @@ NEWS = tempfile.mkdtemp(prefix="chdemo_news_")
 os.environ.update({
     "GATE_DIR": tempfile.mkdtemp(prefix="chdemo_gate_"), "OPENCLAW_ENV": "/nonexistent", "NEWS_CACHE_DIR": NEWS,
     "GATE_BASE_URL": "http://localhost:%d" % a.port, "GATE_GOOGLE_CLIENT_ID": "gid", "GATE_GOOGLE_CLIENT_SECRET": "gsec",
-    "GATE_APPROVAL": "auto", "PRIVACY_OPERATOR": "시험 운영자", "PRIVACY_CONTACT": "op@example.test"})
+    "GATE_APPROVAL": "auto", "CHALLENGE_SLACK_LOG_DIR": tempfile.mkdtemp(prefix="chdemo_slack_"), "PRIVACY_OPERATOR": "시험 운영자", "PRIVACY_CONTACT": "op@example.test"})
 import gate       # noqa: E402
 import challenge  # noqa: E402
 from datetime import date, timedelta  # noqa: E402
@@ -67,6 +67,8 @@ t = date.fromisoformat(a.today)
 mon = t - timedelta(days=t.weekday())
 for k in range(5):                     # 이번 주 월~금 신문(미래 날짜는 화면에 안 쓰이고, 날짜를 넘기는 검사용)
     paper((mon + timedelta(days=k)).isoformat())
+with open(os.path.join(os.environ["CHALLENGE_SLACK_LOG_DIR"], a.today + ".jsonl"), "w") as f:   # 신문 요약(GPT) 흉내: 3면 기사 제목
+    f.write(json.dumps({"ts": "x", "source": "news", "text": "1. 성북·서대문구 역세권 아파트 상승\n• 사진: 03\n• WHAT: 서울 아파트값 89주 연속 상승"}, ensure_ascii=False) + "\n")
 challenge.add_cohort("1기", mon.isoformat(), (mon + timedelta(days=4)).isoformat())
 cid = challenge.list_cohorts()[0]["id"]
 
