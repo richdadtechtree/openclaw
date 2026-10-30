@@ -143,8 +143,8 @@ check("찰스는 디그 열림", cA.get("/dig").status_code == 200 and cA.get("/
 check("찰스는 챌린지 화면 열림", cA.get("/challenge").status_code == 200 and "챌린지" in cA.get("/challenge").text)
 check("챌린지 화면 탭도 역할대로(찰스: 신문 요약 없음)", "/economy" not in cA.get("/challenge").text.split("</nav>")[0])
 r = cG.get("/challenge")
-check("일반 사용자는 챌린지 못 들어감", r.status_code == 302 and r.headers["location"] == "/economy" and cG.get("/api/challenge/me").status_code == 403)
-check("로그인 안 하면 챌린지 → 로그인", TestClient(APP, base_url="https://example.test", follow_redirects=False).get("/challenge").headers["location"].startswith("/gate/login"))
+check("일반 사용자는 챌린지 못 씀(참가 신청 화면만)", r.status_code == 200 and "찰스 참가 신청" in r.text and cG.get("/api/challenge/me").status_code == 403)
+check("로그인 안 하면 챌린지 → 챌린지 전용 입구", TestClient(APP, base_url="https://example.test", follow_redirects=False).get("/challenge").headers["location"] == "/gate/charles")
 check("로그인 후 돌아갈 곳에 /challenge 허용", gate.safe_next("/challenge") == "/challenge")
 
 print("[오늘 쓰기 · 같은 기수 글 잠금(D6)]")
@@ -322,6 +322,46 @@ check("용어장: 관리자는 모든 기수", len(ca.get("/api/challenge/glossa
 check("용어장: 일반 사용자는 못 봄", cG.get("/api/challenge/glossary").status_code == 403)
 TODAY[0] = "2026-11-11"
 check("용어장: 다음 날엔 지난 날 용어가 열림", len(cV.get("/api/challenge/glossary").json()["items"]) == 3)
+
+print("[🔥 챌린지 전용 입구: 가입하면 찰스 승인 대기]")
+anon = TestClient(APP, base_url="https://example.test", follow_redirects=False)
+check("로그인 안 하고 /challenge → 챌린지 전용 입구(/gate/charles)", anon.get("/challenge").headers["location"] == "/gate/charles")
+pg = anon.get("/gate/charles").text
+check("입구 화면: 찰스 안내 + 로그인 단추가 /challenge 로", "🔥 찰스 챌린지" in pg and "찰스로 승인한 뒤" in pg and "/gate/google/start?next=/challenge" in pg)
+check("/gate/login?next=/challenge 도 같은 챌린지 화면", "🔥 찰스 챌린지" in anon.get("/gate/login?next=/challenge").text)
+st = urllib.parse.parse_qs(urllib.parse.urlparse(anon.get("/gate/google/start?next=/challenge").headers["location"]).query)["state"][0]
+gate.identity_from_code = lambda provider, code: "NEWCH-1"
+r = anon.get("/gate/google/callback?code=x&state=" + st)
+check("콜백 → 동의 화면(다음 = /challenge)", r.headers["location"].startswith("/gate/consent") and "challenge" in r.headers["location"])
+nu = gate.get_user(gate._unsign(anon.cookies.get("gate_sess"))["uid"])
+check("챌린지 입구 가입 = 자동 승인(auto)이어도 '승인 대기' + 찰스 신청 표시", nu["status"] == "pending" and nu["apply"] == "charles")
+r = anon.post("/gate/consent", content="agree_privacy=1&agree_age=1&agree_notice=1&nickname=%EC%8B%A0%EC%B2%AD%EC%9E%90&next=%2Fchallenge", headers=FORM)
+check("동의 뒤 → 승인 대기 화면", r.headers["location"] == "/gate/pending")
+check("대기 화면: '찰스 승인을 기다리고 있어요'", "찰스 승인을 기다리고" in anon.get("/gate/pending").text)
+check("승인 전엔 신문 요약도 못 씀", anon.get("/economy").headers["location"] == "/gate/pending" and anon.get("/api/news/today").status_code == 403)
+check("승인 전엔 챌린지도 못 씀", anon.get("/challenge").headers["location"] == "/gate/pending")
+adm = ca.get("/gate/admin?f=apply").text
+check("관리 화면 '🙋 찰스 신청' 탭에 보임", "신청자" in adm and "🙋 찰스 신청" in adm)
+act(action="charles", uid=nu["id"], on="1", cohort=c4["id"])
+nu = gate.get_user(nu["id"])
+check("관리자가 ☑ 찰스 지정 → 승인 + 신청 표시 지움", nu["status"] == "approved" and nu["role"] == "charles" and nu["apply"] is None)
+check("이제 챌린지 열림 · 신문 요약은 여전히 막힘(찰스)", anon.get("/challenge").status_code == 200 and anon.get("/economy").headers["location"] == "/challenge")
+check("대기 화면을 새로고침하면 챌린지로", anon.get("/gate/pending").headers["location"] == "/challenge")
+gate.identity_from_code = lambda provider, code: "NEWGEN-1"
+gen = TestClient(APP, base_url="https://example.test", follow_redirects=False)
+st = urllib.parse.parse_qs(urllib.parse.urlparse(gen.get("/gate/google/start?next=/economy").headers["location"]).query)["state"][0]
+gen.get("/gate/google/callback?code=x&state=" + st)
+check("일반 입구(/economy)로 가입하면 예전처럼 바로 승인(auto)", gate.get_user(gate._unsign(gen.cookies.get("gate_sess"))["uid"])["status"] == "approved")
+
+print("[일반 이용자가 /challenge 에 오면: 참가 신청]")
+r = cG.get("/challenge")
+check("일반 이용자 → 참가 신청 화면(신문 요약으로 튕기지 않음)", r.status_code == 200 and "찰스 참가 신청" in r.text)
+check("신청 전엔 챌린지 API 403", cG.get("/api/challenge/me").status_code == 403)
+r = cG.post("/gate/charles/apply")
+check("신청 → 신청 표시 + 화면 '신청했어요'", gate.applied_charles(gate.get_user(g_id)) and "신청을 했어요" in cG.get("/challenge").text)
+check("신청해도 다른 화면은 그대로 사용", cG.get("/economy").status_code == 200)
+check("관리 화면 '찰스 신청' 탭에 일반 이용자도", "일반인" in ca.get("/gate/admin?f=apply").text)
+check("관리자는 신청 화면이 아니라 챌린지", ca.get("/challenge").status_code == 200 and "참가 신청" not in ca.get("/challenge").text)
 
 print("\n결과: %s" % ("전부 통과" if not fails else "실패 %d개: %s" % (len(fails), fails)))
 sys.exit(1 if fails else 0)

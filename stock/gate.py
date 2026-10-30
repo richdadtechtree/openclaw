@@ -227,7 +227,8 @@ def _db():
     have = {r["name"] for r in con.execute("PRAGMA table_info(users)")}
     for col, ddl in (("is_admin", "INTEGER NOT NULL DEFAULT 0"), ("expires_at", "TEXT"),
                      ("nick_set", "INTEGER NOT NULL DEFAULT 0"), ("nick_key", "TEXT"), ("theme", "TEXT"),
-                     ("role", "TEXT"), ("cohort_id", "INTEGER"), ("celebrated_at", "TEXT")):       # 예전에 만든 DB 도 가입자 정보를 그대로 둔 채 이어서 쓴다
+                     ("role", "TEXT"), ("cohort_id", "INTEGER"), ("celebrated_at", "TEXT"),
+                     ("apply", "TEXT")):                     # apply='charles' = 챌린지 입구로 가입·신청(찰스 승인 대기)       # 예전에 만든 DB 도 가입자 정보를 그대로 둔 채 이어서 쓴다
         if col not in have:
             con.execute("ALTER TABLE users ADD COLUMN %s %s" % (col, ddl))
     if "terms" not in {r["name"] for r in con.execute("PRAGMA table_info(challenge_posts)")}:
@@ -336,19 +337,22 @@ def expiry_text(u):
     return ("만료됨 (%s)" % e) if is_expired(u) else "%s까지" % e
 
 
-def upsert_login(provider, uid):
+def upsert_login(provider, uid, apply=None):
     """소셜 로그인에 성공했을 때: 처음이면 가입(승인 방식에 따라 상태 결정, 닉네임은 동의 화면에서 직접 입력), 아니면 최근 로그인만 갱신.
-    구글·카카오가 알려 주는 이름은 받지도 저장하지도 않는다."""
+    구글·카카오가 알려 주는 이름은 받지도 저장하지도 않는다.
+    apply='charles' = 🔥 챌린지 입구(/gate/charles·/challenge)로 처음 가입 → 승인 방식과 상관없이 '승인 대기'.
+    운영자가 관리 화면에서 ☑ 찰스로 지정해야만 쓸 수 있다(그 전엔 신문 요약 등 다른 화면도 못 씀)."""
     with _db() as con:
         row = con.execute("SELECT * FROM users WHERE provider=? AND provider_uid=?", (provider, str(uid))).fetchone()
         if row:
             con.execute("UPDATE users SET last_login_at=? WHERE id=?", (_now(), row["id"]))
         else:
-            status = "approved" if cfg()["approval"] == "auto" else "pending"
+            charles = apply == "charles"
+            status = "approved" if (cfg()["approval"] == "auto" and not charles) else "pending"
             auto_days = _env("GATE_AUTO_DAYS", "0")
             exp = _add_days(auto_days) if status == "approved" and auto_days.isdigit() and 0 < int(auto_days) <= 3650 else None     # 체험 기간(기본 무기한)
-            con.execute("INSERT INTO users(provider,provider_uid,status,expires_at,created_at,last_login_at) VALUES(?,?,?,?,?,?)",
-                        (provider, str(uid), status, exp, _now(), _now()))
+            con.execute("INSERT INTO users(provider,provider_uid,status,expires_at,created_at,last_login_at,apply) VALUES(?,?,?,?,?,?,?)",
+                        (provider, str(uid), status, exp, _now(), _now(), "charles" if charles else None))
         return con.execute("SELECT * FROM users WHERE provider=? AND provider_uid=?", (provider, str(uid))).fetchone()
 
 
@@ -435,6 +439,18 @@ def role_of(u):
         return u["role"] if u is not None and "role" in u.keys() else None
     except Exception:
         return None
+
+
+def applied_charles(u):
+    try:
+        return bool(u is not None and "apply" in u.keys() and u["apply"] == "charles")
+    except Exception:
+        return False
+
+
+def set_apply(uid, value):
+    with _db() as con:
+        con.execute("UPDATE users SET apply=? WHERE id=?", (value, int(uid)))
 
 
 def is_charles(u):
@@ -797,6 +813,13 @@ def login_html(nxt, c):
         btns += '<a class="btn google" href="/gate/google/start%s">🔵 구글로 계속하기</a>' % q
     if c["kakao"]:
         btns += '<a class="btn kakao" href="/gate/kakao/start%s">💬 카카오로 계속하기</a>' % q
+    if nxt.startswith("/challenge"):           # 🔥 찰스 챌린지 전용 입구
+        return """
+<div class="card"><h1>🔥 찰스 챌린지</h1>
+<p>평일마다 종이신문 기사 하나를 골라 <b>WHAT · WHY · HOW · 생각</b>을 쓰는 챌린지예요.</p>
+<p class="sub">로그인·가입을 하면 <b>운영자가 찰스로 승인한 뒤</b>에 이용할 수 있어요. 승인 전에는 다른 화면도 이용할 수 없어요.</p>%s
+<p class="sub">로그인하면 <a href="/privacy">개인정보 처리방침</a>을 확인한 것으로 보며, 다음 화면에서 동의를 받습니다. 이메일은 수집하지 않아요.</p>
+</div>""" % btns
     note = ("가입 후 관리자가 승인하면 이용할 수 있어요." if c["approval"] == "manual"
             else "로그인하고 개인정보 처리 동의를 하면 바로 이용할 수 있어요.")
     return """
@@ -866,6 +889,18 @@ def _challenge_row(u):
         html.escape(name + " ") if name else "", "🎓 완수" if r == "graduate" else "참가 중", n)
 
 
+def charles_apply_html(u, done=False):
+    """이미 쓰고 있는 일반 이용자가 🔥 챌린지 주소로 들어왔을 때: 참가 신청 화면."""
+    if applied_charles(u):
+        body = ('<p>✅ <b>찰스 참가 신청을 했어요.</b> 운영자가 승인하면 이 화면이 챌린지로 바뀌어요.</p>'
+                '<p class="sub">승인되면 새로고침해 주세요. 그동안 다른 화면은 지금처럼 쓸 수 있어요.</p>')
+    else:
+        body = ('<p>챌린지는 운영자가 <b>찰스</b>로 승인한 분만 참여할 수 있어요.</p>'
+                '<p class="sub">찰스가 되면 챌린지 기간에는 📚 디그·🔥 챌린지 화면만 보이고, 기간 평일을 모두 채우면 모든 화면을 기한 없이 다시 쓸 수 있어요.</p>'
+                '<form method="post" action="/gate/charles/apply"><button class="btn primary" type="submit">🔥 찰스 참가 신청</button></form>')
+    return ('<div class="card"><h1>🔥 찰스 챌린지</h1>%s<p><a href="/economy">📰 신문 요약으로 돌아가기</a></p></div>' % body) + _foot()
+
+
 def footer_html(request=None):
     """/slack·/dig 맨 아래에 끼워 넣는 링크(처리방침은 항상 쉽게 찾을 수 있어야 한다). 잠금이 꺼져 있으면 빈 글."""
     if not cfg()["enabled"]:
@@ -885,7 +920,7 @@ _ADMIN_MSG = {"approve": "승인했어요.", "block": "차단했어요.", "unblo
               "cohort_bad": "기수 이름(1~20자)과 날짜(시작 ≤ 종료, 1년 이내)를 확인해 주세요.", "cohort_dup": "같은 이름의 기수가 이미 있어요.",
               "charles_on": "찰스로 지정했어요(디그·챌린지 탭만 보이고, 이용 기한은 기수 종료일).", "charles_off": "찰스에서 해제했어요(일반 사용자 화면).",
               "charles_nocohort": "찰스로 지정하려면 기수를 골라 주세요(기수가 없으면 위에서 먼저 추가).", "excuse": "그날을 인정했어요."}
-_FILTERS = ("pending", "approved", "expired", "blocked", "charles", "graduate")
+_FILTERS = ("pending", "approved", "expired", "blocked", "apply", "charles", "graduate")
 _TERM_OPTS = (("none", "무기한"), ("7", "7일"), ("30", "30일"), ("90", "90일"), ("365", "1년"), ("custom", "날짜 지정"))
 
 
@@ -993,7 +1028,7 @@ def admin_html(me, rows, counts, flt, msg, d=""):
         cohorts = []
     tabs = ""
     for key, label in (("", "전체"), ("pending", "승인 대기"), ("approved", "이용 가능"), ("expired", "기한 만료"), ("blocked", "차단"),
-                       ("charles", "🔥 찰스"), ("graduate", "🎓 완수")):
+                       ("apply", "🙋 찰스 신청"), ("charles", "🔥 찰스"), ("graduate", "🎓 완수")):
         n = len(rows) if key == "" else counts.get(key, 0)
         tabs += '<a href="/gate/admin%s" class="%s">%s %d</a>' % (("?f=" + key) if key else "", "on" if key == flt else "", label, n)
     trs = ""
@@ -1024,7 +1059,7 @@ def admin_html(me, rows, counts, flt, msg, d=""):
             return html.escape((t or "")[5:16].replace("T", " "))
         trs += ("<tr><td>%d</td><td><b>%s</b>%s<div class='sub'>%s</div></td><td><span class='%s'>%s</span></td><td>%s</td>"
                 "<td class='sub'>가입 %s<br>접속 %s</td><td>%s</td><td class='act'>%s</td><td class='act'>%s</td></tr>"
-                % (u["id"], html.escape(disp(u)), " 🛠" if u["is_admin"] else "", html.escape(prov), cls, label, html.escape(term_cell),
+                % (u["id"], html.escape(disp(u)), (" 🛠" if u["is_admin"] else "") + (" <span class='b-wait'>🙋 찰스 신청</span>" if applied_charles(u) and not is_charles(u) else ""), html.escape(prov), cls, label, html.escape(term_cell),
                    _short(u["created_at"]), _short(u["last_login_at"]), consent, acts, _charles_cell(u, csrf, flt, cohorts)))
     if not trs:
         trs = '<tr><td colspan="8" class="sub">해당하는 가입자가 없어요.</td></tr>'
@@ -1105,6 +1140,8 @@ def _check(request):
         return JSONResponse({"ok": False, "reason": "ip_login"}, status_code=401) if api else RedirectResponse("/gate/ip-login?next=" + nxt, 302)
     user = session_user(request)
     if not user:
+        if not api and _is_challenge_path(path):
+            return RedirectResponse("/gate/charles", 302)      # 챌린지 주소로 오면 챌린지 전용 입구(가입하면 찰스 승인 대기)
         return JSONResponse({"ok": False, "reason": "login"}, status_code=401) if api else RedirectResponse("/gate/login?next=" + nxt, 302)
     if user["status"] == "blocked":
         return JSONResponse({"ok": False, "reason": "blocked"}, status_code=403) if api else _page(
@@ -1124,7 +1161,7 @@ def _check(request):
     if is_expired(user):
         return JSONResponse({"ok": False, "reason": "expired"}, status_code=403) if api else _page("이용 기간 종료", expired_html(user), 403)
     if _is_challenge_path(path) and not can_challenge(user):
-        return JSONResponse({"ok": False, "reason": "not_charles"}, status_code=403) if api else RedirectResponse("/economy", 302)
+        return JSONResponse({"ok": False, "reason": "not_charles"}, status_code=403) if api else _page("찰스 챌린지", charles_apply_html(user))
     if is_charles(user) and not _charles_ok(path):          # 찰스는 디그·챌린지만(주소를 직접 쳐도)
         return JSONResponse({"ok": False, "reason": "charles"}, status_code=403) if api else RedirectResponse("/challenge", 302)
     return None
@@ -1286,8 +1323,8 @@ def install(app):
             print("[gate] %s 로그인 실패: %s: %s" % (provider, type(e).__name__, e))
             return _page("로그인 실패", '<div class="card"><h1>로그인 서버와 연결하지 못했어요</h1><p>잠시 후 다시 시도해 주세요.</p>'
                          '<a class="btn primary" href="/gate/login">다시 로그인</a></div>' + _foot(), 502)
-        user = upsert_login(provider, uid)
         nxt = safe_next(st.get("n"))
+        user = upsert_login(provider, uid, apply="charles" if nxt.startswith("/challenge") else None)
         dest = nxt if (user["consent_version"] == POLICY_VERSION and user["nick_set"]) else "/gate/consent?next=" + urllib.parse.quote(nxt)
         resp = RedirectResponse(dest, 302)
         resp.set_cookie(COOKIE_SESSION, _session_token(user["id"]), **_cookie_args(SESSION_DAYS * 86400))
@@ -1331,10 +1368,34 @@ def install(app):
         if not u:
             return RedirectResponse("/gate/login", 302)
         if u["status"] == "approved" and u["consent_version"] == POLICY_VERSION and u["nick_set"]:
-            return RedirectResponse("/economy", 302)
+            return RedirectResponse("/challenge" if can_challenge(u) and is_charles(u) else "/economy", 302)
+        if applied_charles(u):
+            return _page("찰스 승인 대기", '<div class="card"><h1>🔥 찰스 승인을 기다리고 있어요</h1><p>%s 님, 가입은 끝났어요. 운영자가 <b>찰스</b>로 승인하면 챌린지를 시작할 수 있어요.</p>'
+                         '<p class="sub">승인되면 이 화면을 새로고침하세요(챌린지 화면으로 바로 넘어가요).</p></div><div class="foot"><a href="/gate/logout">로그아웃</a> · <a href="/privacy">처리방침</a></div>'
+                         % html.escape(disp(u)))
         return _page("승인 대기", '<div class="card"><h1>⏳ 승인을 기다리고 있어요</h1><p>%s 님, 가입은 끝났고 운영자가 승인하면 이용할 수 있어요.</p>'
                      '<p class="sub">승인되면 이 화면을 새로고침하세요.</p></div><div class="foot"><a href="/gate/logout">로그아웃</a> · <a href="/privacy">처리방침</a></div>'
                      % html.escape(disp(u)))
+
+    @r.get("/gate/charles")
+    def charles_entry(request: Request):
+        """🔥 찰스 챌린지 전용 입구. 여기로 가입하면 찰스 승인 대기(일반 화면도 승인 전엔 못 씀)."""
+        if not cfg()["enabled"]:
+            return _off()
+        u = session_user(request)
+        if not u:
+            return _page("찰스 챌린지", login_html("/challenge", cfg()) + _foot())
+        return RedirectResponse("/challenge", 302)          # 로그인돼 있으면 문지기가 상태에 맞게(동의·대기·신청·챌린지) 보낸다
+
+    @r.post("/gate/charles/apply")
+    def charles_apply(request: Request):
+        u = session_user(request)
+        if not u:
+            return RedirectResponse("/gate/charles", 303)
+        if not is_charles(u) and not is_admin(u):
+            set_apply(u["id"], "charles")
+            print("[gate] 🔥 찰스 참가 신청: 회원 %d" % u["id"])
+        return RedirectResponse("/challenge", 303)
 
     @r.get("/gate/account")
     def account(request: Request, m: str = ""):
@@ -1435,7 +1496,16 @@ def install(app):
             counts[user_cat(u)] = counts.get(user_cat(u), 0) + 1
             if role_of(u) in ("charles", "graduate"):
                 counts[role_of(u)] = counts.get(role_of(u), 0) + 1
-        rows = [u for u in allrows if (not flt or (role_of(u) == flt if flt in ("charles", "graduate") else user_cat(u) == flt))]
+            if applied_charles(u) and not is_charles(u):
+                counts["apply"] = counts.get("apply", 0) + 1
+
+        def _keep(u):
+            if not flt:
+                return True
+            if flt == "apply":
+                return applied_charles(u) and not is_charles(u)
+            return role_of(u) == flt if flt in ("charles", "graduate") else user_cat(u) == flt
+        rows = [u for u in allrows if _keep(u)]
         dd = d if (d == "none" or valid_date(d)) else ""        # 화면에 되돌려 보여 주는 값은 날짜 모양일 때만(임의 글자 반사 방지)
         return _page("가입자 관리", admin_html(me, rows, counts, flt, m, dd), wide=True)
 
@@ -1482,6 +1552,8 @@ def install(app):
                     code = "baddate"
                 else:
                     set_access(t["id"], "approved" if action != "term" else t["status"], exp)
+                    if action != "term":
+                        set_apply(t["id"], None)             # 찰스 신청자를 일반으로 승인하면 신청 표시는 지운다
                     code, exp_note = action, exp or "none"
         elif action == "charles":
             import challenge
