@@ -63,6 +63,8 @@ const TEXT = { what: '반도체 수출이 석 달 연속 늘었다는 기사', w
       await pg.waitForSelector('#ed.open');
       check(await pg.$eval('#ed-photo', i => i.src.includes('/api/challenge/photo')), '사진을 누르면 큰 사진 + 입력칸');
       check(await pg.$$eval('#ed-form textarea', t => t.length) === 4, '입력칸 4개(WHAT·WHY·HOW·생각)');
+      await pg.waitForFunction(() => document.querySelector('#f-title') && document.querySelector('#f-title').value !== '', null, { timeout: 5000 }).catch(() => {});
+      check((await pg.inputValue('#f-title')) === '성북·서대문구 역세권 아파트 상승', '📰 기사 제목 칸이 신문 요약에서 자동으로 채워짐');
       // 🖼 사진 뷰어: 휠 확대 · 끌어 옮기기 · 🖍 줄 긋기 · 되돌리기 (경제 화면 뷰어와 같은 사용법)
       await pg.waitForFunction(() => document.querySelector('#ed-photo').naturalWidth > 0);
       await sleep(200);
@@ -117,7 +119,7 @@ const TEXT = { what: '반도체 수출이 석 달 연속 늘었다는 기사', w
       for (const k of Object.keys(TEXT)) await pg.fill('#f-' + k, TEXT[k]);
       // 📖 모르는 용어: HOW 와 생각 사이 · Enter 로 추가 · 🔍 뜻 찾기 → AI 풀이 카드
       const order = await pg.$$eval('#ed-form .fld', fs => fs.map(f => f.querySelector('label').textContent.trim().split(/\s+/)[0]));
-      check(order.slice(0, 5).join('|') === 'WHAT|WHY|HOW|📖|생각', '모르는 용어 칸은 HOW 와 생각 사이 (' + order.join('|') + ')');
+      check(order.slice(0, 6).join('|') === '📰|WHAT|WHY|HOW|📖|생각', '칸 순서: 기사 제목 → WHAT·WHY·HOW → 모르는 용어 → 생각 (' + order.join('|') + ')');
       await pg.fill('#t-in', '기준금리');
       await pg.press('#t-in', 'Enter');
       await pg.fill('#t-in', 'PER, 기준 금리');
@@ -144,8 +146,8 @@ const TEXT = { what: '반도체 수출이 석 달 연속 늘었다는 기사', w
       const unlocked = await pg.$eval('#posts', e => e.textContent);
       check(!unlocked.includes('내 글을 저장하면') && (unlocked.includes('찰스에이') || unlocked.includes('아직 다른 찰스')), '저장 뒤 같은 기수 글이 열림');
       // 다른 찰스 글의 '📰 N면' = 사진만(글쓰기 칸 없음)
-      if (await pg.$('#posts .post a.pg')) {
-        await pg.click('#posts .post a.pg');
+      if (await pg.$('#posts .post:not(.mine) a.pg')) {
+        await pg.click('#posts .post:not(.mine) a.pg');
         await pg.waitForSelector('#ed.open.photo');
         await pg.waitForFunction(() => document.querySelector('#ed-photo').naturalWidth > 0);
         check(await pg.$eval('#ed-form', e => getComputedStyle(e).display === 'none' && !e.querySelector('textarea')), '남의 글 📰 N면 → 사진만 보임(입력 칸 없음)');
@@ -156,6 +158,8 @@ const TEXT = { what: '반도체 수출이 석 달 연속 늘었다는 기사', w
         check(await pg.$$eval('#ed-form textarea', t => t.length) === 4, '사진 바둑판에서 누르면 다시 내 글쓰기 창');
         await pg.click('#ed-close');
       }
+      const myCard = await pg.$eval('#posts', e => { const m = e.querySelector('.post.mine'); return m ? m.textContent : ''; });
+      check(myCard.includes('나') && myCard.includes('성북·서대문구 역세권 아파트 상승'), '내 글도 목록에(나 표시 + 기사 제목)');
       const mineSaved = await pg.evaluate(async () => (await (await fetch('/api/challenge/day')).json()).mine['03.jpg'].terms);
       check(JSON.stringify(mineSaved) === JSON.stringify(['기준금리', 'PER']), '저장한 글에 용어 2개');
       // 📖 우리 기수 용어장

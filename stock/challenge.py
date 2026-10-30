@@ -444,6 +444,135 @@ def cohort_glossary(v, cohort_filter=None):
     return {"ok": True, "items": out, "can_lookup": bool(v["uid"]) and (can_write(v) or v["admin"])}
 
 
+# ───────────────────────── 📰 기사 제목 자동으로 따기 ─────────────────────────
+# (2026-10-30 사용자 요청 "기사 제목 정도는 자동으로 따서") 새 AI 호출 없이 이미 서버에 있는 두 곳에서:
+#   ① 그날 신문 요약(GPT 가 슬랙에 올린 글, ~/.openclaw/slack_logs/<날짜>.jsonl) 의
+#      맨 끝 JSON 묶음 {"articles":[{"title","page"}]} 과 기사 제목 아래 '• 사진: 07' 줄
+#   ② 지면 글자 읽기(news_page_text.py 가 만든 page_words.json) 에서 글씨가 큰 줄(= 제목)
+# 쓴 글(WHAT·WHY·HOW)과 글자 조각이 가장 많이 겹치는 제목을 고른다. 확신이 없으면 비워 둔다(지어내지 않음).
+TITLE_MAX = 80
+_TITLE_JUNK = re.compile(r"^[\s_*~>•·\-–—]*(?:\d{1,2}[.)]\s*)?(?:[🔴🟠🟡🟢🔵🚨⏸📌✅⭐️❗️]+\s*)?")
+
+
+def _slack_log_dir():
+    return os.path.expanduser(os.getenv("CHALLENGE_SLACK_LOG_DIR", "~/.openclaw/slack_logs"))
+
+
+def _clean_title(t):
+    t = re.sub(r"<[^>|]+\|([^>]+)>", r"\1", str(t or ""))          # 슬랙 링크 <주소|글자> → 글자
+    t = _TITLE_JUNK.sub("", re.sub(r"[_*~`]+", "", t).strip())         # 밑줄·굵게 표시를 먼저 벗겨야 끝의 (3) 이 떼어진다
+    t = re.sub(r"\s*\((?:사진|지면|PDF|p)?\s*\d{1,2}(?:[·,]\s*\d{1,2})*\s*(?:쪽|면)?(?:\s*(?:좌|우|상|하|좌상|좌하|우상|우하|상단|하단|중앙))?\)\s*$", "", t)
+    t = re.sub(r"[_*~`]+", "", t).strip(" :：-–—|")
+    return re.sub(r"\s+", " ", t)[:TITLE_MAX]
+
+
+def _page_num(name_or_num):
+    m = re.search(r"\d+", str(name_or_num or ""))
+    return int(m.group(0)) if m else None
+
+
+def _summary_titles(day):
+    """신문 요약 글 → {쪽 번호: [제목…]}. 요약이 없거나 모양이 달라도 조용히 빈 결과."""
+    out = {}
+
+    def add(pg, title):
+        title = _clean_title(title)
+        if pg and 4 <= len(title) and title not in out.setdefault(pg, []):
+            out[pg].append(title)
+    try:
+        with open(os.path.join(_slack_log_dir(), day + ".jsonl"), encoding="utf-8") as f:
+            texts = [json.loads(ln).get("text") or "" for ln in f if ln.strip()]
+    except Exception:
+        return out
+    for text in texts:
+        for m in re.finditer(r'\{\s*"articles"\s*:', text):           # ① JSON 묶음
+            depth, end = 0, None
+            for i in range(m.start(), len(text)):
+                if text[i] == "{":
+                    depth += 1
+                elif text[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        end = i + 1
+                        break
+            try:
+                for a in json.loads(text[m.start():end]).get("articles") or []:
+                    add(_page_num(a.get("page")), a.get("title"))
+            except Exception:
+                pass
+        lines = text.splitlines()                                       # ② 제목 아래 '• 사진: 07'
+        for i, ln in enumerate(lines):
+            mm = re.match(r"^\s*[•·\-*]?\s*사진\s*[:：]\s*(\d{1,2})", ln)
+            if not mm:
+                continue
+            for j in range(i - 1, max(-1, i - 4), -1):
+                t = lines[j].strip()
+                if t and not re.match(r"^\s*[•·\-*]?\s*(원문|사진|WHAT|WHY|HOW)\b", t, re.I):
+                    add(int(mm.group(1)), t)
+                    break
+    return out
+
+
+def _ocr_headlines(day, name):
+    """지면 글자 읽기 결과에서 글씨가 큰 줄(제목) 후보. 없으면 []."""
+    if _news is None or not hasattr(_news, "page_words"):
+        return []
+    pw = _news.page_words(day, name)
+    segs = pw.get("segs") or [] if pw.get("ok") else []
+    if len(segs) < 5:
+        return []
+    hs = sorted(sg[4] for sg in segs if sg[4] > 0)
+    med = hs[len(hs) // 2] if hs else 0
+    if not med:
+        return []
+    big = [sg for sg in segs if sg[4] >= med * 1.7]
+    big.sort(key=lambda sg: (sg[0], sg[2], sg[1]))
+    out, cur, last = [], [], None
+    for sg in big:                                                      # 같은 단에서 바로 아래 이어지는 큰 줄은 한 제목
+        if last is not None and (sg[0] != last[0] or sg[2] - (last[2] + last[4]) > last[4] * 0.8):
+            out.append(cur)
+            cur = []
+        cur.append(sg)
+        last = sg
+    if cur:
+        out.append(cur)
+    titles = []
+    for grp in out:
+        t = _clean_title(" ".join(" ".join(w[0] for w in sg[5]) for sg in grp))
+        if len(re.sub(r"[^가-힣A-Za-z0-9]", "", t)) >= 5 and re.search(r"[가-힣]", t) and t not in titles:
+            titles.append(t)
+    return titles[:8]
+
+
+def _grams(t):
+    t = re.sub(r"[^가-힣A-Za-z0-9]", "", str(t or "")).lower()
+    return {t[i:i + 2] for i in range(len(t) - 1)}
+
+
+def title_candidates(day, name):
+    pg = _page_num(name)
+    out = [{"title": t, "src": "summary"} for t in _summary_titles(day).get(pg, [])]
+    seen = {o["title"] for o in out}
+    out += [{"title": t, "src": "page"} for t in _ocr_headlines(day, name) if t not in seen]
+    return out
+
+
+def pick_title(cands, text):
+    """후보 중 쓴 글과 가장 잘 맞는 제목. 요약 제목이 하나뿐이면 그것, 아니면 겹침이 충분할 때만."""
+    if not cands:
+        return ""
+    g = _grams(text)
+    scored = sorted(((len(_grams(c["title"]) & g) / max(1, len(_grams(c["title"]))), i, c) for i, c in enumerate(cands)),
+                    key=lambda x: (-x[0], x[1]))
+    best = scored[0]
+    summ = [c for c in cands if c["src"] == "summary"]
+    if best[0] >= 0.25:
+        return best[2]["title"]
+    if len(summ) == 1:
+        return summ[0]["title"]
+    return ""
+
+
 # ───────────────────────── 진행도·완수 ─────────────────────────
 def _done_days(con, uid):
     days = {r[0] for r in con.execute("SELECT DISTINCT day FROM challenge_posts WHERE user_id=?", (uid,))}
@@ -571,6 +700,7 @@ def _post_dict(r, with_author=True):
         d["terms"] = json.loads(r["terms"] or "[]")
     except Exception:
         d["terms"] = []
+    d["title"] = r["title"] if "title" in r.keys() else None
     if with_author:
         d["nick"] = r["nickname"] or "(닉네임 없음)"
         d["admin"] = bool(r["is_admin"])
@@ -648,6 +778,13 @@ def save_post(v, day, page, data):
         terms = parse_terms(data.get("terms"))
     except ValueError as e:
         return str(e), "terms"
+    title = _clean_title(data.get("title"))
+    if not title:                                       # 비워 두면 자동으로 따기(확신 없으면 빈 채로)
+        try:
+            title = pick_title(title_candidates(day, page), " ".join(vals[k] for k in ("what", "why", "how")))
+        except Exception as e:
+            print("[challenge] 제목 자동 따기 실패: %r" % (e,))
+            title = ""
     hist = [x for x in _rate.get(v["uid"], []) if time.time() - x < 60]
     if len(hist) >= 30:
         return "rate", None
@@ -655,11 +792,12 @@ def save_post(v, day, page, data):
     cohort = None if v["admin"] else v["cohort_id"]
     now = gate._now()
     with gate._db() as con:
-        con.execute("INSERT INTO challenge_posts(user_id,cohort_id,day,page,what,why,how,think,terms,created_at,updated_at) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,day,page) DO UPDATE SET "
-                    "what=excluded.what, why=excluded.why, how=excluded.how, think=excluded.think, terms=excluded.terms, updated_at=excluded.updated_at",
+        con.execute("INSERT INTO challenge_posts(user_id,cohort_id,day,page,what,why,how,think,terms,title,created_at,updated_at) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,day,page) DO UPDATE SET "
+                    "what=excluded.what, why=excluded.why, how=excluded.how, think=excluded.think, terms=excluded.terms, "
+                    "title=excluded.title, updated_at=excluded.updated_at",
                     (v["uid"], cohort, day, page, vals["what"], vals["why"], vals["how"], vals["think"],
-                     json.dumps(terms, ensure_ascii=False), now, now))
+                     json.dumps(terms, ensure_ascii=False), title or None, now, now))
     _archive(day, page)
     return "ok", None
 
@@ -770,6 +908,21 @@ def install(app):
         if not v:
             return deny()
         return JSONResponse(cohort_glossary(v, cohort if (v["admin"] and cohort.isdigit()) else None))
+
+    @app.get("/api/challenge/titles")
+    def api_titles(request: Request, date: str = "", page: str = ""):
+        """📰 그 면의 기사 제목 후보(신문 요약 → 지면 큰 글씨 순)."""
+        v = viewer(request)
+        if not v:
+            return deny()
+        if not gate.valid_date(date or "") or not NAME_RE.match(page or "") or not day_allowed(v, date):
+            return JSONResponse({"ok": False}, status_code=400)
+        try:
+            cands = title_candidates(date, page)
+        except Exception as e:
+            print("[challenge] 제목 후보 실패: %r" % (e,))
+            cands = []
+        return JSONResponse({"ok": True, "items": cands})
 
     @app.post("/api/challenge/terms")
     async def api_terms(request: Request):

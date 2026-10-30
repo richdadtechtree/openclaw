@@ -231,8 +231,11 @@ def _db():
                      ("apply", "TEXT")):                     # apply='charles' = 챌린지 입구로 가입·신청(찰스 승인 대기)       # 예전에 만든 DB 도 가입자 정보를 그대로 둔 채 이어서 쓴다
         if col not in have:
             con.execute("ALTER TABLE users ADD COLUMN %s %s" % (col, ddl))
-    if "terms" not in {r["name"] for r in con.execute("PRAGMA table_info(challenge_posts)")}:
+    _cp = {r["name"] for r in con.execute("PRAGMA table_info(challenge_posts)")}
+    if "terms" not in _cp:
         con.execute("ALTER TABLE challenge_posts ADD COLUMN terms TEXT")              # 📖 모르는 용어(JSON 목록)
+    if "title" not in _cp:
+        con.execute("ALTER TABLE challenge_posts ADD COLUMN title TEXT")              # 📰 기사 제목(자동으로 따거나 직접 고침)
     con.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_users_nick ON users(nick_key)")          # 같은 닉네임 중복 방지(NULL 은 여러 개 가능)
     # 예전에 구글·카카오가 알려 줘서 저장된 이름(실명일 수 있음)은 지운다 — 이제는 이용자가 직접 정한 닉네임(nick_set=1)만 보관한다.
     con.execute("UPDATE users SET nickname=NULL, nick_key=NULL WHERE nick_set=0 AND nickname IS NOT NULL")

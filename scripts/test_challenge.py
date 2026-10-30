@@ -4,6 +4,7 @@
 필요: fastapi + httpx (없으면 건너뜀). 개발 환경 전용.
 실행: python3 scripts/test_challenge.py
 """
+import json
 import os
 import re
 import shutil
@@ -390,6 +391,41 @@ with gate._db() as con:
     zrow = con.execute("SELECT 1 FROM challenge_posts WHERE user_id=? AND what LIKE '남의 번호%'", (z_id,)).fetchone()
 check("요청에 남의 회원번호를 넣어도 남의 글로 저장 안 됨", zrow is None)
 check("남의 글은 지울 수도 없음", not cV.post("/api/challenge/delete", json={"date": "2026-11-10", "page": "01.jpg"}).json()["ok"])
+
+print("[📰 기사 제목 자동으로 따기]")
+SLK = tempfile.mkdtemp(prefix="chslack_")
+os.environ["CHALLENGE_SLACK_LOG_DIR"] = SLK
+TODAY[0] = "2026-11-12"
+paper("2026-11-12", n=4)
+summary_text = ("📰 11월 12일 신문 요약\n1. 🔴 _성북·서대문구 역세권 아파트 상승 (3)_\n• 사진: 03\n• WHAT: 서울 아파트값 89주 연속 상승\n"
+                "2. 반도체 수출 석 달째 증가\n• 사진: 02\n• WHAT: …\n"
+                '```json\n{"articles":[{"title":"미국 금리 동결 이어져","page":2},{"title":"<https://x|코스피 3천 회복>","page":4}]}\n```')
+with open(os.path.join(SLK, "2026-11-12.jsonl"), "w") as f:
+    f.write(json.dumps({"ts": "x", "source": "news", "text": summary_text}, ensure_ascii=False) + "\n")
+import json as _j  # noqa: E402
+with open(os.path.join(NEWS, "2026-11-12", "page_words.json"), "w") as f:     # 1면: 큰 글씨 두 줄(이어진 제목) + 본문 여러 줄
+    segs = [[0, 100, 100, 5000, 600, [["‘공화", 0, 0, 0, 0], ["후보", 0, 0, 0, 0], ["동명이인’", 0, 0, 0, 0]]],
+            [0, 100, 760, 5000, 600, [["기획", 0, 0, 0, 0], ["논란", 0, 0, 0, 0]]]] + \
+           [[0, 100, 2000 + i * 200, 3000, 150, [["본문", 0, 0, 0, 0], ["글자", 0, 0, 0, 0]]] for i in range(8)]
+    _j.dump({"pages": {"01.jpg": {"W": 1000, "H": 1500, "segs": segs}}}, f, ensure_ascii=False)
+check("제목 다듬기: 번호·🔴·_밑줄_·(3) 떼기", challenge._clean_title("1. 🔴 _성북·서대문구 역세권 아파트 상승 (3)_") == "성북·서대문구 역세권 아파트 상승")
+c3_ = challenge.title_candidates("2026-11-12", "03.jpg")
+check("신문 요약의 '• 사진: 03' 위 제목을 3면 후보로", [c["title"] for c in c3_] == ["성북·서대문구 역세권 아파트 상승"] and c3_[0]["src"] == "summary")
+c2_ = [c["title"] for c in challenge.title_candidates("2026-11-12", "02.jpg")]
+check("JSON 묶음(page 2) + 사진 줄 둘 다 2면 후보", "미국 금리 동결 이어져" in c2_ and "반도체 수출 석 달째 증가" in c2_)
+check("슬랙 링크 <주소|글자> 는 글자만", [c["title"] for c in challenge.title_candidates("2026-11-12", "04.jpg")] == ["코스피 3천 회복"])
+c1_ = challenge.title_candidates("2026-11-12", "01.jpg")
+check("요약에 없는 면은 지면 큰 글씨(두 줄 이어서)를 후보로", c1_ and c1_[0]["src"] == "page" and c1_[0]["title"] == "‘공화 후보 동명이인’ 기획 논란")
+r = post(cV, page="03.jpg", what="서울 아파트값이 계속 오르고 있다", title="")
+check("제목을 비우고 저장 → 자동으로 3면 제목", r.json()["day"]["mine"]["03.jpg"]["title"] == "성북·서대문구 역세권 아파트 상승")
+r = post(cV, page="02.jpg", what="반도체 수출이 석 달째 늘었다는 소식", title="")
+check("후보가 여럿이면 쓴 글과 가장 맞는 제목", r.json()["day"]["mine"]["02.jpg"]["title"] == "반도체 수출 석 달째 증가")
+r = post(cV, page="04.jpg", title="내가 직접 고친 제목")
+check("직접 쓴 제목은 그대로 저장", r.json()["day"]["mine"]["04.jpg"]["title"] == "내가 직접 고친 제목")
+check("제목 후보 API", [c["title"] for c in cV.get("/api/challenge/titles?date=2026-11-12&page=03.jpg").json()["items"]] == ["성북·서대문구 역세권 아파트 상승"])
+check("제목 후보 API: 이상한 이름은 거부", cV.get("/api/challenge/titles?date=2026-11-12&page=../x").status_code == 400)
+os.remove(os.path.join(SLK, "2026-11-12.jsonl"))
+check("요약도 지면 글자도 없으면 지어내지 않고 빈 칸", post(cV, page="02.jpg", title="", what="전혀 다른 이야기를 적어 본다").json()["day"]["mine"]["02.jpg"]["title"] in (None, ""))
 
 print("\n결과: %s" % ("전부 통과" if not fails else "실패 %d개: %s" % (len(fails), fails)))
 sys.exit(1 if fails else 0)

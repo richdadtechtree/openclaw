@@ -276,6 +276,18 @@
   .gcard{border-radius:16px;padding:16px 16px 12px;font-size:15px;box-shadow:var(--shadow)}
   .gcard h4{font-size:18px;color:var(--terms)}
   .gcard .short{font-size:15.5px}
+
+  /* 📰 기사 제목(2026-10-30) · 내 글 표시 */
+  .ptitle{font-size:17.5px;font-weight:800;letter-spacing:-.02em;line-height:1.5;margin:0 0 12px;color:var(--ink)}
+  .ptitle small{font-size:12.5px;font-weight:600;color:var(--sub);margin-right:6px}
+  .badge.me{background:color-mix(in srgb,var(--blue) 16%,transparent);color:var(--blue)}
+  .post.mine{border-color:color-mix(in srgb,var(--blue) 45%,var(--line))}
+  .fld.ttl input{width:100%;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--bg);font:inherit;font-size:16px;font-weight:700;color:var(--ink)}
+  .fld.ttl input:focus{outline:2px solid var(--blue);border-color:transparent}
+  label[for="f-title"]{color:var(--ink)}
+  .tsug{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .tsug button{font-size:13px;font-weight:600;padding:4px 10px;border-radius:999px;text-align:left;max-width:100%}
+  .tsug button[aria-pressed="true"]{background:var(--soft);border-color:var(--blue);color:var(--blue)}
 </style>
 </head>
 <body>
@@ -458,20 +470,24 @@ function avatar(n){n=String(n||"?");let h=0;for(const ch of n)h=(h*31+ch.codePoi
   return '<span class="av" aria-hidden="true" style="background:'+AV_COLORS[h%AV_COLORS.length]+'">'+esc([...n][0]||"?")+'</span>';}
 const LABEL={what:"WHAT",why:"WHY",how:"HOW",think:"생각 & 투자"};
 function postHtml(p,withPage){
-  return '<article class="post"><header class="ph">'+avatar(p.nick)+'<div class="pn"><b>'+esc(p.nick)+'</b><span class="badge ch">🔥 찰스</span>'+
+  return '<article class="post'+(p.me?' mine':'')+'"><header class="ph">'+avatar(p.nick)+'<div class="pn"><b>'+esc(p.nick)+'</b><span class="badge ch">🔥 찰스</span>'+(p.me?'<span class="badge me">나</span>':'')+
     (S.me.admin&&p.cohort?'<span class="badge">'+esc(p.cohort)+'</span>':'')+'</div>'+
-    (withPage?'<a href="#" class="pg" data-page="'+esc(p.page)+'" data-nick="'+esc(p.nick)+'" title="이 기사 사진 보기">📰 '+esc(pageNo(p.page))+'면</a>':'')+'</header>'+
+    (withPage?'<a href="#" class="pg" data-page="'+esc(p.page)+'" data-nick="'+esc(p.nick)+'"'+(p.me?' data-me="1"':'')+' title="'+(p.me?'내 글 열기':'이 기사 사진 보기')+'">📰 '+esc(pageNo(p.page))+'면</a>':'')+'</header>'+
+    (p.title?'<h4 class="ptitle">'+esc(p.title)+'</h4>':'')+
     '<div class="pf">'+FIELDS.map(f=>(f[0]==="think"&&p.terms&&p.terms.length?'<section class="f" data-k="terms"><span class="lb">📖 용어</span>'+termsChips(p.terms)+'</section>':'')+
       '<section class="f" data-k="'+f[0]+'"><span class="lb">'+esc(LABEL[f[0]])+'</span><p>'+esc(p[f[0]])+'</p></section>').join("")+'</div></article>';
 }
 function renderPosts(){
   const d=S.day,o=d.others,el=$("posts");
-  let h='<h3>👥 '+(S.me.admin?(S.cohort?"이 기수":"모든 기수"):"우리 기수")+' 글 <span class="sub">'+o.count+'개</span></h3>';
+  // 내 글도 맨 위에(2026-10-30 사용자 요청) — '나' 표시, 📰 N면 을 누르면 내 글쓰기 창
+  const mine=Object.values(d.mine||{}).map(p=>Object.assign({},p,{nick:S.me.nick,me:true}));
+  let h='<h3>👥 '+(S.me.admin?(S.cohort?"이 기수":"모든 기수"):"우리 기수")+' 글 <span class="sub">'+(o.count+mine.length)+'개</span></h3>';
+  h+=mine.map(p=>postHtml(p,true)).join("");
   if(o.locked)h+='<div class="lock">🔒 <b>오늘 내 글을 저장하면</b> 우리 기수 찰스들의 글'+(o.count?' '+o.count+'개':'')+'가 열려요.<br><span class="sub">먼저 스스로 생각해 보는 게 챌린지의 핵심이에요.</span></div>';
   else if(!o.posts.length)h+='<div class="lock">아직 다른 찰스의 글이 없어요.</div>';
   else h+=o.posts.map(p=>postHtml(p,true)).join("");
   el.innerHTML=h;
-  el.querySelectorAll("a.pg").forEach(a=>a.onclick=e=>{e.preventDefault();openPhoto(a.dataset.page,a.dataset.nick);});
+  el.querySelectorAll("a.pg").forEach(a=>a.onclick=e=>{e.preventDefault();if(a.dataset.me)openEd(a.dataset.page);else openPhoto(a.dataset.page,a.dataset.nick);});
 }
 
 /* ── 신문 사진 뷰어 ─────────────────────────
@@ -651,6 +667,8 @@ function openEd(name){
     S.terms=(src.terms||[]).slice();
     const fld=f=>'<div class="fld"><label for="f-'+f[0]+'">'+esc(f[1])+' <small id="c-'+f[0]+'"></small></label>'+
        '<textarea id="f-'+f[0]+'" maxlength="'+S.me.limits.max+'" placeholder="'+esc(f[2])+'">'+esc(src[f[0]]||"")+'</textarea></div>';
+    h+='<div class="fld ttl"><label for="f-title">📰 기사 제목 <small>자동으로 채워요 · 고칠 수 있어요</small></label>'+
+       '<input id="f-title" maxlength="80" autocomplete="off" placeholder="비워 두면 저장할 때 자동으로 찾아요" value="'+esc(src.title||"")+'"><div class="tsug" id="t-sug"></div></div>';
     h+=FIELDS.slice(0,3).map(fld).join("");
     h+='<div class="fld terms"><label for="t-in">📖 모르는 용어 <small>선택 · '+S.me.limits.terms+'개까지</small></label>'+
        '<div class="tin"><input id="t-in" maxlength="'+S.me.limits.term_len+'" placeholder="예: 기준금리, PER (Enter 로 추가)" autocomplete="off">'+
@@ -659,6 +677,7 @@ function openEd(name){
     h+='<div class="ed-actions"><button class="primary" id="ed-save">'+(mine?"고쳐서 저장":"저장")+'</button>'+(mine?'<button id="ed-del">이 글 지우기</button>':'')+
        '<span class="st" id="ed-st">'+(draft?"쓰던 글을 불러왔어요(아직 저장 전).":"칸마다 "+S.me.limits.min+"자 이상 써 주세요.")+'</span></div>';
   }else if(mine){
+    if(mine.title)h+='<h4 class="ptitle">📰 '+esc(mine.title)+'</h4>';
     h+=FIELDS.map(f=>(f[0]==="think"&&mine.terms&&mine.terms.length?'<div class="fld"><label>📖 모르는 용어</label>'+mine.terms.map(t=>termCard(t,false)).join("")+'</div>':'')+
        '<div class="fld"><label>'+esc(f[1])+'</label><div class="ro">'+esc(mine[f[0]])+'</div></div>').join("");
     h+='<p class="sub">'+(S.me.role==="graduate"?"🎓 완수했어요. 글은 기록으로 남아요(읽기 전용).":"마감된 글이에요(읽기 전용).")+'</p><div class="ed-actions"><span class="st" id="ed-st"></span></div>';
@@ -680,8 +699,21 @@ function openEd(name){
     $("t-add").onclick=()=>addTerms(name);
     $("t-find").onclick=()=>findTerms();
     renderTerms(name);
+    $("f-title").addEventListener("input",()=>{$("f-title").dataset.auto="";markSug();saveDraft(name);});
+    loadTitles(name);
   }
 }
+/* 📰 기사 제목 후보: 신문 요약(GPT) → 지면 큰 글씨(글자 읽기). 칸이 비어 있으면 첫 후보로 채움 */
+async function loadTitles(name){
+  let j={};try{j=await api("/api/challenge/titles?date="+S.date+"&page="+encodeURIComponent(name));}catch(e){}
+  if(S.page!==name||!$("f-title"))return;
+  const items=(j.items||[]).slice(0,6),inp=$("f-title"),box=$("t-sug");
+  if(!inp.value.trim()&&items.length){inp.value=items[0].title;inp.dataset.auto="1";saveDraft(name);}
+  box.innerHTML=items.length>1||(items.length&&inp.dataset.auto!=="1")?items.map(it=>'<button type="button" data-t="'+esc(it.title)+'" title="'+(it.src==="summary"?"신문 요약에서":"지면 큰 글씨에서")+'">'+esc(it.title)+'</button>').join(""):"";
+  box.querySelectorAll("button").forEach(b=>b.onclick=()=>{inp.value=b.dataset.t;inp.dataset.auto="";markSug();saveDraft(name);});
+  markSug();
+}
+function markSug(){const v=($("f-title")||{}).value;document.querySelectorAll("#t-sug button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.t===v));}
 function renderTerms(name){
   const el=$("t-list");if(!el)return;
   el.innerHTML=S.terms.map(t=>termCard(t,true)).join("");
@@ -708,11 +740,11 @@ async function findTerms(){
   }catch(e){st("인터넷 연결을 확인해 주세요.",true);}
   finally{if(b)b.textContent="🔍 뜻 찾기";renderTerms(S.page);}
 }
-function saveDraft(name){try{const o={terms:S.terms};FIELDS.forEach(f=>o[f[0]]=$("f-"+f[0]).value);localStorage.setItem(dkey(name),JSON.stringify(o));}catch(e){}}
+function saveDraft(name){try{const o={terms:S.terms,title:($("f-title")||{}).value||""};FIELDS.forEach(f=>o[f[0]]=$("f-"+f[0]).value);localStorage.setItem(dkey(name),JSON.stringify(o));}catch(e){}}
 function closeEd(){$("ed").classList.remove("open","photo");document.body.style.overflow="";PV.close();}
 async function save(name){
   if(!addTerms(name))return;                                  // 칸에 적어 두고 '추가'를 안 누른 용어도 함께
-  const body={date:S.date,page:name,terms:S.terms};FIELDS.forEach(f=>body[f[0]]=$("f-"+f[0]).value);
+  const body={date:S.date,page:name,terms:S.terms,title:($("f-title")||{}).value||""};FIELDS.forEach(f=>body[f[0]]=$("f-"+f[0]).value);
   for(const f of FIELDS){if(body[f[0]].trim().length<S.me.limits.min){st(f[1]+" 칸을 "+S.me.limits.min+"자 이상 써 주세요.",true);$("f-"+f[0]).focus();return;}}
   $("ed-save").disabled=true;st("저장 중…");
   try{
