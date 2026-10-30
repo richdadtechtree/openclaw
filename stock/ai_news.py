@@ -33,7 +33,8 @@ MAX_KEEP = {"threads": 60, "geeknews": 120}
 # 최근 글은 '글 하나 화면'을 따로 열어 본인 글(이어진 글 + 남의 댓글에 단 답)을 전부 모은다.
 DEEP_DAYS = 7          # 이 기간 안의 글은 30분마다 다시 열어 새로 단 댓글까지 챙긴다
 DEEP_MAX = 8           # 한 번에 여는 글 화면 수(크로미움이 무거워서)
-DEEP_SCROLLS = 6       # 글 화면을 아래로 내려 더 불러오는 횟수
+DEEP_SCROLLS = 15      # 글 화면을 아래로 내려 더 불러오는 최대 횟수(더 안 늘어나면 일찍 멈춤)
+SUB_MAX = 10           # 글 하나에서 '답이 숨어 있는 댓글' 화면을 따로 여는 최대 수
 SOURCES = tuple(MAX_AGE)
 _locks = {s: threading.Lock() for s in SOURCES}
 
@@ -190,19 +191,34 @@ def walk_items(o, out):
     return out
 
 
+def _reply_count(po):
+    """Threads 가 그 글에 적어 둔 '달린 댓글 수'(없으면 None)."""
+    info = (po or {}).get("text_post_app_info") or {}
+    for k in ("direct_reply_count", "reply_count"):
+        if isinstance(info.get(k), int):
+            return info[k]
+    return None
+
+
 def parse_thread_page(groups, root, user=THREADS_USER):
     """글 하나 화면의 thread_items 묶음들 → {"posts":[이어진 글…], "replies":[남의 댓글에 단 답…]} (없으면 None).
     묶음 안에서 앞에 다른 사람 글이 있으면 그 사람에게 단 답, 아니면 본인이 이어 쓴 글로 본다."""
     chain, replies = {}, {}
+    comments, root_count = {}, None             # comments = {남의 댓글 code: [그 댓글, 그 묶음에 보인 본인 답 수]}
     for items in groups or []:
         other = None
         for it in items or []:
             po = (it or {}).get("post") or {}
             if not po.get("code"):
                 continue
+            if po["code"] == root and _reply_count(po) is not None:
+                root_count = _reply_count(po)
             if _uname(po) != user:
                 other = po
+                comments.setdefault(po["code"], [po, 0])
                 continue
+            if other is not None:
+                comments[other["code"]][1] += 1
             x = _info(po)
             if other is None:
                 chain[x["code"]] = x
@@ -213,7 +229,29 @@ def parse_thread_page(groups, root, user=THREADS_USER):
     if root not in chain:
         return None
     posts = sorted(chain.values(), key=lambda p: (p["code"] != root, p["at"]))
-    return {"posts": posts, "replies": sorted((r for c, r in replies.items() if c not in chain), key=lambda p: p["at"])}
+    # 답이 숨어 있을 수 있는 남의 댓글: Threads 가 적은 답글 수 > 이 화면에 보인 본인 답 수(답이 남의 것일 수도 있어 '후보')
+    hidden = [{"code": po["code"], "user": _uname(po), "text": ((po.get("caption") or {}).get("text") or "").strip()[:120]}
+              for po, seen in comments.values() if (_reply_count(po) or 0) > seen]
+    return {"posts": posts, "replies": sorted((r for c, r in replies.items() if c not in chain), key=lambda p: p["at"]),
+            "hidden": hidden, "stats": {"threads_comments": root_count, "others_comments": len(comments), "groups": len(groups or [])}}
+
+
+def parse_comment_page(groups, comment, user=THREADS_USER):
+    """남의 댓글 하나 화면 → 그 댓글에 본인이 단 답들(누구에게 단 답인지 붙여서)."""
+    out = {}
+    for items in groups or []:
+        prev = comment
+        for it in items or []:
+            po = (it or {}).get("post") or {}
+            if not po.get("code") or po["code"] == comment["code"]:
+                continue
+            if _uname(po) != user:
+                prev = {"code": po["code"], "user": _uname(po), "text": ((po.get("caption") or {}).get("text") or "").strip()[:120]}
+                continue
+            x = _info(po)
+            x["reply_to"], x["reply_to_text"] = prev["user"], prev["text"]
+            out[x["code"]] = x
+    return list(out.values())
 
 
 def parse_threads(groups, user=THREADS_USER):
@@ -249,16 +287,47 @@ def _json_chunks(text):
         return out
 
 
-def _open_collect(page, url, scrolls=0):
-    """화면을 열고(필요하면 아래로 내리며) 화면 JSON + 받은 데이터 속 thread_items 를 모두 모은다."""
+# 접힌 답글 펼치기: '답글 N개 보기·더 보기·View more replies' 같은 단추만 누른다(로그인·가입·앱 단추는 절대 안 누름)
+_EXPAND_JS = """() => {
+  let n = 0;
+  document.querySelectorAll('[role=button],button,a,span').forEach(b => {
+    const t = (b.innerText || '').trim();
+    if (!t || t.length > 30 || b.dataset.ocx) return;
+    if (/로그인|가입|Log ?in|Sign ?up|앱|App|열기|Open/i.test(t)) return;
+    if (/(답글|댓글|repl).*(보기|더|more|view)|^(더 보기|View more|Show more|See more)/i.test(t) || /^View \\d+ (more )?repl/i.test(t)) {
+      b.dataset.ocx = '1'; try { b.click(); n++; } catch (e) {} }
+  });
+  return n;
+}"""
+_WALL_JS = """() => /로그인하여 .*(확인|보기)|Log in to see|Log in or sign up/i.test(document.body.innerText || '')"""
+
+
+def _open_collect(page, url, scrolls=0, info=None):
+    """화면을 열고(필요하면 아래로 내리며 접힌 답글도 펼치며) 화면 JSON + 받은 데이터 속 thread_items 를 모두 모은다.
+    더 내려도 새 데이터가 안 오면 일찍 멈춘다. info(dict)에 로그인 벽·내린 횟수를 적는다."""
     resps = []
     page.on("response", resps.append)
     try:
         page.goto(url, wait_until="networkidle", timeout=60000)
-        for _ in range(scrolls):
+        idle, done = 0, 0
+        for done in range(1, scrolls + 1):
+            before = len(resps)
+            try:
+                clicked = page.evaluate(_EXPAND_JS)
+            except Exception:
+                clicked = 0
             page.mouse.wheel(0, 5000)
-            page.wait_for_timeout(1000)
+            page.wait_for_timeout(1200)
+            idle = idle + 1 if (len(resps) == before and not clicked) else 0
+            if idle >= 3:                                # 세 번 연속 아무것도 안 늘면 끝
+                break
         groups = page.evaluate(_EXTRACT_JS)
+        if info is not None:
+            info["scrolls"] = done
+            try:
+                info["login_wall"] = bool(page.evaluate(_WALL_JS))
+            except Exception:
+                pass
     finally:
         page.remove_listener("response", resps.append)
     for r in resps:                                      # 내리면서 받은 댓글 데이터(graphql 등)
@@ -294,9 +363,24 @@ def fetch_threads(deep=()):
                     codes.append(c)
             for code in codes[:DEEP_MAX]:
                 try:
-                    d = parse_thread_page(_open_collect(page, "%s/post/%s" % (THREADS_URL, code), DEEP_SCROLLS), code)
-                    if d:
-                        details[code] = d
+                    info = {}
+                    d = parse_thread_page(_open_collect(page, "%s/post/%s" % (THREADS_URL, code), DEEP_SCROLLS, info), code)
+                    if not d:
+                        continue
+                    have = {r["code"] for r in d["replies"]}
+                    opened = 0
+                    for cm in d["hidden"][:SUB_MAX]:          # 답이 숨어 있는 댓글은 그 댓글 화면을 따로 열어 본인 답을 찾는다
+                        try:
+                            for r in parse_comment_page(_open_collect(page, "https://www.threads.com/@%s/post/%s" % (cm["user"], cm["code"]), 4), cm):
+                                if r["code"] not in have and r["code"] not in {p["code"] for p in d["posts"]}:
+                                    d["replies"].append(r)
+                                    have.add(r["code"])
+                            opened += 1
+                        except Exception as e:
+                            print("[ai_news] 댓글 화면 %s 실패: %r" % (cm["code"], e))
+                    d["replies"].sort(key=lambda r: r["at"])
+                    d["stats"].update(info, hidden=len(d["hidden"]), sub_opened=opened)
+                    details[code] = d
                 except Exception as e:
                     print("[ai_news] 글 화면 %s 실패: %r" % (code, e))
         finally:
@@ -338,7 +422,7 @@ def merge(src, old, new):
         prev = {x["code"]: x for x in old}
         new = [dict(x, posts=sorted(_union(prev[x["code"]].get("posts"), x.get("posts")), key=lambda p: (p.get("code") != x["code"], p.get("at", 0))),
                     replies=sorted(_union(prev[x["code"]].get("replies"), x.get("replies")), key=lambda p: p.get("at", 0)),
-                    full_at=x.get("full_at") or prev[x["code"]].get("full_at"))
+                    full_at=x.get("full_at") or prev[x["code"]].get("full_at"), stats=x.get("stats") or prev[x["code"]].get("stats"))
                if x["code"] in prev else x for x in new]
     rows = list(new) + [x for x in old if _key(src, x) not in have]
     if src == "threads":
@@ -368,7 +452,7 @@ def refresh(src):
                     base = next((x for x in new if x["code"] == code), None) or byc.get(code)
                     if base is None:
                         continue
-                    full = dict(base, posts=d["posts"], replies=d["replies"], full_at=int(time.time()))
+                    full = dict(base, posts=d["posts"], replies=d["replies"], full_at=int(time.time()), stats=d.get("stats") or {})
                     new = [full if x["code"] == code else x for x in new] if any(x["code"] == code for x in new) else new + [full]
             else:
                 new = fetch_geeknews()
@@ -423,6 +507,12 @@ if __name__ == "__main__":                              # 서버에서 손으로
     d = _read(s)
     print("오류:", d.get("error") or "없음", "· 글", len(d.get("items", [])))
     for x in d.get("items", [])[:5]:
+        st = x.get("stats") or {}
         extra = ("  [이어진 글 %d · 댓글에 단 답 %d%s]" % (len(x.get("posts") or []), len(x.get("replies") or []),
                                                     " · 글 화면 확인함" if x.get("full_at") else "")) if s == "threads" else ""
+        if s == "threads" and st:                        # 점검: Threads 가 센 전체 댓글 수와 비교할 단서
+            extra += ("\n    └ Threads 전체 댓글 %s개 · 화면에 보인 남의 댓글 %s개 · 답이 숨어 있을 수 있는 댓글 %s개(따로 연 것 %s)"
+                      " · 내린 횟수 %s · 로그인 벽 %s" % (st.get("threads_comments", "?"), st.get("others_comments", "?"),
+                                                    st.get("hidden", "?"), st.get("sub_opened", "?"), st.get("scrolls", "?"),
+                                                    "있음" if st.get("login_wall") else "없음"))
         print("-", (x.get("title") or x["posts"][0]["text"])[:70].replace("\n", " ") + extra)

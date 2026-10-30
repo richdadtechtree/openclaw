@@ -157,6 +157,24 @@ def main():
         check("⑨ 다음번에 못 읽어도 예전에 모은 것은 그대로", len(t["posts"]) == 3 and len(t["replies"]) == 1, t)
         check("⑨ 최근 7일 글은 다시 열 목록(deep)에 들어감", seen.get("deep") == ["A"], seen)
 
+        # ⑩ 숫자가 안 맞을 때: Threads 가 적은 답글 수로 '답이 숨은 댓글'을 찾고, 그 댓글 화면에서 본인 답을 모은다
+        def withcount(item, n):
+            item["post"]["text_post_app_info"] = {"direct_reply_count": n}
+            return item
+        g = [[withcount(post("A", 100, "첫 글"), 9), post("A1", 101, "1/")],
+             [withcount(post("X", 110, "질문1", user="kim"), 2), post("R1", 111, "답1")],      # 답 2개라는데 1개만 보임 → 숨음
+             [withcount(post("Y", 120, "질문2", user="lee"), 1), post("R2", 121, "답2")],      # 다 보임
+             [withcount(post("Z", 130, "질문3", user="park"), 0)]]
+        d = ai.parse_thread_page(g, "A")
+        check("⑩ Threads 가 센 전체 댓글 수·남의 댓글 수 기록", d["stats"]["threads_comments"] == 9 and d["stats"]["others_comments"] == 3, d["stats"])
+        check("⑩ 답이 숨어 있을 수 있는 댓글만 골라냄", [h["code"] for h in d["hidden"]] == ["X"] and d["hidden"][0]["user"] == "kim", d["hidden"])
+        cpage = [[post("X", 110, "질문1", user="kim")],
+                 [post("R1", 111, "답1")], [post("R9", 115, "숨어 있던 둘째 답")],
+                 [post("W", 116, "끼어든 사람", user="choi"), post("R10", 117, "끼어든 사람에게 단 답")]]
+        rs = ai.parse_comment_page(cpage, d["hidden"][0])
+        check("⑩ 댓글 화면에서 본인 답 전부(누구에게 단 답인지 포함)",
+              sorted((r["code"], r["reply_to"]) for r in rs) == [("R1", "kim"), ("R10", "choi"), ("R9", "kim")], rs)
+
     print("모두 통과" if ok_all else "실패 있음")
     return 0 if ok_all else 1
 
