@@ -19,7 +19,7 @@ challenge.py — 🔥 찰스 챌린지 (2026-10-30, 계획서: docs/challenge-pl
   D10 관리자 글(cohort_id 없음)은 모든 기수에게 보인다
   📖 모르는 용어(2026-10-30 사용자 요청): HOW 와 생각 사이에 선택 칸(최대 5개). '뜻 찾기'를 누르면
      용어 글자만 GPT(openclaw 게이트웨이, ChatGPT Plus — 별도 키·요금 없음)에 보내 쉬운 풀이를 받고
-     glossary 표에 저장해 모두가 같이 쓴다(같은 용어는 한 번만 묻는다). AI 풀이는 틀릴 수 있어 사전 링크를 함께 준다.
+     glossary 표에 저장해 모두가 같이 쓴다(같은 용어는 한 번만 묻는다). AI 풀이는 틀릴 수 있다고 화면에 표시한다(2026-10-30 사용자 요청으로 사전 링크는 뺌).
 
 [저장] 로그인 게이트와 같은 DB(gate.sqlite)의 cohorts / challenge_posts / challenge_excused / challenge_days 표.
 [사진] 신문 사진은 14일 뒤 지워지므로(retention_cleanup.py), 글을 쓴 장은 gate 폴더의 challenge_photos/ 에 복사해 둔다.
@@ -378,7 +378,7 @@ def lookup_terms(v, terms):
             out.append(dict(item, ok=True, **have[k]))
             continue
         if _term_rate.get(day_key, 0) >= TERM_DAILY:
-            out.append(dict(item, ok=False, reason="오늘은 뜻 찾기를 많이 썼어요. 사전 링크로 확인해 주세요."))
+            out.append(dict(item, ok=False, reason="오늘은 뜻 찾기를 많이 썼어요. 내일 다시 눌러 주세요."))
             continue
         with _term_lock(k):
             again = glossary_get([t])                    # 기다리는 동안 다른 사람이 이미 찾았을 수 있다
@@ -392,7 +392,7 @@ def lookup_terms(v, terms):
                 print("[challenge] 용어 풀이 실패 %r: %r" % (t, e))
                 ans = None
             if not ans:
-                out.append(dict(item, ok=False, reason="AI 풀이를 받지 못했어요. 사전 링크로 확인해 주세요."))
+                out.append(dict(item, ok=False, reason="AI 풀이를 받지 못했어요. 잠시 후 🔍 뜻 찾기를 다시 눌러 주세요."))
                 continue
             with gate._db() as con:
                 con.execute("INSERT OR IGNORE INTO glossary(key,term,short,easy,invest,source,created_at) VALUES(?,?,?,?,?,?,?)",
@@ -526,6 +526,35 @@ def can_write(v, day=None):
     return bool(c and c["start_date"] <= day <= c["end_date"])
 
 
+_WD = "월화수목금토일"
+
+
+def _md(day):
+    d = _d(day)
+    return "%d월 %d일(%s)" % (d.month, d.day, _WD[d.weekday()])
+
+
+def why_cant_write(v, day=None):
+    """글을 못 쓰는 이유(쓸 수 있으면 빈 글). 화면이 '왜 입력 칸이 없는지' 알려 주는 데 쓴다."""
+    day = day or today()
+    if v is None or v["uid"] == 0:
+        return "IP 관리자 모드에서는 글을 쓸 수 없어요(도메인 주소로 로그인해 주세요)."
+    if v["admin"]:
+        return ""
+    if v["role"] == "graduate":
+        return "🎓 챌린지를 완수했어요. 글은 기록으로 읽기만 할 수 있어요."
+    if v["role"] != "charles":
+        return "찰스만 글을 쓸 수 있어요."
+    c = get_cohort(v["cohort_id"])
+    if not c:
+        return "기수가 정해지지 않았어요. 운영자에게 문의해 주세요."
+    if day < c["start_date"]:
+        return "%s 챌린지는 %s부터 시작해요. 그날부터 글을 쓸 수 있어요." % (c["name"], _md(c["start_date"]))
+    if day > c["end_date"]:
+        return "%s 챌린지 기간(%s까지)이 끝났어요." % (c["name"], _md(c["end_date"]))
+    return ""
+
+
 def day_allowed(v, day):
     """이 날짜를 볼 수 있나. 찰스·완수자는 자기 기수 기간 + 오늘."""
     if v["admin"]:
@@ -585,6 +614,11 @@ def day_view(v, day, cohort_filter=None):
             "glossary": glossary,
             "archived": archived, "images": images, "mine": mine,
             "writable": can_write(v, day) and day == now and is_weekday(day) and bool(names) and not archived,
+            "why_not": ("주말에는 쓰지 않아요." if not is_weekday(day) else
+                        "지난 날은 마감됐어요(읽기 전용)." if day < now else
+                        "앞으로 올 날이에요." if day > now else
+                        "오늘 신문이 아직 도착하지 않았어요." if not names or archived else
+                        why_cant_write(v, day)),
             "others": {"locked": not unlocked, "count": len(others),
                        "posts": [_post_dict(r) for r in others] if unlocked else []}}
 
@@ -647,7 +681,7 @@ def me_info(v):
     celebrate = bool(u is not None and gate.role_of(u) == "graduate" and not u["celebrated_at"])
     d = today()
     out = {"ok": True, "nick": v["nick"], "admin": v["admin"], "role": v["role"], "today": d, "weekday": is_weekday(d),
-           "can_write": can_write(v, d), "progress": p, "celebrate": celebrate, "celebrate_text": CELEBRATE_TEXT,
+           "can_write": can_write(v, d), "why_not": why_cant_write(v, d), "progress": p, "celebrate": celebrate, "celebrate_text": CELEBRATE_TEXT,
            "limits": {"min": MIN_LEN, "max": MAX_LEN, "terms": MAX_TERMS, "term_len": TERM_LEN}}
     if v["admin"]:
         out["cohorts"] = [{"id": c["id"], "name": c["name"], "start": c["start_date"], "end": c["end_date"]} for c in list_cohorts()]

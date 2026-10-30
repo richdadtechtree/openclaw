@@ -75,7 +75,8 @@ const TEXT = { what: '반도체 수출이 석 달 연속 늘었다는 기사', w
       await pg.click('#t-find');
       await pg.waitForFunction(() => document.querySelectorAll('#t-list .tcard:not(.wait)').length === 2);
       const card = await pg.textContent('#t-list .tcard');
-      check(card.includes('시험용 한 줄 뜻') && card.includes('AI 풀이') && card.includes('사전에서 확인'), '🔍 뜻 찾기 → AI 풀이 + 사전 확인 링크');
+      check(card.includes('시험용 한 줄 뜻') && card.includes('AI 풀이') && !card.includes('사전'), '🔍 뜻 찾기 → AI 풀이(사전 링크 없음)');
+      check(!(await pg.content()).includes('terms.naver.com'), '화면 어디에도 사전 링크 없음');
       if (SHOT) await pg.screenshot({ path: path.join(SHOT, `ch_${w}_terms.png`) });
       await pg.reload();                       // 새로고침해도 쓰던 글이 남는지
       await pg.waitForSelector('.tile');
