@@ -175,6 +175,10 @@ def main():
         check("⑩ 댓글 화면에서 본인 답 전부(누구에게 단 답인지 포함)",
               sorted((r["code"], r["reply_to"]) for r in rs) == [("R1", "kim"), ("R10", "choi"), ("R9", "kim")], rs)
 
+    # ⑫ 글 화면에서 본 글을 못 찾으면 이유를 한 줄로(2026-10-30 서버에서 '글 화면 확인함'이 하나도 안 붙음 — 조용히 건너뛰던 것)
+    why = ai.why_not_found([[post("Z", 1, "남의 글", user="kim")]], "Q", {"login_wall": True, "url": "https://x/login", "page_groups": 1, "data_resps": 0})
+    check("⑫ 못 찾은 이유(본 글 없음·로그인 벽·주소)", "본 글 없음" in why and "로그인 벽 있음" in why and "https://x/login" in why, why)
+
     # ⑪ 진짜 브라우저로 _open_collect 한 번 돌리기(2026-10-30 서버 오류 '_pw_impl_instance_' — 가짜 page 검사로는 못 잡았음)
     try:
         from playwright.sync_api import sync_playwright
