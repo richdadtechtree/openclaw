@@ -40,6 +40,12 @@
   .more{display:inline-block;margin-top:12px;font-size:14px}
   .fold{margin-top:10px}
   .fold summary{cursor:pointer;color:var(--blue);font-size:14px}
+  /* 💬 남의 댓글에 단 답(2026-10-30) — 누구 댓글에 단 답인지 위에 흐리게 */
+  .reply{margin:12px 0 0;padding:10px 12px;border-left:3px solid var(--blue);background:color-mix(in srgb,var(--blue) 6%,transparent);border-radius:0 10px 10px 0}
+  .reply .q{font-size:13px;color:var(--sub);white-space:pre-line;margin-bottom:6px}
+  .reply .q b{color:var(--ink);font-weight:600}
+  .reply .a{white-space:pre-line}
+  .reply .t{font-size:12px;color:var(--sub);margin-top:4px}
   .gn h2{font-size:calc(17px*var(--fs));line-height:1.45;margin:0 0 4px}
   .gn h2 a{color:var(--ink);text-decoration:none}
   .gn h2 a:hover{text-decoration:underline}
@@ -139,7 +145,9 @@ function statusLine(d){
 }
 function threadCard(t){
   const c=el('article','card');
+  const reps=t.replies||[];
   const m=el('div','meta'); m.appendChild(el('span',null,when(t.at))); if(t.posts.length>1) m.appendChild(el('span',null,'· 이어진 글 '+t.posts.length+'개'));
+  if(reps.length) m.appendChild(el('span',null,'· 댓글에 단 답 '+reps.length+'개'));
   c.appendChild(m);
   const add=(box,p)=>{ const d=el('div','post',p.text||'(글 없음)'); box.appendChild(d);
     if(p.media){ const x=el('a','media','📷 사진·영상은 원문에서'); x.href=safeUrl(p.url); x.target='_blank'; x.rel='noopener noreferrer'; d.appendChild(el('br')); d.appendChild(x); } };
@@ -147,6 +155,14 @@ function threadCard(t){
   if(t.posts.length>1){                               // 이어진 글(1/ 2/ …)은 접어 두었다가 펼친다
     const f=el('details','fold'); f.appendChild(el('summary',null,'이어진 글 '+(t.posts.length-1)+'개 펼치기'));
     t.posts.slice(1).forEach(p=>add(f,p)); c.appendChild(f);
+  }
+  if(reps.length){                                     // 💬 다른 사람 댓글에 CHOI님이 단 답 — 하나도 빠짐없이(접어 둠)
+    const f=el('details','fold'); f.appendChild(el('summary',null,'💬 댓글에 단 답 '+reps.length+'개 펼치기'));
+    reps.forEach(r=>{ const b=el('div','reply'); const q=el('div','q'); q.appendChild(el('b',null,'@'+(r.reply_to||'?')));
+      if(r.reply_to_text) q.appendChild(document.createTextNode(' : '+r.reply_to_text)); b.appendChild(q);
+      b.appendChild(el('div','a',r.text||'(글 없음)')); const tm=el('div','t'); tm.appendChild(link(when(r.at)+' · 원문 ↗', r.url)); b.appendChild(tm);
+      f.appendChild(b); });
+    c.appendChild(f);
   }
   c.appendChild(link('Threads에서 보기 ↗', t.url, 'more'));
   return c;
@@ -194,7 +210,7 @@ function render(d){
   if(!items.length){ main.appendChild(el('div','empty', d.refreshing?'처음 글을 받는 중이에요. 잠시 뒤 다시 확인합니다.':'아직 받은 글이 없어요.'+(d.error?'\n('+d.error+')':''))); return; }
   items.forEach(x=>main.appendChild(src==='threads'?threadCard(x):geekCard(x)));
   main.appendChild(el('div','note', src==='threads'
-    ? 'Threads는 로그인 없이 최근 글 몇 개만 보여 줘서, 30분마다 받아 이곳에 쌓아 둡니다 · 개인 열람용'
+    ? 'Threads는 로그인 없이 최근 글 몇 개만 보여 줘서, 30분마다 받아 이곳에 쌓아 둡니다 · 최근 7일 글은 글마다 따로 열어 CHOI님이 단 댓글을 전부 모읍니다 · 개인 열람용'
     : 'GeekNews(news.hada.io/new) 새 글 · 10분마다 확인 · 개인 열람용'));
   document.body.dataset.ready='1';
 }

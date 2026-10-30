@@ -117,6 +117,46 @@ def main():
         r = ai.feed("geeknews")
         check("⑥ 지워진 글(404): gone 표시·목록에서 빠짐", t.get("gone") and [x["id"] for x in r["items"]] == ["36136", "36130"], (t, r))
 
+        # ⑦ 글 하나 화면: 본인이 이어 쓴 글 + 남의 댓글에 단 답을 '하나도 빠짐없이' (2026-10-30 사용자 요청)
+        page_groups = [[post("A", 100, "첫 글"), post("A1", 101, "1/ 이어서"), post("A2", 102, "2/ 이어서")],
+                       [post("X", 110, "질문 있어요", user="kim"), post("R1", 111, "답변입니다")],
+                       [post("A3", 120, "3/ 한참 뒤에 이어 씀")],
+                       [post("Y", 130, "좋아요", user="lee")],
+                       [post("Z", 140, "또 질문", user="park"), post("Q", 141, "끼어든 사람", user="lee"), post("R2", 142, "둘째 답")]]
+        d = ai.parse_thread_page(page_groups, "A")
+        check("⑦ 이어진 글 전부(따로 떨어진 3/ 포함)·뿌리 글 먼저", [p["code"] for p in d["posts"]] == ["A", "A1", "A2", "A3"], d)
+        check("⑦ 남의 댓글에 단 답 전부 + 누구에게", [(r["code"], r["reply_to"]) for r in d["replies"]] == [("R1", "kim"), ("R2", "lee")]
+              and d["replies"][0]["reply_to_text"] == "질문 있어요", d["replies"])
+        check("⑦ 남의 글은 안 들어감", all(p["code"] not in ("X", "Y", "Z", "Q") for p in d["posts"] + d["replies"]))
+        check("⑦ 뿌리 글이 없으면(다른 화면) 쓰지 않음", ai.parse_thread_page(page_groups, "NOPE") is None)
+        nested = {"data": {"x": [{"y": {"thread_items": [post("N", 1, "n")]}}], "z": {"thread_items": []}}}
+        check("⑧ 어떤 JSON 속 thread_items 도 찾음", len(ai.walk_items(nested, [])) == 2)
+        check("⑧ 받은 데이터 앞의 for(;;); 와 줄마다 JSON", ai._json_chunks('for (;;);{"a":1}') == [{"a": 1}]
+              and ai._json_chunks('{"a":1}\n{"b":2}') == [{"a": 1}, {"b": 2}])
+
+        # ⑨ 받기: 프로필엔 앞부분만 → 글 화면에서 전부 붙임, 다음번에 글 화면을 못 읽어도 모은 댓글은 남음
+        prof = ai.parse_threads([[post("A", int(time.time()) - 3600, "첫 글"), post("A1", int(time.time()) - 3599, "1/ 이어서")]])
+        full = ai.parse_thread_page([[post("A", int(time.time()) - 3600, "첫 글"), post("A1", int(time.time()) - 3599, "1/"),
+                                      post("A2", int(time.time()) - 3598, "2/")],
+                                     [post("X", int(time.time()) - 3000, "질문", user="kim"), post("R1", int(time.time()) - 2999, "답")]], "A")
+        seen = {}
+
+        def fake(deep=()):
+            seen["deep"] = list(deep)
+            return prof, {"A": full}
+        ai.fetch_threads = fake
+        ai.refresh("threads")
+        t = ai._read("threads")["items"][0]
+        check("⑨ 글 화면에서 모은 이어진 글 3개 + 댓글에 단 답 1개가 붙음", len(t["posts"]) == 3 and len(t["replies"]) == 1 and t.get("full_at"), t)
+        def fake2(deep=()):                                 # 이번엔 글 화면을 못 읽음
+            seen["deep"] = list(deep)
+            return prof, {}
+        ai.fetch_threads = fake2
+        ai.refresh("threads")
+        t = ai._read("threads")["items"][0]
+        check("⑨ 다음번에 못 읽어도 예전에 모은 것은 그대로", len(t["posts"]) == 3 and len(t["replies"]) == 1, t)
+        check("⑨ 최근 7일 글은 다시 열 목록(deep)에 들어감", seen.get("deep") == ["A"], seen)
+
     print("모두 통과" if ok_all else "실패 있음")
     return 0 if ok_all else 1
 
