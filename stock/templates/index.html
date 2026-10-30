@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>주가 및 투자 타이밍 대시보드 | OpenClaw Stock Briefing</title>
-  <meta name="description" content="실시간 주가지수, 역대 최고가(ATH) 대비 하락률, 단계별 분할 매수 타이밍, 관심 종목 및 ETF 변동성 모니터링 대시보드">
+  <meta name="description" content="실시간 주가지수, 역대 최고가(ATH) 대비 하락률, 단계별 분할 매수 타이밍 대시보드">
   
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -626,120 +626,6 @@
       padding: 14px;
     }
 
-    /* Custom Stocks Watchlist Section */
-    .custom-stocks-section {
-      margin-bottom: 32px;
-    }
-
-    .filter-tabs {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 16px;
-      flex-wrap: wrap;
-    }
-
-    .tab-btn {
-      font-family: var(--font-sans);
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--text-muted);
-      background: var(--bg-surface);
-      border: 1px solid var(--border-color);
-      border-radius: var(--radius-full);
-      padding: 6px 14px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-    }
-
-    .tab-btn:hover {
-      color: var(--text-main);
-      border-color: var(--border-color-strong);
-    }
-
-    .tab-btn.active {
-      color: #ffffff;
-      background: var(--accent-primary);
-      border-color: var(--accent-primary);
-      box-shadow: 0 2px 8px var(--accent-glow);
-    }
-
-    .custom-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: 16px;
-    }
-
-    .stock-card {
-      background: var(--bg-surface);
-      border: 1px solid var(--border-color);
-      border-radius: var(--radius-md);
-      padding: 16px;
-      transition: transform 0.2s ease, border-color 0.2s ease;
-    }
-
-    .stock-card:hover {
-      transform: translateY(-2px);
-      border-color: var(--border-color-strong);
-    }
-
-    .stock-card-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 8px;
-    }
-
-    .stock-symbol {
-      font-family: var(--font-mono);
-      font-size: 12px;
-      font-weight: 700;
-      color: var(--accent-primary);
-      background: var(--accent-glow);
-      padding: 2px 6px;
-      border-radius: 4px;
-    }
-
-    .stock-name {
-      font-size: 15px;
-      font-weight: 700;
-      color: var(--text-main);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .stock-price {
-      font-family: var(--font-mono);
-      font-size: 20px;
-      font-weight: 700;
-      color: var(--text-main);
-      margin: 4px 0;
-    }
-
-    .step-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      font-family: var(--font-mono);
-      font-size: 11.5px;
-      font-weight: 700;
-      padding: 2px 7px;
-      border-radius: 4px;
-      margin-top: 6px;
-    }
-
-    .step-badge.rise {
-      color: var(--color-up);
-      background: var(--color-up-bg);
-      border: 1px solid var(--color-up-border);
-    }
-
-    .step-badge.fall {
-      color: var(--color-down);
-      background: var(--color-down-bg);
-      border: 1px solid var(--color-down-border);
-    }
-
     /* Market Summary / Briefing Box */
     .summary-section {
       background: var(--bg-surface);
@@ -894,25 +780,6 @@
       </div>
     </section>
 
-    <!-- Section 3: Custom Stocks Watchlist -->
-    <section class="custom-stocks-section">
-      <div class="section-title">
-        <h2>⭐ 관심 종목 및 ETF 변동성 모니터링</h2>
-        <span class="subtitle">2% 단위 Step 변동성 알림 추적 (슬랙 연동)</span>
-      </div>
-
-      <div class="filter-tabs" id="filter-tabs">
-        <button class="tab-btn active" data-filter="all">전체 종목</button>
-        <button class="tab-btn" data-filter="stock">개별 주식</button>
-        <button class="tab-btn" data-filter="etf">ETF</button>
-        <button class="tab-btn" data-filter="alert">당일 알림 발생</button>
-      </div>
-
-      <div class="custom-grid" id="custom-stocks-grid">
-        <p>관심 종목 데이터를 로딩 중입니다…</p>
-      </div>
-    </section>
-
     <!-- Section 4: AI Market Executive Summary -->
     <section class="summary-section">
       <div class="section-title">
@@ -994,9 +861,7 @@
       period: '5y',
       charts: {},          // { '5y': { ts, data }, ... } 기간마다 따로 기억(왔다 갔다 해도 다시 안 받게)
       alerts: null,
-      customStocks: null,
       summary: null,
-      activeFilter: 'all',
       countdownSeconds: 20,
       timerId: null
     };
@@ -1133,10 +998,9 @@
 
     async function fetchDashboardData() {
       try {
-        const [resIndices, resAlerts, resCustom, resSummary, resCrypto, resFx] = await Promise.all([
+        const [resIndices, resAlerts, resSummary, resCrypto, resFx] = await Promise.all([
           fetch('/api/indices').then(r => r.json()),
           fetch('/api/alerts').then(r => r.json()),
-          fetch('/api/custom-stocks').then(r => r.json()),
           fetch('/api/summary').then(r => r.json()),
           // 비트코인은 거래소 장애가 나도 나머지 화면을 막지 않게 실패를 null 로 삼킨다
           fetch('/api/crypto').then(r => r.json()).catch(() => null),
@@ -1150,7 +1014,6 @@
 
         if (resIndices.status === 'success') AppState.indices = resIndices.data;
         if (resAlerts.status === 'success') AppState.alerts = resAlerts.data;
-        if (resCustom.status === 'success') AppState.customStocks = resCustom.data;
         if (resSummary.status === 'success') AppState.summary = resSummary.text;
 
         document.getElementById('last-updated-time').textContent = `최종 갱신: ${new Date().toLocaleTimeString('ko-KR')}`;
@@ -1158,7 +1021,6 @@
 
         renderIndices();
         renderStrategy();
-        renderCustomStocks();
         renderSummary();
 
       } catch (err) {
@@ -1575,56 +1437,6 @@
       container.innerHTML = cardsHtml;
     }
 
-    // 3. Render Custom Stocks Watchlist
-    function renderCustomStocks() {
-      const container = document.getElementById('custom-stocks-grid');
-      const data = AppState.customStocks;
-      if (!data) return;
-
-      const filter = AppState.activeFilter;
-      const entries = Object.entries(data);
-
-      const filtered = entries.filter(([symbol, item]) => {
-        if (filter === 'etf') return item.is_etf;
-        if (filter === 'stock') return !item.is_etf;
-        if (filter === 'alert') return item.triggered_steps && item.triggered_steps.length > 0;
-        return true;
-      });
-
-      if (filtered.length === 0) {
-        container.innerHTML = `<div style="grid-column: 1/-1; color: var(--text-muted); padding: 20px;">해당 조건에 부합하는 종목이 없습니다.</div>`;
-        return;
-      }
-
-      container.innerHTML = filtered.map(([symbol, item]) => {
-        const isUs = !/^\d+$/.test(symbol);
-        const flagIcon = getFlagIcon(isUs ? 'us' : 'kr');
-        const priceStr = isUs ? `$${formatNumber(item.current)}` : `${formatNumber(item.current, 0)}원`;
-        
-        const badgesHtml = (item.triggered_steps || []).map(st => {
-          const isRise = st.direction === 'RISE';
-          const icon = isRise ? '🚀' : '📉';
-          const cls = isRise ? 'rise' : 'fall';
-          return `<span class="step-badge ${cls}">${icon} ${st.val}% ${isRise ? '급등' : '급락'}</span>`;
-        }).join(' ');
-
-        return `
-          <div class="stock-card">
-            <div class="stock-card-head">
-              <span class="stock-name">${flagIcon} ${item.name}</span>
-              <span class="stock-symbol">${symbol}</span>
-            </div>
-            
-            <div class="stock-price">${priceStr}</div>
-            
-            <div>${formatChangePill(item.change_rate)}</div>
-            
-            ${badgesHtml ? `<div style="margin-top: 8px;">${badgesHtml}</div>` : ''}
-          </div>
-        `;
-      }).join('');
-    }
-
     // 4. Render Executive Briefing Summary
     function renderSummary() {
       const container = document.getElementById('summary-content');
@@ -1676,16 +1488,6 @@
       document.documentElement.setAttribute('data-theme', savedTheme);
       document.getElementById('theme-toggle-btn').textContent = savedTheme === 'light' ? '☀️ 모드' : '🌙 모드';
     }
-
-    // Filter Tab Buttons
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        e.target.classList.add('active');
-        AppState.activeFilter = e.target.dataset.filter;
-        renderCustomStocks();
-      });
-    });
 
     // Copy Summary Text
     document.getElementById('copy-summary-btn').addEventListener('click', () => {
