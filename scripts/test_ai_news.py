@@ -179,6 +179,25 @@ def main():
     why = ai.why_not_found([[post("Z", 1, "남의 글", user="kim")]], "Q", {"login_wall": True, "url": "https://x/login", "page_groups": 1, "data_resps": 0})
     check("⑫ 못 찾은 이유(본 글 없음·로그인 벽·주소)", "본 글 없음" in why and "로그인 벽 있음" in why and "https://x/login" in why, why)
 
+    # ⑬ 서버 실제 모양(2026-10-30 debug): 글 하나 화면의 thread_items 는 '이 사람의 다른 글'뿐, 본 글·댓글은 다른 자리
+    def rp(code, at, text, user="choi.openai", to=None, n=None):
+        po = post(code, at, text, user=user)["post"]
+        po["text_post_app_info"] = dict({"reply_to_author": {"username": to}} if to else {}, **({"direct_reply_count": n} if n is not None else {}))
+        return po
+    related = [[post("OLD1", 50, "다른 글")], [post("OLDX", 60, "남의 다른 글", user="the_future")], [post("OLD2", 70, "또 다른 글")]]
+    flat = {"data": {"containing_thread": {"items": [{"node": rp("R0", 100, "본 글", n=3)}, {"node": rp("R0b", 101, "2/", to="choi.openai")}]},
+                     "replies": [{"node": rp("K1", 110, "질문입니다", user="kim")}, {"node": rp("C1", 111, "답입니다", to="kim")},
+                                 {"node": rp("L1", 120, "의견", user="lee")}, {"node": rp("C2", 121, "감사합니다", to="lee")}]}}
+    pool = {}
+    ai.walk_posts(flat, pool)
+    for g in related:
+        ai.walk_posts(g, pool)
+    d = ai.thread_detail(related, "R0", {"posts": pool})
+    check("⑬ thread_items 에 본 글이 없어도 화면 곳곳에서 이어진 글을 찾음", d and [x["code"] for x in d["posts"]] == ["R0", "R0b"], d)
+    check("⑬ 댓글에 단 답(누구에게·원 댓글)", d and [(r["code"], r["reply_to"], r["reply_to_text"]) for r in d["replies"]] == [("C1", "kim", "질문입니다"), ("C2", "lee", "의견")], d)
+    check("⑬ 다른 글(OLD1·OLD2)은 섞이지 않음·Threads 댓글 수", d and not {"OLD1", "OLD2"} & {x["code"] for x in d["posts"] + d["replies"]} and d["stats"]["threads_comments"] == 3, d)
+    check("⑬ 본 글이 어디에도 없으면 None", ai.thread_detail(related, "NONE", {"posts": pool}) is None)
+
     # ⑪ 진짜 브라우저로 _open_collect 한 번 돌리기(2026-10-30 서버 오류 '_pw_impl_instance_' — 가짜 page 검사로는 못 잡았음)
     try:
         from playwright.sync_api import sync_playwright
@@ -190,7 +209,9 @@ def main():
         import pathlib
         tmp = pathlib.Path(tempfile.mkdtemp()) / "t.html"
         data = {"thread_items": [{"post": {"code": "Q1", "taken_at": 100, "user": {"username": "choi.openai"}, "caption": {"text": "브라우저 시험 글"}}}]}
-        tmp.write_text('<script type="application/json">%s</script><button>답글 2개 보기</button>' % json.dumps(data), encoding="utf-8")
+        other = {"require": [{"containing_thread": {"node": {"code": "ROOT9", "taken_at": 200, "user": {"username": "choi.openai"}, "caption": {"text": "본 글"}}}}]}
+        tmp.write_text('<script type="application/json">%s</script><script type="application/json" data-sjs>%s</script><button>답글 2개 보기</button>'
+                       % (json.dumps(data), json.dumps(other)), encoding="utf-8")
         exe = os.environ.get("PW_CHROME") or ai.CHROMIUM_PATH or (glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome") or [None])[0]
         try:
             with sync_playwright() as p:
@@ -199,6 +220,7 @@ def main():
                 groups = ai._open_collect(b.new_page(), tmp.as_uri(), 2, info)
                 b.close()
             check("⑪ 진짜 브라우저에서 _open_collect 오류 없음·글 읽음", any(it.get("post", {}).get("code") == "Q1" for g in groups for it in g) and info.get("scrolls", 0) >= 1, (groups, info))
+            check("⑪ thread_items 밖 script 의 본 글도 모음(info.posts)", "ROOT9" in (info.get("posts") or {}) and "Q1" in info["posts"], list(info.get("posts") or {}))
         except Exception as e:
             check("⑪ 진짜 브라우저에서 _open_collect 오류 없음", False, repr(e))
 
