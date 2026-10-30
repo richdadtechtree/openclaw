@@ -187,7 +187,7 @@ check("…시작 기록이 있으면 원래 가려던 곳으로", c.get("/gate/g
 fake_identity()
 check("이미 동의한 사람이 로그인하면 바로 입장",client(app).get("/gate/login").status_code == 200 and login(client(app)).headers["location"] == "/economy")
 check("DB 에 이메일·전화·실명 같은 열이 없음(최소 수집, 닉네임·화면 모드·챌린지 역할 열만 추가)",
-      {r["name"] for r in gate._db().execute("PRAGMA table_info(users)")} == {"id", "provider", "provider_uid", "nickname", "status", "consent_version", "consent_at", "created_at", "last_login_at", "is_admin", "expires_at", "nick_set", "nick_key", "theme", "role", "cohort_id", "celebrated_at"})
+      {r["name"] for r in gate._db().execute("PRAGMA table_info(users)")} == {"id", "provider", "provider_uid", "nickname", "status", "consent_version", "consent_at", "created_at", "last_login_at", "is_admin", "expires_at", "nick_set", "nick_key", "theme", "role", "cohort_id", "celebrated_at", "apply"})
 
 print("[누가 로그인했는지 화면에 표시]")
 cg = client(make_app()); login(cg, provider="google", uid="w-1", nick="누리"); cg.post("/gate/consent", content=agree_for(cg), headers=FORM)

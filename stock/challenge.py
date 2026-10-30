@@ -151,7 +151,7 @@ def set_charles(uid, on, cohort_id=None):
         if not c:
             return "nocohort"
         with gate._db() as con:
-            con.execute("UPDATE users SET role='charles', cohort_id=?, status='approved', expires_at=?, celebrated_at=NULL "
+            con.execute("UPDATE users SET role='charles', cohort_id=?, status='approved', expires_at=?, celebrated_at=NULL, apply=NULL "
                         "WHERE id=? AND is_admin=0", (c["id"], c["end_date"], int(uid)))
         return "on"
     with gate._db() as con:
