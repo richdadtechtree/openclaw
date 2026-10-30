@@ -60,6 +60,43 @@ const TEXT = { what: '반도체 수출이 석 달 연속 늘었다는 기사', w
       await pg.waitForSelector('#ed.open');
       check(await pg.$eval('#ed-photo', i => i.src.includes('/api/challenge/photo')), '사진을 누르면 큰 사진 + 입력칸');
       check(await pg.$$eval('#ed-form textarea', t => t.length) === 4, '입력칸 4개(WHAT·WHY·HOW·생각)');
+      // 🖼 사진 뷰어: 휠 확대 · 끌어 옮기기 · 🖍 줄 긋기 · 되돌리기 (경제 화면 뷰어와 같은 사용법)
+      await pg.waitForFunction(() => document.querySelector('#ed-photo').naturalWidth > 0);
+      await sleep(200);
+      const st = () => pg.evaluate(() => window.__PV.state());
+      const box = await pg.$eval('#pv-stage', e => { const r = e.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
+      check(box.w > 100 && box.h > 100, '사진 칸이 보임 (' + Math.round(box.w) + '×' + Math.round(box.h) + ')');
+      check(await pg.evaluate(() => document.querySelector('.pv-bar').scrollWidth <= document.querySelector('.pv-bar').clientWidth + 1), '사진 도구줄이 칸 안에 들어감');
+      if (w >= 500) {
+        const cx = box.x + box.w / 2, cy = box.y + box.h / 3;
+        await pg.mouse.move(cx, cy);
+        await pg.mouse.wheel(0, -300);
+        await sleep(100);
+        const z1 = await st();
+        check(z1.s > 1.3, '마우스 휠 → 확대 (' + z1.s.toFixed(2) + '배)');
+        await pg.mouse.down(); await pg.mouse.move(cx + 120, cy + 80, { steps: 5 }); await pg.mouse.up();
+        const z2 = await st();
+        check(z2.tx !== z1.tx || z2.ty !== z1.ty, '✋ 손바닥(기본): 끌어서 옮기기');
+        await pg.mouse.move(cx, cy); await pg.mouse.down({ button: 'right' }); await pg.mouse.move(cx - 80, cy - 60, { steps: 4 }); await pg.mouse.up({ button: 'right' });
+        check((await st()).tx !== z2.tx, '오른쪽 버튼으로도 옮기기(우클릭 메뉴 없이)');
+        await pg.click('#pv-pen');
+        check(await pg.$eval('#pv-pentools', e => !e.hidden) && !(await st()).hand, '🖍 켜면 도구(직선·동그라미·자유·색·굵기) 나오고 손바닥 꺼짐');
+        await pg.mouse.move(cx - 100, cy); await pg.mouse.down(); await pg.mouse.move(cx + 100, cy + 4, { steps: 6 }); await pg.mouse.up();
+        check((await st()).marks === 1 && await pg.$$eval('#pv-svg polyline', l => l.length) === 1, '직선 긋기 → 줄 1개');
+        const ys = await pg.$eval('#pv-svg polyline', l => l.getAttribute('points').split(' ').map(p => +p.split(',')[1]));
+        check(Math.abs(ys[0] - ys[1]) < 0.01, '수평 근처 직선은 반듯하게');
+        await pg.click('#pv-t-oval');
+        await pg.mouse.move(cx - 60, cy + 40); await pg.mouse.down(); await pg.mouse.move(cx + 60, cy + 100, { steps: 5 }); await pg.mouse.up();
+        check(await pg.$$eval('#pv-svg ellipse', l => l.length) === 1, '동그라미 그리기');
+        await pg.click('#pv-undo');
+        check((await st()).marks === 1, '↶ 되돌리기');
+        await pg.click('#ed-close');
+        await pg.click('.tile >> nth=2');
+        await pg.waitForSelector('#ed.open');
+        await sleep(200);
+        check((await st()).marks === 1, '창을 닫았다 다시 열어도 그 장의 줄은 남음(새로고침 전까지)');
+        await pg.click('#pv-pen');           // 원래대로(손바닥)
+      }
       await pg.fill('#f-what', '짧음');
       await pg.click('#ed-save');
       check((await pg.textContent('#ed-st')).includes('자 이상'), '짧으면 저장 안 하고 안내');
