@@ -304,5 +304,24 @@ r = cZ.post("/api/challenge/terms", json={"terms": ["새로운말"]}).json()
 check("하루 한도를 넘으면 AI 대신 사전 안내", not r["items"][0]["ok"] and "많이" in r["items"][0]["reason"])
 check("한도여도 이미 풀이된 용어는 보임", cZ.post("/api/challenge/terms", json={"terms": ["PER"]}).json()["items"][0]["ok"])
 
+print("[📖 우리 기수 용어장]")
+challenge._term_rate.clear()
+v_id, cV = user("V", "찰스브이")
+act(action="charles", uid=v_id, on="1", cohort=c4["id"])
+post(cW, page="03.jpg", terms=["PER", "환율"])
+gw = cW.get("/api/challenge/glossary").json()
+per = [x for x in gw["items"] if x["key"] == "per"]
+check("용어장: 우리 기수 용어 모음(같은 용어는 하나로, 몇 번·몇 명)", sorted(x["term"] for x in gw["items"]) == ["PER", "기준금리", "환율"]
+      and per and per[0]["count"] == 2 and per[0]["people"] == 2 and per[0]["short"] == "PER 의 한 줄 뜻")
+check("용어장: 내가 쓴 용어 표시", per[0]["mine"] and not [x for x in gw["items"] if x["key"] == "기준금리"][0]["mine"])
+check("용어장: 풀이 없는 용어(환율)는 비어 있고 사전 링크는 있음", [x for x in gw["items"] if x["term"] == "환율"][0]["short"] is None
+      and "terms.naver.com" in [x for x in gw["items"] if x["term"] == "환율"][0]["dict"])
+check("용어장: 오늘 글을 안 쓴 찰스에겐 오늘 다른 사람 용어가 안 보임(D6)", cV.get("/api/challenge/glossary").json()["items"] == [])
+check("용어장: 다른 기수엔 안 보임", cX.get("/api/challenge/glossary").json()["items"] == [] if gate.get_user(x_id)["expires_at"] >= TODAY[0] else True)
+check("용어장: 관리자는 모든 기수", len(ca.get("/api/challenge/glossary").json()["items"]) >= 3)
+check("용어장: 일반 사용자는 못 봄", cG.get("/api/challenge/glossary").status_code == 403)
+TODAY[0] = "2026-11-11"
+check("용어장: 다음 날엔 지난 날 용어가 열림", len(cV.get("/api/challenge/glossary").json()["items"]) == 3)
+
 print("\n결과: %s" % ("전부 통과" if not fails else "실패 %d개: %s" % (len(fails), fails)))
 sys.exit(1 if fails else 0)

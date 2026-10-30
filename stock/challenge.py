@@ -401,6 +401,49 @@ def lookup_terms(v, terms):
     return out
 
 
+def cohort_glossary(v, cohort_filter=None):
+    """📖 기수 용어장: 우리 기수(+운영자) 글에 나온 모르는 용어를 모아 풀이와 함께.
+    잠금 규칙은 글과 같다(D6) — 오늘 다른 사람 글의 용어는 내가 오늘 글을 쓴 뒤에만 보인다."""
+    now = today()
+    with gate._db() as con:
+        q = ("SELECT p.user_id, p.day, p.terms FROM challenge_posts p JOIN users u ON u.id=p.user_id "
+             "WHERE p.terms IS NOT NULL AND p.terms<>'[]'")
+        args = []
+        if v["admin"]:
+            if cohort_filter:
+                q += " AND (p.cohort_id=? OR p.cohort_id IS NULL)"
+                args.append(int(cohort_filter))
+        else:
+            q += " AND (p.user_id=? OR p.cohort_id=? OR (p.cohort_id IS NULL AND u.is_admin=1))"
+            args += [v["uid"], v["cohort_id"] or -1]
+        rows = con.execute(q, args).fetchall()
+        wrote_today = bool(v["uid"]) and bool(con.execute("SELECT 1 FROM challenge_posts WHERE user_id=? AND day=?", (v["uid"], now)).fetchone())
+    open_today = v["admin"] or v["role"] == "graduate" or wrote_today
+    agg = {}
+    for r in rows:
+        if r["day"] >= now and r["user_id"] != v["uid"] and not open_today:
+            continue
+        try:
+            terms = json.loads(r["terms"] or "[]")
+        except Exception:
+            continue
+        for t in terms:
+            k = term_key(t)
+            a = agg.setdefault(k, {"term": t, "key": k, "count": 0, "people": set(), "first": r["day"], "last": r["day"], "mine": False})
+            a["count"] += 1
+            a["people"].add(r["user_id"])
+            a["first"], a["last"] = min(a["first"], r["day"]), max(a["last"], r["day"])
+            a["mine"] = a["mine"] or r["user_id"] == v["uid"]
+    gl = glossary_get([a["term"] for a in agg.values()])
+    out = []
+    for k, a in agg.items():
+        g = gl.get(k, {})
+        out.append({"term": a["term"], "key": k, "count": a["count"], "people": len(a["people"]), "first": a["first"], "last": a["last"],
+                    "mine": a["mine"], "short": g.get("short"), "easy": g.get("easy"), "invest": g.get("invest"), "dict": dict_url(a["term"])})
+    out.sort(key=lambda x: x["term"])
+    return {"ok": True, "items": out, "can_lookup": bool(v["uid"]) and (can_write(v) or v["admin"])}
+
+
 # ───────────────────────── 진행도·완수 ─────────────────────────
 def _done_days(con, uid):
     days = {r[0] for r in con.execute("SELECT DISTINCT day FROM challenge_posts WHERE user_id=?", (uid,))}
@@ -686,6 +729,13 @@ def install(app):
             msg = _ERR[code] % ((label, MIN_LEN) if code == "short" else (label, MAX_LEN)) if code in ("short", "long") else _ERR[code]
             return JSONResponse({"ok": False, "reason": code, "field": field, "message": msg}, status_code=400)
         return JSONResponse({"ok": True, "me": me_info(viewer(request)), "day": day_view(viewer(request), day)})
+
+    @app.get("/api/challenge/glossary")
+    def api_glossary(request: Request, cohort: str = ""):
+        v = viewer(request)
+        if not v:
+            return deny()
+        return JSONResponse(cohort_glossary(v, cohort if (v["admin"] and cohort.isdigit()) else None))
 
     @app.post("/api/challenge/terms")
     async def api_terms(request: Request):

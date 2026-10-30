@@ -153,6 +153,24 @@
   @keyframes fall{to{transform:translateY(110vh) rotate(720deg)}}
 
   .empty{text-align:center;color:var(--sub);padding:40px 10px}
+
+  /* 📰 오늘 신문 / 📖 용어장 전환 */
+  .vtabs{display:flex;gap:6px;margin:0 0 12px}
+  .vtabs button{border-radius:999px;font-weight:700;padding:8px 16px}
+  .vtabs button[aria-selected="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+  .gtools{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  .gtools input{flex:1;min-width:160px;border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:var(--bg);font:inherit;font-size:15px;color:var(--ink)}
+  .gtools select{border-radius:10px;padding:7px 10px;border:1px solid var(--line);background:var(--card)}
+  .ggrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  @media (max-width:760px){.ggrid{grid-template-columns:1fr}}
+  .gcard{border:1px solid var(--line);border-radius:14px;padding:14px 14px 10px;background:var(--card);line-height:1.6;font-size:14px}
+  .gcard h4{margin:0;font-size:17px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .gcard .short{font-weight:700;margin:6px 0 2px;font-size:15px}
+  .gcard .inv{color:var(--sub);margin-top:4px}
+  .gcard .gf{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px;font-size:12px;color:var(--sub)}
+  .gcard .gf a,.gcard .gf button{font-size:12px;color:var(--sub)}
+  .gcard .gf button{padding:2px 8px}
+  .gcard.none .short{color:var(--sub);font-weight:500}
   .sitefoot{max-width:1040px;margin:0 auto;padding:0 16px 40px;text-align:center;font-size:13px;color:var(--sub)}
   .sitefoot a{color:var(--sub)}
 </style>
@@ -170,6 +188,17 @@
 </div>
 <main>
   <section class="card hero" id="hero"><div class="empty">불러오는 중…</div></section>
+  <div class="vtabs" role="tablist" aria-label="보기">
+    <button role="tab" id="v-day" aria-selected="true">📰 오늘 신문</button>
+    <button role="tab" id="v-gloss" aria-selected="false">📖 우리 기수 용어장</button>
+  </div>
+  <section class="card" id="glosscard" hidden>
+    <div class="gtools"><input id="g-q" type="search" placeholder="용어 찾기" aria-label="용어 찾기">
+      <select id="g-sort" aria-label="정렬"><option value="abc">가나다순</option><option value="many">많이 나온 순</option><option value="new">최근 순</option></select>
+      <span class="sub" id="g-count"></span></div>
+    <div class="ggrid" id="g-list"></div>
+    <p class="sub" style="margin-top:12px">🤖 풀이는 AI 가 만든 것이라 틀릴 수 있어요. 📚 사전 링크로 꼭 확인해 보세요.</p>
+  </section>
   <section class="card" id="daycard">
     <div class="dayhead"><h3 id="daytitle">오늘 신문</h3><button id="totoday" hidden>오늘로</button></div>
     <div id="daymsg"></div>
@@ -270,7 +299,7 @@ function renderHero(){
   }
   h.innerHTML=out;
   h.querySelectorAll(".day[data-day]").forEach(b=>b.onclick=()=>loadDay(b.dataset.day));
-  const cs=$("cohortsel");if(cs)cs.onchange=()=>{S.cohort=cs.value;loadDay(S.date);};
+  const cs=$("cohortsel");if(cs)cs.onchange=()=>{S.cohort=cs.value;loadDay(S.date);if(S.view==="gloss")loadGloss();};
 }
 
 /* ── 그날 ─────────────────────────── */
@@ -429,6 +458,42 @@ async function celebrated(){try{await api("/api/challenge/celebrated",{method:"P
 $("cele-go").onclick=async()=>{await celebrated();location.href="/economy";};
 $("cele-close").onclick=async()=>{$("cele").classList.remove("open");await celebrated();location.reload();};
 
+/* ── 📖 우리 기수 용어장 ─────────────────────────── */
+S.view="day";S.gloss=null;
+function setView(v){
+  S.view=v;
+  $("v-day").setAttribute("aria-selected",v==="day");$("v-gloss").setAttribute("aria-selected",v==="gloss");
+  $("daycard").hidden=$("posts").hidden=v!=="day";$("glosscard").hidden=v!=="gloss";
+  try{history.replaceState(null,"",v==="gloss"?"#glossary":location.pathname);}catch(e){}
+  if(v==="gloss")loadGloss();
+}
+async function loadGloss(){
+  $("g-list").innerHTML='<div class="empty" style="grid-column:1/-1">불러오는 중…</div>';
+  const j=await api("/api/challenge/glossary"+(S.cohort?"?cohort="+S.cohort:""));
+  if(!j.ok){$("g-list").innerHTML='<div class="empty" style="grid-column:1/-1">'+esc(j.message||"불러오지 못했어요")+'</div>';return;}
+  S.gloss=j;renderGloss();
+}
+function renderGloss(){
+  const j=S.gloss;if(!j)return;
+  const q=tkey($("g-q").value),sort=$("g-sort").value;
+  let items=j.items.filter(x=>!q||x.key.includes(q)||tkey(x.short||"").includes(q));
+  items.sort(sort==="many"?(a,b)=>b.count-a.count||a.term.localeCompare(b.term,"ko"):sort==="new"?(a,b)=>b.last.localeCompare(a.last)||a.term.localeCompare(b.term,"ko"):(a,b)=>a.term.localeCompare(b.term,"ko"));
+  $("g-count").textContent=j.items.length?("용어 "+j.items.length+"개"+(q?" 중 "+items.length+"개":"")):"";
+  if(!j.items.length){$("g-list").innerHTML='<div class="empty" style="grid-column:1/-1">아직 모인 용어가 없어요.<br>글을 쓸 때 <b>📖 모르는 용어</b> 칸에 적으면 여기에 모여요.</div>';return;}
+  $("g-list").innerHTML=items.map(x=>{const t=new Date(x.last+"T00:00:00");
+    return '<article class="gcard'+(x.short?'':' none')+'"><h4>'+esc(x.term)+(x.mine?' <span class="badge">내 용어</span>':'')+'</h4>'+
+      (x.short?'<div class="short">'+esc(x.short)+'</div><div>'+esc(x.easy||"")+'</div>'+(x.invest?'<div class="inv">💡 '+esc(x.invest)+'</div>':''):'<div class="short">아직 풀이가 없어요.</div>')+
+      '<div class="gf"><span>'+x.count+'번 · '+x.people+'명</span><button data-day="'+esc(x.last)+'">'+(t.getMonth()+1)+'/'+t.getDate()+' 글 보기</button>'+
+      (!x.short&&j.can_lookup?'<button data-find="'+esc(x.term)+'">🔍 뜻 찾기</button>':'')+
+      '<a href="'+esc(x.dict)+'" target="_blank" rel="noopener">📚 사전에서 확인</a></div></article>';}).join("")||'<div class="empty" style="grid-column:1/-1">찾는 용어가 없어요.</div>';
+  $("g-list").querySelectorAll("button[data-day]").forEach(b=>b.onclick=()=>{setView("day");loadDay(b.dataset.day);});
+  $("g-list").querySelectorAll("button[data-find]").forEach(b=>b.onclick=async()=>{b.disabled=true;b.textContent="AI 가 찾는 중…";
+    try{await api("/api/challenge/terms",{method:"POST",body:JSON.stringify({terms:[b.dataset.find]})});}catch(e){}
+    loadGloss();});
+}
+$("v-day").onclick=()=>setView("day");$("v-gloss").onclick=()=>setView("gloss");
+$("g-q").addEventListener("input",renderGloss);$("g-sort").onchange=renderGloss;
+
 /* ── 시작 ─────────────────────────── */
 $("ed-close").onclick=closeEd;
 $("ed").addEventListener("click",e=>{if(e.target.id==="ed")closeEd();});
@@ -442,6 +507,7 @@ async function boot(){
     const me=await api("/api/challenge/me");
     if(!me.ok){$("hero").innerHTML='<div class="empty">'+esc(me.message||"챌린지 정보를 불러오지 못했어요.")+'</div>';return;}
     S.me=me;renderHero();await loadDay(me.today);
+    if(location.hash==="#glossary")setView("gloss");
     if(me.celebrate)setTimeout(celebrate,400);
     // 신문이 아직이면 5분마다 다시 확인
     setInterval(async()=>{if(S.date===S.me.today&&S.day&&!S.day.images.length&&!$("ed").classList.contains("open")){S.me=await api("/api/challenge/me");loadDay(S.me.today);}},300000);

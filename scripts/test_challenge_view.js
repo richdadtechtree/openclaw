@@ -93,6 +93,20 @@ const TEXT = { what: '반도체 수출이 석 달 연속 늘었다는 기사', w
       check(!unlocked.includes('내 글을 저장하면') && (unlocked.includes('찰스에이') || unlocked.includes('아직 다른 찰스')), '저장 뒤 같은 기수 글이 열림');
       const mineSaved = await pg.evaluate(async () => (await (await fetch('/api/challenge/day')).json()).mine['03.jpg'].terms);
       check(JSON.stringify(mineSaved) === JSON.stringify(['기준금리', 'PER']), '저장한 글에 용어 2개');
+      // 📖 우리 기수 용어장
+      await pg.click('#v-gloss');
+      await pg.waitForSelector('.gcard');
+      const gc = await pg.$$eval('.gcard', c => c.map(x => x.textContent));
+      check(gc.length === 2 && gc.some(t => t.includes('기준금리') && t.includes('시험용 한 줄 뜻') && t.includes('내 용어')), '용어장: 내가 찾은 용어 2개 + 풀이');
+      check(await pg.$eval('#daycard', e => e.hidden), '용어장을 열면 신문 칸은 숨김');
+      await pg.fill('#g-q', 'per');
+      check(await pg.$$eval('.gcard', c => c.length) === 1, '용어장 찾기(대소문자 무시)');
+      check(await pg.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), '용어장 가로 스크롤 없음');
+      if (SHOT) await pg.screenshot({ path: path.join(SHOT, `ch_${w}_gloss.png`), fullPage: true });
+      await pg.fill('#g-q', '');
+      await pg.click('.gcard button[data-day]');
+      await pg.waitForSelector('#daycard:not([hidden]) .tile');
+      check(true, '용어장 → "글 보기"로 그날 신문으로');
       check(await pg.$('.day.today') === null && await pg.$eval('.day.sel', e => e.classList.contains('done')), '오늘 칸이 ⭕ → ✅ 완료로');
       if (SHOT) await pg.screenshot({ path: path.join(SHOT, `ch_${w}_after.png`), fullPage: true });
       // 이번 회차의 B 글 지우기(다음 화면 크기 검사를 같은 조건으로)
