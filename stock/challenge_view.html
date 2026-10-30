@@ -95,9 +95,11 @@
   /* 글쓰기 창 */
   .ed{position:fixed;inset:0;z-index:20;background:rgba(10,12,16,.55);display:none}
   .ed.open{display:flex}
-  .ed-box{margin:auto;width:min(1180px,100%);height:min(94vh,100%);background:var(--card);border-radius:16px;display:flex;flex-direction:column;overflow:hidden}
+  /* 2026-10-30 사용자 요청 "팝업이 더 커져서 신문 보기 수월하게": 화면 거의 전체 + 사진 칸을 넓게(글 칸은 최대 460px) */
+  .ed-box{margin:auto;width:calc(100vw - 20px);height:calc(100vh - 20px);height:calc(100dvh - 20px);background:var(--card);border-radius:14px;display:flex;flex-direction:column;overflow:hidden}
   .ed-top{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
   .ed-top b{flex:1}
+  .ed-top #ed-wide{font-size:13px}
   .ed-body{flex:1;display:flex;min-height:0}
   /* 신문 사진 뷰어(2026-10-30, 경제 화면 뷰어와 같은 사용법): 휠 확대 · ✋ 끌어 옮기기 · 🖍 형광펜(직선·동그라미·자유) */
   .ed-img{flex:1.1;display:flex;flex-direction:column;background:#222;position:relative;min-height:0;min-width:0}
@@ -121,7 +123,8 @@
     .pv-bar{gap:3px;padding:5px 6px}
     .pv-bar button{padding:3px 7px;min-width:28px}
   }
-  .ed-form{flex:1;overflow:auto;padding:14px 16px 20px}
+  .ed-form{flex:0 0 clamp(340px,34%,460px);overflow:auto;padding:14px 16px 20px;border-left:1px solid var(--line)}
+  .ed.wide .ed-form{display:none}          /* '⤢ 사진만 크게' — 글 칸을 잠깐 접고 사진을 화면 가득 */
   .fld{margin:0 0 12px}
   .fld label{display:flex;justify-content:space-between;font-weight:800;color:var(--blue);font-size:14px;margin-bottom:4px}
   .fld label small{color:var(--sub);font-weight:500}
@@ -151,7 +154,9 @@
   .tchips details[open]{flex-basis:100%;padding:6px 10px}
   .tchips summary{cursor:pointer;color:var(--blue);font-weight:700}
   @media (max-width:900px){
-    .ed-box{height:100%;border-radius:0}
+    .ed-box{width:100%;height:100%;border-radius:0}
+    .ed-form{flex:none;border-left:none}
+    #ed-wide{display:none}
     .ed-body{flex-direction:column;overflow:auto}
     .ed-img{flex:none;height:58vh}
     .ed-form{overflow:visible}
@@ -229,7 +234,7 @@
 <!-- 글쓰기 창: 사진(확대) + WHAT/WHY/HOW/생각 -->
 <div class="ed" id="ed" role="dialog" aria-modal="true" aria-labelledby="ed-title">
   <div class="ed-box">
-    <div class="ed-top"><b id="ed-title">사진</b><button id="ed-close" aria-label="닫기">✕ 닫기</button></div>
+    <div class="ed-top"><b id="ed-title">사진</b><button id="ed-wide" aria-pressed="false" title="글 칸을 접고 사진만 크게 (W)">⤢ 사진만 크게</button><button id="ed-close" aria-label="닫기">✕ 닫기</button></div>
     <div class="ed-body">
       <div class="ed-img" id="ed-img">
         <div class="pv-bar" role="toolbar" aria-label="사진 도구">
@@ -687,6 +692,13 @@ $("g-q").addEventListener("input",renderGloss);$("g-sort").onchange=renderGloss;
 
 /* ── 시작 ─────────────────────────── */
 $("ed-close").onclick=closeEd;
+/* ⤢ 사진만 크게: 글 칸을 접었다 펴기(이 브라우저에 기억 — 다음에 열 때도 같은 모양) */
+function setWide(on){$("ed").classList.toggle("wide",!!on);$("ed-wide").setAttribute("aria-pressed",!!on);
+  $("ed-wide").textContent=on?"✍️ 글 칸 펴기":"⤢ 사진만 크게";try{localStorage.setItem("ch.edWide",on?"1":"0");}catch(e){}
+  requestAnimationFrame(()=>window.dispatchEvent(new Event("resize")));}
+$("ed-wide").onclick=()=>setWide(!$("ed").classList.contains("wide"));
+try{if(localStorage.getItem("ch.edWide")==="1"&&matchMedia("(min-width:901px)").matches)setWide(true);}catch(e){}
+document.addEventListener("keydown",e=>{if((e.key==="w"||e.key==="W")&&$("ed").classList.contains("open")&&!/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))setWide(!$("ed").classList.contains("wide"));});
 $("ed").addEventListener("click",e=>{if(e.target.id==="ed")closeEd();});
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&$("ed").classList.contains("open")&&!PV.busy())closeEd();});
 $("totoday").onclick=()=>loadDay(S.me.today);
