@@ -115,6 +115,23 @@
   .ed-actions .st{font-size:13px;color:var(--sub)}
   .ed-actions .st.err{color:var(--bad)}
   .ed-others{margin-top:18px;border-top:1px dashed var(--line);padding-top:10px}
+  /* 📖 모르는 용어 */
+  .terms .tin{display:flex;gap:6px;flex-wrap:wrap}
+  .terms .tin input{flex:1;min-width:150px;border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:var(--bg);font:inherit;font-size:15px;color:var(--ink)}
+  .terms .tin input:focus{outline:2px solid var(--blue);border-color:transparent}
+  .tcard{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:8px;background:var(--bg);font-size:14px;line-height:1.6}
+  .tcard .th{display:flex;align-items:center;gap:8px}
+  .tcard .th b{font-size:15px;flex:1}
+  .tcard .th button{padding:1px 8px;font-size:12px}
+  .tcard .short{font-weight:700;margin-top:4px}
+  .tcard .inv{margin-top:4px;color:var(--sub)}
+  .tcard .src{margin-top:6px;font-size:12px;color:var(--sub)}
+  .tcard .src a{color:var(--sub)}
+  .tcard.wait .short{color:var(--sub);font-weight:500}
+  .tchips{display:flex;flex-wrap:wrap;gap:6px}
+  .tchips details{background:var(--soft);border-radius:8px;padding:2px 8px;font-size:13px}
+  .tchips details[open]{flex-basis:100%;padding:6px 10px}
+  .tchips summary{cursor:pointer;color:var(--blue);font-weight:700}
   @media (max-width:900px){
     .ed-box{height:100%;border-radius:0}
     .ed-body{flex-direction:column;overflow:auto}
@@ -195,7 +212,24 @@ const FIELDS=[["what","WHAT","무슨 일이 있었나 (사실)"],["why","WHY","�
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const WD=["일","월","화","수","목","금","토"];
-const S={me:null,day:null,date:null,cohort:"",zoom:1,page:null};
+const S={me:null,day:null,date:null,cohort:"",zoom:1,page:null,terms:[],gl:{}};
+/* 📖 모르는 용어: 같은 말 판단(띄어쓰기·대소문자 무시) — 서버 challenge.term_key 와 같은 규칙 */
+const tkey=t=>String(t||"").normalize("NFC").replace(/\s+/g,"").toLowerCase();
+const dictUrl=t=>"https://terms.naver.com/search.naver?query="+encodeURIComponent(t);
+function glOf(t){const g=S.gl[tkey(t)]||(S.day&&S.day.glossary||{})[tkey(t)];return g&&g.short?g:null;}
+function termCard(t,removable){
+  const g=glOf(t),fail=(S.gl[tkey(t)]||{}).reason;
+  return '<div class="tcard'+(g?'':' wait')+'"><div class="th"><b>'+esc(t)+'</b>'+(removable?'<button data-rm="'+esc(t)+'" aria-label="'+esc(t)+' 빼기">✕</button>':'')+'</div>'+
+    (g?'<div class="short">'+esc(g.short)+'</div><div>'+esc(g.easy)+'</div>'+(g.invest?'<div class="inv">💡 '+esc(g.invest)+'</div>':''):
+       '<div class="short">'+esc(fail||"아직 뜻을 안 찾았어요 — 🔍 뜻 찾기를 눌러 보세요.")+'</div>')+
+    '<div class="src">'+(g?'🤖 AI 풀이(틀릴 수 있어요) · ':'')+'<a href="'+dictUrl(t)+'" target="_blank" rel="noopener">📚 사전에서 확인</a></div></div>';
+}
+function termsChips(list){
+  if(!list||!list.length)return "";
+  return '<div class="tchips">'+list.map(t=>{const g=glOf(t);return '<details><summary>'+esc(t)+'</summary>'+
+    (g?'<div><b>'+esc(g.short)+'</b></div><div>'+esc(g.easy)+'</div>'+(g.invest?'<div class="sub">💡 '+esc(g.invest)+'</div>':''):'<div class="sub">아직 풀이가 없어요.</div>')+
+    '<div class="sub"><a href="'+dictUrl(t)+'" target="_blank" rel="noopener">📚 사전에서 확인</a></div></details>';}).join("")+'</div>';
+}
 
 function md(d){const t=new Date(d+"T00:00:00");return (t.getMonth()+1)+"월 "+t.getDate()+"일 ("+WD[t.getDay()]+")";}
 function pageNo(n){const m=String(n).match(/\d+/);return m?String(+m[0]):n;}
@@ -269,7 +303,8 @@ function postHtml(p,withPage){
   return '<article class="post"><div class="who">'+esc(p.nick)+(p.admin?' <span class="badge op">운영자</span>':'')+
     (S.me.admin&&p.cohort?' <span class="badge">'+esc(p.cohort)+'</span>':'')+
     (withPage?' <a href="#" class="pg" data-page="'+esc(p.page)+'">'+esc(pageNo(p.page))+'면 사진 보기</a>':'')+'</div>'+
-    '<dl class="kv">'+FIELDS.map(f=>'<dt>'+esc(f[1].replace(" & 투자에 적용할 점",""))+'</dt><dd>'+esc(p[f[0]])+'</dd>').join("")+'</dl></article>';
+    '<dl class="kv">'+FIELDS.map(f=>(f[0]==="think"&&p.terms&&p.terms.length?'<dt>용어</dt><dd>'+termsChips(p.terms)+'</dd>':'')+
+      '<dt>'+esc(f[1].replace(" & 투자에 적용할 점",""))+'</dt><dd>'+esc(p[f[0]])+'</dd>').join("")+'</dl></article>';
 }
 function renderPosts(){
   const d=S.day,o=d.others,el=$("posts");
@@ -294,12 +329,19 @@ function openEd(name){
   let h="";
   if(d.writable){
     const src=draft||mine||{};
-    h+=FIELDS.map(f=>'<div class="fld"><label for="f-'+f[0]+'">'+esc(f[1])+' <small id="c-'+f[0]+'"></small></label>'+
-       '<textarea id="f-'+f[0]+'" maxlength="'+S.me.limits.max+'" placeholder="'+esc(f[2])+'">'+esc(src[f[0]]||"")+'</textarea></div>').join("");
+    S.terms=(src.terms||[]).slice();
+    const fld=f=>'<div class="fld"><label for="f-'+f[0]+'">'+esc(f[1])+' <small id="c-'+f[0]+'"></small></label>'+
+       '<textarea id="f-'+f[0]+'" maxlength="'+S.me.limits.max+'" placeholder="'+esc(f[2])+'">'+esc(src[f[0]]||"")+'</textarea></div>';
+    h+=FIELDS.slice(0,3).map(fld).join("");
+    h+='<div class="fld terms"><label for="t-in">📖 모르는 용어 <small>선택 · '+S.me.limits.terms+'개까지</small></label>'+
+       '<div class="tin"><input id="t-in" maxlength="'+S.me.limits.term_len+'" placeholder="예: 기준금리, PER (Enter 로 추가)" autocomplete="off">'+
+       '<button id="t-add" type="button">추가</button><button id="t-find" type="button">🔍 뜻 찾기</button></div><div id="t-list"></div></div>';
+    h+=fld(FIELDS[3]);
     h+='<div class="ed-actions"><button class="primary" id="ed-save">'+(mine?"고쳐서 저장":"저장")+'</button>'+(mine?'<button id="ed-del">이 글 지우기</button>':'')+
        '<span class="st" id="ed-st">'+(draft?"쓰던 글을 불러왔어요(아직 저장 전).":"칸마다 "+S.me.limits.min+"자 이상 써 주세요.")+'</span></div>';
   }else if(mine){
-    h+=FIELDS.map(f=>'<div class="fld"><label>'+esc(f[1])+'</label><div class="ro">'+esc(mine[f[0]])+'</div></div>').join("");
+    h+=FIELDS.map(f=>(f[0]==="think"&&mine.terms&&mine.terms.length?'<div class="fld"><label>📖 모르는 용어</label>'+mine.terms.map(t=>termCard(t,false)).join("")+'</div>':'')+
+       '<div class="fld"><label>'+esc(f[1])+'</label><div class="ro">'+esc(mine[f[0]])+'</div></div>').join("");
     h+='<p class="sub">'+(S.me.role==="graduate"?"🎓 완수했어요. 글은 기록으로 남아요(읽기 전용).":"마감된 글이에요(읽기 전용).")+'</p><div class="ed-actions"><span class="st" id="ed-st"></span></div>';
   }else{
     h+='<p class="sub">'+(d.today&&!d.weekday?"주말에는 쓰지 않아요.":"이 사진에 쓴 내 글이 없어요.")+'</p>';
@@ -314,12 +356,44 @@ function openEd(name){
       t.addEventListener("input",()=>{upd();saveDraft(name);});upd();});
     $("ed-save").onclick=()=>save(name);
     const del=$("ed-del");if(del)del.onclick=()=>delPost(name);
+    const tin=$("t-in");
+    tin.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===","){e.preventDefault();addTerms(name);}});
+    $("t-add").onclick=()=>addTerms(name);
+    $("t-find").onclick=()=>findTerms();
+    renderTerms(name);
   }
 }
-function saveDraft(name){try{const o={};FIELDS.forEach(f=>o[f[0]]=$("f-"+f[0]).value);localStorage.setItem(dkey(name),JSON.stringify(o));}catch(e){}}
+function renderTerms(name){
+  const el=$("t-list");if(!el)return;
+  el.innerHTML=S.terms.map(t=>termCard(t,true)).join("");
+  el.querySelectorAll("button[data-rm]").forEach(b=>b.onclick=()=>{S.terms=S.terms.filter(x=>x!==b.dataset.rm);renderTerms(name);saveDraft(name);});
+  const f=$("t-find");if(f)f.disabled=!S.terms.some(t=>!glOf(t));
+}
+function addTerms(name){
+  const tin=$("t-in");if(!tin)return true;
+  const parts=tin.value.split(/[,\n、，]+/).map(x=>x.replace(/\s+/g," ").trim()).filter(Boolean);
+  for(const t of parts){
+    if(S.terms.some(x=>tkey(x)===tkey(t)))continue;
+    if(S.terms.length>=S.me.limits.terms){st("모르는 용어는 "+S.me.limits.terms+"개까지예요.",true);tin.value="";renderTerms(name);return false;}
+    S.terms.push(t.slice(0,S.me.limits.term_len));
+  }
+  tin.value="";renderTerms(name);saveDraft(name);return true;
+}
+async function findTerms(){
+  const need=S.terms.filter(t=>!glOf(t));if(!need.length)return;
+  const b=$("t-find");if(b){b.disabled=true;b.textContent="AI 가 찾는 중…";}
+  try{
+    const j=await api("/api/challenge/terms",{method:"POST",body:JSON.stringify({terms:need})});
+    if(!j.ok){st(j.message||"뜻을 찾지 못했어요.",true);}
+    else j.items.forEach(it=>{S.gl[it.key]=it.ok?it:{reason:it.reason};});
+  }catch(e){st("인터넷 연결을 확인해 주세요.",true);}
+  finally{if(b)b.textContent="🔍 뜻 찾기";renderTerms(S.page);}
+}
+function saveDraft(name){try{const o={terms:S.terms};FIELDS.forEach(f=>o[f[0]]=$("f-"+f[0]).value);localStorage.setItem(dkey(name),JSON.stringify(o));}catch(e){}}
 function closeEd(){$("ed").classList.remove("open");document.body.style.overflow="";$("ed-photo").removeAttribute("src");}
 async function save(name){
-  const body={date:S.date,page:name};FIELDS.forEach(f=>body[f[0]]=$("f-"+f[0]).value);
+  if(!addTerms(name))return;                                  // 칸에 적어 두고 '추가'를 안 누른 용어도 함께
+  const body={date:S.date,page:name,terms:S.terms};FIELDS.forEach(f=>body[f[0]]=$("f-"+f[0]).value);
   for(const f of FIELDS){if(body[f[0]].trim().length<S.me.limits.min){st(f[1]+" 칸을 "+S.me.limits.min+"자 이상 써 주세요.",true);$("f-"+f[0]).focus();return;}}
   $("ed-save").disabled=true;st("저장 중…");
   try{
@@ -327,6 +401,7 @@ async function save(name){
     if(!j.ok){st(j.message||"저장하지 못했어요.",true);if(j.field&&$("f-"+j.field))$("f-"+j.field).focus();return;}
     try{localStorage.removeItem(dkey(name));}catch(e){}
     S.me=j.me;S.day=j.day;renderDay();renderHero();openEd(name);st("✅ 저장했어요!"+(j.day.others.count?" 이제 우리 기수 글을 볼 수 있어요.":""));
+    if(S.terms.some(t=>!glOf(t))&&$("t-find"))findTerms();      // 뜻을 아직 안 찾은 용어는 저장하면서 자동으로 찾아 줌
     if(S.me.celebrate)setTimeout(celebrate,500);
   }catch(e){st("인터넷 연결을 확인해 주세요. 쓰던 글은 이 기기에 임시로 남아 있어요.",true);}
   finally{const b=$("ed-save");if(b)b.disabled=false;}

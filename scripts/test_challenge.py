@@ -255,5 +255,54 @@ for f in ("slack_digest_live.html", "dig_view.html", "ai_view.html", "challenge_
     t = open(os.path.join(ROOT, "stock", f), encoding="utf-8").read()
     check("%s: 탭 자리표(GATE_NAV)가 짝 맞음" % f, len(re.findall(r"<!--GATE_NAV:\w+-->", t)) == 1 and t.count("<!--/GATE_NAV-->") == 1)
 
+print("[📖 모르는 용어 · AI 풀이]")
+TODAY[0] = "2026-11-10"
+act(action="cohort_add", name="4기", start="2026-11-09", end="2026-11-20")
+c4 = [c for c in challenge.list_cohorts() if c["name"] == "4기"][0]
+z_id, cZ = user("Z", "찰스제트")
+w_id, cW = user("W", "찰스더블유")
+for uid in (z_id, w_id):
+    act(action="charles", uid=uid, on="1", cohort=c4["id"])
+paper("2026-11-10")
+CALLS = []
+
+
+def fake_gpt(system, user_msg):
+    CALLS.append(user_msg)
+    if "망가짐" in user_msg:
+        return "죄송해요 잘 모르겠어요"                        # JSON 이 아닌 답
+    term = user_msg.split("\n")[0].replace("용어: ", "")
+    return '```json\n{"short":"%s 의 한 줄 뜻","easy":"쉬운 풀이 문장입니다. 비유도 있어요.","invest":"이럴 땐 금리를 보세요","unsure":false}\n```' % term
+
+
+challenge.gpt_chat = fake_gpt
+check("용어 입력 다듬기: 쉼표·줄바꿈 구분, 같은 말(띄어쓰기·대소문자) 한 번만", challenge.parse_terms("기준금리, 기준 금리\nPER,per") == ["기준금리", "PER"])
+r = cZ.post("/api/challenge/terms", json={"terms": ["기준금리", "PER"]}).json()
+check("뜻 찾기 → AI 풀이 2개(사전 링크 포함)", r["ok"] and all(i["ok"] for i in r["items"]) and r["items"][0]["short"] == "기준금리 의 한 줄 뜻"
+      and r["items"][0]["dict"].startswith("https://terms.naver.com/search.naver?query="))
+check("AI 에는 용어 글자만 보냄(닉네임·글 없음)", all("찰스" not in c and "삼성전자" not in c for c in CALLS) and CALLS[0].startswith("용어: 기준금리"))
+n = len(CALLS)
+r = cW.post("/api/challenge/terms", json={"terms": ["기준 금리"]}).json()
+check("이미 풀이된 용어는 다시 묻지 않음(다른 사람·띄어쓰기 달라도)", len(CALLS) == n and r["items"][0]["ok"])
+r = cZ.post("/api/challenge/terms", json={"terms": ["망가짐"]}).json()
+check("AI 답이 이상하면 실패로 + 사전 링크 안내(지어내지 않음)", not r["items"][0]["ok"] and "사전" in r["items"][0]["reason"])
+with gate._db() as con:
+    check("실패한 풀이는 저장 안 함", con.execute("SELECT COUNT(*) FROM glossary WHERE key='망가짐'").fetchone()[0] == 0)
+check("용어 6개는 거부", cZ.post("/api/challenge/terms", json={"terms": list("가나다라마바")}).status_code == 400)
+check("31자 용어는 거부", cZ.post("/api/challenge/terms", json={"terms": ["가" * 31]}).status_code == 400)
+check("일반 사용자는 뜻 찾기 불가", cG.post("/api/challenge/terms", json={"terms": ["PER"]}).status_code == 403)
+r = post(cZ, terms=["기준금리", "PER"])
+check("글에 용어 저장", r.json()["ok"] and r.json()["day"]["mine"]["01.jpg"]["terms"] == ["기준금리", "PER"])
+check("용어 없이도 저장 가능(선택 칸)", post(cW, page="02.jpg").json()["ok"])
+check("저장할 때 용어 6개는 거부", post(cZ, terms=list("가나다라마바")).json()["reason"] == "termmany")
+dw = cW.get("/api/challenge/day").json()
+zp = [p for p in dw["others"]["posts"] if p["nick"] == "찰스제트"][0]
+check("같은 기수 글에 용어 + 풀이가 같이 옴", zp["terms"] == ["기준금리", "PER"] and dw["glossary"]["per"]["short"] == "PER 의 한 줄 뜻")
+check("처리방침에 '용어 글자만 AI 에 보냄' 명시", "용어 글자만" in cZ.get("/privacy").text)
+challenge._term_rate[(z_id, "2026-11-10")] = challenge.TERM_DAILY
+r = cZ.post("/api/challenge/terms", json={"terms": ["새로운말"]}).json()
+check("하루 한도를 넘으면 AI 대신 사전 안내", not r["items"][0]["ok"] and "많이" in r["items"][0]["reason"])
+check("한도여도 이미 풀이된 용어는 보임", cZ.post("/api/challenge/terms", json={"terms": ["PER"]}).json()["items"][0]["ok"])
+
 print("\n결과: %s" % ("전부 통과" if not fails else "실패 %d개: %s" % (len(fails), fails)))
 sys.exit(1 if fails else 0)

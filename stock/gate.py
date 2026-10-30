@@ -45,7 +45,7 @@ from datetime import datetime, timedelta, timezone
 KST = timezone(timedelta(hours=9))
 
 # 처리방침·동의 문구를 고치면 이 날짜를 바꾼다 → 모든 사용자가 새 문구에 다시 동의해야 입장한다.
-POLICY_VERSION = "2026-10-30.1"      # 동의 기록에 남는 버전(문구를 고칠 때마다 올린다) — .1=찰스 챌린지(기수·작성 글·같은 기수 공개) 추가
+POLICY_VERSION = "2026-10-30.2"      # 동의 기록에 남는 버전(문구를 고칠 때마다 올린다) — .1=찰스 챌린지(기수·작성 글·같은 기수 공개) 추가, .2=모르는 용어 AI 풀이(용어 글자만 전송)
 POLICY_EFFECTIVE = "2026-10-30"        # 처리방침에 보이는 시행일
 
 COOKIE_SESSION = "gate_sess"          # ⚠️ PT 대시보드(Flask)의 'session' 쿠키와 같은 도메인에서 겹치지 않게 이름을 다르게
@@ -207,6 +207,10 @@ CREATE TABLE IF NOT EXISTS challenge_excused(
   user_id INTEGER NOT NULL, day TEXT NOT NULL, by_admin INTEGER, at TEXT NOT NULL, PRIMARY KEY(user_id, day));
 CREATE TABLE IF NOT EXISTS challenge_days(
   day TEXT PRIMARY KEY, pages INTEGER NOT NULL, seen_at TEXT NOT NULL);
+-- 📖 모르는 용어 풀이(2026-10-30): 같은 용어는 한 번만 AI 에 묻고 모두가 같이 쓴다(사람 정보 없음)
+CREATE TABLE IF NOT EXISTS glossary(
+  key TEXT PRIMARY KEY, term TEXT NOT NULL, short TEXT, easy TEXT, invest TEXT,
+  source TEXT NOT NULL, created_at TEXT NOT NULL);
 """
 
 
@@ -226,6 +230,8 @@ def _db():
                      ("role", "TEXT"), ("cohort_id", "INTEGER"), ("celebrated_at", "TEXT")):       # 예전에 만든 DB 도 가입자 정보를 그대로 둔 채 이어서 쓴다
         if col not in have:
             con.execute("ALTER TABLE users ADD COLUMN %s %s" % (col, ddl))
+    if "terms" not in {r["name"] for r in con.execute("PRAGMA table_info(challenge_posts)")}:
+        con.execute("ALTER TABLE challenge_posts ADD COLUMN terms TEXT")              # 📖 모르는 용어(JSON 목록)
     con.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_users_nick ON users(nick_key)")          # 같은 닉네임 중복 방지(NULL 은 여러 개 가능)
     # 예전에 구글·카카오가 알려 줘서 저장된 이름(실명일 수 있음)은 지운다 — 이제는 이용자가 직접 정한 닉네임(nick_set=1)만 보관한다.
     con.execute("UPDATE users SET nickname=NULL, nick_key=NULL WHERE nick_set=0 AND nickname IS NOT NULL")
@@ -732,7 +738,7 @@ def privacy_html():
 <p>탈퇴하거나 정보 삭제를 요청할 때까지 보유하며, 탈퇴 시 <b>지체 없이(즉시) 모두 삭제</b>합니다. 서비스를 종료하는 경우에도 지체 없이 파기합니다. 웹서버 접속 기록은 약 %(logdays)s일 보관한 뒤 자동으로 삭제됩니다(탈퇴해도 이 기간 동안은 서버 기록에 남을 수 있습니다).</p>
 
 <h2>3. 제3자 제공 및 처리 위탁</h2>
-<p>이용자의 개인정보를 제3자에게 제공하거나 처리를 위탁하지 않습니다. 로그인 과정에서 구글 또는 카카오가 각 사의 정책에 따라 로그인 정보를 처리하며, 이는 서비스가 아닌 각 사의 처리입니다. 정보는 운영자가 관리하는 클라우드 서버에 저장됩니다.</p>
+<p>이용자의 개인정보를 제3자에게 제공하거나 처리를 위탁하지 않습니다. 챌린지의 <b>모르는 용어 뜻 찾기</b>를 누르면 입력한 <b>용어 글자만</b>(닉네임·작성한 글·계정 정보는 빼고) 운영자의 AI 서비스(OpenAI ChatGPT)에 보내 설명을 받으며, 받은 설명은 다른 참가자도 같이 볼 수 있게 저장됩니다. 로그인 과정에서 구글 또는 카카오가 각 사의 정책에 따라 로그인 정보를 처리하며, 이는 서비스가 아닌 각 사의 처리입니다. 정보는 운영자가 관리하는 클라우드 서버에 저장됩니다.</p>
 
 <h2>4. 이용자의 권리와 행사 방법</h2>
 <ul><li>언제든지 <a href="/gate/account">내 정보</a> 화면에서 저장된 정보를 확인하고 <b>탈퇴(정보 삭제)</b>할 수 있습니다.</li>
