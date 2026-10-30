@@ -375,5 +375,21 @@ check("기수 시작 전: 저장도 거부", post(cF).status_code == 400)
 check("쓸 수 있는 찰스는 이유가 비어 있음", cV.get("/api/challenge/day").json()["why_not"] == "" and cV.get("/api/challenge/day").json()["writable"])
 check("지난 날 이유: 마감", "마감" in cV.get("/api/challenge/day?date=2026-11-10").json()["why_not"])
 
+print("[남의 글은 절대 못 고침]")
+TODAY[0] = "2026-11-11"
+with gate._db() as con:
+    before = con.execute("SELECT what FROM challenge_posts WHERE user_id=? AND day=? AND page='01.jpg'", (z_id, "2026-11-10")).fetchone()
+post(cV, page="01.jpg", what="찰스브이가 쓴 다른 내용입니다")
+with gate._db() as con:
+    rows = con.execute("SELECT user_id, what FROM challenge_posts WHERE day='2026-11-11' AND page='01.jpg'").fetchall()
+    after = con.execute("SELECT what FROM challenge_posts WHERE user_id=? AND day=? AND page='01.jpg'", (z_id, "2026-11-10")).fetchone()
+check("같은 사진에 써도 내 글로만 저장(다른 사람 글 그대로)", before is None or (after and after["what"] == before["what"]))
+check("저장은 로그인한 본인 이름으로만", all(r["user_id"] == v_id for r in rows))
+r = cV.post("/api/challenge/post", json={"date": "2026-11-11", "page": "01.jpg", "user_id": z_id, "what": "남의 번호를 넣어도 소용없음", "why": "가나다라마바사아자차", "how": "가나다라마바사아자차", "think": "가나다라마바사아자차"})
+with gate._db() as con:
+    zrow = con.execute("SELECT 1 FROM challenge_posts WHERE user_id=? AND what LIKE '남의 번호%'", (z_id,)).fetchone()
+check("요청에 남의 회원번호를 넣어도 남의 글로 저장 안 됨", zrow is None)
+check("남의 글은 지울 수도 없음", not cV.post("/api/challenge/delete", json={"date": "2026-11-10", "page": "01.jpg"}).json()["ok"])
+
 print("\n결과: %s" % ("전부 통과" if not fails else "실패 %d개: %s" % (len(fails), fails)))
 sys.exit(1 if fails else 0)
