@@ -197,7 +197,7 @@
       <select id="g-sort" aria-label="정렬"><option value="abc">가나다순</option><option value="many">많이 나온 순</option><option value="new">최근 순</option></select>
       <span class="sub" id="g-count"></span></div>
     <div class="ggrid" id="g-list"></div>
-    <p class="sub" style="margin-top:12px">🤖 풀이는 AI 가 만든 것이라 틀릴 수 있어요. 📚 사전 링크로 꼭 확인해 보세요.</p>
+    <p class="sub" style="margin-top:12px">🤖 풀이는 AI 가 만든 것이라 틀릴 수 있어요. 중요한 투자 판단 전에는 한 번 더 확인해 보세요.</p>
   </section>
   <section class="card" id="daycard">
     <div class="dayhead"><h3 id="daytitle">오늘 신문</h3><button id="totoday" hidden>오늘로</button></div>
@@ -244,20 +244,19 @@ const WD=["일","월","화","수","목","금","토"];
 const S={me:null,day:null,date:null,cohort:"",zoom:1,page:null,terms:[],gl:{}};
 /* 📖 모르는 용어: 같은 말 판단(띄어쓰기·대소문자 무시) — 서버 challenge.term_key 와 같은 규칙 */
 const tkey=t=>String(t||"").normalize("NFC").replace(/\s+/g,"").toLowerCase();
-const dictUrl=t=>"https://terms.naver.com/search.naver?query="+encodeURIComponent(t);
 function glOf(t){const g=S.gl[tkey(t)]||(S.day&&S.day.glossary||{})[tkey(t)];return g&&g.short?g:null;}
 function termCard(t,removable){
   const g=glOf(t),fail=(S.gl[tkey(t)]||{}).reason;
   return '<div class="tcard'+(g?'':' wait')+'"><div class="th"><b>'+esc(t)+'</b>'+(removable?'<button data-rm="'+esc(t)+'" aria-label="'+esc(t)+' 빼기">✕</button>':'')+'</div>'+
     (g?'<div class="short">'+esc(g.short)+'</div><div>'+esc(g.easy)+'</div>'+(g.invest?'<div class="inv">💡 '+esc(g.invest)+'</div>':''):
        '<div class="short">'+esc(fail||"아직 뜻을 안 찾았어요 — 🔍 뜻 찾기를 눌러 보세요.")+'</div>')+
-    '<div class="src">'+(g?'🤖 AI 풀이(틀릴 수 있어요) · ':'')+'<a href="'+dictUrl(t)+'" target="_blank" rel="noopener">📚 사전에서 확인</a></div></div>';
+    (g?'<div class="src">🤖 AI 풀이(틀릴 수 있어요)</div>':'')+'</div>';
 }
 function termsChips(list){
   if(!list||!list.length)return "";
   return '<div class="tchips">'+list.map(t=>{const g=glOf(t);return '<details><summary>'+esc(t)+'</summary>'+
     (g?'<div><b>'+esc(g.short)+'</b></div><div>'+esc(g.easy)+'</div>'+(g.invest?'<div class="sub">💡 '+esc(g.invest)+'</div>':''):'<div class="sub">아직 풀이가 없어요.</div>')+
-    '<div class="sub"><a href="'+dictUrl(t)+'" target="_blank" rel="noopener">📚 사전에서 확인</a></div></details>';}).join("")+'</div>';
+    '</details>';}).join("")+'</div>';
 }
 
 function md(d){const t=new Date(d+"T00:00:00");return (t.getMonth()+1)+"월 "+t.getDate()+"일 ("+WD[t.getDay()]+")";}
@@ -485,7 +484,7 @@ function renderGloss(){
       (x.short?'<div class="short">'+esc(x.short)+'</div><div>'+esc(x.easy||"")+'</div>'+(x.invest?'<div class="inv">💡 '+esc(x.invest)+'</div>':''):'<div class="short">아직 풀이가 없어요.</div>')+
       '<div class="gf"><span>'+x.count+'번 · '+x.people+'명</span><button data-day="'+esc(x.last)+'">'+(t.getMonth()+1)+'/'+t.getDate()+' 글 보기</button>'+
       (!x.short&&j.can_lookup?'<button data-find="'+esc(x.term)+'">🔍 뜻 찾기</button>':'')+
-      '<a href="'+esc(x.dict)+'" target="_blank" rel="noopener">📚 사전에서 확인</a></div></article>';}).join("")||'<div class="empty" style="grid-column:1/-1">찾는 용어가 없어요.</div>';
+      '</div></article>';}).join("")||'<div class="empty" style="grid-column:1/-1">찾는 용어가 없어요.</div>';
   $("g-list").querySelectorAll("button[data-day]").forEach(b=>b.onclick=()=>{setView("day");loadDay(b.dataset.day);});
   $("g-list").querySelectorAll("button[data-find]").forEach(b=>b.onclick=async()=>{b.disabled=true;b.textContent="AI 가 찾는 중…";
     try{await api("/api/challenge/terms",{method:"POST",body:JSON.stringify({terms:[b.dataset.find]})});}catch(e){}

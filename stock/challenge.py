@@ -19,7 +19,7 @@ challenge.py — 🔥 찰스 챌린지 (2026-10-30, 계획서: docs/challenge-pl
   D10 관리자 글(cohort_id 없음)은 모든 기수에게 보인다
   📖 모르는 용어(2026-10-30 사용자 요청): HOW 와 생각 사이에 선택 칸(최대 5개). '뜻 찾기'를 누르면
      용어 글자만 GPT(openclaw 게이트웨이, ChatGPT Plus — 별도 키·요금 없음)에 보내 쉬운 풀이를 받고
-     glossary 표에 저장해 모두가 같이 쓴다(같은 용어는 한 번만 묻는다). AI 풀이는 틀릴 수 있어 사전 링크를 함께 준다.
+     glossary 표에 저장해 모두가 같이 쓴다(같은 용어는 한 번만 묻는다). AI 풀이는 틀릴 수 있다고 화면에 표시한다(2026-10-30 사용자 요청으로 사전 링크는 뺌).
 
 [저장] 로그인 게이트와 같은 DB(gate.sqlite)의 cohorts / challenge_posts / challenge_excused / challenge_days 표.
 [사진] 신문 사진은 14일 뒤 지워지므로(retention_cleanup.py), 글을 쓴 장은 gate 폴더의 challenge_photos/ 에 복사해 둔다.
@@ -378,7 +378,7 @@ def lookup_terms(v, terms):
             out.append(dict(item, ok=True, **have[k]))
             continue
         if _term_rate.get(day_key, 0) >= TERM_DAILY:
-            out.append(dict(item, ok=False, reason="오늘은 뜻 찾기를 많이 썼어요. 사전 링크로 확인해 주세요."))
+            out.append(dict(item, ok=False, reason="오늘은 뜻 찾기를 많이 썼어요. 내일 다시 눌러 주세요."))
             continue
         with _term_lock(k):
             again = glossary_get([t])                    # 기다리는 동안 다른 사람이 이미 찾았을 수 있다
@@ -392,7 +392,7 @@ def lookup_terms(v, terms):
                 print("[challenge] 용어 풀이 실패 %r: %r" % (t, e))
                 ans = None
             if not ans:
-                out.append(dict(item, ok=False, reason="AI 풀이를 받지 못했어요. 사전 링크로 확인해 주세요."))
+                out.append(dict(item, ok=False, reason="AI 풀이를 받지 못했어요. 잠시 후 🔍 뜻 찾기를 다시 눌러 주세요."))
                 continue
             with gate._db() as con:
                 con.execute("INSERT OR IGNORE INTO glossary(key,term,short,easy,invest,source,created_at) VALUES(?,?,?,?,?,?,?)",
