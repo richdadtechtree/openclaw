@@ -398,7 +398,7 @@ os.environ["GATE_AUTO_DAYS"] = "0"
 _, bid = mk_user("google", "auto-2", "무기한사용자")
 check("체험 기간을 안 쓰면(기본) 무기한", gate.get_user(bid)["expires_at"] is None)
 check("처리방침에 '이용 기한'이 운영자가 부여하는 정보로 명시", "이용 기한" in client(app_adm).get("/privacy").text and "운영자가 부여하는 정보" in client(app_adm).get("/privacy").text)
-check("처리방침 버전이 올라가 예전 동의자는 다시 동의해야 함", gate.POLICY_VERSION == "2026-10-30.1")
+check("처리방침 버전이 올라가 예전 동의자는 다시 동의해야 함", gate.POLICY_VERSION == "2026-10-30.2")
 
 print("[예전 DB 이어 쓰기(서버에 이미 있는 가입자 보호)]")
 import sqlite3 as _sq  # noqa: E402

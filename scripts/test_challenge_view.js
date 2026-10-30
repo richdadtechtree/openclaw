@@ -64,11 +64,25 @@ const TEXT = { what: '반도체 수출이 석 달 연속 늘었다는 기사', w
       await pg.click('#ed-save');
       check((await pg.textContent('#ed-st')).includes('자 이상'), '짧으면 저장 안 하고 안내');
       for (const k of Object.keys(TEXT)) await pg.fill('#f-' + k, TEXT[k]);
+      // 📖 모르는 용어: HOW 와 생각 사이 · Enter 로 추가 · 🔍 뜻 찾기 → AI 풀이 카드
+      const order = await pg.$$eval('#ed-form .fld', fs => fs.map(f => f.querySelector('label').textContent.trim().split(/\s+/)[0]));
+      check(order.slice(0, 5).join('|') === 'WHAT|WHY|HOW|📖|생각', '모르는 용어 칸은 HOW 와 생각 사이 (' + order.join('|') + ')');
+      await pg.fill('#t-in', '기준금리');
+      await pg.press('#t-in', 'Enter');
+      await pg.fill('#t-in', 'PER, 기준 금리');
+      await pg.click('#t-add');
+      check(await pg.$$eval('#t-list .tcard', c => c.length) === 2, '용어 추가(같은 말은 한 번만)');
+      await pg.click('#t-find');
+      await pg.waitForFunction(() => document.querySelectorAll('#t-list .tcard:not(.wait)').length === 2);
+      const card = await pg.textContent('#t-list .tcard');
+      check(card.includes('시험용 한 줄 뜻') && card.includes('AI 풀이') && card.includes('사전에서 확인'), '🔍 뜻 찾기 → AI 풀이 + 사전 확인 링크');
+      if (SHOT) await pg.screenshot({ path: path.join(SHOT, `ch_${w}_terms.png`) });
       await pg.reload();                       // 새로고침해도 쓰던 글이 남는지
       await pg.waitForSelector('.tile');
       await pg.click('.tile >> nth=2');
       await pg.waitForSelector('#ed.open');
       check((await pg.inputValue('#f-what')) === TEXT.what, '새로고침해도 쓰던 글이 남음(임시 보관)');
+      check(await pg.$$eval('#t-list .tcard', c => c.length) === 2, '새로고침해도 고른 용어가 남음');
       if (SHOT) await pg.screenshot({ path: path.join(SHOT, `ch_${w}_editor.png`) });
       await pg.click('#ed-save');
       await pg.waitForFunction(() => (document.querySelector('#ed-st') || {}).textContent?.includes('저장했어요'));
@@ -77,6 +91,22 @@ const TEXT = { what: '반도체 수출이 석 달 연속 늘었다는 기사', w
       check(await pg.$eval('.tile >> nth=2', t => t.classList.contains('has')), '내가 쓴 사진에 ✅ 표시');
       const unlocked = await pg.$eval('#posts', e => e.textContent);
       check(!unlocked.includes('내 글을 저장하면') && (unlocked.includes('찰스에이') || unlocked.includes('아직 다른 찰스')), '저장 뒤 같은 기수 글이 열림');
+      const mineSaved = await pg.evaluate(async () => (await (await fetch('/api/challenge/day')).json()).mine['03.jpg'].terms);
+      check(JSON.stringify(mineSaved) === JSON.stringify(['기준금리', 'PER']), '저장한 글에 용어 2개');
+      // 📖 우리 기수 용어장
+      await pg.click('#v-gloss');
+      await pg.waitForSelector('.gcard');
+      const gc = await pg.$$eval('.gcard', c => c.map(x => x.textContent));
+      check(gc.length === 2 && gc.some(t => t.includes('기준금리') && t.includes('시험용 한 줄 뜻') && t.includes('내 용어')), '용어장: 내가 찾은 용어 2개 + 풀이');
+      check(await pg.$eval('#daycard', e => e.hidden), '용어장을 열면 신문 칸은 숨김');
+      await pg.fill('#g-q', 'per');
+      check(await pg.$$eval('.gcard', c => c.length) === 1, '용어장 찾기(대소문자 무시)');
+      check(await pg.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), '용어장 가로 스크롤 없음');
+      if (SHOT) await pg.screenshot({ path: path.join(SHOT, `ch_${w}_gloss.png`), fullPage: true });
+      await pg.fill('#g-q', '');
+      await pg.click('.gcard button[data-day]');
+      await pg.waitForSelector('#daycard:not([hidden]) .tile');
+      check(true, '용어장 → "글 보기"로 그날 신문으로');
       check(await pg.$('.day.today') === null && await pg.$eval('.day.sel', e => e.classList.contains('done')), '오늘 칸이 ⭕ → ✅ 완료로');
       if (SHOT) await pg.screenshot({ path: path.join(SHOT, `ch_${w}_after.png`), fullPage: true });
       // 이번 회차의 B 글 지우기(다음 화면 크기 검사를 같은 조건으로)

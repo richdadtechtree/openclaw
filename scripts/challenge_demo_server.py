@@ -36,6 +36,14 @@ TODAY = [a.today]
 gate._today = lambda: TODAY[0]
 
 
+def fake_gpt(system, user):       # 진짜 GPT 대신(시험용): 용어 이름을 넣은 정해진 풀이
+    t = user.split("\n")[0].replace("용어: ", "")
+    return '{"short":"%s: 시험용 한 줄 뜻","easy":"시험용 쉬운 풀이예요. 물가를 잡으려고 돈의 값을 올리는 것과 비슷해요.","invest":"이 말이 나오면 은행·성장주 흐름을 같이 보세요.","unsure":false}' % t
+
+
+challenge.gpt_chat = fake_gpt
+
+
 def paper(day, n=12):
     from PIL import Image, ImageDraw
     d = os.path.join(NEWS, day)

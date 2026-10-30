@@ -17,6 +17,9 @@ challenge.py — 🔥 찰스 챌린지 (2026-10-30, 계획서: docs/challenge-pl
   D7 빠진 날이 있으면 완수 불가 → 관리자가 그날을 '인정'하면 구제
   D8 찰스의 이용 기한 = 기수 종료일
   D10 관리자 글(cohort_id 없음)은 모든 기수에게 보인다
+  📖 모르는 용어(2026-10-30 사용자 요청): HOW 와 생각 사이에 선택 칸(최대 5개). '뜻 찾기'를 누르면
+     용어 글자만 GPT(openclaw 게이트웨이, ChatGPT Plus — 별도 키·요금 없음)에 보내 쉬운 풀이를 받고
+     glossary 표에 저장해 모두가 같이 쓴다(같은 용어는 한 번만 묻는다). AI 풀이는 틀릴 수 있어 사전 링크를 함께 준다.
 
 [저장] 로그인 게이트와 같은 DB(gate.sqlite)의 cohorts / challenge_posts / challenge_excused / challenge_days 표.
 [사진] 신문 사진은 14일 뒤 지워지므로(retention_cleanup.py), 글을 쓴 장은 gate 폴더의 challenge_photos/ 에 복사해 둔다.
@@ -29,7 +32,12 @@ import re
 import shutil
 import threading
 import time
+import unicodedata
+import urllib.parse
 from datetime import date as _date, datetime, timedelta
+
+import urllib.error
+import urllib.request
 
 import gate
 
@@ -42,8 +50,13 @@ FIELDS = (("what", "WHAT"), ("why", "WHY"), ("how", "HOW"), ("think", "생각 & 
 MIN_LEN, MAX_LEN = 10, 2000
 NAME_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,80}$")
 CELEBRATE_TEXT = "꾸준함은 인생을 바꿀 수 있습니다"
+MAX_TERMS, TERM_LEN = 5, 30                # 모르는 용어: 글 하나에 5개까지, 용어 하나 30자까지
+TERM_DAILY = 40                            # 한 사람이 하루에 새로 AI 에 물을 수 있는 용어 수(이미 풀이된 용어는 무료)
 
 _rate = {}                               # {회원번호: [최근 저장 시각들]} 1분 30번 넘으면 거부
+_term_rate = {}                          # {(회원번호, 날짜): 오늘 AI 에 물은 용어 수}
+_term_locks = {}                         # 같은 용어를 동시에 두 번 묻지 않게
+_term_locks_guard = threading.Lock()
 _arch_lock = threading.Lock()
 
 
@@ -258,6 +271,179 @@ def _sniff(path):
     return "application/octet-stream"
 
 
+# ───────────────────────── 📖 모르는 용어 ─────────────────────────
+def term_key(t):
+    """같은 용어 판단용 키: 대소문자·띄어쓰기 차이 무시('PER'='per', '기준 금리'='기준금리')."""
+    return re.sub(r"\s+", "", unicodedata.normalize("NFC", t or "")).casefold()
+
+
+def parse_terms(raw):
+    """입력(목록 또는 쉼표·줄바꿈 글) → 다듬은 용어 목록(중복 제거, 5개·30자 제한). 잘못되면 ValueError(이유)."""
+    if raw is None or raw == "":
+        return []
+    items = raw if isinstance(raw, list) else re.split(r"[,\n、，]+", str(raw))
+    out, seen = [], set()
+    for x in items:
+        t = re.sub(r"\s+", " ", unicodedata.normalize("NFC", str(x or ""))).strip(" ·-•")
+        if not t:
+            continue
+        if len(t) > TERM_LEN:
+            raise ValueError("termlen")
+        if term_key(t) in seen:
+            continue
+        seen.add(term_key(t))
+        out.append(t)
+    if len(out) > MAX_TERMS:
+        raise ValueError("termmany")
+    return out
+
+
+def dict_url(t):
+    """AI 풀이를 사람이 확인할 수 있는 사전 검색 주소(네이버 지식백과 — 시사경제용어사전·한경 경제용어사전 등이 함께 나온다)."""
+    return "https://terms.naver.com/search.naver?query=" + urllib.parse.quote(t)
+
+
+def glossary_get(terms):
+    """{키: 풀이} — 이미 저장된 풀이만."""
+    keys = [term_key(t) for t in terms if t]
+    if not keys:
+        return {}
+    with gate._db() as con:
+        rows = con.execute("SELECT * FROM glossary WHERE key IN (%s)" % ",".join("?" * len(keys)), keys).fetchall()
+    return {r["key"]: {"term": r["term"], "short": r["short"], "easy": r["easy"], "invest": r["invest"], "source": r["source"]} for r in rows}
+
+
+TERM_SYSTEM = (
+    "너는 한국 경제 신문을 처음 읽는 사람을 돕는 경제 용어 선생님이다. 중학생도 알아들을 쉬운 한국어로 설명한다.\n"
+    "규칙: ① 정확한 일반적 정의만 쓴다. 특정 수치·날짜·최근 사건을 지어내지 않는다. ② 잘 모르거나 뜻이 여러 개라 애매하면 unsure 를 true 로 한다.\n"
+    "③ 반드시 아래 JSON 한 덩어리로만 답한다(다른 글 금지).\n"
+    '{"short":"한 줄 뜻(40자 이내)","easy":"쉬운 풀이 2~3문장(비유 하나 포함, 200자 이내)",'
+    '"invest":"신문·투자에서 이 말이 나오면 무엇을 보면 되는지 1문장(120자 이내)","unsure":false}')
+
+
+def gpt_chat(system, user):
+    """openclaw 게이트웨이(ChatGPT Plus, mer_blog_slack.py 와 같은 방식) → 답 글. 실패는 예외. 시험에서 바꿔 끼운다."""
+    token = gate._env("GATEWAY_TOKEN")
+    if not token:
+        raise RuntimeError("GATEWAY_TOKEN 이 .env 에 없습니다")
+    url = gate._env("CHALLENGE_GATEWAY_URL", "http://127.0.0.1:18789/v1/chat/completions")
+    model = gate._env("CHALLENGE_TERM_AGENT", gate._env("MER_SUMMARY_AGENT", "openclaw/debate-gpt"))
+    msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+    last = None
+    for payload in ({"model": model, "messages": msgs, "max_tokens": 500, "temperature": 0.2}, {"model": model, "messages": msgs}):
+        req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers={
+            "Authorization": "Bearer " + token, "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return json.loads(r.read().decode())["choices"][0]["message"]["content"].strip()
+        except urllib.error.HTTPError as e:
+            last = RuntimeError("게이트웨이 HTTP %d" % e.code)
+            if e.code < 500:
+                break
+    raise last
+
+
+def _parse_term_answer(txt):
+    m = re.search(r"\{.*\}", txt or "", re.S)
+    if not m:
+        return None
+    try:
+        d = json.loads(m.group(0))
+    except Exception:
+        return None
+    clip = lambda k, n: re.sub(r"\s+", " ", str(d.get(k) or "")).strip()[:n]     # noqa: E731
+    out = {"short": clip("short", 80), "easy": clip("easy", 400), "invest": clip("invest", 240)}
+    if not out["short"] or not out["easy"]:
+        return None
+    if d.get("unsure") is True:
+        out["short"] = "(AI 도 확실하지 않아요) " + out["short"]
+    return out
+
+
+def _term_lock(key):
+    with _term_locks_guard:
+        return _term_locks.setdefault(key, threading.Lock())
+
+
+def lookup_terms(v, terms):
+    """용어들의 풀이를 돌려준다. 저장된 건 그대로, 없는 건 AI 에 묻고 저장(용어 글자만 보냄).
+    결과: [{"term","key","ok","short","easy","invest","source","dict","reason"}]"""
+    out = []
+    have = glossary_get(terms)
+    day_key = (v["uid"], today())
+    for t in terms:
+        k = term_key(t)
+        item = {"term": t, "key": k, "dict": dict_url(t)}
+        if k in have:
+            out.append(dict(item, ok=True, **have[k]))
+            continue
+        if _term_rate.get(day_key, 0) >= TERM_DAILY:
+            out.append(dict(item, ok=False, reason="오늘은 뜻 찾기를 많이 썼어요. 사전 링크로 확인해 주세요."))
+            continue
+        with _term_lock(k):
+            again = glossary_get([t])                    # 기다리는 동안 다른 사람이 이미 찾았을 수 있다
+            if k in again:
+                out.append(dict(item, ok=True, **again[k]))
+                continue
+            _term_rate[day_key] = _term_rate.get(day_key, 0) + 1
+            try:
+                ans = _parse_term_answer(gpt_chat(TERM_SYSTEM, "용어: " + t + "\n(한국 경제 신문 기사에 나온 말)"))
+            except Exception as e:
+                print("[challenge] 용어 풀이 실패 %r: %r" % (t, e))
+                ans = None
+            if not ans:
+                out.append(dict(item, ok=False, reason="AI 풀이를 받지 못했어요. 사전 링크로 확인해 주세요."))
+                continue
+            with gate._db() as con:
+                con.execute("INSERT OR IGNORE INTO glossary(key,term,short,easy,invest,source,created_at) VALUES(?,?,?,?,?,?,?)",
+                            (k, t, ans["short"], ans["easy"], ans["invest"], "ai", gate._now()))
+            out.append(dict(item, ok=True, source="ai", **ans))
+    return out
+
+
+def cohort_glossary(v, cohort_filter=None):
+    """📖 기수 용어장: 우리 기수(+운영자) 글에 나온 모르는 용어를 모아 풀이와 함께.
+    잠금 규칙은 글과 같다(D6) — 오늘 다른 사람 글의 용어는 내가 오늘 글을 쓴 뒤에만 보인다."""
+    now = today()
+    with gate._db() as con:
+        q = ("SELECT p.user_id, p.day, p.terms FROM challenge_posts p JOIN users u ON u.id=p.user_id "
+             "WHERE p.terms IS NOT NULL AND p.terms<>'[]'")
+        args = []
+        if v["admin"]:
+            if cohort_filter:
+                q += " AND (p.cohort_id=? OR p.cohort_id IS NULL)"
+                args.append(int(cohort_filter))
+        else:
+            q += " AND (p.user_id=? OR p.cohort_id=? OR (p.cohort_id IS NULL AND u.is_admin=1))"
+            args += [v["uid"], v["cohort_id"] or -1]
+        rows = con.execute(q, args).fetchall()
+        wrote_today = bool(v["uid"]) and bool(con.execute("SELECT 1 FROM challenge_posts WHERE user_id=? AND day=?", (v["uid"], now)).fetchone())
+    open_today = v["admin"] or v["role"] == "graduate" or wrote_today
+    agg = {}
+    for r in rows:
+        if r["day"] >= now and r["user_id"] != v["uid"] and not open_today:
+            continue
+        try:
+            terms = json.loads(r["terms"] or "[]")
+        except Exception:
+            continue
+        for t in terms:
+            k = term_key(t)
+            a = agg.setdefault(k, {"term": t, "key": k, "count": 0, "people": set(), "first": r["day"], "last": r["day"], "mine": False})
+            a["count"] += 1
+            a["people"].add(r["user_id"])
+            a["first"], a["last"] = min(a["first"], r["day"]), max(a["last"], r["day"])
+            a["mine"] = a["mine"] or r["user_id"] == v["uid"]
+    gl = glossary_get([a["term"] for a in agg.values()])
+    out = []
+    for k, a in agg.items():
+        g = gl.get(k, {})
+        out.append({"term": a["term"], "key": k, "count": a["count"], "people": len(a["people"]), "first": a["first"], "last": a["last"],
+                    "mine": a["mine"], "short": g.get("short"), "easy": g.get("easy"), "invest": g.get("invest"), "dict": dict_url(a["term"])})
+    out.sort(key=lambda x: x["term"])
+    return {"ok": True, "items": out, "can_lookup": bool(v["uid"]) and (can_write(v) or v["admin"])}
+
+
 # ───────────────────────── 진행도·완수 ─────────────────────────
 def _done_days(con, uid):
     days = {r[0] for r in con.execute("SELECT DISTINCT day FROM challenge_posts WHERE user_id=?", (uid,))}
@@ -352,6 +538,10 @@ def _post_dict(r, with_author=True):
     d = {"page": r["page"], "updated": r["updated_at"], "created": r["created_at"]}
     for k, _ in FIELDS:
         d[k] = r[k]
+    try:
+        d["terms"] = json.loads(r["terms"] or "[]")
+    except Exception:
+        d["terms"] = []
     if with_author:
         d["nick"] = r["nickname"] or "(닉네임 없음)"
         d["admin"] = bool(r["is_admin"])
@@ -388,7 +578,11 @@ def day_view(v, day, cohort_filter=None):
     images = [{"name": n, "thumb": "/api/challenge/photo?date=%s&name=%s&size=thumb" % (day, n),
                "full": "/api/challenge/photo?date=%s&name=%s" % (day, n),
                "mine": n in mine, "others": per_page.get(n, 0)} for n in (names or [])]
+    shown = [t for p in list(mine.values()) + ([_post_dict(r) for r in others] if unlocked else []) for t in p.get("terms") or []]
+    gl = glossary_get(shown)
+    glossary = {term_key(t): dict(gl.get(term_key(t), {}), term=t, dict=dict_url(t)) for t in shown}
     return {"ok": True, "date": day, "today": day == now, "weekday": is_weekday(day), "ready": bool(names) and not archived,
+            "glossary": glossary,
             "archived": archived, "images": images, "mine": mine,
             "writable": can_write(v, day) and day == now and is_weekday(day) and bool(names) and not archived,
             "others": {"locked": not unlocked, "count": len(others),
@@ -416,6 +610,10 @@ def save_post(v, day, page, data):
         if len(t) > MAX_LEN:
             return "long", k
         vals[k] = t
+    try:
+        terms = parse_terms(data.get("terms"))
+    except ValueError as e:
+        return str(e), "terms"
     hist = [x for x in _rate.get(v["uid"], []) if time.time() - x < 60]
     if len(hist) >= 30:
         return "rate", None
@@ -423,10 +621,11 @@ def save_post(v, day, page, data):
     cohort = None if v["admin"] else v["cohort_id"]
     now = gate._now()
     with gate._db() as con:
-        con.execute("INSERT INTO challenge_posts(user_id,cohort_id,day,page,what,why,how,think,created_at,updated_at) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,day,page) DO UPDATE SET "
-                    "what=excluded.what, why=excluded.why, how=excluded.how, think=excluded.think, updated_at=excluded.updated_at",
-                    (v["uid"], cohort, day, page, vals["what"], vals["why"], vals["how"], vals["think"], now, now))
+        con.execute("INSERT INTO challenge_posts(user_id,cohort_id,day,page,what,why,how,think,terms,created_at,updated_at) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,day,page) DO UPDATE SET "
+                    "what=excluded.what, why=excluded.why, how=excluded.how, think=excluded.think, terms=excluded.terms, updated_at=excluded.updated_at",
+                    (v["uid"], cohort, day, page, vals["what"], vals["why"], vals["how"], vals["think"],
+                     json.dumps(terms, ensure_ascii=False), now, now))
     _archive(day, page)
     return "ok", None
 
@@ -449,7 +648,7 @@ def me_info(v):
     d = today()
     out = {"ok": True, "nick": v["nick"], "admin": v["admin"], "role": v["role"], "today": d, "weekday": is_weekday(d),
            "can_write": can_write(v, d), "progress": p, "celebrate": celebrate, "celebrate_text": CELEBRATE_TEXT,
-           "limits": {"min": MIN_LEN, "max": MAX_LEN}}
+           "limits": {"min": MIN_LEN, "max": MAX_LEN, "terms": MAX_TERMS, "term_len": TERM_LEN}}
     if v["admin"]:
         out["cohorts"] = [{"id": c["id"], "name": c["name"], "start": c["start_date"], "end": c["end_date"]} for c in list_cohorts()]
     return out
@@ -460,7 +659,9 @@ _ERR = {"nowrite": "지금은 글을 쓸 수 없어요(챌린지 기간이 아�
         "closed": "오늘 신문에만 쓸 수 있어요. 지난 날은 마감됐어요(밤 12시).",
         "nopage": "그 사진을 찾을 수 없어요. 새로고침해 주세요.",
         "short": "%s 칸을 %d자 이상 써 주세요.", "long": "%s 칸은 %d자까지 쓸 수 있어요.",
-        "rate": "너무 빨리 저장하고 있어요. 잠시 후 다시 눌러 주세요."}
+        "rate": "너무 빨리 저장하고 있어요. 잠시 후 다시 눌러 주세요.",
+        "termlen": "모르는 용어는 하나에 %d자까지 써 주세요." % TERM_LEN,
+        "termmany": "모르는 용어는 글 하나에 %d개까지예요." % MAX_TERMS}
 
 
 def install(app):
@@ -524,10 +725,32 @@ def install(app):
         day, page = str(d.get("date") or ""), str(d.get("page") or "")
         code, field = save_post(v, day, page, d)
         if code != "ok":
-            label = dict(FIELDS).get(field, "")
+            label = dict(FIELDS).get(field, "모르는 용어")
             msg = _ERR[code] % ((label, MIN_LEN) if code == "short" else (label, MAX_LEN)) if code in ("short", "long") else _ERR[code]
             return JSONResponse({"ok": False, "reason": code, "field": field, "message": msg}, status_code=400)
         return JSONResponse({"ok": True, "me": me_info(viewer(request)), "day": day_view(viewer(request), day)})
+
+    @app.get("/api/challenge/glossary")
+    def api_glossary(request: Request, cohort: str = ""):
+        v = viewer(request)
+        if not v:
+            return deny()
+        return JSONResponse(cohort_glossary(v, cohort if (v["admin"] and cohort.isdigit()) else None))
+
+    @app.post("/api/challenge/terms")
+    async def api_terms(request: Request):
+        """📖 모르는 용어 뜻 찾기. 본문 {"terms":[...]} → 풀이 목록. 글을 쓸 수 있는 사람(찰스·관리자)만."""
+        v = viewer(request)
+        if not v or not (can_write(v) or v["admin"]) or not v["uid"]:
+            return deny()
+        d = await _json(request)
+        try:
+            terms = parse_terms(d.get("terms"))
+        except ValueError as e:
+            return JSONResponse({"ok": False, "reason": str(e), "message": _ERR[str(e)]}, status_code=400)
+        import asyncio
+        items = await asyncio.get_running_loop().run_in_executor(None, lookup_terms, v, terms)   # AI 기다리는 동안 서버가 멈추지 않게
+        return JSONResponse({"ok": True, "items": items})
 
     @app.post("/api/challenge/delete")
     async def api_delete(request: Request):
