@@ -526,6 +526,35 @@ def can_write(v, day=None):
     return bool(c and c["start_date"] <= day <= c["end_date"])
 
 
+_WD = "월화수목금토일"
+
+
+def _md(day):
+    d = _d(day)
+    return "%d월 %d일(%s)" % (d.month, d.day, _WD[d.weekday()])
+
+
+def why_cant_write(v, day=None):
+    """글을 못 쓰는 이유(쓸 수 있으면 빈 글). 화면이 '왜 입력 칸이 없는지' 알려 주는 데 쓴다."""
+    day = day or today()
+    if v is None or v["uid"] == 0:
+        return "IP 관리자 모드에서는 글을 쓸 수 없어요(도메인 주소로 로그인해 주세요)."
+    if v["admin"]:
+        return ""
+    if v["role"] == "graduate":
+        return "🎓 챌린지를 완수했어요. 글은 기록으로 읽기만 할 수 있어요."
+    if v["role"] != "charles":
+        return "찰스만 글을 쓸 수 있어요."
+    c = get_cohort(v["cohort_id"])
+    if not c:
+        return "기수가 정해지지 않았어요. 운영자에게 문의해 주세요."
+    if day < c["start_date"]:
+        return "%s 챌린지는 %s부터 시작해요. 그날부터 글을 쓸 수 있어요." % (c["name"], _md(c["start_date"]))
+    if day > c["end_date"]:
+        return "%s 챌린지 기간(%s까지)이 끝났어요." % (c["name"], _md(c["end_date"]))
+    return ""
+
+
 def day_allowed(v, day):
     """이 날짜를 볼 수 있나. 찰스·완수자는 자기 기수 기간 + 오늘."""
     if v["admin"]:
@@ -585,6 +614,11 @@ def day_view(v, day, cohort_filter=None):
             "glossary": glossary,
             "archived": archived, "images": images, "mine": mine,
             "writable": can_write(v, day) and day == now and is_weekday(day) and bool(names) and not archived,
+            "why_not": ("주말에는 쓰지 않아요." if not is_weekday(day) else
+                        "지난 날은 마감됐어요(읽기 전용)." if day < now else
+                        "앞으로 올 날이에요." if day > now else
+                        "오늘 신문이 아직 도착하지 않았어요." if not names or archived else
+                        why_cant_write(v, day)),
             "others": {"locked": not unlocked, "count": len(others),
                        "posts": [_post_dict(r) for r in others] if unlocked else []}}
 
@@ -647,7 +681,7 @@ def me_info(v):
     celebrate = bool(u is not None and gate.role_of(u) == "graduate" and not u["celebrated_at"])
     d = today()
     out = {"ok": True, "nick": v["nick"], "admin": v["admin"], "role": v["role"], "today": d, "weekday": is_weekday(d),
-           "can_write": can_write(v, d), "progress": p, "celebrate": celebrate, "celebrate_text": CELEBRATE_TEXT,
+           "can_write": can_write(v, d), "why_not": why_cant_write(v, d), "progress": p, "celebrate": celebrate, "celebrate_text": CELEBRATE_TEXT,
            "limits": {"min": MIN_LEN, "max": MAX_LEN, "terms": MAX_TERMS, "term_len": TERM_LEN}}
     if v["admin"]:
         out["cohorts"] = [{"id": c["id"], "name": c["name"], "start": c["start_date"], "end": c["end_date"]} for c in list_cohorts()]

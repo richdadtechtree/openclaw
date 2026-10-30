@@ -363,5 +363,19 @@ check("신청해도 다른 화면은 그대로 사용", cG.get("/economy").statu
 check("관리 화면 '찰스 신청' 탭에 일반 이용자도", "일반인" in ca.get("/gate/admin?f=apply").text)
 check("관리자는 신청 화면이 아니라 챌린지", ca.get("/challenge").status_code == 200 and "참가 신청" not in ca.get("/challenge").text)
 
+print("[글을 못 쓸 때 이유 알려 주기]")
+TODAY[0] = "2026-11-11"
+act(action="cohort_add", name="5기", start="2026-11-16", end="2026-11-20")
+c5 = [c for c in challenge.list_cohorts() if c["name"] == "5기"][0]
+paper("2026-11-11")
+f_id, cF = user("F", "미래찰스")
+act(action="charles", uid=f_id, on="1", cohort=c5["id"])
+d = cF.get("/api/challenge/day").json()
+check("기수 시작 전: 쓸 수 없음 + '11월 16일(월)부터 시작' 안내", not d["writable"] and "11월 16일(월)부터 시작" in d["why_not"])
+check("기수 시작 전: 진행 칸에도 같은 안내", "부터 시작" in cF.get("/api/challenge/me").json()["why_not"])
+check("기수 시작 전: 저장도 거부", post(cF).status_code == 400)
+check("쓸 수 있는 찰스는 이유가 비어 있음", cV.get("/api/challenge/day").json()["why_not"] == "" and cV.get("/api/challenge/day").json()["writable"])
+check("지난 날 이유: 마감", "마감" in cV.get("/api/challenge/day?date=2026-11-10").json()["why_not"])
+
 print("\n결과: %s" % ("전부 통과" if not fails else "실패 %d개: %s" % (len(fails), fails)))
 sys.exit(1 if fails else 0)
