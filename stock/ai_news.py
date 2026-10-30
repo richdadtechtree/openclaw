@@ -29,6 +29,11 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like
       "Chrome/130.0 Safari/537.36")                     # GeekNews 는 짧은 UA 를 403 으로 막는다
 MAX_AGE = {"threads": 30 * 60, "geeknews": 10 * 60}    # 이보다 오래된 캐시면 뒤에서 새로 받는다
 MAX_KEEP = {"threads": 60, "geeknews": 120}
+# 2026-10-30 사용자 요청 "CHOI님이 단 댓글은 하나도 빠짐없이": 프로필엔 글마다 앞부분만 보여서,
+# 최근 글은 '글 하나 화면'을 따로 열어 본인 글(이어진 글 + 남의 댓글에 단 답)을 전부 모은다.
+DEEP_DAYS = 7          # 이 기간 안의 글은 30분마다 다시 열어 새로 단 댓글까지 챙긴다
+DEEP_MAX = 8           # 한 번에 여는 글 화면 수(크로미움이 무거워서)
+DEEP_SCROLLS = 6       # 글 화면을 아래로 내려 더 불러오는 횟수
 SOURCES = tuple(MAX_AGE)
 _locks = {s: threading.Lock() for s in SOURCES}
 
@@ -160,6 +165,57 @@ _EXTRACT_JS = """() => {
 }"""
 
 
+def _uname(po):
+    return ((po or {}).get("user") or {}).get("username") or ""
+
+
+def _info(po):
+    media = bool(po.get("carousel_media") or (po.get("image_versions2") or {}).get("candidates") or po.get("video_versions"))
+    return {"code": po["code"], "url": "%s/post/%s" % (THREADS_URL, po["code"]), "at": int(po.get("taken_at") or 0),
+            "text": ((po.get("caption") or {}).get("text") or "").strip(), "media": media}
+
+
+def walk_items(o, out):
+    """아무 JSON 에서 thread_items 목록을 모두 찾는다(화면에 든 JSON·아래로 내리며 받은 데이터 모두)."""
+    if isinstance(o, dict):
+        ti = o.get("thread_items")
+        if isinstance(ti, list):
+            out.append(ti)
+            return out
+        for v in o.values():
+            walk_items(v, out)
+    elif isinstance(o, list):
+        for v in o:
+            walk_items(v, out)
+    return out
+
+
+def parse_thread_page(groups, root, user=THREADS_USER):
+    """글 하나 화면의 thread_items 묶음들 → {"posts":[이어진 글…], "replies":[남의 댓글에 단 답…]} (없으면 None).
+    묶음 안에서 앞에 다른 사람 글이 있으면 그 사람에게 단 답, 아니면 본인이 이어 쓴 글로 본다."""
+    chain, replies = {}, {}
+    for items in groups or []:
+        other = None
+        for it in items or []:
+            po = (it or {}).get("post") or {}
+            if not po.get("code"):
+                continue
+            if _uname(po) != user:
+                other = po
+                continue
+            x = _info(po)
+            if other is None:
+                chain[x["code"]] = x
+            elif x["code"] not in chain:
+                x["reply_to"] = _uname(other)
+                x["reply_to_text"] = ((other.get("caption") or {}).get("text") or "").strip()[:120]
+                replies[x["code"]] = x
+    if root not in chain:
+        return None
+    posts = sorted(chain.values(), key=lambda p: (p["code"] != root, p["at"]))
+    return {"posts": posts, "replies": sorted((r for c, r in replies.items() if c not in chain), key=lambda p: p["at"])}
+
+
 def parse_threads(groups, user=THREADS_USER):
     """thread_items 묶음들 → [{code,url,at,posts:[{code,url,at,text,media}]}] (그 사람이 쓴 글만, 최신 묶음 먼저)."""
     seen, out = set(), []
@@ -169,11 +225,7 @@ def parse_threads(groups, user=THREADS_USER):
             po = (it or {}).get("post") or {}
             if ((po.get("user") or {}).get("username") or "") != user or not po.get("code"):
                 continue
-            media = bool(po.get("carousel_media") or (po.get("image_versions2") or {}).get("candidates")
-                         or po.get("video_versions"))   # 사진·영상 있음(화면엔 '원문에서 보기'로만 안내)
-            posts.append({"code": po["code"], "url": "%s/post/%s" % (THREADS_URL, po["code"]),
-                          "at": int(po.get("taken_at") or 0), "text": ((po.get("caption") or {}).get("text") or "").strip(),
-                          "media": media})
+            posts.append(_info(po))                       # media = 사진·영상 있음(화면엔 '원문에서 보기'로만 안내)
         if not posts or posts[0]["code"] in seen:
             continue
         seen.add(posts[0]["code"])
@@ -182,10 +234,50 @@ def parse_threads(groups, user=THREADS_USER):
     return out
 
 
-def fetch_threads():
+def _json_chunks(text):
+    """받은 데이터 글 → JSON 덩어리들(앞에 for(;;); 가 붙거나 줄마다 JSON 인 경우도)."""
+    text = re.sub(r"^\s*for\s*\(;;\);", "", text or "")
+    try:
+        return [json.loads(text)]
+    except ValueError:
+        out = []
+        for ln in text.splitlines():
+            try:
+                out.append(json.loads(ln))
+            except ValueError:
+                pass
+        return out
+
+
+def _open_collect(page, url, scrolls=0):
+    """화면을 열고(필요하면 아래로 내리며) 화면 JSON + 받은 데이터 속 thread_items 를 모두 모은다."""
+    resps = []
+    page.on("response", resps.append)
+    try:
+        page.goto(url, wait_until="networkidle", timeout=60000)
+        for _ in range(scrolls):
+            page.mouse.wheel(0, 5000)
+            page.wait_for_timeout(1000)
+        groups = page.evaluate(_EXTRACT_JS)
+    finally:
+        page.remove_listener("response", resps.append)
+    for r in resps:                                      # 내리면서 받은 댓글 데이터(graphql 등)
+        try:
+            if "json" not in (r.headers.get("content-type") or "") and "graphql" not in r.url:
+                continue
+            for obj in _json_chunks(r.text()):
+                walk_items(obj, groups)
+        except Exception:
+            pass
+    return groups
+
+
+def fetch_threads(deep=()):
     """로그인 없이 보이는 최근 글 묶음(2026-10-28 확인: 4묶음, 더 내리면 '로그인하여 더 확인' 안내).
-    30분마다 받아 캐시에 쌓으므로 새 글은 계속 모인다."""
+    + 프로필의 글과 deep(최근 글 code 목록)은 글 하나 화면을 열어 본인 글을 전부 모은다.
+    반환 (items, details={code: {"posts":…, "replies":…}}). 글 하나 화면이 실패해도 그 글만 건너뛴다."""
     from playwright.sync_api import sync_playwright    # 늦게 불러온다 → 없어도 GeekNews 는 정상
+    details = {}
     with sync_playwright() as p:
         kw = {"headless": True}
         if CHROMIUM_PATH:
@@ -193,14 +285,23 @@ def fetch_threads():
         browser = p.chromium.launch(**kw)
         try:
             page = browser.new_page(locale="ko-KR", user_agent=UA)
-            page.goto(THREADS_URL, wait_until="networkidle", timeout=60000)
-            groups = page.evaluate(_EXTRACT_JS)
+            items = parse_threads(_open_collect(page, THREADS_URL))
+            if not items:
+                raise RuntimeError("Threads 글을 못 읽음(로그인 요구·화면 구조 바뀜?)")
+            codes = []
+            for c in [x["code"] for x in items] + list(deep):
+                if c not in codes:
+                    codes.append(c)
+            for code in codes[:DEEP_MAX]:
+                try:
+                    d = parse_thread_page(_open_collect(page, "%s/post/%s" % (THREADS_URL, code), DEEP_SCROLLS), code)
+                    if d:
+                        details[code] = d
+                except Exception as e:
+                    print("[ai_news] 글 화면 %s 실패: %r" % (code, e))
         finally:
             browser.close()
-    items = parse_threads(groups)
-    if not items:
-        raise RuntimeError("Threads 글을 못 읽음(로그인 요구·화면 구조 바뀜?)")
-    return items
+    return items, details
 
 
 # ── 캐시 ─────────────────────────────────────────────────────────────────────
@@ -220,9 +321,25 @@ def _key(src, x):
     return x["code"] if src == "threads" else x["id"]
 
 
+def _union(a, b):
+    """글 목록 두 개를 합침(같은 code 는 b 가 이김) — 이번에 못 읽은 댓글이 있어도 예전에 모은 건 남긴다."""
+    if not all(x.get("code") for x in (a or []) + (b or [])):   # 번호 없는 옛 형식이면 새 것을 그대로
+        return list(b or a or [])
+    m = {x["code"]: x for x in a or []}
+    m.update({x["code"]: x for x in b or []})
+    return list(m.values())
+
+
 def merge(src, old, new):
-    """새로 받은 글 + 예전 글(같은 글은 새 것으로), 최신순 최대 MAX_KEEP 개."""
+    """새로 받은 글 + 예전 글(같은 글은 새 것으로), 최신순 최대 MAX_KEEP 개.
+    Threads 는 같은 글이면 이어진 글·댓글에 단 답을 합친다(프로필엔 앞부분만 보이므로 예전에 모은 걸 잃지 않게)."""
     have = {_key(src, x) for x in new}
+    if src == "threads":
+        prev = {x["code"]: x for x in old}
+        new = [dict(x, posts=sorted(_union(prev[x["code"]].get("posts"), x.get("posts")), key=lambda p: (p.get("code") != x["code"], p.get("at", 0))),
+                    replies=sorted(_union(prev[x["code"]].get("replies"), x.get("replies")), key=lambda p: p.get("at", 0)),
+                    full_at=x.get("full_at") or prev[x["code"]].get("full_at"))
+               if x["code"] in prev else x for x in new]
     rows = list(new) + [x for x in old if _key(src, x) not in have]
     if src == "threads":
         rows.sort(key=lambda t: -t["at"])
@@ -241,7 +358,20 @@ def refresh(src):
     try:
         old = _read(src)
         try:
-            new = fetch_threads() if src == "threads" else fetch_geeknews()
+            if src == "threads":
+                olds = old.get("items", [])
+                recent = [x["code"] for x in sorted(olds, key=lambda t: -t["at"]) if time.time() - x.get("at", 0) < DEEP_DAYS * 86400]
+                got = fetch_threads(deep=recent)
+                new, details = got if isinstance(got, tuple) else (got, {})
+                byc = {x["code"]: x for x in olds}
+                for code, d in details.items():           # 글 하나 화면에서 모은 '전부'를 해당 글에 붙인다
+                    base = next((x for x in new if x["code"] == code), None) or byc.get(code)
+                    if base is None:
+                        continue
+                    full = dict(base, posts=d["posts"], replies=d["replies"], full_at=int(time.time()))
+                    new = [full if x["code"] == code else x for x in new] if any(x["code"] == code for x in new) else new + [full]
+            else:
+                new = fetch_geeknews()
             data = {"src": src, "fetched_at": int(time.time()), "error": "",
                     "items": merge(src, old.get("items", []), new)}
         except Exception as e:                           # 실패해도 예전 글은 그대로 두고 오류만 적는다
@@ -293,4 +423,6 @@ if __name__ == "__main__":                              # 서버에서 손으로
     d = _read(s)
     print("오류:", d.get("error") or "없음", "· 글", len(d.get("items", [])))
     for x in d.get("items", [])[:5]:
-        print("-", (x.get("title") or x["posts"][0]["text"])[:70].replace("\n", " "))
+        extra = ("  [이어진 글 %d · 댓글에 단 답 %d%s]" % (len(x.get("posts") or []), len(x.get("replies") or []),
+                                                    " · 글 화면 확인함" if x.get("full_at") else "")) if s == "threads" else ""
+        print("-", (x.get("title") or x["posts"][0]["text"])[:70].replace("\n", " ") + extra)
