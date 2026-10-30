@@ -327,21 +327,43 @@ def _open_collect(page, url, scrolls=0, info=None):
         groups = page.evaluate(_EXTRACT_JS)
         if info is not None:
             info["scrolls"] = done
+            info["url"] = page.url                       # 점검용: 다른 주소(로그인 화면 등)로 넘어갔는지
             try:
                 info["login_wall"] = bool(page.evaluate(_WALL_JS))
+                info["title"] = page.title()[:80]
             except Exception:
                 pass
+            if info.get("dump"):                         # debug 명령: 화면 HTML·사진을 파일로
+                with open(info["dump"] + ".html", "w", encoding="utf-8") as f:
+                    f.write(page.content())
+                page.screenshot(path=info["dump"] + ".png", full_page=True)
     finally:
         page.remove_listener("response", on_resp)
+    page_groups, data_resps = len(groups), 0
     for r in resps:                                      # 내리면서 받은 댓글 데이터(graphql 등)
         try:
             if "json" not in (r.headers.get("content-type") or "") and "graphql" not in r.url:
                 continue
+            n = len(groups)
             for obj in _json_chunks(r.text()):
                 walk_items(obj, groups)
+            data_resps += len(groups) > n
         except Exception:
             pass
+    if info is not None:
+        info.update(page_groups=page_groups, data_resps=data_resps)
     return groups
+
+
+def why_not_found(groups, root, info, user=THREADS_USER):
+    """글 화면에서 본 글을 못 찾았을 때 이유를 한 줄로(점검용)."""
+    posts = [((it or {}).get("post") or {}) for g in groups or [] for it in g or []]
+    codes = [po.get("code") for po in posts if po.get("code")]
+    mine = [po for po in posts if _uname(po) == user]
+    return ("묶음 %d(화면 %s·받은 데이터 %s) · 글 %d(본인 %d) · 본 글 %s · 로그인 벽 %s · 주소 %s · 제목 %r" % (
+        len(groups or []), info.get("page_groups", "?"), info.get("data_resps", "?"), len(codes), len(mine),
+        "있음(남의 글 뒤)" if root in codes else "없음", "있음" if info.get("login_wall") else "없음",
+        info.get("url", "?"), info.get("title", "")))
 
 
 def fetch_threads(deep=()):
@@ -367,8 +389,10 @@ def fetch_threads(deep=()):
             for code in codes[:DEEP_MAX]:
                 try:
                     info = {}
-                    d = parse_thread_page(_open_collect(page, "%s/post/%s" % (THREADS_URL, code), DEEP_SCROLLS, info), code)
+                    g = _open_collect(page, "%s/post/%s" % (THREADS_URL, code), DEEP_SCROLLS, info)
+                    d = parse_thread_page(g, code)
                     if not d:
+                        print("[ai_news] 글 화면 %s: 본 글을 못 찾음 — %s" % (code, why_not_found(g, code, info)))
                         continue
                     have = {r["code"] for r in d["replies"]}
                     opened = 0
@@ -506,6 +530,24 @@ def feed(src, background=True):
 if __name__ == "__main__":                              # 서버에서 손으로 확인: python3 ai_news.py threads|geeknews
     import sys
     s = sys.argv[1] if len(sys.argv) > 1 else "geeknews"
+    if s == "debug":                                     # 글 하나 화면만 열어 무엇이 보이는지: python3 ai_news.py debug [글 code]
+        from playwright.sync_api import sync_playwright
+        code = sys.argv[2] if len(sys.argv) > 2 else next((x["code"] for x in _read("threads").get("items", [])), "")
+        dump = os.path.join(CACHE_DIR, "debug_" + code)
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        with sync_playwright() as p:
+            b = p.chromium.launch(**({"headless": True, "executable_path": CHROMIUM_PATH} if CHROMIUM_PATH else {"headless": True}))
+            info = {"dump": dump}
+            g = _open_collect(b.new_page(locale="ko-KR", user_agent=UA), "%s/post/%s" % (THREADS_URL, code), DEEP_SCROLLS, info)
+            b.close()
+        d = parse_thread_page(g, code)
+        print("글", code, "→", ("이어진 글 %d · 댓글에 단 답 %d · 숨은 댓글 %d · %s" % (len(d["posts"]), len(d["replies"]), len(d["hidden"]), d["stats"]))
+              if d else "본 글을 못 찾음")
+        print("점검:", why_not_found(g, code, info), "· 내린 횟수", info.get("scrolls"))
+        for i, grp in enumerate(g[:12]):                 # 묶음마다 누가 쓴 글인지
+            print("  묶음%d:" % i, " → ".join("%s(%s)" % (_uname((it or {}).get("post")), ((it or {}).get("post") or {}).get("code")) for it in grp or []))
+        print("화면 저장:", dump + ".html", dump + ".png")
+        sys.exit(0)
     refresh(s)
     d = _read(s)
     print("오류:", d.get("error") or "없음", "· 글", len(d.get("items", [])))
