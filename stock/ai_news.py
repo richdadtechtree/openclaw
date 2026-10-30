@@ -180,6 +180,8 @@ def walk_posts(o, out, path="", paths=None):
             if paths is not None:
                 paths.setdefault(o["code"], path)
         for k, v in o.items():
+            if k == "relatedPosts":                      # 화면 아래 '관련 글'(이 대화가 아님, 2026-10-30 서버 debug 로 확인)
+                continue
             walk_posts(v, out, path + "." + str(k) if paths is not None else "", paths)
     elif isinstance(o, list):
         for i, v in enumerate(o):

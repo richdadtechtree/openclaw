@@ -188,8 +188,10 @@ def main():
     flat = {"data": {"containing_thread": {"items": [{"node": rp("R0", 100, "본 글", n=3)}, {"node": rp("R0b", 101, "2/", to="choi.openai")}]},
                      "replies": [{"node": rp("K1", 110, "질문입니다", user="kim")}, {"node": rp("C1", 111, "답입니다", to="kim")},
                                  {"node": rp("L1", 120, "의견", user="lee")}, {"node": rp("C2", 121, "감사합니다", to="lee")}]}}
+    flat["data"]["relatedPosts"] = {"threads": [{"thread_items": [{"post": rp("NEWREL", 500, "관련 글(더 최신)")}]}]}
     pool = {}
     ai.walk_posts(flat, pool)
+    check("⑬ 화면 아래 '관련 글'(relatedPosts)은 모으지 않음", "NEWREL" not in pool and "R0" in pool, list(pool))
     for g in related:
         ai.walk_posts(g, pool)
     d = ai.thread_detail(related, "R0", {"posts": pool})
