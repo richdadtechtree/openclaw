@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!--GATE_THEME-->
 <title>챌린지</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
   /* 🔥 찰스 챌린지 화면 (2026-10-30, 계획서 docs/challenge-plan.md).
      색은 디그 화면과 같은 규칙: 자동(기기 설정) / 화이트(data-theme="light") / 다크(data-theme="dark") */
@@ -196,6 +197,83 @@
   .gcard.none .short{color:var(--sub);font-weight:500}
   .sitefoot{max-width:1040px;margin:0 auto;padding:0 16px 40px;text-align:center;font-size:13px;color:var(--sub)}
   .sitefoot a{color:var(--sub)}
+
+  /* ═══════════ 리디자인 (2026-10-30 사용자 요청 "가독성 좋게 · 전체 디자인 이쁘게") ═══════════
+     이 묶음만 지우면 예전 모양으로 돌아간다. 신문 요약 화면과 같은 Pretendard 글꼴 · 둥근 카드 · 넓은 줄 간격.
+     글 칸 색: WHAT 파랑 · WHY 보라 · HOW 초록 · 용어 분홍 · 생각 주황 */
+  :root{--what:#2f6fe0;--why:#7c4ddb;--how:#119a6b;--terms:#d6408f;--think:#e07812;--shadow:0 1px 2px rgba(16,24,40,.04),0 6px 20px rgba(16,24,40,.06);
+        --ink2:#3a4356;--bg:#f4f5f8}
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--what:#7aa8ff;--why:#b49bff;--how:#4fd1a1;--terms:#ff8fc7;--think:#ffb35c;--shadow:none;--ink2:#c9d0dc;--bg:#101318}}
+  :root[data-theme="dark"]{--what:#7aa8ff;--why:#b49bff;--how:#4fd1a1;--terms:#ff8fc7;--think:#ffb35c;--shadow:none;--ink2:#c9d0dc;--bg:#101318}
+  body{font-family:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",sans-serif;
+       font-size:16px;line-height:1.75;letter-spacing:-.01em;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+  main{padding-top:22px}
+  .card{border-radius:20px;padding:22px 22px;box-shadow:var(--shadow)}
+  @media (max-width:560px){.card{padding:18px 16px;border-radius:16px}}
+  button{border-radius:12px;font-weight:600}
+  .top h1{font-size:17px;letter-spacing:-.02em}
+
+  /* 진행 칸: 위쪽에 따뜻한 빛 */
+  .hero{background:linear-gradient(180deg,color-mix(in srgb,var(--fire) 9%,var(--card)) 0%,var(--card) 70%)}
+  .hero h2{font-size:23px;letter-spacing:-.03em}
+  .hero .meta{font-size:14.5px}
+  .bar{height:12px}
+  .count{font-size:15px}
+  .count b{font-size:24px;letter-spacing:-.02em}
+  .day{width:56px;height:58px;border-radius:14px;font-size:11.5px;font-weight:600}
+  .day b{font-size:18px}
+
+  /* 보기 탭 */
+  .vtabs{gap:8px;margin:2px 0 14px}
+  .vtabs button{padding:9px 18px;font-size:15px;border-radius:999px}
+
+  /* 신문 사진 바둑판 */
+  .dayhead h3{font-size:20px;letter-spacing:-.02em}
+  .msg{border-radius:14px;padding:13px 16px;font-size:15px;line-height:1.65}
+  .grid{gap:12px}
+  .tile{border-radius:14px;transition:transform .15s,box-shadow .15s}
+  .tile:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(16,24,40,.14)}
+  .tile .no{border-radius:8px;padding:2px 8px}
+
+  /* 같은 기수 글: 한 사람 = 한 카드 */
+  .posts h3{font-size:19px;letter-spacing:-.02em;margin-bottom:14px}
+  .post{border:1px solid var(--line);border-radius:18px;padding:18px 20px;margin:0 0 14px;background:var(--bg)}
+  .post:first-of-type{border-top:1px solid var(--line)}
+  .post:last-child{margin-bottom:0}
+  @media (max-width:560px){.post{padding:15px 14px;border-radius:14px}}
+  .ph{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  .av{width:36px;height:36px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:15px;flex:none}
+  .pn{flex:1;display:flex;align-items:center;gap:7px;flex-wrap:wrap;min-width:0}
+  .pn b{font-size:16.5px;letter-spacing:-.02em}
+  .badge{font-size:12px;border-radius:999px;padding:2px 9px}
+  .badge.ch{background:color-mix(in srgb,var(--fire) 15%,transparent);color:var(--fire)}
+  .pg{flex:none;font-size:13px;font-weight:700;text-decoration:none;color:var(--sub);border:1px solid var(--line);background:var(--card);border-radius:999px;padding:4px 11px}
+  .pg:hover{color:var(--ink);border-color:var(--sub)}
+  .pf{display:flex;flex-direction:column;gap:12px}
+  .f{display:grid;grid-template-columns:96px 1fr;gap:12px;align-items:start}
+  @media (max-width:560px){.f{grid-template-columns:1fr;gap:4px}}
+  .f .lb{display:inline-block;justify-self:start;font-size:12px;font-weight:800;letter-spacing:.02em;border-radius:999px;padding:3px 10px;margin-top:3px;white-space:nowrap;
+         color:var(--k);background:color-mix(in srgb,var(--k) 13%,transparent)}
+  .f p{margin:0;font-size:16.5px;line-height:1.8;color:var(--ink2);white-space:pre-wrap;overflow-wrap:anywhere;max-width:72ch}
+  .f[data-k="what"]{--k:var(--what)}.f[data-k="why"]{--k:var(--why)}.f[data-k="how"]{--k:var(--how)}
+  .f[data-k="terms"]{--k:var(--terms)}.f[data-k="think"]{--k:var(--think)}
+  .f[data-k="what"] p{font-weight:600;color:var(--ink)}
+  .tchips details{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:4px 12px;font-size:14px}
+  .tchips summary{color:var(--terms)}
+  .lock{padding:28px 12px;font-size:15.5px;line-height:1.8;border:1px dashed var(--line);border-radius:16px}
+
+  /* 글쓰기 창 */
+  .fld label{font-size:14.5px}
+  .fld textarea{font-size:16px;line-height:1.75;border-radius:12px}
+  .fld .ro{font-size:16px;line-height:1.8;border-radius:12px}
+  label[for="f-what"]{color:var(--what)}label[for="f-why"]{color:var(--why)}label[for="f-how"]{color:var(--how)}
+  label[for="t-in"]{color:var(--terms)}label[for="f-think"]{color:var(--think)}
+  .tcard{border-radius:14px;font-size:14.5px}
+
+  /* 용어장 카드 */
+  .gcard{border-radius:16px;padding:16px 16px 12px;font-size:15px;box-shadow:var(--shadow)}
+  .gcard h4{font-size:18px;color:var(--terms)}
+  .gcard .short{font-size:15.5px}
 </style>
 </head>
 <body>
@@ -372,12 +450,17 @@ function renderDay(){
   $("grid").querySelectorAll(".tile").forEach(b=>b.onclick=()=>openEd(b.dataset.name));
   renderPosts();
 }
+/* 글 카드: 동그라미 이름표 + '🔥 찰스'(2026-10-30 사용자 요청 — 운영자도 모두 '찰스'로) + 색 라벨 칸 */
+const AV_COLORS=["#f97316","#3b82f6","#10b981","#8b5cf6","#ec4899","#0ea5e9","#eab308"];
+function avatar(n){n=String(n||"?");let h=0;for(const ch of n)h=(h*31+ch.codePointAt(0))%9973;
+  return '<span class="av" aria-hidden="true" style="background:'+AV_COLORS[h%AV_COLORS.length]+'">'+esc([...n][0]||"?")+'</span>';}
+const LABEL={what:"WHAT",why:"WHY",how:"HOW",think:"생각 & 투자"};
 function postHtml(p,withPage){
-  return '<article class="post"><div class="who">'+esc(p.nick)+(p.admin?' <span class="badge op">운영자</span>':'')+
-    (S.me.admin&&p.cohort?' <span class="badge">'+esc(p.cohort)+'</span>':'')+
-    (withPage?' <a href="#" class="pg" data-page="'+esc(p.page)+'">'+esc(pageNo(p.page))+'면 사진 보기</a>':'')+'</div>'+
-    '<dl class="kv">'+FIELDS.map(f=>(f[0]==="think"&&p.terms&&p.terms.length?'<dt>용어</dt><dd>'+termsChips(p.terms)+'</dd>':'')+
-      '<dt>'+esc(f[1].replace(" & 투자에 적용할 점",""))+'</dt><dd>'+esc(p[f[0]])+'</dd>').join("")+'</dl></article>';
+  return '<article class="post"><header class="ph">'+avatar(p.nick)+'<div class="pn"><b>'+esc(p.nick)+'</b><span class="badge ch">🔥 찰스</span>'+
+    (S.me.admin&&p.cohort?'<span class="badge">'+esc(p.cohort)+'</span>':'')+'</div>'+
+    (withPage?'<a href="#" class="pg" data-page="'+esc(p.page)+'">📰 '+esc(pageNo(p.page))+'면</a>':'')+'</header>'+
+    '<div class="pf">'+FIELDS.map(f=>(f[0]==="think"&&p.terms&&p.terms.length?'<section class="f" data-k="terms"><span class="lb">📖 용어</span>'+termsChips(p.terms)+'</section>':'')+
+      '<section class="f" data-k="'+f[0]+'"><span class="lb">'+esc(LABEL[f[0]])+'</span><p>'+esc(p[f[0]])+'</p></section>').join("")+'</div></article>';
 }
 function renderPosts(){
   const d=S.day,o=d.others,el=$("posts");
