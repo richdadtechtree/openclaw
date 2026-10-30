@@ -67,15 +67,15 @@ PT 대시보드 설정 파일(보통 `/etc/nginx/sites-enabled/` 아래, `server
 **HTTPS(443) server { } 안**에 아래 두 블록을 추가합니다. 기존 `location /` 는 그대로 둡니다.
 
 ```nginx
-    # 신문 요약·경제 공부·로그인 화면 → stock 앱(8000)
-    location ~ ^/(economy|slack|dig|gate|privacy)(/|$) {
+    # 신문 요약·경제 공부·AI 소식·🔥 챌린지·로그인 화면 → stock 앱(8000)
+    location ~ ^/(economy|slack|dig|ai|challenge|gate|privacy)(/|$) {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_read_timeout 120s;      # PDF 처음 만들 때 몇 초 걸림
     }
-    location ~ ^/api/(dig|news)/ {
+    location ~ ^/api/(dig|news|ai|challenge)/ {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
