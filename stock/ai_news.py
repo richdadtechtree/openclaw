@@ -166,6 +166,64 @@ _EXTRACT_JS = """() => {
 }"""
 
 
+# 글 하나 화면에선 본 글·댓글이 thread_items 가 아닌 다른 자리에 들어 있을 수 있다(2026-10-30 서버 확인:
+# thread_items 묶음은 '이 사람의 다른 글'뿐) → 글 데이터가 든 script 를 종류 상관없이 모두 가져온다.
+_SCRIPTS_JS = """() => [...document.scripts].map(s => s.textContent || '').filter(t => t.includes('taken_at') && t.includes('username'))"""
+
+
+def walk_posts(o, out, path="", paths=None):
+    """아무 JSON 에서 글 객체(code + user.username + taken_at)를 모두 찾는다. paths 를 주면 {code: 처음 본 자리}."""
+    if isinstance(o, dict):
+        u = o.get("user")
+        if isinstance(o.get("code"), str) and isinstance(u, dict) and u.get("username") and ("taken_at" in o or "caption" in o):
+            out.setdefault(o["code"], o)
+            if paths is not None:
+                paths.setdefault(o["code"], path)
+        for k, v in o.items():
+            walk_posts(v, out, path + "." + str(k) if paths is not None else "", paths)
+    elif isinstance(o, list):
+        for i, v in enumerate(o):
+            walk_posts(v, out, path + "[%d]" % i if paths is not None else "", paths)
+    return out
+
+
+def _reply_to_user(po):
+    """그 글이 누구에게 단 답인지(Threads 가 적어 둔 값, 없으면 '')."""
+    info = (po or {}).get("text_post_app_info") or {}
+    for k in ("reply_to_author", "replied_to_author"):
+        v = info.get(k) or (po or {}).get(k)
+        if isinstance(v, dict) and v.get("username"):
+            return v["username"]
+    return ""
+
+
+def parse_flat(posts, root, exclude=(), user=THREADS_USER):
+    """thread_items 로 못 찾았을 때: 화면 곳곳의 글 객체(posts={code: 글})로 이어진 글·댓글에 단 답을 만든다.
+    exclude = 다른 글 묶음(이 사람의 다른 글)에 든 code. 본 글보다 앞선 글도 뺀다(다른 대화)."""
+    rp = posts.get(root)
+    if not rp or _uname(rp) != user:
+        return None
+    t0 = int(rp.get("taken_at") or 0)
+    rows = [po for c, po in posts.items() if c == root or (c not in exclude and int(po.get("taken_at") or 0) >= t0)]
+    rows.sort(key=lambda po: int(po.get("taken_at") or 0))
+    chain, replies, others = {}, {}, []
+    for po in rows:
+        if _uname(po) != user:
+            others.append(po)
+            continue
+        x, to = _info(po), _reply_to_user(po)
+        if po["code"] == root or not to or to == user:
+            chain[x["code"]] = x
+        else:
+            par = [o for o in others if _uname(o) == to and int(o.get("taken_at") or 0) <= x["at"]]
+            x["reply_to"] = to
+            x["reply_to_text"] = ((par[-1].get("caption") or {}).get("text") or "").strip()[:120] if par else ""
+            replies[x["code"]] = x
+    posts_ = sorted(chain.values(), key=lambda p: (p["code"] != root, p["at"]))
+    return {"posts": posts_, "replies": sorted(replies.values(), key=lambda p: p["at"]), "hidden": [],
+            "stats": {"threads_comments": _reply_count(rp), "others_comments": len(others), "groups": 0, "flat": True}}
+
+
 def _uname(po):
     return ((po or {}).get("user") or {}).get("username") or ""
 
@@ -325,6 +383,7 @@ def _open_collect(page, url, scrolls=0, info=None):
             if idle >= 3:                                # 세 번 연속 아무것도 안 늘면 끝
                 break
         groups = page.evaluate(_EXTRACT_JS)
+        scripts = page.evaluate(_SCRIPTS_JS) if info is not None else []
         if info is not None:
             info["scrolls"] = done
             info["url"] = page.url                       # 점검용: 다른 주소(로그인 화면 등)로 넘어갔는지
@@ -340,6 +399,10 @@ def _open_collect(page, url, scrolls=0, info=None):
     finally:
         page.remove_listener("response", on_resp)
     page_groups, data_resps = len(groups), 0
+    posts, paths = {}, {}
+    for i, t in enumerate(scripts):                      # 화면 script 속 글 객체(종류 상관없이)
+        for obj in _json_chunks(t):
+            walk_posts(obj, posts, "script%d" % i, paths if (info or {}).get("dump") else None)
     for r in resps:                                      # 내리면서 받은 댓글 데이터(graphql 등)
         try:
             if "json" not in (r.headers.get("content-type") or "") and "graphql" not in r.url:
@@ -347,11 +410,13 @@ def _open_collect(page, url, scrolls=0, info=None):
             n = len(groups)
             for obj in _json_chunks(r.text()):
                 walk_items(obj, groups)
+                if info is not None:
+                    walk_posts(obj, posts, "resp:" + r.url[:60], paths if info.get("dump") else None)
             data_resps += len(groups) > n
         except Exception:
             pass
     if info is not None:
-        info.update(page_groups=page_groups, data_resps=data_resps)
+        info.update(page_groups=page_groups, data_resps=data_resps, posts=posts, paths=paths, scripts=len(scripts))
     return groups
 
 
@@ -360,10 +425,26 @@ def why_not_found(groups, root, info, user=THREADS_USER):
     posts = [((it or {}).get("post") or {}) for g in groups or [] for it in g or []]
     codes = [po.get("code") for po in posts if po.get("code")]
     mine = [po for po in posts if _uname(po) == user]
-    return ("묶음 %d(화면 %s·받은 데이터 %s) · 글 %d(본인 %d) · 본 글 %s · 로그인 벽 %s · 주소 %s · 제목 %r" % (
+    flat = info.get("posts") or {}
+    return ("묶음 %d(화면 %s·받은 데이터 %s) · 글 %d(본인 %d) · 본 글 %s · 화면 곳곳의 글 %d개(본 글 %s) · 로그인 벽 %s · 주소 %s · 제목 %r" % (
         len(groups or []), info.get("page_groups", "?"), info.get("data_resps", "?"), len(codes), len(mine),
-        "있음(남의 글 뒤)" if root in codes else "없음", "있음" if info.get("login_wall") else "없음",
-        info.get("url", "?"), info.get("title", "")))
+        "있음(남의 글 뒤)" if root in codes else "없음", len(flat), "있음" if root in flat else "없음",
+        "있음" if info.get("login_wall") else "없음", info.get("url", "?"), info.get("title", "")))
+
+
+def _other_codes(groups, root):
+    """thread_items 묶음 중 본 글이 없는 묶음(= 이 사람의 다른 글)에 든 code."""
+    out = set()
+    for g in groups or []:
+        cs = [((it or {}).get("post") or {}).get("code") for it in g or []]
+        if root not in cs:
+            out.update(c for c in cs if c)
+    return out
+
+
+def thread_detail(groups, root, info):
+    """글 하나 화면 → 이어진 글·댓글에 단 답. thread_items 로 안 되면 화면 곳곳의 글 객체로."""
+    return parse_thread_page(groups, root) or parse_flat(info.get("posts") or {}, root, _other_codes(groups, root))
 
 
 def fetch_threads(deep=()):
@@ -390,7 +471,7 @@ def fetch_threads(deep=()):
                 try:
                     info = {}
                     g = _open_collect(page, "%s/post/%s" % (THREADS_URL, code), DEEP_SCROLLS, info)
-                    d = parse_thread_page(g, code)
+                    d = thread_detail(g, code, info)
                     if not d:
                         print("[ai_news] 글 화면 %s: 본 글을 못 찾음 — %s" % (code, why_not_found(g, code, info)))
                         continue
@@ -540,12 +621,20 @@ if __name__ == "__main__":                              # 서버에서 손으로
             info = {"dump": dump}
             g = _open_collect(b.new_page(locale="ko-KR", user_agent=UA), "%s/post/%s" % (THREADS_URL, code), DEEP_SCROLLS, info)
             b.close()
-        d = parse_thread_page(g, code)
+        d = thread_detail(g, code, info)
         print("글", code, "→", ("이어진 글 %d · 댓글에 단 답 %d · 숨은 댓글 %d · %s" % (len(d["posts"]), len(d["replies"]), len(d["hidden"]), d["stats"]))
               if d else "본 글을 못 찾음")
         print("점검:", why_not_found(g, code, info), "· 내린 횟수", info.get("scrolls"))
         for i, grp in enumerate(g[:12]):                 # 묶음마다 누가 쓴 글인지
             print("  묶음%d:" % i, " → ".join("%s(%s)" % (_uname((it or {}).get("post")), ((it or {}).get("post") or {}).get("code")) for it in grp or []))
+        fl, pa = info.get("posts") or {}, info.get("paths") or {}
+        print("화면 곳곳의 글 %d개 (글 데이터가 든 script %s개):" % (len(fl), info.get("scripts")))
+        for c, po in sorted(fl.items(), key=lambda kv: int(kv[1].get("taken_at") or 0))[:40]:
+            print("  %s %-24s %s 답상대=%s 답글수=%s 자리=%s  %s" % (
+                "★" if c == code else " ", _uname(po), c, _reply_to_user(po) or "-", _reply_count(po),
+                pa.get(c, "")[:90], ((po.get("caption") or {}).get("text") or "").replace("\n", " ")[:30]))
+        if code in fl:
+            print("본 글 text_post_app_info 칸:", sorted(((fl[code].get("text_post_app_info") or {}).keys())))
         print("화면 저장:", dump + ".html", dump + ".png")
         sys.exit(0)
     refresh(s)
