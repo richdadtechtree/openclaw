@@ -96,6 +96,17 @@ const TEXT = { what: '반도체 수출이 석 달 연속 늘었다는 기사', w
         await sleep(200);
         check((await st()).marks === 1, '창을 닫았다 다시 열어도 그 장의 줄은 남음(새로고침 전까지)');
         await pg.click('#pv-pen');           // 원래대로(손바닥)
+        // 팝업 크기: 화면 거의 전체 + 사진 칸이 넓게, '⤢ 사진만 크게'
+        const sz = await pg.evaluate(() => ({ box: document.querySelector('.ed-box').getBoundingClientRect().width, img: document.querySelector('#pv-stage').getBoundingClientRect().width, vw: innerWidth }));
+        check(sz.box >= sz.vw - 30 && sz.img >= sz.vw * 0.55, '팝업이 화면 거의 전체 · 사진 칸이 55% 이상 (' + Math.round(sz.img) + '/' + sz.vw + 'px)');
+        await pg.click('#ed-wide');
+        await sleep(300);
+        const wide = await pg.evaluate(() => ({ form: getComputedStyle(document.querySelector('#ed-form')).display, img: document.querySelector('#pv-stage').getBoundingClientRect().width, vw: innerWidth }));
+        check(wide.form === 'none' && wide.img >= wide.vw - 40, '⤢ 사진만 크게 → 글 칸 접히고 사진이 화면 가득');
+        check((await st()).marks === 1, '사진만 크게 해도 그은 줄은 그대로');
+        await pg.click('#ed-wide');
+        await sleep(200);
+        check(await pg.$eval('#ed-form', e => getComputedStyle(e).display !== 'none'), '✍️ 글 칸 펴기 → 다시 입력 칸');
       }
       await pg.fill('#f-what', '짧음');
       await pg.click('#ed-save');
