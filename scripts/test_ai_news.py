@@ -175,6 +175,29 @@ def main():
         check("⑩ 댓글 화면에서 본인 답 전부(누구에게 단 답인지 포함)",
               sorted((r["code"], r["reply_to"]) for r in rs) == [("R1", "kim"), ("R10", "choi"), ("R9", "kim")], rs)
 
+    # ⑪ 진짜 브라우저로 _open_collect 한 번 돌리기(2026-10-30 서버 오류 '_pw_impl_instance_' — 가짜 page 검사로는 못 잡았음)
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        sync_playwright = None
+        print("  (⑪ 건너뜀: playwright 없음)")
+    if sync_playwright:
+        import glob
+        import pathlib
+        tmp = pathlib.Path(tempfile.mkdtemp()) / "t.html"
+        data = {"thread_items": [{"post": {"code": "Q1", "taken_at": 100, "user": {"username": "choi.openai"}, "caption": {"text": "브라우저 시험 글"}}}]}
+        tmp.write_text('<script type="application/json">%s</script><button>답글 2개 보기</button>' % json.dumps(data), encoding="utf-8")
+        exe = os.environ.get("PW_CHROME") or ai.CHROMIUM_PATH or (glob.glob("/opt/pw-browsers/chromium-*/chrome-linux*/chrome") or [None])[0]
+        try:
+            with sync_playwright() as p:
+                b = p.chromium.launch(**({"executable_path": exe} if exe else {}))
+                info = {}
+                groups = ai._open_collect(b.new_page(), tmp.as_uri(), 2, info)
+                b.close()
+            check("⑪ 진짜 브라우저에서 _open_collect 오류 없음·글 읽음", any(it.get("post", {}).get("code") == "Q1" for g in groups for it in g) and info.get("scrolls", 0) >= 1, (groups, info))
+        except Exception as e:
+            check("⑪ 진짜 브라우저에서 _open_collect 오류 없음", False, repr(e))
+
     print("모두 통과" if ok_all else "실패 있음")
     return 0 if ok_all else 1
 

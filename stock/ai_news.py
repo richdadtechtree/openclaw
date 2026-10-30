@@ -306,7 +306,10 @@ def _open_collect(page, url, scrolls=0, info=None):
     """화면을 열고(필요하면 아래로 내리며 접힌 답글도 펼치며) 화면 JSON + 받은 데이터 속 thread_items 를 모두 모은다.
     더 내려도 새 데이터가 안 오면 일찍 멈춘다. info(dict)에 로그인 벽·내린 횟수를 적는다."""
     resps = []
-    page.on("response", resps.append)
+
+    def on_resp(r):                                      # ⚠️ list.append 를 바로 넘기면 Playwright 가 오류(내장 함수엔 표시를 못 붙임)
+        resps.append(r)
+    page.on("response", on_resp)
     try:
         page.goto(url, wait_until="networkidle", timeout=60000)
         idle, done = 0, 0
@@ -329,7 +332,7 @@ def _open_collect(page, url, scrolls=0, info=None):
             except Exception:
                 pass
     finally:
-        page.remove_listener("response", resps.append)
+        page.remove_listener("response", on_resp)
     for r in resps:                                      # 내리면서 받은 댓글 데이터(graphql 등)
         try:
             if "json" not in (r.headers.get("content-type") or "") and "graphql" not in r.url:
