@@ -186,8 +186,8 @@ c.get("/gate/google/start?next=/dig")
 check("…시작 기록이 있으면 원래 가려던 곳으로", c.get("/gate/google/callback?code=x&state=WRONG").headers.get("location") == "/dig")
 fake_identity()
 check("이미 동의한 사람이 로그인하면 바로 입장",client(app).get("/gate/login").status_code == 200 and login(client(app)).headers["location"] == "/economy")
-check("DB 에 이메일·전화·실명 같은 열이 없음(최소 수집, 닉네임·화면 모드 열만 추가)",
-      {r["name"] for r in gate._db().execute("PRAGMA table_info(users)")} == {"id", "provider", "provider_uid", "nickname", "status", "consent_version", "consent_at", "created_at", "last_login_at", "is_admin", "expires_at", "nick_set", "nick_key", "theme"})
+check("DB 에 이메일·전화·실명 같은 열이 없음(최소 수집, 닉네임·화면 모드·챌린지 역할 열만 추가)",
+      {r["name"] for r in gate._db().execute("PRAGMA table_info(users)")} == {"id", "provider", "provider_uid", "nickname", "status", "consent_version", "consent_at", "created_at", "last_login_at", "is_admin", "expires_at", "nick_set", "nick_key", "theme", "role", "cohort_id", "celebrated_at"})
 
 print("[누가 로그인했는지 화면에 표시]")
 cg = client(make_app()); login(cg, provider="google", uid="w-1", nick="누리"); cg.post("/gate/consent", content=agree_for(cg), headers=FORM)
@@ -275,7 +275,7 @@ cn = client(make_app()); login(cn, uid="n-1", nick="처음닉")
 un = gate.get_user(gate._unsign(cn.cookies.get("gate_sess"))["uid"])
 check("로그인만 한 상태에서는 이름(닉네임)이 비어 있음 — 구글·카카오 이름을 저장하지 않음", un["nickname"] is None and un["nick_set"] == 0)
 cp = cn.get("/gate/consent?next=/economy").text
-check("가입 화면에 닉네임 입력 칸·안내(실명·전화번호·이메일 금지)가 있음", 'name="nickname"' in cp and "실명" in cp and "운영자에게만" in cp)
+check("가입 화면에 닉네임 입력 칸·안내(실명·전화번호·이메일 금지)가 있음", 'name="nickname"' in cp and "실명" in cp and "운영자에게 보여요" in cp and "같은 기수" in cp)
 check("가입 화면의 수집 항목에 구글·카카오 이름은 받지 않는다고 안내", "이름·이메일은 받지 않아요" in cp)
 check("닉네임 없이 동의만 하면 거부(400)하고 입장 불가", cn.post("/gate/consent", content=AGREE + "&nickname=", headers=FORM).status_code == 400 and cn.get("/economy/data").status_code == 403)
 bad = {"한 글자": "가", "너무 김": "가" * 21, "특수문자": "나<b>x", "이메일 모양": "me@mail.com", "전화번호 모양": "010 1234 5678", "숫자만 길게": "20260101abc12345678", "기호만": "..__--", "예약어": "관리자", "예약어(영문 대소문자)": "ADMIN", "예약어(공백 끼움)": "운 영 자"}
@@ -398,7 +398,7 @@ os.environ["GATE_AUTO_DAYS"] = "0"
 _, bid = mk_user("google", "auto-2", "무기한사용자")
 check("체험 기간을 안 쓰면(기본) 무기한", gate.get_user(bid)["expires_at"] is None)
 check("처리방침에 '이용 기한'이 운영자가 부여하는 정보로 명시", "이용 기한" in client(app_adm).get("/privacy").text and "운영자가 부여하는 정보" in client(app_adm).get("/privacy").text)
-check("처리방침 버전이 올라가 예전 동의자는 다시 동의해야 함", gate.POLICY_VERSION == "2026-10-23.5")
+check("처리방침 버전이 올라가 예전 동의자는 다시 동의해야 함", gate.POLICY_VERSION == "2026-10-30.1")
 
 print("[예전 DB 이어 쓰기(서버에 이미 있는 가입자 보호)]")
 import sqlite3 as _sq  # noqa: E402

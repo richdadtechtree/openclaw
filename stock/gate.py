@@ -45,8 +45,8 @@ from datetime import datetime, timedelta, timezone
 KST = timezone(timedelta(hours=9))
 
 # 처리방침·동의 문구를 고치면 이 날짜를 바꾼다 → 모든 사용자가 새 문구에 다시 동의해야 입장한다.
-POLICY_VERSION = "2026-10-23.5"      # 동의 기록에 남는 버전(문구를 고칠 때마다 올린다)
-POLICY_EFFECTIVE = "2026-10-23"        # 처리방침에 보이는 시행일
+POLICY_VERSION = "2026-10-30.1"      # 동의 기록에 남는 버전(문구를 고칠 때마다 올린다) — .1=찰스 챌린지(기수·작성 글·같은 기수 공개) 추가
+POLICY_EFFECTIVE = "2026-10-30"        # 처리방침에 보이는 시행일
 
 COOKIE_SESSION = "gate_sess"          # ⚠️ PT 대시보드(Flask)의 'session' 쿠키와 같은 도메인에서 겹치지 않게 이름을 다르게
 COOKIE_STATE = "gate_state"
@@ -171,7 +171,7 @@ def _unsign(token):
         return None
 
 
-_NEXT_OK = re.compile(r"^/(economy|slack|dig|ai)(/[A-Za-z0-9_\-./]*)?(\?[A-Za-z0-9_\-=&%.]*)?$")
+_NEXT_OK = re.compile(r"^/(economy|slack|dig|ai|challenge)(/[A-Za-z0-9_\-./]*)?(\?[A-Za-z0-9_\-=&%.]*)?$")
 
 
 def safe_next(target, default="/economy"):
@@ -192,6 +192,21 @@ CREATE TABLE IF NOT EXISTS users(
 CREATE TABLE IF NOT EXISTS consents(
   id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
   version TEXT NOT NULL, items TEXT NOT NULL, agreed_at TEXT NOT NULL);
+-- 찰스 챌린지(2026-10-30, 상세: challenge.py · docs/challenge-plan.md)
+CREATE TABLE IF NOT EXISTS cohorts(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL,
+  start_date TEXT NOT NULL, end_date TEXT NOT NULL, memo TEXT, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS challenge_posts(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, cohort_id INTEGER,
+  day TEXT NOT NULL, page TEXT NOT NULL,
+  what TEXT NOT NULL, why TEXT NOT NULL, how TEXT NOT NULL, think TEXT NOT NULL,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  UNIQUE(user_id, day, page));
+CREATE INDEX IF NOT EXISTS ix_cp_day ON challenge_posts(day, cohort_id);
+CREATE TABLE IF NOT EXISTS challenge_excused(
+  user_id INTEGER NOT NULL, day TEXT NOT NULL, by_admin INTEGER, at TEXT NOT NULL, PRIMARY KEY(user_id, day));
+CREATE TABLE IF NOT EXISTS challenge_days(
+  day TEXT PRIMARY KEY, pages INTEGER NOT NULL, seen_at TEXT NOT NULL);
 """
 
 
@@ -207,7 +222,8 @@ def _db():
     con.executescript(_SCHEMA)
     have = {r["name"] for r in con.execute("PRAGMA table_info(users)")}
     for col, ddl in (("is_admin", "INTEGER NOT NULL DEFAULT 0"), ("expires_at", "TEXT"),
-                     ("nick_set", "INTEGER NOT NULL DEFAULT 0"), ("nick_key", "TEXT"), ("theme", "TEXT")):       # 예전에 만든 DB 도 가입자 정보를 그대로 둔 채 이어서 쓴다
+                     ("nick_set", "INTEGER NOT NULL DEFAULT 0"), ("nick_key", "TEXT"), ("theme", "TEXT"),
+                     ("role", "TEXT"), ("cohort_id", "INTEGER"), ("celebrated_at", "TEXT")):       # 예전에 만든 DB 도 가입자 정보를 그대로 둔 채 이어서 쓴다
         if col not in have:
             con.execute("ALTER TABLE users ADD COLUMN %s %s" % (col, ddl))
     con.execute("CREATE UNIQUE INDEX IF NOT EXISTS ux_users_nick ON users(nick_key)")          # 같은 닉네임 중복 방지(NULL 은 여러 개 가능)
@@ -360,9 +376,11 @@ def set_nickname(uid, nickname):
 
 
 def delete_user(uid):
-    """탈퇴: 사용자 정보와 동의 기록을 모두 지운다(보관하지 않음)."""
+    """탈퇴: 사용자 정보와 동의 기록을 모두 지운다(보관하지 않음). 챌린지 글·인정 기록도 함께 지운다."""
     with _db() as con:
         con.execute("DELETE FROM consents WHERE user_id=?", (uid,))
+        con.execute("DELETE FROM challenge_posts WHERE user_id=?", (uid,))
+        con.execute("DELETE FROM challenge_excused WHERE user_id=?", (uid,))
         con.execute("DELETE FROM users WHERE id=?", (uid,))
 
 
@@ -402,6 +420,66 @@ def set_admin(uid, flag):
         if flag:        # 관리자는 항상 승인된 상태여야 한다(차단된 채 관리자로 남는 모순 방지)
             return con.execute("UPDATE users SET is_admin=1, status='approved', expires_at=NULL WHERE id=?", (uid,)).rowcount     # 관리자는 기한으로 잠기지 않음
         return con.execute("UPDATE users SET is_admin=0 WHERE id=?", (uid,)).rowcount
+
+
+# ───────────────────── 찰스 챌린지 역할 ─────────────────────
+# role: NULL=일반 · 'charles'=챌린지 참가 중(디그·챌린지 탭만) · 'graduate'=완수(모든 탭 + 챌린지 기록)
+def role_of(u):
+    try:
+        return u["role"] if u is not None and "role" in u.keys() else None
+    except Exception:
+        return None
+
+
+def is_charles(u):
+    return role_of(u) == "charles" and not (u and u["is_admin"])
+
+
+def can_challenge(u):
+    """챌린지 화면을 볼 수 있나: 찰스·완수자·관리자."""
+    return bool(u) and (is_admin(u) or role_of(u) in ("charles", "graduate"))
+
+
+def nav_links(u, ip_admin=False):
+    """맨 위 탭에 보일 (주소, 글자) 목록. 찰스는 디그·챌린지만."""
+    eco, dig, ai, ch = ("/economy", "📰 신문 요약"), ("/dig", "📚 경제 공부 (디그)"), ("/ai", "🤖 AI 소식"), ("/challenge", "🔥 챌린지")
+    if ip_admin or (u and is_admin(u)) or role_of(u) == "graduate":
+        return [eco, dig, ai, ch]
+    if is_charles(u):
+        return [dig, ch]
+    return [eco, dig, ai]
+
+
+def nav_html(request, current):
+    """탭 링크 HTML(지금 화면은 aria-current 로 강조). 잠금이 꺼져 있거나 로그인 정보가 없으면 기본 3개."""
+    u, ip = None, False
+    try:
+        if request is not None and cfg()["enabled"]:
+            if is_ip_host(request):
+                ip = ip_admin_ok(request)
+            else:
+                u = session_user(request)
+    except Exception:
+        u = None
+    return "".join('<a href="%s"%s>%s</a>' % (href, ' aria-current="page"' if href == "/" + current else "", label)
+                   for href, label in nav_links(u, ip))
+
+
+_NAV_RE = re.compile(r"<!--GATE_NAV:(\w+)-->.*?<!--/GATE_NAV-->", re.S)
+
+
+def fill_page(html_text, request=None):
+    """화면 HTML 의 자리표를 채운다: 탭(역할별)·맨 위 '이름 님'·맨 아래 링크·계정 화면 모드.
+    자리표 사이의 기본 탭은 이 함수가 못 돌 때(파일을 그대로 열 때) 보이는 예비용."""
+    try:
+        foot, who, thm = footer_html(request), who_html(request), theme_head(request)
+    except Exception:
+        foot = who = thm = ""
+    try:
+        html_text = _NAV_RE.sub(lambda m: nav_html(request, m.group(1)), html_text)
+    except Exception:
+        pass
+    return html_text.replace("<!--GATE_THEME-->", thm).replace("<!--GATE_FOOT-->", foot).replace("<!--GATE_WHO-->", who)
 
 
 # ───────────────────── 서버 IP 접속 (관리자 비밀번호) ─────────────────────
@@ -587,10 +665,10 @@ label.chk input{margin-top:5px;width:18px;height:18px;flex:none}
 .warn{color:var(--red);font-weight:700} a{color:var(--blue)} .foot{text-align:center;font-size:13px;color:var(--sub);margin-top:18px}
 ul{padding-left:20px;margin:0 0 12px} li{margin:3px 0}
 input.txt{width:100%;font:inherit;font-size:16px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);margin:4px 0 6px}
-main.wide{max-width:1000px}
+main.wide{max-width:1320px}   /* 2026-10-30 '🔥 찰스 · 기수' 칸이 늘어 넓힘 */
 .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch} .tablewrap table{min-width:640px;margin:0}
 .tablewrap th,.tablewrap td{width:auto;white-space:nowrap}
-.tablewrap td.act{white-space:normal;min-width:270px}.tablewrap td.act div{margin:1px 0}   /* 내 정보 화면용 첫 칸 30% 규칙을 관리 표에는 쓰지 않음 · 날짜가 여러 줄로 꺾이지 않게 */
+.tablewrap td.act{white-space:normal;min-width:230px}.tablewrap td.act div{margin:1px 0}   /* 내 정보 화면용 첫 칸 30% 규칙을 관리 표에는 쓰지 않음 · 날짜가 여러 줄로 꺾이지 않게 */
 .tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 14px}
 .tabs a{padding:6px 14px;border:1px solid var(--line);border-radius:999px;text-decoration:none;font-size:14px;color:var(--sub)}
 .tabs a.on{background:var(--blue);border-color:var(--blue);color:#fff}
@@ -639,11 +717,14 @@ def privacy_html():
 
 <h2>1. 처리하는 개인정보 항목과 목적</h2>
 <table>
-<tr><th>항목</th><td>소셜 로그인(구글 또는 카카오)이 알려 주는 <b>고유 식별번호</b>, 가입할 때 이용자가 직접 정한 <b>닉네임</b>, 가입 시각·최근 접속 시각, 동의 이력, <b>화면 모드 설정</b>(화이트/다크/자동 — 선택한 경우에만)</td></tr>
-<tr><th>목적</th><td>이용자 확인(본인 계정 식별), 서비스 이용 권한·기한 관리(승인 여부와 이용 기한 확인), 부정 이용 방지</td></tr>
-<tr><th>운영자가 부여하는 정보</th><td><b>승인 상태</b>와 <b>이용 기한</b>(운영자가 정한 경우)은 이용자가 입력하는 것이 아니라 운영자가 계정에 기록하는 정보이며, 가입자 관리 화면에서 운영자만 볼 수 있습니다.</td></tr>
+<tr><th>항목</th><td>소셜 로그인(구글 또는 카카오)이 알려 주는 <b>고유 식별번호</b>, 가입할 때 이용자가 직접 정한 <b>닉네임</b>, 가입 시각·최근 접속 시각, 동의 이력, <b>화면 모드 설정</b>(화이트/다크/자동 — 선택한 경우에만),
+<b>(챌린지 참가자만)</b> 이용자가 직접 작성한 <b>챌린지 글</b>(WHAT·WHY·HOW·생각 &amp; 투자에 적용할 점, 고른 신문 쪽)과 작성·수정 시각</td></tr>
+<tr><th>목적</th><td>이용자 확인(본인 계정 식별), 서비스 이용 권한·기한 관리(승인 여부와 이용 기한 확인), 부정 이용 방지,
+챌린지 운영(참여 기록·진행도 확인, 같은 기수 참가자 간 글 공유, 완수 시 이용 권한 부여)</td></tr>
+<tr><th>운영자가 부여하는 정보</th><td><b>승인 상태</b>와 <b>이용 기한</b>(운영자가 정한 경우), 챌린지 참가 여부·<b>기수</b>·챌린지 기간·빠진 날 인정 기록은 이용자가 입력하는 것이 아니라 운영자가 계정에 기록하는 정보이며, 가입자 관리 화면에서 운영자만 볼 수 있습니다.</td></tr>
 <tr><th>자동 생성 정보</th><td>웹서버 <b>접속 기록</b>(접속 IP 주소, 접속 시각, 요청한 주소)이 서비스 이용 중 자동으로 남습니다. 목적은 안정적 운영과 부정 이용 방지입니다.</td></tr>
-<tr><th>닉네임 공개 범위</th><td>닉네임은 본인 화면과 가입자 관리 화면(운영자 전용)에만 표시되며 다른 이용자에게는 공개되지 않습니다. 언제든 내 정보 화면에서 바꿀 수 있습니다.</td></tr>
+<tr><th>닉네임·글 공개 범위</th><td>닉네임은 본인 화면과 가입자 관리 화면(운영자 전용)에 표시됩니다. 언제든 내 정보 화면에서 바꿀 수 있습니다.
+<b>챌린지 참가자</b>의 닉네임과 작성한 챌린지 글은 <b>같은 기수 참가자와 운영자</b>에게 공개됩니다(그날은 자기 글을 저장한 참가자에게만 열리고, 지난 날의 글은 같은 기수 참가자가 읽을 수 있습니다). 그 밖의 이용자에게는 공개되지 않습니다.</td></tr>
 <tr><th>수집하지 않는 것</th><td>실명, 이메일, 전화번호, 주소, 생년월일, 성별, 프로필 사진, 비밀번호는 <b>수집하지 않습니다.</b> 구글·카카오에는 이름·이메일·프로필 정보를 요청하지 않으며 저장하지도 않습니다. 닉네임에는 실명·전화번호·이메일을 쓰지 않도록 안내하고, 전화번호나 이메일처럼 보이는 값은 입력할 수 없게 막습니다.</td></tr>
 </table>
 
@@ -684,12 +765,12 @@ def consent_html(nick_value, nxt, error="", checks=()):
 <input type="hidden" name="next" value="%(next)s">
 <h2>닉네임 (필수)</h2>
 <input class="txt" type="text" name="nickname" value="%(name)s" maxlength="20" required autocomplete="off" placeholder="예: 경제공부하는곰" aria-label="닉네임">
-<p class="sub">2~20자, 한글·영문·숫자·공백과 _ - . 만 쓸 수 있어요. 이 이름이 화면에 표시되고 운영자에게만 보여요(다른 이용자에게는 공개되지 않아요).
+<p class="sub">2~20자, 한글·영문·숫자·공백과 _ - . 만 쓸 수 있어요. 이 이름이 화면에 표시되고 운영자에게 보여요. 챌린지 참가자라면 같은 기수 참가자에게도 보여요(그 밖의 이용자에게는 공개되지 않아요).
 <b>실명·전화번호·이메일은 쓰지 마세요.</b> 나중에 내 정보 화면에서 바꿀 수 있어요.</p>
 <h2>개인정보 수집·이용 동의 (필수)</h2>
 <table>
-<tr><th>수집 항목</th><td>소셜 로그인 고유 식별번호, 위에서 직접 입력한 닉네임, 화면 모드 설정(선택 시) (구글·카카오의 이름·이메일은 받지 않아요)</td></tr>
-<tr><th>이용 목적</th><td>이용자 확인, 서비스 이용 권한·기한 관리, 부정 이용 방지</td></tr>
+<tr><th>수집 항목</th><td>소셜 로그인 고유 식별번호, 위에서 직접 입력한 닉네임, 화면 모드 설정(선택 시), (챌린지 참가자만) 직접 작성한 챌린지 글과 작성 시각 (구글·카카오의 이름·이메일은 받지 않아요)</td></tr>
+<tr><th>이용 목적</th><td>이용자 확인, 서비스 이용 권한·기한 관리, 부정 이용 방지, 챌린지 운영(진행도·같은 기수 글 공유)</td></tr>
 <tr><th>보유 기간</th><td>탈퇴 시까지 (탈퇴하면 즉시 삭제)</td></tr>
 <tr><th>동의 거부 권리</th><td>동의하지 않을 수 있으며, 이 경우 서비스를 이용할 수 없습니다.</td></tr>
 </table>
@@ -762,6 +843,23 @@ def who_html(request=None):
     return out + '<a class="logout" href="/gate/logout">로그아웃</a>'
 
 
+def _challenge_row(u):
+    """내 정보 표의 '챌린지' 줄(참가자·완수자만)."""
+    r = role_of(u)
+    if r not in ("charles", "graduate"):
+        return ""
+    name = ""
+    try:
+        with _db() as con:
+            c = con.execute("SELECT name FROM cohorts WHERE id=?", (u["cohort_id"],)).fetchone() if u["cohort_id"] else None
+            name = c["name"] if c else ""
+            n = con.execute("SELECT COUNT(*) FROM challenge_posts WHERE user_id=?", (u["id"],)).fetchone()[0]
+    except Exception:
+        n = 0
+    return "<tr><th>챌린지</th><td>%s%s · 작성한 글 %d개</td></tr>" % (
+        html.escape(name + " ") if name else "", "🎓 완수" if r == "graduate" else "참가 중", n)
+
+
 def footer_html(request=None):
     """/slack·/dig 맨 아래에 끼워 넣는 링크(처리방침은 항상 쉽게 찾을 수 있어야 한다). 잠금이 꺼져 있으면 빈 글."""
     if not cfg()["enabled"]:
@@ -775,8 +873,13 @@ def footer_html(request=None):
 # ───────────────────────── 라우터·중간 문지기 ─────────────────────────
 _ADMIN_MSG = {"approve": "승인했어요.", "block": "차단했어요.", "unblock": "차단을 풀고 승인했어요.", "term": "이용 기한을 바꿨어요.",
               "delete": "그 사람의 정보를 삭제했어요.", "admin": "관리자는 이 화면에서 바꿀 수 없어요.", "none": "그런 사용자가 없어요.",
-              "baddate": "날짜를 확인해 주세요(오늘 이후, 10년 이내).", "badterm": "변경할 기한을 먼저 골라 주세요.", "badstate": "승인된 사람만 기한을 바꿀 수 있어요."}
-_FILTERS = ("pending", "approved", "expired", "blocked")
+              "baddate": "날짜를 확인해 주세요(오늘 이후, 10년 이내).", "badterm": "변경할 기한을 먼저 골라 주세요.", "badstate": "승인된 사람만 기한을 바꿀 수 있어요.",
+              "cohort_add": "기수를 추가했어요.", "cohort_edit": "기수를 고쳤어요(그 기수 찰스들의 이용 기한도 종료일로 맞췄어요).",
+              "cohort_del": "기수를 삭제했어요.", "cohort_busy": "소속된 사람이 있는 기수는 삭제할 수 없어요.",
+              "cohort_bad": "기수 이름(1~20자)과 날짜(시작 ≤ 종료, 1년 이내)를 확인해 주세요.", "cohort_dup": "같은 이름의 기수가 이미 있어요.",
+              "charles_on": "찰스로 지정했어요(디그·챌린지 탭만 보이고, 이용 기한은 기수 종료일).", "charles_off": "찰스에서 해제했어요(일반 사용자 화면).",
+              "charles_nocohort": "찰스로 지정하려면 기수를 골라 주세요(기수가 없으면 위에서 먼저 추가).", "excuse": "그날을 인정했어요."}
+_FILTERS = ("pending", "approved", "expired", "blocked", "charles", "graduate")
 _TERM_OPTS = (("none", "무기한"), ("7", "7일"), ("30", "30일"), ("90", "90일"), ("365", "1년"), ("custom", "날짜 지정"))
 
 
@@ -809,11 +912,82 @@ def _term_form(uid, action, label, csrf, flt, placeholder=False):
             % (uid, action, csrf, html.escape(flt, quote=True), opts, label))
 
 
+def _hidden(csrf, flt, action, **kw):
+    out = ('<input type="hidden" name="action" value="%s"><input type="hidden" name="csrf" value="%s"><input type="hidden" name="f" value="%s">'
+           % (action, csrf, html.escape(flt, quote=True)))
+    return out + "".join('<input type="hidden" name="%s" value="%s">' % (k, html.escape(str(v), quote=True)) for k, v in kw.items())
+
+
+def cohorts_html(csrf, flt):
+    """관리 화면 '🔥 찰스 기수' 칸: 기수 추가·수정·삭제."""
+    try:
+        import challenge
+        cs = challenge.list_cohorts()
+        with _db() as con:
+            members = {r[0]: (r[1], r[2]) for r in con.execute(
+                "SELECT cohort_id, SUM(role='charles'), SUM(role='graduate') FROM users WHERE cohort_id IS NOT NULL GROUP BY cohort_id")}
+    except Exception as e:
+        return '<div class="note">챌린지 모듈을 불러오지 못했어요: %s</div>' % html.escape(repr(e))
+    rows = ""
+    for c in cs:
+        n_ch, n_gr = members.get(c["id"], (0, 0))
+        wd = len(challenge.weekdays(c["start_date"], c["end_date"]))
+        rows += ('<tr><td><form method="post" action="/gate/admin/act" class="inl">%s'
+                 '<input class="mini" name="name" value="%s" maxlength="20" style="width:70px">'
+                 '<input class="mini" type="date" name="start" value="%s"> ~ <input class="mini" type="date" name="end" value="%s">'
+                 '<button class="mini go" type="submit">수정</button></form></td><td>평일 %d일</td><td>참가 %d · 🎓 %d</td><td>%s</td></tr>'
+                 % (_hidden(csrf, flt, "cohort_edit", cid=c["id"]), html.escape(c["name"], quote=True), c["start_date"], c["end_date"], wd,
+                    n_ch or 0, n_gr or 0,
+                    ('<form method="post" action="/gate/admin/act" class="inl" onsubmit="return confirm(\'이 기수를 삭제할까요?\')">%s'
+                     '<button class="mini stop" type="submit">삭제</button></form>' % _hidden(csrf, flt, "cohort_del", cid=c["id"]))))
+    if not rows:
+        rows = '<tr><td colspan="4" class="sub">아직 기수가 없어요. 아래에서 추가하세요.</td></tr>'
+    add = ('<form method="post" action="/gate/admin/act" class="inl">%s<input class="mini" name="name" placeholder="예: 1기" maxlength="20" style="width:80px" required>'
+           '<input class="mini" type="date" name="start" required> ~ <input class="mini" type="date" name="end" required>'
+           '<button class="mini go" type="submit">기수 추가</button></form>' % _hidden(csrf, flt, "cohort_add"))
+    return ('<h2>🔥 찰스 기수 · 챌린지 기간</h2><div class="tablewrap"><table><tr><th>기수 · 기간</th><th>챌린지 날</th><th>사람</th><th></th></tr>%s</table></div>'
+            '<p>%s</p><p class="sub">챌린지 날 = 기간 안의 평일(신문이 안 올라온 날은 자동으로 빠져요). 기간을 바꾸면 그 기수 찰스들의 이용 기한도 종료일로 같이 바뀌어요.</p>'
+            % (rows, add))
+
+
+def _charles_cell(u, csrf, flt, cohorts):
+    """가입자 표의 '찰스' 칸: ☑ 찰스 + 기수 고르기 + 진행도(빠진 날 [인정])."""
+    if u["is_admin"]:
+        return '<span class="sub">관리자(🔥 챌린지 글쓰기 가능)</span>'
+    r = role_of(u)
+    opts = '<option value="">기수…</option>' + "".join('<option value="%d"%s>%s</option>' % (
+        c["id"], " selected" if c["id"] == u["cohort_id"] else "", html.escape(c["name"])) for c in cohorts)
+    form = ('<form method="post" action="/gate/admin/act" class="inl">%s<label class="mini"><input type="checkbox" name="on" value="1"%s> 찰스</label>'
+            '<select name="cohort" class="mini">%s</select><button class="mini go" type="submit">저장</button></form>'
+            % (_hidden(csrf, flt, "charles", uid=u["id"]), " checked" if r == "charles" else "", opts))
+    info = ""
+    if r in ("charles", "graduate"):
+        try:
+            import challenge
+            p = challenge.progress(u)
+        except Exception:
+            p = None
+        if r == "graduate":
+            info = '<div>🎓 %s 완수</div>' % html.escape(p["cohort"]["name"] if p else "")
+        elif p:
+            info = '<div>%s · %d/%d일%s</div>' % (html.escape(p["cohort"]["name"]), p["done"], p["total"], (" · ✗%d" % len(p["missed"])) if p["missed"] else "")
+            for day in p["missed"][:10]:
+                info += ('<form method="post" action="/gate/admin/act" class="inl">%s<button class="mini" type="submit" title="이 날을 한 것으로 인정">%s 인정</button></form>'
+                         % (_hidden(csrf, flt, "excuse", uid=u["id"], day=day), day[5:]))
+    return form + info
+
+
 def admin_html(me, rows, counts, flt, msg, d=""):
     c = cfg()
     csrf = _csrf(me["id"])
+    try:
+        import challenge
+        cohorts = challenge.list_cohorts()
+    except Exception:
+        cohorts = []
     tabs = ""
-    for key, label in (("", "전체"), ("pending", "승인 대기"), ("approved", "이용 가능"), ("expired", "기한 만료"), ("blocked", "차단")):
+    for key, label in (("", "전체"), ("pending", "승인 대기"), ("approved", "이용 가능"), ("expired", "기한 만료"), ("blocked", "차단"),
+                       ("charles", "🔥 찰스"), ("graduate", "🎓 완수")):
         n = len(rows) if key == "" else counts.get(key, 0)
         tabs += '<a href="/gate/admin%s" class="%s">%s %d</a>' % (("?f=" + key) if key else "", "on" if key == flt else "", label, n)
     trs = ""
@@ -843,11 +1017,11 @@ def admin_html(me, rows, counts, flt, msg, d=""):
         def _short(t):          # 2026-10-23T21:47:12 → 10-23 21:47 (표가 옆으로 길어지지 않게)
             return html.escape((t or "")[5:16].replace("T", " "))
         trs += ("<tr><td>%d</td><td><b>%s</b>%s<div class='sub'>%s</div></td><td><span class='%s'>%s</span></td><td>%s</td>"
-                "<td class='sub'>가입 %s<br>접속 %s</td><td>%s</td><td class='act'>%s</td></tr>"
+                "<td class='sub'>가입 %s<br>접속 %s</td><td>%s</td><td class='act'>%s</td><td class='act'>%s</td></tr>"
                 % (u["id"], html.escape(disp(u)), " 🛠" if u["is_admin"] else "", html.escape(prov), cls, label, html.escape(term_cell),
-                   _short(u["created_at"]), _short(u["last_login_at"]), consent, acts))
+                   _short(u["created_at"]), _short(u["last_login_at"]), consent, acts, _charles_cell(u, csrf, flt, cohorts)))
     if not trs:
-        trs = '<tr><td colspan="7" class="sub">해당하는 가입자가 없어요.</td></tr>'
+        trs = '<tr><td colspan="8" class="sub">해당하는 가입자가 없어요.</td></tr>'
     auto_days = _env("GATE_AUTO_DAYS", "0")
     note = ('지금은 <b>가입하면 바로 이용 가능</b>(auto)입니다%s. 승인제로 바꾸려면 서버 .env 의 <code>GATE_APPROVAL=manual</code> 후 재시작하세요.'
             % ((" · 새 가입자 체험 기간 %s일" % html.escape(auto_days)) if auto_days.isdigit() and int(auto_days) > 0 else "")
@@ -861,16 +1035,27 @@ def admin_html(me, rows, counts, flt, msg, d=""):
 <p class="sub">%s 님(관리자) · 이름과 로그인 방식·가입일 외의 개인정보는 저장하지 않아요.</p>%s
 <div class="note">%s</div>
 <div class="tabs">%s</div>
-<div class="tablewrap"><table><tr><th>번호</th><th>이름·방식</th><th>상태</th><th>이용 기한</th><th>가입·접속</th><th>동의</th><th>처리</th></tr>%s</table></div>
+<div class="tablewrap"><table><tr><th>번호</th><th>이름·방식</th><th>상태</th><th>이용 기한</th><th>가입·접속</th><th>동의</th><th>처리</th><th>🔥 찰스 · 기수</th></tr>%s</table></div>
 <p class="sub">기한은 그 날짜의 밤 12시까지 쓸 수 있어요(기한이 지나면 로그인해도 '이용 기간 종료'가 보이고, 관리자가 기한을 늘리면 바로 다시 쓸 수 있어요).
 차단하면 쿠키가 남아 있어도 바로 이용할 수 없고, 삭제하면 정보와 동의 기록이 모두 지워져요. 관리자 지정·해제는 서버에서 <code>gate.py admin/unadmin 번호</code> 로만 할 수 있어요.</p>
-<p><a class="btn primary" href="/economy">📰 신문 요약</a></p></div>
+%s
+<p><a class="btn primary" href="/economy">📰 신문 요약</a><a class="btn primary" href="/challenge">🔥 챌린지</a></p></div>
 <div class="foot"><a href="/gate/account">내 정보</a> · <a href="/gate/logout">로그아웃</a> · <a href="/privacy">개인정보 처리방침</a></div>""" % (
-        html.escape(disp(me)), flash, note, tabs, trs)
+        html.escape(disp(me)), flash, note, tabs, trs, cohorts_html(csrf, flt))
 
 
 def _is_gated(path):
-    return (path in ("/economy", "/slack", "/dig", "/ai") or path.startswith(("/economy/", "/slack/", "/dig/", "/api/dig/", "/api/news/", "/ai/", "/api/ai/")))
+    return (path in ("/economy", "/slack", "/dig", "/ai", "/challenge")
+            or path.startswith(("/economy/", "/slack/", "/dig/", "/api/dig/", "/api/news/", "/ai/", "/api/ai/", "/challenge/", "/api/challenge/")))
+
+
+def _is_challenge_path(path):
+    return path == "/challenge" or path.startswith(("/challenge/", "/api/challenge/"))
+
+
+def _charles_ok(path):
+    """찰스가 쓸 수 있는 곳: 디그 + 챌린지."""
+    return path == "/dig" or path.startswith(("/dig/", "/api/dig/")) or _is_challenge_path(path)
 
 
 def _is_api(path):
@@ -922,8 +1107,20 @@ def _check(request):
         return JSONResponse({"ok": False, "reason": "consent"}, status_code=403) if api else RedirectResponse("/gate/consent?next=" + nxt, 302)
     if user["status"] != "approved":
         return JSONResponse({"ok": False, "reason": "pending"}, status_code=403) if api else RedirectResponse("/gate/pending", 302)
+    if is_charles(user) and is_expired(user):
+        # 마지막 날 신문이 없어서(휴간) 완수 판정이 다음 날로 미뤄진 경우: 기한 화면 전에 한 번 더 판정해 본다
+        try:
+            import challenge
+            if challenge.maybe_graduate(user):
+                user = get_user(user["id"])
+        except Exception as e:
+            print("[gate] 챌린지 완수 판정 실패: %r" % (e,))
     if is_expired(user):
         return JSONResponse({"ok": False, "reason": "expired"}, status_code=403) if api else _page("이용 기간 종료", expired_html(user), 403)
+    if _is_challenge_path(path) and not can_challenge(user):
+        return JSONResponse({"ok": False, "reason": "not_charles"}, status_code=403) if api else RedirectResponse("/economy", 302)
+    if is_charles(user) and not _charles_ok(path):          # 찰스는 디그·챌린지만(주소를 직접 쳐도)
+        return JSONResponse({"ok": False, "reason": "charles"}, status_code=403) if api else RedirectResponse("/challenge", 302)
     return None
 
 
@@ -1145,12 +1342,12 @@ def install(app):
         prov = {"google": "구글", "kakao": "카카오"}.get(u["provider"], u["provider"])
         body = """<div class="card"><h1>내 정보</h1>
 %s<table><tr><th>회원 번호</th><td>%d</td></tr><tr><th>닉네임</th><td>%s</td></tr><tr><th>로그인 방식</th><td>%s</td></tr>
-<tr><th>가입 시각</th><td>%s</td></tr><tr><th>동의 시각</th><td>%s (처리방침 %s)</td></tr><tr><th>상태</th><td>%s</td></tr><tr><th>이용 기한</th><td>%s</td></tr><tr><th>화면 모드</th><td>%s</td></tr></table>
-<p class="sub">저장된 정보는 위가 전부예요(실명·이메일 등은 저장하지 않습니다).</p>
+<tr><th>가입 시각</th><td>%s</td></tr><tr><th>동의 시각</th><td>%s (처리방침 %s)</td></tr><tr><th>상태</th><td>%s</td></tr><tr><th>이용 기한</th><td>%s</td></tr><tr><th>화면 모드</th><td>%s</td></tr>%s</table>
+<p class="sub">저장된 정보는 위가 전부예요(실명·이메일 등은 저장하지 않습니다). 챌린지 글은 🔥 챌린지 화면에서 볼 수 있어요.</p>
 <h2>닉네임 바꾸기</h2>
 <form method="post" action="/gate/nickname"><input class="txt" type="text" name="nickname" value="%s" maxlength="20" required autocomplete="off" aria-label="새 닉네임">
 <button class="btn primary" type="submit">닉네임 변경</button></form>
-<p><a class="btn primary" href="/economy">📰 신문 요약</a><a class="btn primary" href="/dig">📚 경제 공부 (디그)</a><a class="btn primary" href="/ai">🤖 AI 소식</a></p>
+<p>%s</p>
 <h2>탈퇴 (정보 삭제)</h2><p class="sub">누르면 저장된 모든 정보와 동의 기록이 즉시 삭제되며 되돌릴 수 없어요.</p>
 <form method="post" action="/gate/delete"><label class="chk"><input type="checkbox" name="confirm" value="1"><span>내 정보를 삭제하고 탈퇴합니다.</span></label>
 <button class="btn danger" type="submit">탈퇴하고 정보 삭제</button></form></div>
@@ -1160,6 +1357,8 @@ def install(app):
             html.escape({"approved": "이용 가능", "pending": "승인 대기", "blocked": "이용 제한"}.get(u["status"], u["status"])),
             html.escape("무기한(관리자)" if is_admin(u) else expiry_text(u)),
             html.escape({"light": "화이트", "dark": "다크", "auto": "자동(기기 설정)"}.get(u["theme"], "고르지 않음")),
+            _challenge_row(u),
+            "".join('<a class="btn primary" href="%s">%s</a>' % (h, t) for h, t in nav_links(u)),
             html.escape(u["nickname"] or "", quote=True))
         return _page("내 정보", body)
 
@@ -1228,7 +1427,9 @@ def install(app):
         counts = {}
         for u in allrows:
             counts[user_cat(u)] = counts.get(user_cat(u), 0) + 1
-        rows = [u for u in allrows if (not flt or user_cat(u) == flt)]
+            if role_of(u) in ("charles", "graduate"):
+                counts[role_of(u)] = counts.get(role_of(u), 0) + 1
+        rows = [u for u in allrows if (not flt or (role_of(u) == flt if flt in ("charles", "graduate") else user_cat(u) == flt))]
         dd = d if (d == "none" or valid_date(d)) else ""        # 화면에 되돌려 보여 주는 값은 날짜 모양일 때만(임의 글자 반사 방지)
         return _page("가입자 관리", admin_html(me, rows, counts, flt, m, dd), wide=True)
 
@@ -1243,6 +1444,20 @@ def install(app):
                          '<a class="btn primary" href="/gate/admin">관리 화면으로</a></div>', 400)
         flt = f.get("f") if f.get("f") in _FILTERS else ""
         action = f.get("action", "")
+        if action.startswith("cohort_"):                 # 기수 추가·수정·삭제(사람이 아니라 기수가 대상)
+            import challenge
+            cid = f.get("cid", "")
+            if action == "cohort_add":
+                res, _ = challenge.add_cohort(f.get("name", ""), f.get("start", ""), f.get("end", ""))
+                code = {"ok": "cohort_add", "dup": "cohort_dup"}.get(res, "cohort_bad")
+            elif action == "cohort_edit" and cid.isdigit():
+                res = challenge.edit_cohort(cid, f.get("name", ""), f.get("start", ""), f.get("end", ""))
+                code = {"ok": "cohort_edit", "dup": "cohort_dup"}.get(res, "cohort_bad")
+            elif action == "cohort_del" and cid.isdigit():
+                code = "cohort_del" if challenge.delete_cohort(cid) == "ok" else "cohort_busy"
+            else:
+                code = "none"
+            return RedirectResponse("/gate/admin?" + ("f=" + flt + "&" if flt else "") + "m=" + code, 303)
         t = get_user(f["uid"]) if f.get("uid", "").isdigit() else None
         exp_note = ""
         if not t:
@@ -1262,6 +1477,13 @@ def install(app):
                 else:
                     set_access(t["id"], "approved" if action != "term" else t["status"], exp)
                     code, exp_note = action, exp or "none"
+        elif action == "charles":
+            import challenge
+            res = challenge.set_charles(t["id"], bool(f.get("on")), f.get("cohort") if f.get("cohort", "").isdigit() else None)
+            code = {"on": "charles_on", "off": "charles_off"}.get(res, "charles_nocohort")
+        elif action == "excuse":
+            import challenge
+            code = "excuse" if challenge.excuse(t["id"], f.get("day", ""), me["id"]) else "none"
         elif action == "block":
             set_status(t["id"], "blocked")
             code = "block"
@@ -1280,6 +1502,11 @@ def install(app):
         return resp
 
     app.include_router(r)
+    try:                                                     # 🔥 찰스 챌린지 화면·주소(/challenge, /api/challenge/*)
+        import challenge
+        challenge.install(app)
+    except Exception as e:
+        print("[gate] ⚠️ 챌린지 모듈 로드 실패: %r" % (e,))
 
 
 # ───────────────────────── 운영 명령 ─────────────────────────

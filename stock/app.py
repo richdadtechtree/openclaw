@@ -34,25 +34,21 @@ except Exception as _gate_err:
     @app.middleware("http")
     async def _gate_failsafe(request, call_next):
         p = request.url.path
-        if p in ("/economy", "/slack", "/dig", "/ai") or p.startswith(("/economy/", "/slack/", "/dig/", "/api/dig/", "/api/news/", "/ai/", "/api/ai/")):
+        if p in ("/economy", "/slack", "/dig", "/ai", "/challenge") or p.startswith(("/economy/", "/slack/", "/dig/", "/api/dig/", "/api/news/", "/ai/", "/api/ai/", "/challenge/", "/api/challenge/")):
             from fastapi.responses import JSONResponse as _J
             return _J({"ok": False, "reason": "로그인 모듈 오류 — 운영자에게 알려 주세요"}, status_code=503)
         return await call_next(request)
 
 
 def _with_gate_footer(html_text, request=None):
-    """화면 아래 '개인정보 처리방침 · 내 정보·탈퇴 · 로그아웃' 링크 + 맨 위 '이름 님 · 구글/카카오'(잠금이 켜져 있을 때만)."""
-    try:
-        foot = _gate.footer_html(request) if _gate else ""
-        who = _gate.who_html(request) if _gate else ""
-    except Exception:
-        foot = who = ""
-    try:
-        thm = _gate.theme_head(request) if _gate else ""      # 계정에 저장된 화이트/다크(없으면 빈 글)
-    except Exception:
-        thm = ""
-    html_text = html_text.replace("<!--GATE_THEME-->", thm)
-    return html_text.replace("<!--GATE_FOOT-->", foot).replace("<!--GATE_WHO-->", who)
+    """화면 자리표 채우기: 맨 위 탭(역할별 — 찰스는 디그·챌린지만)·'이름 님 · 구글/카카오'·맨 아래 링크·계정 화면 모드.
+    (실제 일은 gate.fill_page. 로그인 모듈이 없으면 자리표만 지우고 기본 탭이 그대로 보인다)"""
+    if _gate:
+        try:
+            return _gate.fill_page(html_text, request)
+        except Exception:
+            pass
+    return html_text.replace("<!--GATE_THEME-->", "").replace("<!--GATE_FOOT-->", "").replace("<!--GATE_WHO-->", "")
 
 # Ensure templates and static directories exist
 os.makedirs("templates", exist_ok=True)
