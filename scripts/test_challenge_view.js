@@ -35,6 +35,9 @@ const TEXT = { what: '반도체 수출이 석 달 연속 늘었다는 기사', w
       return ctx;
     };
     const errors = [];
+    // 오늘 다른 찰스(A)가 먼저 쓴 글 하나 — B 화면의 '📰 N면'(사진만 보기) 검사용
+    await fetch(BASE + '/api/challenge/post', { method: 'POST', headers: { 'Content-Type': 'application/json', cookie: 'gate_sess=' + cookies.a },
+      body: JSON.stringify({ date: '2026-11-04', page: '05.jpg', what: '에이가 먼저 쓴 오늘 기사', why: '이유를 열 글자 넘게 적음', how: '전망을 열 글자 넘게 적음', think: '생각을 열 글자 넘게 적음' }) });
 
     for (const [label, w, h] of [['PC', 1280, 900], ['폰', 390, 844]]) {
       console.log(`[${label} ${w}px]`);
@@ -140,6 +143,19 @@ const TEXT = { what: '반도체 수출이 석 달 연속 늘었다는 기사', w
       check(await pg.$eval('.tile >> nth=2', t => t.classList.contains('has')), '내가 쓴 사진에 ✅ 표시');
       const unlocked = await pg.$eval('#posts', e => e.textContent);
       check(!unlocked.includes('내 글을 저장하면') && (unlocked.includes('찰스에이') || unlocked.includes('아직 다른 찰스')), '저장 뒤 같은 기수 글이 열림');
+      // 다른 찰스 글의 '📰 N면' = 사진만(글쓰기 칸 없음)
+      if (await pg.$('#posts .post a.pg')) {
+        await pg.click('#posts .post a.pg');
+        await pg.waitForSelector('#ed.open.photo');
+        await pg.waitForFunction(() => document.querySelector('#ed-photo').naturalWidth > 0);
+        check(await pg.$eval('#ed-form', e => getComputedStyle(e).display === 'none' && !e.querySelector('textarea')), '남의 글 📰 N면 → 사진만 보임(입력 칸 없음)');
+        check((await pg.textContent('#ed-title')).includes('사진'), '제목에 "사진" 표시');
+        await pg.click('#ed-close');
+        await pg.click('.tile >> nth=2');
+        await pg.waitForSelector('#ed.open:not(.photo)');
+        check(await pg.$$eval('#ed-form textarea', t => t.length) === 4, '사진 바둑판에서 누르면 다시 내 글쓰기 창');
+        await pg.click('#ed-close');
+      }
       const mineSaved = await pg.evaluate(async () => (await (await fetch('/api/challenge/day')).json()).mine['03.jpg'].terms);
       check(JSON.stringify(mineSaved) === JSON.stringify(['기준금리', 'PER']), '저장한 글에 용어 2개');
       // 📖 우리 기수 용어장

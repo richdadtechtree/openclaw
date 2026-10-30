@@ -125,7 +125,9 @@
     .pv-bar button{padding:3px 7px;min-width:28px}
   }
   .ed-form{flex:0 0 clamp(340px,34%,460px);overflow:auto;padding:14px 16px 20px;border-left:1px solid var(--line)}
-  .ed.wide .ed-form{display:none}          /* '⤢ 사진만 크게' — 글 칸을 잠깐 접고 사진을 화면 가득 */
+  .ed.wide .ed-form{display:none}
+  /* '📰 N면' (다른 찰스 글에서 누름) = 사진만 보기 — 글쓰기 칸 없음(2026-10-30 사용자 요청: 남의 글을 고치는 것처럼 보이지 않게) */
+  .ed.photo .ed-form,.ed.photo #ed-wide{display:none}          /* '⤢ 사진만 크게' — 글 칸을 잠깐 접고 사진을 화면 가득 */
   .fld{margin:0 0 12px}
   .fld label{display:flex;justify-content:space-between;font-weight:800;color:var(--blue);font-size:14px;margin-bottom:4px}
   .fld label small{color:var(--sub);font-weight:500}
@@ -458,7 +460,7 @@ const LABEL={what:"WHAT",why:"WHY",how:"HOW",think:"생각 & 투자"};
 function postHtml(p,withPage){
   return '<article class="post"><header class="ph">'+avatar(p.nick)+'<div class="pn"><b>'+esc(p.nick)+'</b><span class="badge ch">🔥 찰스</span>'+
     (S.me.admin&&p.cohort?'<span class="badge">'+esc(p.cohort)+'</span>':'')+'</div>'+
-    (withPage?'<a href="#" class="pg" data-page="'+esc(p.page)+'">📰 '+esc(pageNo(p.page))+'면</a>':'')+'</header>'+
+    (withPage?'<a href="#" class="pg" data-page="'+esc(p.page)+'" data-nick="'+esc(p.nick)+'" title="이 기사 사진 보기">📰 '+esc(pageNo(p.page))+'면</a>':'')+'</header>'+
     '<div class="pf">'+FIELDS.map(f=>(f[0]==="think"&&p.terms&&p.terms.length?'<section class="f" data-k="terms"><span class="lb">📖 용어</span>'+termsChips(p.terms)+'</section>':'')+
       '<section class="f" data-k="'+f[0]+'"><span class="lb">'+esc(LABEL[f[0]])+'</span><p>'+esc(p[f[0]])+'</p></section>').join("")+'</div></article>';
 }
@@ -469,7 +471,7 @@ function renderPosts(){
   else if(!o.posts.length)h+='<div class="lock">아직 다른 찰스의 글이 없어요.</div>';
   else h+=o.posts.map(p=>postHtml(p,true)).join("");
   el.innerHTML=h;
-  el.querySelectorAll("a.pg").forEach(a=>a.onclick=e=>{e.preventDefault();openEd(a.dataset.page);});
+  el.querySelectorAll("a.pg").forEach(a=>a.onclick=e=>{e.preventDefault();openPhoto(a.dataset.page,a.dataset.nick);});
 }
 
 /* ── 신문 사진 뷰어 ─────────────────────────
@@ -627,7 +629,16 @@ window.__PV=PV;                                   // 검사(test_challenge_view.
 
 /* ── 글쓰기 창 ─────────────────────────── */
 const dkey=(n)=>"ch.draft."+S.date+"."+n;
+function openPhoto(name,nick){                     // 사진만 보기(확대·줄 긋기는 됨, 글쓰기 칸 없음)
+  const im=(S.day.images||[]).find(x=>x.name===name)||{full:"/api/challenge/photo?date="+S.date+"&name="+encodeURIComponent(name)};
+  S.page=name;
+  $("ed-title").textContent=md(S.date)+" · "+pageNo(name)+"면 사진"+(nick?" ("+nick+" 님이 고른 기사)":"");
+  $("ed-form").innerHTML="";
+  $("ed").classList.add("open","photo");document.body.style.overflow="hidden";
+  PV.open(im.full,S.date+"/"+name);
+}
 function openEd(name){
+  $("ed").classList.remove("photo");
   const d=S.day,im=d.images.find(x=>x.name===name)||{full:"/api/challenge/photo?date="+S.date+"&name="+encodeURIComponent(name)};
   S.page=name;
   $("ed-title").textContent=md(S.date)+" · "+pageNo(name)+"면";
@@ -698,7 +709,7 @@ async function findTerms(){
   finally{if(b)b.textContent="🔍 뜻 찾기";renderTerms(S.page);}
 }
 function saveDraft(name){try{const o={terms:S.terms};FIELDS.forEach(f=>o[f[0]]=$("f-"+f[0]).value);localStorage.setItem(dkey(name),JSON.stringify(o));}catch(e){}}
-function closeEd(){$("ed").classList.remove("open");document.body.style.overflow="";PV.close();}
+function closeEd(){$("ed").classList.remove("open","photo");document.body.style.overflow="";PV.close();}
 async function save(name){
   if(!addTerms(name))return;                                  // 칸에 적어 두고 '추가'를 안 누른 용어도 함께
   const body={date:S.date,page:name,terms:S.terms};FIELDS.forEach(f=>body[f[0]]=$("f-"+f[0]).value);
