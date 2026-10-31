@@ -222,8 +222,30 @@ def parse_flat(posts, root, exclude=(), user=THREADS_USER):
             x["reply_to_text"] = ((par[-1].get("caption") or {}).get("text") or "").strip()[:120] if par else ""
             replies[x["code"]] = x
     posts_ = sorted(chain.values(), key=lambda p: (p["code"] != root, p["at"]))
-    return {"posts": posts_, "replies": sorted(replies.values(), key=lambda p: p["at"]), "hidden": [],
+    # 답이 숨어 있을 수 있는 남의 댓글: Threads 가 적은 답글 수 > 이 화면에 보인 본인 답 수(로그아웃 화면은 대댓글을 접어 둠)
+    hidden = []
+    for o in others:
+        seen = sum(1 for r in replies.values() if r["reply_to"] == _uname(o) and r["at"] >= int(o.get("taken_at") or 0))
+        if (_reply_count(o) or 0) > seen:
+            hidden.append({"code": o["code"], "user": _uname(o), "at": int(o.get("taken_at") or 0),
+                           "text": ((o.get("caption") or {}).get("text") or "").strip()[:120]})
+    return {"posts": posts_, "replies": sorted(replies.values(), key=lambda p: p["at"]), "hidden": hidden,
             "stats": {"threads_comments": _reply_count(rp), "others_comments": len(others), "groups": 0, "flat": True}}
+
+
+def comment_flat(posts, comment, user=THREADS_USER):
+    """남의 댓글 화면에서 thread_items 로 못 찾았을 때: 그 댓글 뒤에 본인이 남에게 단 답(본인에게 이어 쓴 글·앞선 글은 뺌)."""
+    t0 = int(comment.get("at") or 0)
+    out = []
+    for c, po in posts.items():
+        to = _reply_to_user(po)
+        if c == comment["code"] or _uname(po) != user or not to or to == user or int(po.get("taken_at") or 0) < t0:
+            continue
+        x = _info(po)
+        x["reply_to"] = to
+        x["reply_to_text"] = comment["text"] if to == comment["user"] else ""
+        out.append(x)
+    return out
 
 
 def _uname(po):
@@ -290,7 +312,8 @@ def parse_thread_page(groups, root, user=THREADS_USER):
         return None
     posts = sorted(chain.values(), key=lambda p: (p["code"] != root, p["at"]))
     # 답이 숨어 있을 수 있는 남의 댓글: Threads 가 적은 답글 수 > 이 화면에 보인 본인 답 수(답이 남의 것일 수도 있어 '후보')
-    hidden = [{"code": po["code"], "user": _uname(po), "text": ((po.get("caption") or {}).get("text") or "").strip()[:120]}
+    hidden = [{"code": po["code"], "user": _uname(po), "at": int(po.get("taken_at") or 0),
+               "text": ((po.get("caption") or {}).get("text") or "").strip()[:120]}
               for po, seen in comments.values() if (_reply_count(po) or 0) > seen]
     return {"posts": posts, "replies": sorted((r for c, r in replies.items() if c not in chain), key=lambda p: p["at"]),
             "hidden": hidden, "stats": {"threads_comments": root_count, "others_comments": len(comments), "groups": len(groups or [])}}
@@ -481,7 +504,9 @@ def fetch_threads(deep=()):
                     opened = 0
                     for cm in d["hidden"][:SUB_MAX]:          # 답이 숨어 있는 댓글은 그 댓글 화면을 따로 열어 본인 답을 찾는다
                         try:
-                            for r in parse_comment_page(_open_collect(page, "https://www.threads.com/@%s/post/%s" % (cm["user"], cm["code"]), 4), cm):
+                            ci = {}
+                            cg = _open_collect(page, "https://www.threads.com/@%s/post/%s" % (cm["user"], cm["code"]), 4, ci)
+                            for r in parse_comment_page(cg, cm) or comment_flat(ci.get("posts") or {}, cm):
                                 if r["code"] not in have and r["code"] not in {p["code"] for p in d["posts"]}:
                                     d["replies"].append(r)
                                     have.add(r["code"])
