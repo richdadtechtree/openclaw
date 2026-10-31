@@ -126,7 +126,9 @@ def main():
         d = ai.parse_thread_page(page_groups, "A")
         check("⑦ 이어진 글 전부(따로 떨어진 3/ 포함)·뿌리 글 먼저", [p["code"] for p in d["posts"]] == ["A", "A1", "A2", "A3"], d)
         check("⑦ 남의 댓글에 단 답 전부 + 누구에게", [(r["code"], r["reply_to"]) for r in d["replies"]] == [("R1", "kim"), ("R2", "lee")]
-              and d["replies"][0]["reply_to_text"] == "질문 있어요", d["replies"])
+              and all("reply_to_text" not in r for r in d["replies"]), d["replies"])
+        check("⑦ 남의 댓글 글은 어디에도 저장 안 함(2026-10-31 사용자 요청)", "질문 있어요" not in json.dumps(d, ensure_ascii=False)
+              and "또 질문" not in json.dumps(d, ensure_ascii=False), d)
         check("⑦ 남의 글은 안 들어감", all(p["code"] not in ("X", "Y", "Z", "Q") for p in d["posts"] + d["replies"]))
         check("⑦ 뿌리 글이 없으면(다른 화면) 쓰지 않음", ai.parse_thread_page(page_groups, "NOPE") is None)
         nested = {"data": {"x": [{"y": {"thread_items": [post("N", 1, "n")]}}], "z": {"thread_items": []}}}
@@ -196,7 +198,8 @@ def main():
         ai.walk_posts(g, pool)
     d = ai.thread_detail(related, "R0", {"posts": pool})
     check("⑬ thread_items 에 본 글이 없어도 화면 곳곳에서 이어진 글을 찾음", d and [x["code"] for x in d["posts"]] == ["R0", "R0b"], d)
-    check("⑬ 댓글에 단 답(누구에게·원 댓글)", d and [(r["code"], r["reply_to"], r["reply_to_text"]) for r in d["replies"]] == [("C1", "kim", "질문입니다"), ("C2", "lee", "의견")], d)
+    check("⑬ 댓글에 단 답(누구에게, 남의 댓글 글은 없음)", d and [(r["code"], r["reply_to"]) for r in d["replies"]] == [("C1", "kim"), ("C2", "lee")]
+          and "질문입니다" not in json.dumps(d, ensure_ascii=False), d)
     check("⑬ 다른 글(OLD1·OLD2)은 섞이지 않음·Threads 댓글 수", d and not {"OLD1", "OLD2"} & {x["code"] for x in d["posts"] + d["replies"]} and d["stats"]["threads_comments"] == 3, d)
     check("⑬ 본 글이 어디에도 없으면 None", ai.thread_detail(related, "NONE", {"posts": pool}) is None)
 
@@ -214,7 +217,15 @@ def main():
                    rp("S1", 101, "본 글 이어 쓰기(앞선 글)", to="choi.openai"), rp("C3", 115, "본인에게 이어 씀", to="choi.openai")], cpool)
     got = ai.comment_flat(cpool, d2["hidden"][0])
     check("⑭ 댓글 화면(화면 곳곳 방식)에서 본인이 남에게 단 답만",
-          sorted((r["code"], r["reply_to"], r["reply_to_text"]) for r in got) == [("C1", "park", "질문A"), ("C2", "lee", "")], got)
+          sorted((r["code"], r["reply_to"]) for r in got) == [("C1", "park"), ("C2", "lee")] and "질문A" not in json.dumps(got, ensure_ascii=False), got)
+
+    # ⑮ 예전 캐시에 남아 있던 남의 댓글 글도 읽을 때 지움 · 화면에도 표시 안 함
+    ai.CACHE_DIR = tempfile.mkdtemp(prefix="ai_news_t15_")      # 진짜 캐시는 건드리지 않음
+    with open(ai._path("threads"), "w", encoding="utf-8") as f:
+        json.dump({"items": [{"code": "OLD", "at": 1, "posts": [], "replies": [{"code": "r", "reply_to": "kim", "reply_to_text": "남의 댓글"}]}]}, f, ensure_ascii=False)
+    check("⑮ 예전 캐시의 남의 댓글 글 지움", "남의 댓글" not in json.dumps(ai._read("threads"), ensure_ascii=False))
+    view = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "stock", "ai_view.html"), encoding="utf-8").read()
+    check("⑮ 화면이 남의 댓글 글을 그리지 않음", "reply_to_text" not in view)
 
     # ⑪ 진짜 브라우저로 _open_collect 한 번 돌리기(2026-10-30 서버 오류 '_pw_impl_instance_' — 가짜 page 검사로는 못 잡았음)
     try:

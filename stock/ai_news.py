@@ -217,9 +217,7 @@ def parse_flat(posts, root, exclude=(), user=THREADS_USER):
         if po["code"] == root or not to or to == user:
             chain[x["code"]] = x
         else:
-            par = [o for o in others if _uname(o) == to and int(o.get("taken_at") or 0) <= x["at"]]
             x["reply_to"] = to
-            x["reply_to_text"] = ((par[-1].get("caption") or {}).get("text") or "").strip()[:120] if par else ""
             replies[x["code"]] = x
     posts_ = sorted(chain.values(), key=lambda p: (p["code"] != root, p["at"]))
     # 답이 숨어 있을 수 있는 남의 댓글: Threads 가 적은 답글 수 > 이 화면에 보인 본인 답 수(로그아웃 화면은 대댓글을 접어 둠)
@@ -227,8 +225,7 @@ def parse_flat(posts, root, exclude=(), user=THREADS_USER):
     for o in others:
         seen = sum(1 for r in replies.values() if r["reply_to"] == _uname(o) and r["at"] >= int(o.get("taken_at") or 0))
         if (_reply_count(o) or 0) > seen:
-            hidden.append({"code": o["code"], "user": _uname(o), "at": int(o.get("taken_at") or 0),
-                           "text": ((o.get("caption") or {}).get("text") or "").strip()[:120]})
+            hidden.append({"code": o["code"], "user": _uname(o), "at": int(o.get("taken_at") or 0)})
     return {"posts": posts_, "replies": sorted(replies.values(), key=lambda p: p["at"]), "hidden": hidden,
             "stats": {"threads_comments": _reply_count(rp), "others_comments": len(others), "groups": 0, "flat": True}}
 
@@ -243,7 +240,6 @@ def comment_flat(posts, comment, user=THREADS_USER):
             continue
         x = _info(po)
         x["reply_to"] = to
-        x["reply_to_text"] = comment["text"] if to == comment["user"] else ""
         out.append(x)
     return out
 
@@ -306,14 +302,12 @@ def parse_thread_page(groups, root, user=THREADS_USER):
                 chain[x["code"]] = x
             elif x["code"] not in chain:
                 x["reply_to"] = _uname(other)
-                x["reply_to_text"] = ((other.get("caption") or {}).get("text") or "").strip()[:120]
                 replies[x["code"]] = x
     if root not in chain:
         return None
     posts = sorted(chain.values(), key=lambda p: (p["code"] != root, p["at"]))
     # 답이 숨어 있을 수 있는 남의 댓글: Threads 가 적은 답글 수 > 이 화면에 보인 본인 답 수(답이 남의 것일 수도 있어 '후보')
-    hidden = [{"code": po["code"], "user": _uname(po), "at": int(po.get("taken_at") or 0),
-               "text": ((po.get("caption") or {}).get("text") or "").strip()[:120]}
+    hidden = [{"code": po["code"], "user": _uname(po), "at": int(po.get("taken_at") or 0)}
               for po, seen in comments.values() if (_reply_count(po) or 0) > seen]
     return {"posts": posts, "replies": sorted((r for c, r in replies.items() if c not in chain), key=lambda p: p["at"]),
             "hidden": hidden, "stats": {"threads_comments": root_count, "others_comments": len(comments), "groups": len(groups or [])}}
@@ -329,10 +323,10 @@ def parse_comment_page(groups, comment, user=THREADS_USER):
             if not po.get("code") or po["code"] == comment["code"]:
                 continue
             if _uname(po) != user:
-                prev = {"code": po["code"], "user": _uname(po), "text": ((po.get("caption") or {}).get("text") or "").strip()[:120]}
+                prev = {"code": po["code"], "user": _uname(po)}
                 continue
             x = _info(po)
-            x["reply_to"], x["reply_to_text"] = prev["user"], prev["text"]
+            x["reply_to"] = prev["user"]
             out[x["code"]] = x
     return list(out.values())
 
@@ -531,9 +525,13 @@ def _path(src):
 def _read(src):
     try:
         with open(_path(src), encoding="utf-8") as f:
-            return json.load(f)
+            d = json.load(f)
     except (OSError, ValueError):
         return {}
+    for x in d.get("items") or []:                        # 남의 댓글 글은 갖고 있지 않는다(2026-10-31 사용자 요청) — 예전 캐시도 지움
+        for r in x.get("replies") or []:
+            r.pop("reply_to_text", None)
+    return d
 
 
 def _key(src, x):
@@ -659,7 +657,7 @@ if __name__ == "__main__":                              # 서버에서 손으로
         for c, po in sorted(fl.items(), key=lambda kv: int(kv[1].get("taken_at") or 0))[:40]:
             print("  %s %-24s %s 답상대=%s 답글수=%s 자리=%s  %s" % (
                 "★" if c == code else " ", _uname(po), c, _reply_to_user(po) or "-", _reply_count(po),
-                pa.get(c, "")[:90], ((po.get("caption") or {}).get("text") or "").replace("\n", " ")[:30]))
+                pa.get(c, "")[:90], ((po.get("caption") or {}).get("text") or "").replace("\n", " ")[:30] if _uname(po) == THREADS_USER else "(남의 글 — 내용 안 봄)"))
         if code in fl:
             print("본 글 text_post_app_info 칸:", sorted(((fl[code].get("text_post_app_info") or {}).keys())))
         print("화면 저장:", dump + ".html", dump + ".png")

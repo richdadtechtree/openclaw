@@ -158,8 +158,7 @@ function threadCard(t){
   }
   if(reps.length){                                     // 💬 다른 사람 댓글에 CHOI님이 단 답 — 하나도 빠짐없이(접어 둠)
     const f=el('details','fold'); f.appendChild(el('summary',null,'💬 댓글에 단 답 '+reps.length+'개 펼치기'));
-    reps.forEach(r=>{ const b=el('div','reply'); const q=el('div','q'); q.appendChild(el('b',null,'@'+(r.reply_to||'?')));
-      if(r.reply_to_text) q.appendChild(document.createTextNode(' : '+r.reply_to_text)); b.appendChild(q);
+    reps.forEach(r=>{ const b=el('div','reply'); const q=el('div','q'); q.appendChild(el('b',null,'@'+(r.reply_to||'?'))); q.appendChild(document.createTextNode(' 님 댓글에 단 답')); b.appendChild(q);
       b.appendChild(el('div','a',r.text||'(글 없음)')); const tm=el('div','t'); tm.appendChild(link(when(r.at)+' · 원문 ↗', r.url)); b.appendChild(tm);
       f.appendChild(b); });
     c.appendChild(f);
