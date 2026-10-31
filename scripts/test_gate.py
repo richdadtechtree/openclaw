@@ -109,6 +109,10 @@ check("서명 쿠키가 맞으면 읽힌다", gate._unsign(tok)["uid"] == 7)
 check("한 글자라도 바꾸면 거부", gate._unsign(tok[:-1] + ("0" if tok[-1] != "0" else "1")) is None)
 check("만료된 쿠키는 거부", gate._unsign(gate._sign({"uid": 7}, -5)) is None)
 check("쓰레기 값은 거부(오류 없이)", gate._unsign("abc") is None and gate._unsign("") is None and gate._unsign("a.b") is None)
+check("📈 주가 대시보드(/market)도 잠기고 로그인 뒤 이동 주소로 허용",
+      gate._is_gated("/market") and gate.safe_next("/market") == "/market" and not gate._is_gated("/"))
+check("탭: 일반·관리자 목록에 📈 주가 대시보드 포함",
+      any(h == "/market" for h, _ in gate.nav_links(None)) and any(h == "/market" for h, _ in gate.nav_links(None, True)))
 check("이동 주소: 우리 화면만 허용", gate.safe_next("/dig?id=2026-10-23") == "/dig?id=2026-10-23" and gate.safe_next("/economy") == "/economy")
 check("이동 주소: 외부·가짜 주소 차단",
       all(gate.safe_next(x) == "/economy" for x in ("https://evil.com", "//evil.com", "/\\evil.com", "/gate/delete", "javascript:alert(1)", "/economy//evil", "")))

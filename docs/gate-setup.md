@@ -68,14 +68,14 @@ PT 대시보드 설정 파일(보통 `/etc/nginx/sites-enabled/` 아래, `server
 
 ```nginx
     # 신문 요약·경제 공부·AI 소식·🔥 챌린지·로그인 화면 → stock 앱(8000)
-    location ~ ^/(economy|slack|dig|ai|challenge|gate|privacy)(/|$) {
+    location ~ ^/(economy|slack|dig|ai|market|challenge|gate|privacy)(/|$) {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_read_timeout 120s;      # PDF 처음 만들 때 몇 초 걸림
     }
-    location ~ ^/api/(dig|news|ai|challenge)/ {
+    location ~ ^/api/(dig|news|ai|challenge|indices|charts|crypto|fx|alerts|summary)(/|$) {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;

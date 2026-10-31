@@ -34,7 +34,7 @@ except Exception as _gate_err:
     @app.middleware("http")
     async def _gate_failsafe(request, call_next):
         p = request.url.path
-        if p in ("/economy", "/slack", "/dig", "/ai", "/challenge") or p.startswith(("/economy/", "/slack/", "/dig/", "/api/dig/", "/api/news/", "/ai/", "/api/ai/", "/challenge/", "/api/challenge/")):
+        if p in ("/economy", "/slack", "/dig", "/ai", "/market", "/challenge") or p.startswith(("/economy/", "/slack/", "/dig/", "/api/dig/", "/api/news/", "/ai/", "/api/ai/", "/market/", "/challenge/", "/api/challenge/")):
             from fastapi.responses import JSONResponse as _J
             return _J({"ok": False, "reason": "로그인 모듈 오류 — 운영자에게 알려 주세요"}, status_code=503)
         return await call_next(request)
@@ -835,6 +835,20 @@ def get_dashboard():
         return FileResponse("templates/index.html")
     if os.path.exists("index.html"):
         return FileResponse("index.html")
+    return HTMLResponse("<h1>Dashboard template loading...</h1>")
+
+
+@app.get("/market", response_class=HTMLResponse)
+def market_view(request: Request):
+    """주가 대시보드(로그인 화면판, 2026-10-31) — '/' 와 같은 화면 + 맨 위 페이지 이동 탭.
+    '/' 는 슬랙 캡처가 쓰므로 그대로 두고, 탭은 이 주소에서만 자리표(<!--MARKET_NAV-->)에 끼워 넣는다."""
+    for p in ("templates/index.html", "index.html"):
+        if os.path.exists(p):
+            with open(p, encoding="utf-8") as f:
+                page = f.read()
+            nav = ('<nav class="sitenav" aria-label="페이지 이동"><!--GATE_NAV:market--><!--/GATE_NAV-->'
+                   '<!--GATE_WHO--></nav>')
+            return HTMLResponse(_with_gate_footer(page.replace("<!--MARKET_NAV-->", nav), request))
     return HTMLResponse("<h1>Dashboard template loading...</h1>")
 
 

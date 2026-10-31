@@ -171,7 +171,7 @@ def _unsign(token):
         return None
 
 
-_NEXT_OK = re.compile(r"^/(economy|slack|dig|ai|challenge)(/[A-Za-z0-9_\-./]*)?(\?[A-Za-z0-9_\-=&%.]*)?$")
+_NEXT_OK = re.compile(r"^/(economy|slack|dig|ai|market|challenge)(/[A-Za-z0-9_\-./]*)?(\?[A-Za-z0-9_\-=&%.]*)?$")
 
 
 def safe_next(target, default="/economy"):
@@ -468,11 +468,12 @@ def can_challenge(u):
 def nav_links(u, ip_admin=False):
     """맨 위 탭에 보일 (주소, 글자) 목록. 찰스는 디그·챌린지만."""
     eco, dig, ai, ch = ("/economy", "📰 신문 요약"), ("/dig", "📚 경제 공부 (디그)"), ("/ai", "🤖 AI 소식"), ("/challenge", "🔥 챌린지")
+    mkt = ("/market", "📈 주가 대시보드")
     if ip_admin or (u and is_admin(u)) or role_of(u) == "graduate":
-        return [eco, dig, ai, ch]
+        return [eco, dig, ai, mkt, ch]
     if is_charles(u):
         return [dig, ch]
-    return [eco, dig, ai]
+    return [eco, dig, ai, mkt]
 
 
 def nav_html(request, current):
@@ -1089,8 +1090,8 @@ def admin_html(me, rows, counts, flt, msg, d=""):
 
 
 def _is_gated(path):
-    return (path in ("/economy", "/slack", "/dig", "/ai", "/challenge")
-            or path.startswith(("/economy/", "/slack/", "/dig/", "/api/dig/", "/api/news/", "/ai/", "/api/ai/", "/challenge/", "/api/challenge/")))
+    return (path in ("/economy", "/slack", "/dig", "/ai", "/market", "/challenge")
+            or path.startswith(("/economy/", "/slack/", "/dig/", "/api/dig/", "/api/news/", "/ai/", "/api/ai/", "/market/", "/challenge/", "/api/challenge/")))
 
 
 def _is_challenge_path(path):

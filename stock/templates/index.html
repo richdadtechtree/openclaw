@@ -109,6 +109,15 @@
       transition: background-color 0.3s ease, color 0.3s ease;
     }
 
+    /* /market(로그인 화면)에서만 맨 위에 붙는 페이지 이동 탭 — '/' 와 슬랙 캡처에는 없음(자리표 <!--MARKET_NAV--> 가 비어 있음) */
+    .sitenav { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 0 14px; }
+    .sitenav a { display: inline-flex; align-items: center; padding: 7px 14px; border-radius: 999px; font-size: 14px; font-weight: 600;
+      color: var(--text-muted); text-decoration: none; background: var(--bg-surface); border: 1px solid var(--border-color); }
+    .sitenav a:hover { color: var(--text-main); }
+    .sitenav a[aria-current="page"] { background: var(--primary, #6366f1); color: #fff; border-color: var(--primary, #6366f1); cursor: default; }
+    .sitenav a.who { margin-left: auto; background: transparent; border-color: transparent; font-weight: 500; font-size: 13px; }
+    .sitenav a.logout, .sitenav a.adminlink { padding: 5px 12px; font-size: 13px; }
+
     /* Layout Construction */
     .container {
       max-width: 1280px;
@@ -691,6 +700,7 @@
 </head>
 <body>
   <div class="container">
+    <!--MARKET_NAV-->
 
     <!-- 슬랙 브리핑 캡처 범위: 헤더~지수 스냅샷 섹션까지만 (투자 타이밍·관심종목·푸터 제외).
          capture.py 가 이 id 하나를 통째로 element screenshot 해서, clip 좌표
