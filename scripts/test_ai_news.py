@@ -200,6 +200,22 @@ def main():
     check("⑬ 다른 글(OLD1·OLD2)은 섞이지 않음·Threads 댓글 수", d and not {"OLD1", "OLD2"} & {x["code"] for x in d["posts"] + d["replies"]} and d["stats"]["threads_comments"] == 3, d)
     check("⑬ 본 글이 어디에도 없으면 None", ai.thread_detail(related, "NONE", {"posts": pool}) is None)
 
+    # ⑭ 2026-10-31 서버: 화면 곳곳 방식에선 '답이 숨은 댓글'이 늘 0 → 대댓글을 찾으러 댓글 화면을 안 열었다
+    pool2 = {}
+    ai.walk_posts({"d": [rp("S0", 100, "본 글", n=13), rp("S1", 101, "2/", to="choi.openai"),
+                         rp("P1", 110, "질문A", user="park", n=1), rp("Q1", 120, "질문B", user="kwon", n=0),
+                         rp("J1", 130, "질문C", user="jung", n=2), rp("C9", 131, "C 답", to="jung")]}, pool2)
+    d2 = ai.thread_detail([], "S0", {"posts": pool2})
+    check("⑭ 답글 수 > 보인 본인 답인 남의 댓글만 '숨은 댓글'(시각 포함)",
+          [(h["code"], h["at"]) for h in d2["hidden"]] == [("P1", 110), ("J1", 130)], d2["hidden"])
+    cpool = {}
+    ai.walk_posts([rp("P1", 110, "질문A", user="park"), rp("C1", 112, "A 에 단 답", to="park"),
+                   rp("X2", 113, "남이 단 답", user="lee", to="park"), rp("C2", 114, "lee 에게 단 답", to="lee"),
+                   rp("S1", 101, "본 글 이어 쓰기(앞선 글)", to="choi.openai"), rp("C3", 115, "본인에게 이어 씀", to="choi.openai")], cpool)
+    got = ai.comment_flat(cpool, d2["hidden"][0])
+    check("⑭ 댓글 화면(화면 곳곳 방식)에서 본인이 남에게 단 답만",
+          sorted((r["code"], r["reply_to"], r["reply_to_text"]) for r in got) == [("C1", "park", "질문A"), ("C2", "lee", "")], got)
+
     # ⑪ 진짜 브라우저로 _open_collect 한 번 돌리기(2026-10-30 서버 오류 '_pw_impl_instance_' — 가짜 page 검사로는 못 잡았음)
     try:
         from playwright.sync_api import sync_playwright
