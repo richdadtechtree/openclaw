@@ -43,6 +43,15 @@ def fake_gpt(system, user):       # 진짜 GPT 대신(시험용): 용어 이름�
 
 challenge.gpt_chat = fake_gpt
 
+import mk_editorial  # noqa: E402  🗞 사설: 진짜 매경·한경 대신 정해진 글(시험용)
+mk_editorial.get_all = lambda date="": {"ok": True, "date": date, "stale": False, "items": [
+    {"press": "매일경제", "title": "시험 매경 사설 제목", "url": "https://www.mk.co.kr/news/editorial/1", "published": date + "T05:00:00+09:00",
+     "paras": ["첫째 문단입니다.", "둘째 문단입니다.", "셋째 문단은 접혀 있어야 합니다."]},
+    {"press": "한국경제", "title": "시험 한경 사설 제목", "url": "https://www.hankyung.com/article/2026110100001", "published": date + "T06:00:00+09:00",
+     "paras": [], "no_body": True}],
+    "sources": {"mk": {"ok": True, "press": "매일경제", "list": "https://www.mk.co.kr/opinion/editorial/"},
+                "hk": {"ok": True, "press": "한국경제", "list": "https://www.hankyung.com/opinion"}}}
+
 
 def paper(day, n=12):
     from PIL import Image, ImageDraw

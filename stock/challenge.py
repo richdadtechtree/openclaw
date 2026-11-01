@@ -909,6 +909,23 @@ def install(app):
             return deny()
         return JSONResponse(cohort_glossary(v, cohort if (v["admin"] and cohort.isdigit()) else None))
 
+    @app.get("/api/challenge/editorial")
+    def api_editorial(request: Request, date: str = ""):
+        """🗞 그날 매일경제·한국경제 사설(2026-11-01 사용자 요청: 챌린지 화면 아래에도). 신문 요약의 /api/news/editorial 과 같은 내용 —
+        찰스는 /api/news/* 를 못 쓰므로 챌린지 주소로 따로 연다."""
+        v = viewer(request)
+        if not v:
+            return deny()
+        day = date or today()
+        if not gate.valid_date(day) or not day_allowed(v, day):
+            return JSONResponse({"ok": False, "items": []}, status_code=400)
+        try:
+            import mk_editorial
+            return JSONResponse(mk_editorial.get_all(day))
+        except Exception as e:
+            print("[challenge] 사설 실패: %r" % (e,))
+            return JSONResponse({"ok": False, "items": [], "error": "사설을 가져오지 못했어요"})
+
     @app.get("/api/challenge/titles")
     def api_titles(request: Request, date: str = "", page: str = ""):
         """📰 그 면의 기사 제목 후보(신문 요약 → 지면 큰 글씨 순)."""
