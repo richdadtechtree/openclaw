@@ -325,9 +325,11 @@ check("용어장: 다음 날엔 지난 날 용어가 열림", len(cV.get("/api/c
 print("[🔥 챌린지 전용 입구: 가입하면 찰스 승인 대기]")
 anon = TestClient(APP, base_url="https://example.test", follow_redirects=False)
 check("로그인 안 하고 /challenge → 챌린지 전용 입구(/gate/charles)", anon.get("/challenge").headers["location"] == "/gate/charles")
-pg = anon.get("/gate/charles").text
+pg = anon.get("/gate/login?manual=1&next=/challenge").text
 check("입구 화면: 찰스 안내 + 로그인 단추가 /challenge 로", "🔥 찰스 챌린지" in pg and "찰스로 승인한 뒤" in pg and "/gate/google/start?next=/challenge" in pg)
-check("/gate/login?next=/challenge 도 같은 챌린지 화면", "🔥 찰스 챌린지" in anon.get("/gate/login?next=/challenge").text)
+check("/gate/charles·/gate/login?next=/challenge 는 자동 로그인 시도 후 같은 챌린지 화면",
+      anon.get("/gate/charles").headers.get("location", "").startswith("/gate/google/start?auto=1&next=/challenge")
+      and "🔥 찰스 챌린지" in anon.get("/gate/login?manual=1&next=/challenge").text)
 st = urllib.parse.parse_qs(urllib.parse.urlparse(anon.get("/gate/google/start?next=/challenge").headers["location"]).query)["state"][0]
 gate.identity_from_code = lambda provider, code: "NEWCH-1"
 r = anon.get("/gate/google/callback?code=x&state=" + st)
