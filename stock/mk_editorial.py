@@ -13,6 +13,12 @@
       cd ~/stock/stock && venv/bin/python mk_editorial.py --probe
 - 캐시: ~/stock/stock/.mk_editorial/<날짜>.json (그날 사설을 찾으면 다시 안 받음, 못 찾았으면 30분 뒤 재시도).
 - 개인용 화면. 외부 공개 사이트로 바꾸면 기사 본문 게시는 저작권 문제가 될 수 있다(원문 링크를 늘 함께 준다).
+- ⭐ 2026-11-01 한국경제 사설도(사용자 요청 "챌린지에서도 한경·매경 사설") — src="hk".
+  링크 찾기: ① 한경 오피니언 RSS(제목이 '[사설]' 인 것) ② 오피니언·사설 목록 페이지의 'hankyung.com/article/번호'.
+  사설인지: RSS 제목·글 제목에 '[사설]' 이 있거나 사설 목록 페이지에서 온 글만. 한경은 봇을 403 으로 막기도 해서
+  글을 못 열면 **RSS 의 제목·시각·링크만**(본문 없이) 보여 준다. ⚠️ 개발 환경에선 한경도 막혀 실제 HTML 미확인 →
+      cd ~/stock/stock && venv/bin/python mk_editorial.py --probe --hk
+  캐시: ~/stock/stock/.hk_editorial/<날짜>.json · 두 신문 합친 결과는 get_all(date).
 """
 import html
 import json
@@ -41,8 +47,22 @@ HEADERS = {
 }
 LINK_RE = re.compile(r'(?:https?:)?(?://(?:www\.|m\.)?mk\.co\.kr)?/news/editorial/(\d{5,})')
 
-_lock = threading.Lock()
-_last_try = {}               # 날짜 → 마지막으로 못 찾은 시각
+# ── 한국경제 (2026-11-01) ──
+HK_BASE = os.getenv("HK_BASE", "https://www.hankyung.com")
+HK_CACHE_DIR = os.path.expanduser(os.getenv("HK_EDITORIAL_DIR",
+                                  os.path.join(os.path.dirname(os.path.abspath(__file__)), ".hk_editorial")))
+HK_LIST_URLS = [HK_BASE + "/feed/opinion", HK_BASE + "/opinion/editorial", HK_BASE + "/opinion"]
+HK_LINK_RE = re.compile(r'(?:https?:)?(?://(?:www\.|plus\.|m\.)?hankyung\.com)?/article/(\d{10,}[a-z]?)')
+MARK_RE = re.compile(r'^\s*\[\s*사설\s*\]')
+
+SOURCES = {
+    "mk": {"press": "매일경제", "list": "https://www.mk.co.kr/opinion/editorial/"},
+    "hk": {"press": "한국경제", "list": "https://www.hankyung.com/opinion"},
+}
+
+_lock = threading.Lock()                     # 매경
+_hk_lock = threading.Lock()                  # 한경(두 신문을 동시에 받을 수 있게 따로)
+_last_try = {}               # 날짜(한경은 'hk:날짜') → 마지막으로 못 찾은 시각
 
 
 def _get(url):
@@ -77,6 +97,67 @@ def find_links(log=None):
         log.extend(errs)
     ids.sort(key=lambda s: int(s), reverse=True)     # 번호가 클수록 새 글
     return ids
+
+
+def _rss_items(page):
+    """RSS 글자 → [(번호, 제목, 시각)] — 한경 오피니언 피드용."""
+    out = []
+    for blk in re.findall(r'<item\b[\s\S]*?</item>', page, re.I):
+        def tag(n):
+            m = re.search(r'<%s[^>]*>([\s\S]*?)</%s>' % (n, n), blk, re.I)
+            v = (m.group(1) if m else "").strip()
+            v = re.sub(r'^<!\[CDATA\[([\s\S]*?)\]\]>$', r'\1', v).strip()
+            return html.unescape(v)
+        m = HK_LINK_RE.search(tag("link") or blk)
+        if not m:
+            continue
+        pub = ""
+        raw = tag("pubDate") or tag("dc:date")
+        if raw:
+            try:
+                from email.utils import parsedate_to_datetime
+                pub = parsedate_to_datetime(raw).astimezone(KST).isoformat()
+            except Exception:
+                t = _parse_time(raw)
+                pub = t.isoformat() if t else ""
+        out.append((m.group(1), tag("title"), pub))
+    return out
+
+
+def hk_find_links(log=None):
+    """한경 사설 후보 → (번호 목록 새 글 먼저, {번호: {"title","published","mark"}}).
+    mark=True = 사설이 확실(RSS 제목에 [사설] 또는 사설 목록 페이지에서 나옴)."""
+    ids, meta, errs = [], {}, []
+    for u in HK_LIST_URLS:
+        try:
+            page = _get(u)
+        except Exception as e:
+            errs.append("%s → %s" % (u, e))
+            continue
+        rss = _rss_items(page) if "<item" in page[:20000].lower() or "<rss" in page[:500].lower() else []
+        if rss:
+            got = [(i, t, p) for i, t, p in rss if MARK_RE.search(t)]
+            for i, t, p in got:
+                meta[i] = {"title": t, "published": p, "mark": True}
+                if i not in ids:
+                    ids.append(i)
+            if log is not None:
+                log.append("%s → RSS 글 %d개 중 사설 %d개" % (u, len(rss), len(got)))
+        else:
+            found = [m.group(1) for m in HK_LINK_RE.finditer(page)]
+            sure = "editorial" in u
+            for i in found:
+                meta.setdefault(i, {"title": "", "published": "", "mark": sure})
+                if i not in ids:
+                    ids.append(i)
+            if log is not None:
+                log.append("%s → 글 링크 %d개%s" % (u, len(set(found)), "(사설 목록)" if sure else "(제목으로 사설만 고름)"))
+        if sum(1 for i in ids if meta[i]["mark"]) >= 6:
+            break
+    if log is not None:
+        log.extend(errs)
+    ids.sort(key=lambda s: (meta[s]["mark"], re.sub(r'\D', '', s)), reverse=True)    # 사설 확실한 것·새 글 먼저
+    return ids, meta
 
 
 # ── 글 한 편 읽기 ──────────────────────────────────────────────────────────
@@ -124,7 +205,8 @@ def _parse_time(s):
 
 class _BoxText(HTMLParser):
     """class 이름에 KEYS 중 하나가 든 상자(div·section·article) 안의 글만 문단으로 모은다."""
-    KEYS = ("news_cnt_detail", "art_txt", "article_body", "articlebody", "news_body", "view_txt")
+    KEYS = ("news_cnt_detail", "art_txt", "article_body", "articlebody", "news_body", "view_txt",
+            "article-body", "articletxt")                              # 한경: <div class="article-body" id="articletxt">
     SKIP = ("script", "style", "figure", "figcaption", "iframe", "button", "noscript")
 
     def __init__(self):
@@ -149,7 +231,7 @@ class _BoxText(HTMLParser):
             if tag in ("p", "br", "div"):
                 self._flush()
             return
-        cls = ((a.get("class") or "") + " " + (a.get("itemprop") or "")).lower()
+        cls = ((a.get("class") or "") + " " + (a.get("itemprop") or "") + " " + (a.get("id") or "")).lower()
         if tag in ("div", "section", "article") and any(k in cls for k in self.KEYS):
             self.depth = 1
 
@@ -191,8 +273,9 @@ def parse_article(page, url=""):
     if not title:
         m = re.search(r'<title[^>]*>([\s\S]*?)</title>', page, re.I)
         title = html.unescape(m.group(1)).strip() if m else ""
-    title = re.sub(r'\s*[-|–]\s*매일경제.*$', '', title).strip()
-    title = re.sub(r'^\s*\[사설\]\s*', '', title).strip()
+    title = re.sub(r'\s*[-|–]\s*(매일경제|한국경제|한경).*$', '', title).strip()
+    mark = bool(MARK_RE.search(title))
+    title = re.sub(r'^\s*\[\s*사설\s*\]\s*', '', title).strip()
 
     pub = _parse_time(_meta(page, "article:published_time", "og:article:published_time", "pubdate", "date")
                       or ld.get("datePublished", ""))
@@ -216,11 +299,18 @@ def parse_article(page, url=""):
         body = [re.sub(r'\s+', ' ', p).strip() for p in ps if len(p.strip()) >= 40]
     body = _clean_paras(body)
     return {"title": title, "url": url, "published": pub.isoformat() if pub else "",
-            "paras": body, "chars": sum(len(p) for p in body)}
+            "paras": body, "chars": sum(len(p) for p in body), "mark": mark}
 
 
 def fetch_article(aid):
     url = "%s/news/editorial/%s" % (BASE, aid)
+    a = parse_article(_get(url), url)
+    a["id"] = aid
+    return a
+
+
+def hk_fetch_article(aid):
+    url = "%s/article/%s" % (HK_BASE, aid)
     a = parse_article(_get(url), url)
     a["id"] = aid
     return a
@@ -244,16 +334,65 @@ def pick_for_date(items, date):
     return win[:MAX_ITEMS]
 
 
-def _cache_path(date):
-    return os.path.join(CACHE_DIR, date + ".json")
+def _cache_path(date, src="mk"):
+    return os.path.join(HK_CACHE_DIR if src == "hk" else CACHE_DIR, date + ".json")
 
 
-def get_editorials(date="", log=None):
-    """{"ok", "date", "items":[{title,url,published,paras}], "stale": 최신 것으로 대신했나, "error"}"""
+def _hk_collect(log):
+    """한경 사설 글 목록. 글을 못 열면(403 등) RSS 의 제목·시각·링크만으로(본문 없음)."""
+    ids, meta = hk_find_links(log)
+    arts = []
+    for aid in ids[:10]:
+        m = meta.get(aid) or {}
+        try:
+            a = hk_fetch_article(aid)
+        except Exception as e:
+            if log is not None:
+                log.append("한경 글 %s 읽기 실패: %s" % (aid, e))
+            a = None
+        if a and a["title"] and (a["mark"] or m.get("mark")) and a["chars"] >= 150:
+            a["published"] = a["published"] or m.get("published", "")
+            arts.append(a)
+        elif m.get("mark") and m.get("title") and m.get("published"):     # 본문 없이 제목·링크만
+            arts.append({"id": aid, "title": MARK_RE.sub("", m["title"]).strip(), "url": "%s/article/%s" % (HK_BASE, aid),
+                         "published": m["published"], "paras": [], "chars": 0, "no_body": True})
+        elif log is not None and a:
+            log.append("한경 글 %s: 사설 아님·본문 부족(제목 %r, %d자)" % (aid, a["title"][:20], a["chars"]))
+    return ids, arts
+
+
+def _mk_collect(log):
+    try:
+        ids = find_links(log)
+    except Exception as e:
+        ids = []
+        if log is not None:
+            log.append("링크 찾기 실패: %s" % e)
+    arts = []
+    for aid in ids[:8]:
+        try:
+            a = fetch_article(aid)
+        except Exception as e:
+            if log is not None:
+                log.append("글 %s 읽기 실패: %s" % (aid, e))
+            continue
+        if a["title"] and a["chars"] >= 150:
+            arts.append(a)
+        elif log is not None:
+            log.append("글 %s: 제목·본문 부족(제목 %r, %d자)" % (aid, a["title"][:20], a["chars"]))
+    return ids, arts
+
+
+def get_editorials(date="", log=None, src="mk"):
+    """{"ok", "date", "items":[{title,url,published,paras,press}], "stale": 최신 것으로 대신했나, "error"}
+    src = "mk"(매일경제, 기본) · "hk"(한국경제)."""
     date = date or today_kst()
     if not re.fullmatch(r"20\d\d-\d\d-\d\d", date):
         return {"ok": False, "date": date, "items": [], "error": "날짜 형식"}
-    p = _cache_path(date)
+    src = "hk" if src == "hk" else "mk"
+    press = SOURCES[src]["press"]
+    key = ("hk:" + date) if src == "hk" else date
+    p = _cache_path(date, src)
     try:
         with open(p, encoding="utf-8") as f:
             c = json.load(f)
@@ -261,39 +400,34 @@ def get_editorials(date="", log=None):
             return c
     except (OSError, ValueError):
         c = None
-    with _lock:
-        if log is None and time.time() - _last_try.get(date, 0) < RETRY_SEC:
+    with (_hk_lock if src == "hk" else _lock):
+        if log is None and time.time() - _last_try.get(key, 0) < RETRY_SEC:
             return c or {"ok": False, "date": date, "items": [], "error": "잠시 뒤 다시 찾아요"}
-        _last_try[date] = time.time()
-        try:
-            ids = find_links(log)
-        except Exception as e:
-            ids = []
-            if log is not None:
-                log.append("링크 찾기 실패: %s" % e)
-        arts = []
-        for aid in ids[:8]:
+        _last_try[key] = time.time()
+        if src == "hk":
             try:
-                a = fetch_article(aid)
+                ids, arts = _hk_collect(log)
             except Exception as e:
+                ids, arts = [], []
                 if log is not None:
-                    log.append("글 %s 읽기 실패: %s" % (aid, e))
-                continue
-            if a["title"] and a["chars"] >= 150:
-                arts.append(a)
-            elif log is not None:
-                log.append("글 %s: 제목·본문 부족(제목 %r, %d자)" % (aid, a["title"][:20], a["chars"]))
+                    log.append("한경 링크 찾기 실패: %s" % e)
+        else:
+            ids, arts = _mk_collect(log)
+        for a in arts:
+            a["press"] = press
         items = pick_for_date(arts, date)
         stale = False
         if not items and date == today_kst() and arts:      # 오늘 사설이 아직 → 가장 최근 것(표시함)
             arts.sort(key=lambda a: a.get("published") or "", reverse=True)
             items, stale = arts[:2], True
+        for a in items:
+            a["stale"] = stale
         res = {"ok": bool(items), "date": date, "items": items, "stale": stale,
                "fetched": datetime.now(KST).isoformat(timespec="seconds"),
                "error": "" if items else ("사설 링크를 못 찾음" if not ids else "그날 사설이 아직 없음")}
         if items:
             try:
-                os.makedirs(CACHE_DIR, exist_ok=True)
+                os.makedirs(os.path.dirname(p), exist_ok=True)
                 tmp = p + ".tmp"
                 with open(tmp, "w", encoding="utf-8") as f:
                     json.dump(res, f, ensure_ascii=False)
@@ -303,22 +437,49 @@ def get_editorials(date="", log=None):
         return res
 
 
+def get_all(date=""):
+    """매일경제 + 한국경제 사설을 함께(두 곳을 동시에 받는다). 한쪽이 실패해도 다른 쪽은 보인다.
+    {"ok", "date", "items":[…각 항목 press·stale], "stale": 전부 최신 것으로 대신했나, "sources":{mk:{ok,error,list}, hk:{…}}}"""
+    date = date or today_kst()
+    out = {}
+
+    def run(src):
+        try:
+            out[src] = get_editorials(date, src=src)
+        except Exception as e:
+            out[src] = {"ok": False, "items": [], "error": str(e)[:200]}
+    ts = [threading.Thread(target=run, args=(k,), daemon=True) for k in ("mk", "hk")]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join(40)
+    items = []
+    for k in ("mk", "hk"):
+        for a in (out.get(k) or {}).get("items") or []:
+            items.append(dict(a, press=a.get("press") or SOURCES[k]["press"]))
+    return {"ok": bool(items), "date": date, "items": items, "stale": bool(items) and all(a.get("stale") for a in items),
+            "sources": {k: {"ok": bool((out.get(k) or {}).get("ok")), "error": (out.get(k) or {}).get("error", "대기 시간 초과"),
+                            "press": SOURCES[k]["press"], "list": SOURCES[k]["list"]} for k in ("mk", "hk")},
+            "error": "" if items else "사설을 못 가져옴"}
+
+
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     d = args[0] if args else today_kst()
+    src = "hk" if "--hk" in sys.argv else "mk"          # --hk = 한국경제(기본은 매일경제)
     if "--probe" in sys.argv:
         _last_try.clear()
         try:
-            os.remove(_cache_path(d))
+            os.remove(_cache_path(d, src))
         except OSError:
             pass
     log = []
-    r = get_editorials(d, log=log)
+    r = get_editorials(d, log=log, src=src)
     for line in log:
         print(" ·", line)
-    print("\n날짜 %s → %s%s" % (d, "찾음 %d편" % len(r["items"]) if r["ok"] else "못 찾음: " + r.get("error", ""),
+    print("\n[%s] 날짜 %s → %s%s" % (SOURCES[src]["press"], d, "찾음 %d편" % len(r["items"]) if r["ok"] else "못 찾음: " + r.get("error", ""),
                               " (오늘 것이 아직이라 최신 것)" if r.get("stale") else ""))
     for a in r["items"]:
         print("\n■ %s\n  %s · %s · 문단 %d개 %d자\n  %s…" % (a["title"], a["published"], a["url"],
-              len(a["paras"]), a["chars"], (a["paras"][0] if a["paras"] else "")[:90]))
+              len(a["paras"]), a["chars"], (a["paras"][0] if a["paras"] else "(본문 없음 — 제목·링크만)")[:90]))
     sys.exit(0 if r["ok"] else 2)

@@ -1611,14 +1611,16 @@ async function loadEditorial(){
   document.getElementById("mk-ed-date").textContent=state.date.replace(/^(\d+)-(\d+)-(\d+)$/,"$1.$2.$3");
   if(!ED.ok){
     list.innerHTML='<div class="mk-ed-empty">이 날짜의 사설을 아직 못 가져왔어요. '+
-      '<a href="https://www.mk.co.kr/opinion/editorial/" target="_blank" rel="noopener">매일경제 사설 목록 열기 ↗</a></div>';
+      '<a href="https://www.mk.co.kr/opinion/editorial/" target="_blank" rel="noopener">매일경제 사설 목록 열기 ↗</a> · '+
+      '<a href="https://www.hankyung.com/opinion" target="_blank" rel="noopener">한국경제 사설 목록 열기 ↗</a></div>';
   }else{
     const hm=t=>{ const m=String(t||"").match(/^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)/); return m?`${+m[2]}월 ${+m[3]}일 ${m[4]}:${m[5]}`:""; };
     const item=(a,k)=>'<article class="mk-ed-item">'+
-      '<h3>'+esc(a.title||"")+(d.stale?'<span class="mk-ed-stale">최신 사설</span>':"")+'</h3>'+
+      '<h3>'+esc(a.title||"")+((a.stale||d.stale)?'<span class="mk-ed-stale">최신 사설</span>':"")+'</h3>'+
       '<div class="mk-ed-meta">'+(hm(a.published)?esc(hm(a.published))+' 올라옴 · ':"")+
         '<a href="'+esc(a.url||"#")+'" target="_blank" rel="noopener">원문 보기 ↗</a></div>'+
-      '<div class="mk-ed-body" id="mk-ed-b'+k+'">'+(a.paras||[]).map(p=>"<p>"+esc(p)+"</p>").join("")+'</div>'+
+      ((a.paras||[]).length?'<div class="mk-ed-body" id="mk-ed-b'+k+'">'+a.paras.map(p=>"<p>"+esc(p)+"</p>").join("")+'</div>'
+        :'<div class="mk-ed-meta">본문은 원문에서 읽어 주세요.</div>')+                 // 한경이 본문을 막으면 제목·링크만(2026-11-01)
       ((a.paras||[]).length>2?'<button class="mk-ed-more" data-k="'+k+'" aria-expanded="false">전문 펼치기</button>':"")+
       "</article>";
     // 2026-10-20: 한국경제 사설도 같은 모양으로(항목의 press 별로 칸 나눔, press 없으면 매일경제)

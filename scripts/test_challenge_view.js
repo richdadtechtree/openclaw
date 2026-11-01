@@ -56,6 +56,20 @@ const TEXT = { what: '반도체 수출이 석 달 연속 늘었다는 기사', w
       check(lockTxt.includes('내 글을 저장하면'), '내 글 쓰기 전엔 같은 기수 글 잠김');
       const noHScroll = await pg.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);
       check(noHScroll, '가로 스크롤 없음');
+      // 🗞 오늘의 사설(2026-11-01): 찰스 화면 맨 아래에 매경·한경
+      await pg.waitForSelector('#eds:not([hidden]) article');
+      const eds = await pg.$eval('#eds', e => ({ t: e.textContent, tags: [...e.querySelectorAll('.ptag')].map(x => x.textContent),
+        below: e.getBoundingClientRect().top >= document.getElementById('posts').getBoundingClientRect().bottom - 1 }));
+      check(eds.tags.join() === '매일경제,한국경제' && eds.t.includes('시험 매경 사설 제목') && eds.t.includes('시험 한경 사설 제목') && eds.below,
+            '챌린지 화면 아래에 매일경제·한국경제 사설(찰스도 볼 수 있음)');
+      check(eds.t.includes('본문은 원문에서') && await pg.$eval('#eds a[href*="hankyung.com/article"]', a => a.target === '_blank'),
+            '한경 본문이 막힌 글은 제목·원문 링크만');
+      check(!(await pg.isVisible('#eds .eb p:nth-child(3)')), '긴 사설은 2문단만 보이고');
+      await pg.click('#eds button.more');
+      check(await pg.isVisible('#eds .eb p:nth-child(3)') && (await pg.textContent('#eds button.more')) === '접기', '"전문 펼치기"로 다 보임');
+      await pg.click('#v-gloss');
+      check(await pg.$eval('#eds', e => e.hidden), '용어장 탭에선 사설 칸 숨김');
+      await pg.click('#v-day');
       if (SHOT) await pg.screenshot({ path: path.join(SHOT, `ch_${w}_list.png`), fullPage: true });
 
       // 글쓰기 창

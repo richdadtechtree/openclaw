@@ -40,6 +40,24 @@ PAGES = {
     "/news/editorial/12179000": '''<html><head><title>지난 사설 - 매일경제</title></head><body><span>입력 : 2026-10-18 17:00</span>
       <p>%s</p><p>홍길동 기자 hong@mk.co.kr</p></body></html>''' % BODY,
 }
+# ── 한국경제(2026-11-01): RSS(사설만 [사설] 제목) + 글 화면(article-body/articletxt) + 403 으로 막힌 글 ──
+HK_BODY = "반도체 보조금 경쟁에서 뒤처지면 산업 기반이 무너진다. " * 6
+HK_RSS = """<?xml version="1.0" encoding="UTF-8"?><rss><channel>
+  <item><title><![CDATA[[사설] 반도체 지원, 속도가 생명이다]]></title><link>https://www.hankyung.com/article/2026103171231</link>
+    <pubDate>Fri, 30 Oct 2026 17:40:00 +0900</pubDate></item>
+  <item><title><![CDATA[[사설] 막힌 글: 본문은 원문에서]]></title><link>https://www.hankyung.com/article/2026103171232</link>
+    <pubDate>Fri, 30 Oct 2026 17:45:00 +0900</pubDate></item>
+  <item><title><![CDATA[[천자칼럼] 사설 아님]]></title><link>https://www.hankyung.com/article/2026103171299</link>
+    <pubDate>Fri, 30 Oct 2026 18:00:00 +0900</pubDate></item>
+  <item><title><![CDATA[[사설] 지난 사설]]></title><link>https://www.hankyung.com/article/2026102871000</link>
+    <pubDate>Wed, 28 Oct 2026 17:40:00 +0900</pubDate></item>
+</channel></rss>"""
+HK_ART = ('<html><head><meta property="og:title" content="[사설] 반도체 지원, 속도가 생명이다 | 한국경제">'
+          '<meta property="article:published_time" content="2026-10-30T17:40:00+09:00"></head><body>'
+          '<div class="article-body" id="articletxt">' + HK_BODY + '<br><br>지원 속도를 높여야 한다.<br>'
+          'ⓒ 한국경제, 무단전재 및 재배포 금지</div></body></html>')
+PAGES.update({"/feed/opinion": HK_RSS, "/article/2026103171231": HK_ART})
+FORBID = {"/article/2026103171232"}                       # 한경이 봇을 403 으로 막는 경우
 HITS = []
 
 
@@ -47,6 +65,10 @@ class H(BaseHTTPRequestHandler):
     def do_GET(self):
         HITS.append(self.path)
         b = PAGES.get(self.path)
+        if self.path in FORBID:
+            self.send_response(403)
+            self.end_headers()
+            return
         self.send_response(200 if b else 404)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
@@ -98,6 +120,32 @@ def main():
     check(not r3["ok"] and r3["items"] == [] and not os.path.exists(os.path.join(cache, "2026-10-25.json")),
           "그날 사설이 없으면 지어내지 않고 빈 목록(캐시도 안 남김)", r3.get("error"))
     check(mk.get_editorials("10/20")["ok"] is False, "이상한 날짜는 거절")
+
+    print("\n[⑦ 한국경제 사설 (2026-11-01)]")
+    hkc = tempfile.mkdtemp(prefix="hked-")
+    os.environ["HK_BASE"] = os.environ["MK_BASE"]
+    os.environ["HK_EDITORIAL_DIR"] = hkc
+    importlib.reload(mk)
+    ids, meta = mk.hk_find_links()
+    check(set(ids) == {"2026103171231", "2026103171232", "2026102871000"} and "2026103171299" not in ids,
+          "RSS 에서 제목이 [사설] 인 글만(칼럼은 뺌)", ids)
+    r = mk.get_editorials("2026-10-31", src="hk")
+    got = {a["id"]: a for a in r["items"]}
+    a = got.get("2026103171231") or {}
+    check(r["ok"] and a.get("title") == "반도체 지원, 속도가 생명이다" and a.get("press") == "한국경제" and len(a.get("paras") or []) == 2
+          and not any("무단" in p for p in a["paras"]), "한경 글: '[사설]'·'| 한국경제' 떼고 제목, 본문 상자(articletxt) 문단, press=한국경제", a)
+    b = got.get("2026103171232") or {}
+    check(b.get("no_body") and b.get("title") == "막힌 글: 본문은 원문에서" and b.get("paras") == [] and b.get("url", "").endswith("/article/2026103171232"),
+          "403 으로 막힌 글은 RSS 제목·시각·링크만(본문 없음, 지어내지 않음)", b)
+    check("2026102871000" not in got, "그날(10-30 낮 12시~10-31 낮 12시)이 아닌 지난 사설은 뺀다", list(got))
+    check(os.path.exists(os.path.join(hkc, "2026-10-31.json")) and not os.path.exists(os.path.join(cache, "2026-10-31.json")),
+          "한경 캐시는 따로(.hk_editorial)")
+    allr = mk.get_all("2026-10-20")
+    presses = [x["press"] for x in allr["items"]]
+    check(allr["ok"] and presses[:2] == ["매일경제", "매일경제"] and allr["sources"]["hk"]["ok"] is False and allr["sources"]["mk"]["ok"],
+          "두 신문 합치기: 한경이 없는 날도 매경은 보이고, 신문별 상태를 알려 줌", (presses, allr["sources"]["hk"].get("error")))
+    allr2 = mk.get_all("2026-10-31")
+    check(allr2["ok"] and set(x["press"] for x in allr2["items"]) == {"한국경제"}, "매경이 없는 날도 한경은 보임")
 
     print("\n[⑥ 서버가 죽었을 때]")
     srv.shutdown()

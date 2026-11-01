@@ -485,11 +485,12 @@ except Exception:                                   # 모듈 문제가 페이지
 
 @app.get("/api/news/editorial")
 def news_editorial(date: str = ""):
-    """그날 신문에 실린 매일경제 사설(제목·본문 문단·원문 링크). 못 찾으면 ok:false — 화면은 조용히 안내만."""
+    """그날 신문에 실린 매일경제·한국경제 사설(제목·본문 문단·원문 링크, 항목마다 press). 못 찾으면 ok:false — 화면은 조용히 안내만.
+    2026-11-01: 한국경제도 함께(get_all). 챌린지 화면은 /api/challenge/editorial 로 같은 내용을 받는다(찰스도 볼 수 있게)."""
     if _mk_ed is None:
         return JSONResponse(status_code=503, content={"ok": False, "items": [], "error": "모듈 없음"})
     try:
-        return JSONResponse(_mk_ed.get_editorials(date))
+        return JSONResponse(_mk_ed.get_all(date))
     except Exception as e:
         return JSONResponse({"ok": False, "items": [], "error": str(e)[:200]})
 

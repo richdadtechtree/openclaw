@@ -288,6 +288,20 @@
   .tsug{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
   .tsug button{font-size:13px;font-weight:600;padding:4px 10px;border-radius:999px;text-align:left;max-width:100%}
   .tsug button[aria-pressed="true"]{background:var(--soft);border-color:var(--blue);color:var(--blue)}
+  /* 🗞 오늘의 사설(매일경제·한국경제) — 2026-11-01 사용자 요청: 챌린지 화면 아래에도 */
+  .eds h3{margin:0;font-size:18px}
+  .eds .edhead{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+  .eds .ptag{display:inline-block;font-size:12px;font-weight:700;padding:2px 9px;border-radius:99px;background:var(--soft);color:var(--blue);margin:14px 0 2px}
+  .eds .ptag.hk{background:rgba(234,88,12,.12);color:#c2410c}
+  .eds article{border-top:1px solid var(--line);padding:12px 0}
+  .eds .ptag+article{border-top:0}
+  .eds h4{margin:0 0 4px;font-size:17px;line-height:1.45;word-break:keep-all}
+  .eds .em{font-size:13px;color:var(--sub);margin-bottom:6px}
+  .eds .em a{color:var(--blue)}
+  .eds .eb p{margin:0 0 10px;line-height:1.8;font-size:15.5px;word-break:keep-all}
+  .eds .eb:not(.open) p:nth-child(n+3){display:none}
+  .eds .stale{font-size:11px;margin-left:6px;padding:1px 7px;border-radius:99px;background:var(--line);color:var(--sub);font-weight:600;vertical-align:middle}
+  .eds .more{font-size:13px;padding:5px 12px}
 </style>
 </head>
 <body>
@@ -320,6 +334,10 @@
     <div class="grid" id="grid"></div>
   </section>
   <section class="card posts" id="posts"></section>
+  <section class="card eds" id="eds" hidden>
+    <div class="edhead"><h3>🗞 오늘의 사설</h3><span class="sub" id="eds-date"></span><span class="sub">매일경제 · 한국경제</span></div>
+    <div id="eds-list"></div>
+  </section>
 </main>
 <!--GATE_FOOT-->
 
@@ -447,7 +465,38 @@ async function loadDay(date){
   $("grid").innerHTML='<div class="empty" style="grid-column:1/-1">불러오는 중…</div>';
   const j=await api("/api/challenge/day?date="+S.date+(S.cohort?"&cohort="+S.cohort:""));
   if(!j.ok){$("grid").innerHTML="";$("daymsg").innerHTML='<div class="msg warn">'+esc(j.message||"불러오지 못했어요")+'</div>';$("posts").innerHTML="";return;}
-  S.day=j;renderDay();renderHero();
+  S.day=j;renderDay();renderHero();loadEds(S.date);
+}
+/* 🗞 그날 신문 사설(매일경제·한국경제) — 신문 요약 화면과 같은 내용(/api/challenge/editorial). 못 가져와도 화면은 안 깨지고 목록 링크만. */
+const EDS={date:"",at:0,ok:false};
+async function loadEds(date){
+  if(EDS.date===date&&Date.now()-EDS.at<(EDS.ok?10:3)*60000)return;
+  EDS.date=date;EDS.at=Date.now();
+  let d=null;
+  try{const r=await fetch("/api/challenge/editorial?date="+date,{credentials:"same-origin",cache:"no-store"});d=await r.json();}catch(e){d=null;}
+  if(EDS.date!==date)return;
+  EDS.ok=!!(d&&d.ok&&d.items&&d.items.length);
+  $("eds-date").textContent=md(date);
+  const src=(d&&d.sources)||{};
+  const listLink=k=>{const x=src[k]||{list:k==="hk"?"https://www.hankyung.com/opinion":"https://www.mk.co.kr/opinion/editorial/",press:k==="hk"?"한국경제":"매일경제"};
+    return '<a href="'+esc(x.list)+'" target="_blank" rel="noopener">'+esc(x.press)+' 사설 목록 ↗</a>';};
+  let html="";
+  ["매일경제","한국경제"].forEach((press,gi)=>{
+    const k=gi?"hk":"mk",items=((d&&d.items)||[]).filter(a=>(a.press||"매일경제")===press);
+    html+='<span class="ptag'+(k==="hk"?' hk':'')+'">'+esc(press)+'</span>';
+    if(!items.length){html+='<div class="sub" style="padding:6px 0 4px">이 날짜의 '+esc(press)+' 사설을 아직 못 가져왔어요. '+listLink(k)+'</div>';return;}
+    items.forEach((a,i)=>{const id="eb-"+k+i,ps=a.paras||[];
+      html+='<article><h4>'+esc(a.title||"")+(a.stale?'<span class="stale">최신 사설</span>':'')+'</h4>'+
+        '<div class="em">'+(a.published?esc(a.published.replace(/^\d{4}-(\d\d)-(\d\d)T(\d\d:\d\d).*/,(m,mo,dd,hm)=>(+mo)+"월 "+(+dd)+"일 "+hm))+' 올라옴 · ':'')+
+        '<a href="'+esc(a.url||"#")+'" target="_blank" rel="noopener">원문 보기 ↗</a></div>'+
+        (ps.length?'<div class="eb" id="'+id+'">'+ps.map(p=>'<p>'+esc(p)+'</p>').join("")+'</div>'+
+          (ps.length>2?'<button class="more" data-eb="'+id+'" aria-expanded="false">전문 펼치기</button>':''):
+          '<div class="sub">본문은 원문에서 읽어 주세요.</div>')+'</article>';});
+  });
+  $("eds-list").innerHTML=html;
+  $("eds-list").querySelectorAll("button[data-eb]").forEach(b=>b.onclick=()=>{const e=$(b.dataset.eb),o=!e.classList.contains("open");
+    e.classList.toggle("open",o);b.textContent=o?"접기":"전문 펼치기";b.setAttribute("aria-expanded",String(o));});
+  $("eds").hidden=S.view==="gloss";
 }
 function renderDay(){
   const d=S.day;let msg="";
@@ -785,7 +834,7 @@ S.view="day";S.gloss=null;
 function setView(v){
   S.view=v;
   $("v-day").setAttribute("aria-selected",v==="day");$("v-gloss").setAttribute("aria-selected",v==="gloss");
-  $("daycard").hidden=$("posts").hidden=v!=="day";$("glosscard").hidden=v!=="gloss";
+  $("daycard").hidden=$("posts").hidden=$("eds").hidden=v!=="day";$("glosscard").hidden=v!=="gloss";
   try{history.replaceState(null,"",v==="gloss"?"#glossary":location.pathname);}catch(e){}
   if(v==="gloss")loadGloss();
 }
