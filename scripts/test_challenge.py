@@ -429,5 +429,36 @@ check("제목 후보 API: 이상한 이름은 거부", cV.get("/api/challenge/ti
 os.remove(os.path.join(SLK, "2026-11-12.jsonl"))
 check("요약도 지면 글자도 없으면 지어내지 않고 빈 칸", post(cV, page="02.jpg", title="", what="전혀 다른 이야기를 적어 본다").json()["day"]["mine"]["02.jpg"]["title"] in (None, ""))
 
+print("[📖 관리자 용어 노트 — 신문 요약 지면 보기 (2026-11-01)]")
+ad_id, cAd = user("ADM-T", "노트관리자", admin=True)
+gn_id, cGn = user("GEN-T", "일반노트")
+check("일반 이용자는 관리자 용어 노트를 못 씀(403)", cGn.get("/api/news/terms").status_code == 403
+      and cGn.post("/api/news/terms", json={"term": "디파이"}).status_code == 403)
+check("찰스도 못 씀(신문 요약 주소 자체가 막힘)", cZ.get("/api/news/terms").status_code in (401, 403))
+check("로그인 안 하면 못 씀", TestClient(APP, base_url="https://example.test").get("/api/news/terms").status_code == 401)
+check("관리자는 빈 노트로 시작", cAd.get("/api/news/terms").json() == {"ok": True, "items": []})
+n = len(CALLS)
+r = cAd.post("/api/news/terms", json={"term": "디파이", "date": "2026-11-01", "page": "27.jpg", "article": "FBI \"北, 바이낸스서 9조원 해킹\""}).json()
+it = r["items"][0] if r.get("items") else {}
+check("찾기 → AI 풀이 + 노트에 저장(날짜·면·기사)", r["ok"] and r["result"]["ok"] and r["result"]["short"] == "디파이 의 한 줄 뜻"
+      and it.get("term") == "디파이" and it.get("date") == "2026-11-01" and it.get("page") == "27.jpg" and "바이낸스" in it.get("article", "") and it.get("short"))
+check("AI 에는 용어 글자만(기사 제목은 안 보냄)", len(CALLS) == n + 1 and "바이낸스" not in CALLS[-1])
+r = cAd.post("/api/news/terms", json={"term": "기준 금리", "date": "2026-11-02", "page": "03.jpg"}).json()
+check("이미 풀이된 용어(챌린지 용어장과 공용)는 AI 에 다시 안 물음", len(CALLS) == n + 1 and r["result"]["short"].startswith("기준금리"))
+r = cAd.post("/api/news/terms", json={"term": "디 파이", "date": "2026-11-03", "page": "05.jpg", "article": "다른 기사"}).json()
+dp = [x for x in r["items"] if x["term"].replace(" ", "") == "디파이"]
+check("같은 용어를 또 찾으면 한 줄로(횟수 2·어디서 봤나는 최신)", len(dp) == 1 and dp[0]["count"] == 2 and dp[0]["date"] == "2026-11-03" and dp[0]["page"] == "05.jpg")
+check("최근에 찾은 용어가 맨 위", r["items"][0]["term"].replace(" ", "") == "디파이")
+check("이상한 면 이름·날짜는 저장 안 함", cAd.post("/api/news/terms", json={"term": "PER", "date": "어제", "page": "../x"}).json()["items"][0]["page"] == "")
+check("너무 긴 용어는 거절(이유 안내)", cAd.post("/api/news/terms", json={"term": "가" * 31}).status_code == 400)
+check("빈 용어는 거절", cAd.post("/api/news/terms", json={"term": "  "}).status_code == 400)
+ad2_id, cAd2 = user("ADM-T2", "다른관리자", admin=True)
+check("관리자마다 노트가 따로", cAd2.get("/api/news/terms").json()["items"] == [])
+tid = dp[0]["id"]
+check("다른 관리자는 내 용어를 못 지움", cAd2.post("/api/news/terms/delete", json={"id": tid}).json()["ok"] is False)
+r = cAd.post("/api/news/terms/delete", json={"id": tid}).json()
+check("지우기", r["ok"] and all(x["id"] != tid for x in r["items"]))
+check("서버에 계속 저장(다시 불러도 그대로)", [x["term"] for x in cAd.get("/api/news/terms").json()["items"]] == [x["term"] for x in r["items"]])
+
 print("\n결과: %s" % ("전부 통과" if not fails else "실패 %d개: %s" % (len(fails), fails)))
 sys.exit(1 if fails else 0)
