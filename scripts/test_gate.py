@@ -130,7 +130,7 @@ check("데이터 주소는 401(JSON)", c.get("/economy/data").status_code == 401
 check("POST 도 401", c.post("/api/dig/refresh").status_code == 401)
 check("주가 대시보드 '/' 는 그대로 열림", c.get("/").status_code == 200)
 check("처리방침은 로그인 없이 공개", c.get("/privacy").status_code == 200 and "개인정보 처리방침" in c.get("/privacy").text)
-lg = c.get("/gate/login").text
+lg = c.get("/gate/login?manual=1").text
 check("로그인 화면에 구글·카카오 버튼", "/gate/google/start" in lg and "/gate/kakao/start" in lg)
 
 print("[소셜 로그인 시작]")
@@ -185,7 +185,7 @@ check("…취소(error) 주소여도 로그인돼 있으면 바로 입장", c.ge
 c.get("/gate/google/start?next=/dig")
 check("…시작 기록이 있으면 원래 가려던 곳으로", c.get("/gate/google/callback?code=x&state=WRONG").headers.get("location") == "/dig")
 fake_identity()
-check("이미 동의한 사람이 로그인하면 바로 입장",client(app).get("/gate/login").status_code == 200 and login(client(app)).headers["location"] == "/economy")
+check("이미 동의한 사람이 로그인하면 바로 입장",client(app).get("/gate/login?manual=1").status_code == 200 and login(client(app)).headers["location"] == "/economy")
 check("DB 에 이메일·전화·실명 같은 열이 없음(최소 수집, 닉네임·화면 모드·챌린지 역할 열만 추가)",
       {r["name"] for r in gate._db().execute("PRAGMA table_info(users)")} == {"id", "provider", "provider_uid", "nickname", "status", "consent_version", "consent_at", "created_at", "last_login_at", "is_admin", "expires_at", "nick_set", "nick_key", "theme", "role", "cohort_id", "celebrated_at", "apply"})
 
@@ -644,6 +644,59 @@ check("내부 열쇠가 있으면 로그인 없이 통과", c.get("/dig", header
 check("틀린 열쇠는 거부", c.get("/dig", headers={"x-gate-internal": "x" * 40}).status_code == 302)
 check("열쇠 파일은 본인만 읽기(600)", oct(os.stat(os.path.join(gate.gate_dir(), "internal.key")).st_mode)[-3:] == "600")
 check("로컬 접속이라는 이유로는 통과시키지 않음(nginx 뒤 우회 방지)", c.get("/economy", headers={"x-forwarded-for": "127.0.0.1"}).status_code == 302)
+
+print("[자동 로그인: 구글·카톡에 로그인돼 있으면 단추 없이 (2026-11-01)]")
+def q(loc):
+    return urllib.parse.parse_qs(urllib.parse.urlparse(loc).query)
+ca = client(make_app())
+r = ca.get("/gate/login?next=/dig")
+check("로그인 쿠키 없이 로그인 화면 → 구글 자동 시도로", r.status_code == 302 and r.headers["location"] == "/gate/google/start?auto=1&next=/dig")
+r = ca.get(r.headers["location"])
+check("자동 시도는 구글에 prompt=none(화면 없이 확인)", q(r.headers["location"]).get("prompt") == ["none"])
+st = q(r.headers["location"])["state"][0]
+r = ca.get("/gate/google/callback?error=login_required&state=" + st)
+check("구글에 로그인 안 돼 있으면 → 카카오 자동 시도", r.headers["location"] == "/gate/kakao/start?auto=1&next=/dig")
+r = ca.get(r.headers["location"])
+check("카카오도 prompt=none", q(r.headers["location"]).get("prompt") == ["none"])
+st = q(r.headers["location"])["state"][0]
+r = ca.get("/gate/kakao/callback?error=consent_required&state=" + st)
+check("둘 다 안 되면 → 로그인 단추 화면(manual, 다시 자동 안 함)", r.headers["location"] == "/gate/login?manual=1&next=/dig")
+pg = ca.get(r.headers["location"])
+check("…그 화면은 단추가 보이고 다시 넘기지 않음", pg.status_code == 200 and "/gate/google/start" in pg.text)
+check("수동 로그인은 예전처럼 계정 고르기(select_account)", q(ca.get("/gate/google/start?next=/dig").headers["location"]).get("prompt") == ["select_account"])
+
+n0 = gate._db().execute("SELECT COUNT(*) FROM users").fetchone()[0]
+fake_identity("auto-new")
+r = ca.get("/gate/google/start?auto=1&next=/dig")
+r = ca.get("/gate/google/callback?code=c&state=" + q(r.headers["location"])["state"][0])
+check("자동으로는 새로 가입시키지 않음(가입 안 한 구글 계정 → 다음 단계로)",
+      r.headers["location"] == "/gate/kakao/start?auto=1&next=/dig" and gate._db().execute("SELECT COUNT(*) FROM users").fetchone()[0] == n0 and "gate_sess" not in ca.cookies)
+
+cj = client(make_app()); login(cj, provider="kakao", uid="auto-k", nick="자동카카오"); cj.post("/gate/consent", content=agree_for(cj), headers=FORM)
+cn = client(make_app())                                   # 새 브라우저(쿠키 없음)
+fake_identity("auto-k")
+r = cn.get("/gate/login?next=/dig")
+r = cn.get(r.headers["location"]); st = q(r.headers["location"])["state"][0]
+r = cn.get("/gate/google/callback?error=account_selection_required&state=" + st)
+r = cn.get(r.headers["location"]); st = q(r.headers["location"])["state"][0]
+r = cn.get("/gate/kakao/callback?code=abc&state=" + st)
+check("카카오로 가입한 사람: 카카오에 로그인돼 있으면 단추 없이 바로 입장", r.headers["location"] == "/dig" and cn.get("/dig").status_code == 200)
+
+r = cn.get("/gate/logout")
+check("직접 로그아웃 → 단추 화면 + 자동 로그인 멈춤 표시", r.headers["location"] == "/gate/login?manual=1" and cn.cookies.get("gate_out") == "1")
+check("로그아웃한 뒤엔 로그인 화면이 자동으로 다시 들어가지 않음", cn.get("/gate/login?next=/dig").status_code == 200)
+check("…/dig 로 가도 로그인 화면에서 멈춤", cn.get(cn.get("/dig").headers["location"]).status_code == 200)
+login(cn, provider="kakao", uid="auto-k", nick="자동카카오")
+check("단추로 다시 로그인하면 자동 멈춤 표시가 지워짐", not cn.cookies.get("gate_out"))
+
+cc = client(make_app())
+check("챌린지 입구도 자동 시도(찰스 승인 규칙은 그대로)", cc.get("/gate/charles").headers.get("location") == "/gate/google/start?auto=1&next=/challenge")
+os.environ["GATE_AUTO_LOGIN"] = "0"
+check("GATE_AUTO_LOGIN=0 이면 자동 로그인 끔", client(make_app()).get("/gate/login").status_code == 200)
+os.environ.pop("GATE_AUTO_LOGIN")
+cs = client(make_app())
+r = cs.get("/gate/google/start?auto=1"); st = q(r.headers["location"])["state"][0]
+check("자동 시도의 state 가 틀리면 다음 단계로 넘기지 않음(보안 확인)", cs.get("/gate/google/callback?error=login_required&state=WRONG").status_code == 400)
 
 print("[처리방침 필수 항목]")
 pv = c.get("/privacy").text

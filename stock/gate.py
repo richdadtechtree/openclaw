@@ -50,6 +50,7 @@ POLICY_EFFECTIVE = "2026-10-30"        # 처리방침에 보이는 시행일
 
 COOKIE_SESSION = "gate_sess"          # ⚠️ PT 대시보드(Flask)의 'session' 쿠키와 같은 도메인에서 겹치지 않게 이름을 다르게
 COOKIE_STATE = "gate_state"
+COOKIE_OUT = "gate_out"            # 직접 로그아웃했다는 표시(창을 닫으면 사라짐) → 그동안은 자동 로그인을 안 한다
 COOKIE_IPADM = "gate_ipadm"        # 서버 IP 로 들어온 관리자 전용 쿠키(도메인 접속에서는 쓰이지 않음)
 IPADM_HOURS = 12                   # IP 관리자 모드 유효 시간(연장 없음)
 IPADM_MIN_PW = 12                  # 이보다 짧은 비밀번호는 쓰지 않는다(추측 공격 방지)
@@ -359,6 +360,23 @@ def upsert_login(provider, uid, apply=None):
         return con.execute("SELECT * FROM users WHERE provider=? AND provider_uid=?", (provider, str(uid))).fetchone()
 
 
+def find_login(provider, uid):
+    """이미 가입한 사람이면 그 행(없으면 None). 자동 로그인은 이것만 쓴다 — 자동으로는 새로 가입시키지 않는다."""
+    with _db() as con:
+        row = con.execute("SELECT * FROM users WHERE provider=? AND provider_uid=?", (provider, str(uid))).fetchone()
+        if row:
+            con.execute("UPDATE users SET last_login_at=? WHERE id=?", (_now(), row["id"]))
+        return row
+
+
+def auto_order(c=None):
+    """자동 로그인을 시도할 순서(설정된 것만). GATE_AUTO_LOGIN=0 이면 끔."""
+    c = c or cfg()
+    if _env("GATE_AUTO_LOGIN", "1") == "0":
+        return []
+    return [p for p in ("google", "kakao") if c[p]]
+
+
 def get_user(uid):
     try:
         with _db() as con:
@@ -637,16 +655,20 @@ def redirect_uri(provider):
     return "%s/gate/%s/callback" % (cfg()["base"], provider)
 
 
-def authorize_url(provider, state):
+def authorize_url(provider, state, silent=False):
+    """silent=True = 자동 로그인 시도(prompt=none): 구글·카카오에 이미 로그인돼 있으면 화면 없이 바로 돌아오고,
+    아니면 error=login_required 등으로 돌아온다(그때는 로그인 단추 화면을 보여 준다)."""
     c = cfg()
     if provider == "google":
         # openid 만: 고유번호(sub)뿐. ⚠️ 이름(profile)·이메일(email)은 요청하지 않는다 — 닉네임은 이용자가 직접 정한다(최소 수집).
         q = {"client_id": _env("GATE_GOOGLE_CLIENT_ID"), "redirect_uri": redirect_uri("google"), "response_type": "code",
-             "scope": "openid", "state": state, "prompt": "select_account"}
+             "scope": "openid", "state": state, "prompt": "none" if silent else "select_account"}
         return "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(q)
     if provider == "kakao":
         # scope 를 보내지 않는다 → 카카오 회원번호(id)만 받고 닉네임·이메일 등은 요청하지 않는다.
         q = {"client_id": _env("GATE_KAKAO_REST_KEY"), "redirect_uri": redirect_uri("kakao"), "response_type": "code", "state": state}
+        if silent:
+            q["prompt"] = "none"
         return "https://kauth.kakao.com/oauth/authorize?" + urllib.parse.urlencode(q)
     raise ValueError(provider)
 
@@ -765,7 +787,7 @@ def privacy_html():
 <li><b>동의를 거부할 권리가 있으며</b>, 동의하지 않으면 서비스를 이용할 수 없습니다(로그인 확인 외의 불이익은 없습니다).</li></ul>
 
 <h2>5. 쿠키(자동 수집 장치)</h2>
-<p>로그인 상태를 유지하기 위한 서명된 세션 쿠키 1개(<code>gate_sess</code>, 마지막 이용 후 최대 1년 — 이용할 때마다 연장되며 로그아웃·탈퇴 시 즉시 삭제)만 사용하며, 광고·추적 목적의 쿠키는 쓰지 않습니다. 브라우저 설정에서 쿠키를 막을 수 있으나 그러면 로그인이 유지되지 않습니다.</p>
+<p>로그인 상태를 유지하기 위한 서명된 세션 쿠키(<code>gate_sess</code>, 마지막 이용 후 최대 1년 — 이용할 때마다 연장되며 로그아웃·탈퇴 시 즉시 삭제)와, 로그인 과정에서만 잠깐 쓰는 보안 확인 쿠키(<code>gate_state</code>, 10분 이내)·직접 로그아웃했음을 표시하는 쿠키(<code>gate_out</code>, 개인정보 없음·브라우저를 닫으면 삭제 — 이 동안은 자동 로그인을 하지 않음)만 사용하며, 광고·추적 목적의 쿠키는 쓰지 않습니다. 브라우저 설정에서 쿠키를 막을 수 있으나 그러면 로그인이 유지되지 않습니다.</p>
 
 <h2>6. 안전성 확보 조치</h2>
 <ul><li>암호화된 연결(HTTPS)로만 로그인하며, 세션 쿠키는 변조 방지 서명을 합니다.</li>
@@ -1278,8 +1300,26 @@ def install(app):
         resp.delete_cookie(COOKIE_IPADM, path="/")
         return resp
 
+    def _auto_start(request, nxt, c, after=None):
+        """자동 로그인(2026-11-01 사용자 요청: 구글·카톡에 로그인돼 있으면 단추 없이 바로).
+        직접 로그아웃한 뒤(gate_out)에는 하지 않는다. after = 방금 실패한 공급자 → 그 다음 것부터."""
+        if request.cookies.get(COOKIE_OUT):
+            return None
+        order = auto_order(c)
+        if after in order:
+            order = order[order.index(after) + 1:]
+        if not order:
+            return None
+        return RedirectResponse("/gate/%s/start?auto=1&next=%s" % (order[0], urllib.parse.quote(nxt)), 302)
+
+    def _auto_next(request, provider, nxt):
+        """자동 로그인 한 단계가 안 됐을 때: 다음 공급자로, 다 해 봤으면 로그인 단추 화면(manual=1 이라 다시 자동 안 함)."""
+        resp = _auto_start(request, nxt, cfg(), after=provider) or RedirectResponse("/gate/login?manual=1&next=" + urllib.parse.quote(nxt), 302)
+        resp.delete_cookie(COOKIE_STATE, path="/")
+        return resp
+
     @r.get("/gate/login")
-    def login(request: Request, next: str = ""):
+    def login(request: Request, next: str = "", manual: str = ""):
         c = cfg()
         if not c["enabled"]:
             return _off()
@@ -1287,16 +1327,19 @@ def install(app):
         u = session_user(request)
         if u and u["consent_version"] == POLICY_VERSION and u["nick_set"] and u["status"] == "approved":
             return _page("이용 기간 종료", expired_html(u), 403) if is_expired(u) else RedirectResponse(nxt, 302)
-        return _page("로그인", login_html(nxt, c) + _foot())
+        auto = None if (u or manual) else _auto_start(request, nxt, c)
+        return auto or _page("로그인", login_html(nxt, c) + _foot())
 
     @r.get("/gate/{provider}/start")
-    def start(provider: str, next: str = ""):
+    def start(provider: str, next: str = "", auto: str = ""):
         c = cfg()
         if not c["enabled"] or provider not in ("google", "kakao") or not c[provider]:
             return _off() if not c["enabled"] else _page("안내", '<div class="card"><p>사용할 수 없는 로그인 방식이에요.</p></div>', 404)
         state = secrets.token_urlsafe(24)
-        resp = RedirectResponse(authorize_url(provider, state), 302)
-        resp.set_cookie(COOKIE_STATE, _sign({"s": state, "n": safe_next(next), "p": provider}, STATE_MINUTES * 60), **_cookie_args(STATE_MINUTES * 60))
+        silent = auto == "1"
+        resp = RedirectResponse(authorize_url(provider, state, silent), 302)
+        resp.set_cookie(COOKIE_STATE, _sign({"s": state, "n": safe_next(next), "p": provider, "a": 1 if silent else 0}, STATE_MINUTES * 60),
+                        **_cookie_args(STATE_MINUTES * 60))
         return resp
 
     @r.get("/gate/{provider}/callback")
@@ -1305,6 +1348,9 @@ def install(app):
         if not c["enabled"] or provider not in ("google", "kakao"):
             return _off()
         st = _unsign(request.cookies.get(COOKIE_STATE, ""))
+        if st and st.get("a") and st.get("p") == provider and (error or not code) and hmac.compare_digest(str(st.get("s", "")), state):
+            # 자동 로그인 시도: 그 서비스에 로그인 안 돼 있음·계정 고르기 필요 등(login_required…) → 다음 서비스 또는 로그인 단추 화면
+            return _auto_next(request, provider, safe_next(st.get("n")))
         if error or not code or not st or st.get("p") != provider or not hmac.compare_digest(str(st.get("s", "")), state):
             # 이미 로그인된 사람이 '뒤로 가기'·앱 복원 등으로 옛 콜백 주소를 다시 연 경우 → 오류 대신 그대로 들여보낸다.
             # (이번 code 는 쓰지 않고 기존 로그인 쿠키만 확인하므로 보안 확인을 건너뛰는 것이 아니다. 승인·기한은 도착한 화면이 다시 검사)
@@ -1319,19 +1365,27 @@ def install(app):
             if not st and not error:
                 return RedirectResponse("/gate/login", 302)
             return _page("로그인 실패", '<div class="card"><h1>로그인하지 못했어요</h1><p>보안 확인에 실패했거나 로그인을 취소하셨어요. 다시 시도해 주세요.</p>'
-                         '<a class="btn primary" href="/gate/login">다시 로그인</a></div>' + _foot(), 400)
+                         '<a class="btn primary" href="/gate/login?manual=1">다시 로그인</a></div>' + _foot(), 400)
         try:
             uid = identity_from_code(provider, code)
         except Exception as e:
             print("[gate] %s 로그인 실패: %s: %s" % (provider, type(e).__name__, e))
+            if st.get("a"):
+                return _auto_next(request, provider, safe_next(st.get("n")))
             return _page("로그인 실패", '<div class="card"><h1>로그인 서버와 연결하지 못했어요</h1><p>잠시 후 다시 시도해 주세요.</p>'
-                         '<a class="btn primary" href="/gate/login">다시 로그인</a></div>' + _foot(), 502)
+                         '<a class="btn primary" href="/gate/login?manual=1">다시 로그인</a></div>' + _foot(), 502)
         nxt = safe_next(st.get("n"))
-        user = upsert_login(provider, uid, apply="charles" if nxt.startswith("/challenge") else None)
+        if st.get("a"):                          # 자동 로그인은 이미 가입한 사람만(새로 가입시키지 않음)
+            user = find_login(provider, uid)
+            if not user:
+                return _auto_next(request, provider, nxt)
+        else:
+            user = upsert_login(provider, uid, apply="charles" if nxt.startswith("/challenge") else None)
         dest = nxt if (user["consent_version"] == POLICY_VERSION and user["nick_set"]) else "/gate/consent?next=" + urllib.parse.quote(nxt)
         resp = RedirectResponse(dest, 302)
         resp.set_cookie(COOKIE_SESSION, _session_token(user["id"]), **_cookie_args(SESSION_DAYS * 86400))
         resp.delete_cookie(COOKIE_STATE, path="/")
+        resp.delete_cookie(COOKIE_OUT, path="/")
         return resp
 
     @r.get("/gate/consent")
@@ -1387,7 +1441,7 @@ def install(app):
             return _off()
         u = session_user(request)
         if not u:
-            return _page("찰스 챌린지", login_html("/challenge", cfg()) + _foot())
+            return _auto_start(request, "/challenge", cfg()) or _page("찰스 챌린지", login_html("/challenge", cfg()) + _foot())
         return RedirectResponse("/challenge", 302)          # 로그인돼 있으면 문지기가 상태에 맞게(동의·대기·신청·챌린지) 보낸다
 
     @r.post("/gate/charles/apply")
@@ -1578,8 +1632,10 @@ def install(app):
 
     @r.get("/gate/logout")
     def logout():
-        resp = RedirectResponse("/gate/login", 302)
+        resp = RedirectResponse("/gate/login?manual=1", 302)
         resp.delete_cookie(COOKIE_SESSION, path="/")
+        # 직접 로그아웃 → 창을 닫기 전까지 자동 로그인 안 함(다시 바로 로그인돼 버리면 로그아웃이 소용없음)
+        resp.set_cookie(COOKIE_OUT, "1", httponly=True, secure=cfg()["https"], samesite="lax", path="/")
         return resp
 
     app.include_router(r)
