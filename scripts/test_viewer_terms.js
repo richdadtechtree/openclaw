@@ -162,6 +162,38 @@ const srv = http.createServer((req, res) => {
   check(SAVED.length === 1 && SAVED[0].term === '디파이', '지우기(확인 후)');
   await ctx.close();
 
+  console.log('\n[⑥ 메인 화면에서도 오른쪽 아래에 늘 떠 있음 (2026-11-01 사용자 요청)]');
+  ctx = await browser.newContext({ viewport: { width: 1280, height: 860 } });
+  page = await ctx.newPage();
+  page.on('pageerror', e => { pass = false; console.log('  ❌ 페이지 오류: ' + e.message); });
+  await page.goto(base + '/economy');
+  await page.waitForSelector('#tn-fab:not([hidden])');
+  check(await page.$eval('#lb', e => e.hidden), '사진 뷰어를 열지 않은 메인 화면에서도 버튼이 보임');
+  if (process.env.SHOT_DIR) await page.screenshot({ path: path.join(process.env.SHOT_DIR, 'terms_main.png') });
+  const mpos = await page.$eval('#tn-fab', b => { const r = b.getBoundingClientRect(); return { r: innerWidth - r.right, b: innerHeight - r.bottom }; });
+  await page.mouse.wheel(0, 3000); await page.waitForTimeout(200);
+  const mpos2 = await page.$eval('#tn-fab', b => { const r = b.getBoundingClientRect(); return { r: innerWidth - r.right, b: innerHeight - r.bottom }; });
+  check(mpos.r < 40 && mpos.b < 40 && JSON.stringify(mpos) === JSON.stringify(mpos2), '메인 화면 오른쪽 아래 · 스크롤해도 그 자리', JSON.stringify(mpos2));
+  await page.click('#tn-fab');
+  check((await page.$$eval('#tn-list .tn-item b', e => e.map(x => x.textContent))).join() === '디파이', '메인 화면에서도 저장한 용어가 계속 보임');
+  check(!(await page.textContent('#tn-ctx')).includes('면'), '메인 화면에선 지금 보는 곳 = 날짜만(면·기사 없음)', await page.textContent('#tn-ctx'));
+  await page.fill('#tn-q', '환율');
+  await page.click('#tn-go');
+  await page.waitForSelector('#tn-res .tn-card');
+  check(lastPost.term === '환율' && lastPost.page === '' && lastPost.article === '', '메인 화면에서 찾아도 저장(면·기사는 비움)', JSON.stringify(lastPost));
+  SAVED.push({ id: 77, term: '금리', date: TODAY, page: '04.jpg', article: '', count: 1, short: '돈의 값' });
+  await page.reload();
+  await page.waitForSelector('#tn-fab:not([hidden])');
+  await page.waitForFunction(() => (newsState.images || []).length > 0);
+  await page.click('#tn-fab');
+  await page.fill('#tn-f', '금리');
+  await page.click('#tn-list a[data-go]');
+  const opened = await page.waitForFunction(() => !document.getElementById('lb').hidden && (V.list[V.i] || {}).name === '04.jpg', null, { timeout: 5000 }).then(() => true, () => false);
+  check(opened && !(await page.isVisible('#tn-panel')), "메인 화면에서 '4면'을 누르면 그 면으로 사진 뷰어가 열림",
+        opened ? '' : JSON.stringify(await page.evaluate(() => ({ lb: !document.getElementById('lb').hidden, n: (V.list && V.list[V.i] || {}).name, nd: newsState.date, sd: state.date }))));
+  check(await page.isVisible('#tn-fab'), '사진 뷰어 위에서도 버튼이 그대로 보임');
+  await ctx.close();
+
   console.log('\n[⑤ 폰 390px]');
   ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   page = await ctx.newPage();
