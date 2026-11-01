@@ -401,6 +401,61 @@ def lookup_terms(v, terms):
     return out
 
 
+# ── 📖 관리자 용어 노트 (2026-11-01 사용자 요청: 신문 요약의 지면+요약 보기에서 관리자만 모르는 용어를 찾아 계속 저장) ──
+# 풀이는 챌린지와 같은 공용 glossary(같은 용어는 AI 에 한 번만), 관리자별 '내가 찾은 용어' 목록은 admin_terms 표에.
+def _admin_terms_table(con):
+    con.execute("CREATE TABLE IF NOT EXISTS admin_terms(id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, "
+                "key TEXT NOT NULL, term TEXT NOT NULL, date TEXT, page TEXT, article TEXT, count INTEGER DEFAULT 1, "
+                "created_at TEXT, updated_at TEXT, UNIQUE(user_id, key))")
+
+
+def news_admin(request):
+    """신문 요약 화면의 관리자(로그인 관리자 또는 서버 IP 관리자) → challenge 와 같은 모양의 v, 아니면 None."""
+    if gate.is_ip_host(request):
+        return {"uid": 0, "admin": True} if gate.ip_admin_ok(request) else None
+    u = gate.session_user(request)
+    return {"uid": u["id"], "admin": True} if u and gate.is_admin(u) else None
+
+
+def admin_terms_list(v):
+    with gate._db() as con:
+        _admin_terms_table(con)
+        rows = con.execute("SELECT * FROM admin_terms WHERE user_id=? ORDER BY updated_at DESC, id DESC", (v["uid"],)).fetchall()
+    gl = glossary_get([r["term"] for r in rows])
+    return [{"id": r["id"], "term": r["term"], "date": r["date"] or "", "page": r["page"] or "", "article": r["article"] or "",
+             "count": r["count"], "updated": r["updated_at"], **({k: gl[r["key"]][k] for k in ("short", "easy", "invest")} if r["key"] in gl else {})}
+            for r in rows]
+
+
+def admin_terms_add(v, term, date="", page="", article=""):
+    """용어 하나를 찾아(공용 풀이 캐시 → 없으면 AI) 관리자 노트에 저장. 같은 용어면 '어디서 봤나'만 최신으로·횟수+1."""
+    try:
+        terms = parse_terms([term])                 # 30자·빈 글 검사
+    except ValueError:
+        raise ValueError("용어는 %d자까지 입력할 수 있어요." % TERM_LEN)
+    if not terms:
+        raise ValueError("용어를 입력해 주세요.")
+    t = terms[0]
+    res = lookup_terms(v, [t])[0]
+    date = date if gate.valid_date(date or "") else ""
+    page = (page or "")[:20] if NAME_RE.match(page or "") else ""
+    article = re.sub(r"\s+", " ", article or "").strip()[:120]
+    now = gate._now() + ".%06d" % (int(time.time() * 1e6) % 1000000)    # 같은 초에 여러 번 찾아도 최근 것이 위로
+    with gate._db() as con:
+        _admin_terms_table(con)
+        con.execute("INSERT INTO admin_terms(user_id,key,term,date,page,article,count,created_at,updated_at) VALUES(?,?,?,?,?,?,1,?,?) "
+                    "ON CONFLICT(user_id,key) DO UPDATE SET term=excluded.term, date=excluded.date, page=excluded.page, "
+                    "article=excluded.article, count=count+1, updated_at=excluded.updated_at",
+                    (v["uid"], term_key(t), t, date, page, article, now, now))
+    return res
+
+
+def admin_terms_delete(v, tid):
+    with gate._db() as con:
+        _admin_terms_table(con)
+        return con.execute("DELETE FROM admin_terms WHERE id=? AND user_id=?", (int(tid), v["uid"])).rowcount > 0
+
+
 def cohort_glossary(v, cohort_filter=None):
     """📖 기수 용어장: 우리 기수(+운영자) 글에 나온 모르는 용어를 모아 풀이와 함께.
     잠금 규칙은 글과 같다(D6) — 오늘 다른 사람 글의 용어는 내가 오늘 글을 쓴 뒤에만 보인다."""
@@ -908,6 +963,38 @@ def install(app):
         if not v:
             return deny()
         return JSONResponse(cohort_glossary(v, cohort if (v["admin"] and cohort.isdigit()) else None))
+
+    @app.get("/api/news/terms")
+    def api_news_terms(request: Request):
+        """📖 관리자 용어 노트 목록(관리자만, 아니면 403 → 화면은 버튼을 안 보인다)."""
+        v = news_admin(request)
+        return JSONResponse({"ok": True, "items": admin_terms_list(v)}) if v else deny()
+
+    @app.post("/api/news/terms")
+    async def api_news_terms_add(request: Request):
+        """본문 {"term","date","page","article"} → 풀이 + 노트에 저장."""
+        v = news_admin(request)
+        if not v:
+            return deny()
+        try:
+            b = await request.json()
+            res = admin_terms_add(v, str(b.get("term") or ""), str(b.get("date") or ""), str(b.get("page") or ""), str(b.get("article") or ""))
+        except ValueError as e:
+            return JSONResponse({"ok": False, "message": str(e)}, status_code=400)
+        except Exception:
+            return JSONResponse({"ok": False, "message": "요청을 읽지 못했어요."}, status_code=400)
+        return JSONResponse({"ok": True, "result": res, "items": admin_terms_list(v)})
+
+    @app.post("/api/news/terms/delete")
+    async def api_news_terms_delete(request: Request):
+        v = news_admin(request)
+        if not v:
+            return deny()
+        try:
+            tid = int((await request.json()).get("id"))
+        except Exception:
+            return JSONResponse({"ok": False}, status_code=400)
+        return JSONResponse({"ok": admin_terms_delete(v, tid), "items": admin_terms_list(v)})
 
     @app.get("/api/challenge/editorial")
     def api_editorial(request: Request, date: str = ""):
