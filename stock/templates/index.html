@@ -687,10 +687,36 @@
       .price-value { font-size: 22px; }
       .indices-grid { grid-template-columns: 1fr; }
     }
+    /* ── 사이트 탭 메뉴(2026-11-02): mystatus-btr.duckdns.org/market 으로 열 때만 보인다.
+          신문 요약(/economy)·디그·AI 소식 화면과 같은 모양·같은 자리표(<!--GATE_NAV-->)를 서버가 역할별로 채운다.
+          서버 IP:8000 의 '/' (슬랙 캡처 화면)에선 숨김 — 캡처 영역 밖이라 캡처엔 원래 안 찍힌다. */
+    .sitenav { display: none; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 18px; }
+    html.in-market .sitenav { display: flex; }
+    .sitenav a { display: inline-flex; align-items: center; padding: 6px 14px; border-radius: 999px; font-size: 14px; font-weight: 600;
+                 color: var(--text-muted); text-decoration: none; border: 1px solid var(--border-color); background: var(--bg-surface); }
+    .sitenav a:hover { color: var(--text-main); }
+    .sitenav a.who { margin-left: auto; background: transparent; border-color: transparent; font-weight: 500; font-size: 13px; }
+    .sitenav a.logout, .sitenav a.adminlink { padding: 5px 12px; font-size: 13px; }
+    .sitenav a[aria-current="page"] { background: #6366f1; color: #fff; border-color: #6366f1; cursor: default; }
+    @media (max-width: 768px) { .sitenav a { padding: 5px 11px; font-size: 13px; } }
   </style>
+  <script>
+    // /market 으로 열렸는지(사이트 탭 보이기·데이터 주소 고르기). 그림 그리기 전에 정해 깜빡임 없게.
+    if (location.pathname === '/market' || location.pathname.startsWith('/market/')) document.documentElement.classList.add('in-market');
+  </script>
 </head>
 <body>
   <div class="container">
+
+    <nav class="sitenav" aria-label="페이지 이동">
+      <!--GATE_NAV:market-->
+      <a href="/economy">📰 신문 요약</a>
+      <a href="/market" aria-current="page">📈 시장 지수</a>
+      <a href="/dig">📚 경제 공부 (디그)</a>
+      <a href="/ai">🤖 AI 소식</a>
+      <!--/GATE_NAV-->
+      <!--GATE_WHO-->
+    </nav>
 
     <!-- 슬랙 브리핑 캡처 범위: 헤더~지수 스냅샷 섹션까지만 (투자 타이밍·관심종목·푸터 제외).
          capture.py 가 이 id 하나를 통째로 element screenshot 해서, clip 좌표
@@ -933,6 +959,9 @@
     }
 
     // ---------------------------------------------------- Fetch & Render Engine
+    // 데이터 주소: /market 으로 열면 /market/api/* (도메인의 다른 앱과 /api/* 이름이 겹쳐서), 아니면 예전처럼 /api/*
+    const API = document.documentElement.classList.contains('in-market') ? '/market/api' : '/api';
+
     // ---------------------------------------------------- 그래프 기간(6개월~10년)
     const CHART_PERIODS = ['6m', '1y', '3y', '5y', '10y'];
     const CHART_TTL = 5 * 60 * 1000;      // 서버도 5분 캐시라 그보다 자주 받을 필요 없음
@@ -951,7 +980,7 @@
       const have = AppState.charts[period];
       if (!force && have && Date.now() - have.ts < CHART_TTL) return have;
       try {
-        const r = await fetch(`/api/charts?period=${period}`).then(r => r.json());
+        const r = await fetch(`${API}/charts?period=${period}`).then(r => r.json());
         if (r && r.status === 'success') {
           // 아직 데이터를 받는 중인 칸(null)이 있으면 30초 뒤 다시 받게 '오래된 것'으로 표시
           const pending = Object.values(r.data || {}).some(v => !v);
@@ -982,13 +1011,13 @@
     async function fetchDashboardData() {
       try {
         const [resIndices, resAlerts, resSummary, resCrypto, resFx] = await Promise.all([
-          fetch('/api/indices').then(r => r.json()),
-          fetch('/api/alerts').then(r => r.json()),
-          fetch('/api/summary').then(r => r.json()),
+          fetch(`${API}/indices`).then(r => r.json()),
+          fetch(`${API}/alerts`).then(r => r.json()),
+          fetch(`${API}/summary`).then(r => r.json()),
           // 비트코인은 거래소 장애가 나도 나머지 화면을 막지 않게 실패를 null 로 삼킨다
-          fetch('/api/crypto').then(r => r.json()).catch(() => null),
+          fetch(`${API}/crypto`).then(r => r.json()).catch(() => null),
           // 환율도 마찬가지로 실패해도 나머지 화면을 막지 않는다
-          fetch('/api/fx').then(r => r.json()).catch(() => null),
+          fetch(`${API}/fx`).then(r => r.json()).catch(() => null),
           // 그래프(고른 기간) — 5분에 한 번만 실제로 받는다
           fetchCharts(AppState.period)
         ]);

@@ -75,10 +75,14 @@ const FX_FULL = { price: 1385.5, change_rate: -0.42, basis: '전일 대비', sou
 let crypto = BTC_FULL;   // 테스트마다 바꿔 끼운다 (null = 전부 실패)
 let fx = FX_FULL;
 
+const apiHits = [];          // 데이터 요청 주소 기록(/api/* 인지 /market/api/* 인지)
 const srv = http.createServer((req, res) => {
-  const u = new URL(req.url, 'http://x').pathname;
+  const raw = new URL(req.url, 'http://x').pathname;
+  if (raw.includes('/api/')) apiHits.push(raw);
+  // /market 화면은 데이터를 /market/api/* 로 받는다(서버 app.py 의 별칭) — 가짜 서버도 같은 응답
+  const u = raw.replace(/^\/market\/api\//, '/api/');
   const send = (t, b) => { res.writeHead(200, { 'Content-Type': t }); res.end(b); };
-  if (u === '/') return send('text/html; charset=utf-8', fs.readFileSync(HTML));
+  if (u === '/' || u === '/market') return send('text/html; charset=utf-8', fs.readFileSync(HTML));
   if (u === '/api/indices') return send('application/json', JSON.stringify({ status: 'success', data: INDICES }));
   if (u === '/api/crypto') {
     if (crypto === 'http500') { res.writeHead(500); return res.end('boom'); }
@@ -404,6 +408,28 @@ const rows = l => { const m = {}; l.forEach(c => (m[c.y] = m[c.y] || []).push(c)
   const tabFit = await page.$eval('#period-tabs', e => { const r = e.getBoundingClientRect(); return r.right <= innerWidth && e.scrollWidth <= e.clientWidth + 1; });
   const hs2 = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
   ok(tabFit && !hs2, '폰 390px: 기간 버튼이 화면 안에 다 들어가고 가로 스크롤 없음');
+  await page.close();
+
+  console.log('⑨ 📈 시장 지수 /market (2026-11-02: mystatus-btr.duckdns.org 사이트 탭으로)');
+  apiHits.length = 0;
+  page = await open(1320, 'market');
+  const mkv = await page.evaluate(() => ({ nav: getComputedStyle(document.querySelector('.sitenav')).display !== 'none',
+    cur: (document.querySelector('.sitenav a[aria-current="page"]') || {}).textContent,
+    inCapture: !!document.querySelector('#briefing-capture-area .sitenav') }));
+  ok(mkv.nav && mkv.cur === '📈 시장 지수', `/market: 맨 위 사이트 탭이 보이고 '📈 시장 지수' 강조 (${mkv.cur})`);
+  ok(!mkv.inCapture, '사이트 탭은 슬랙 캡처 영역(#briefing-capture-area) 밖');
+  ok(apiHits.length > 0 && apiHits.every(h => h.startsWith('/market/api/')),
+     `/market 은 데이터를 /market/api/* 로 받음 (도메인의 PT 대시보드 /api/summary 와 안 겹치게) — ${[...new Set(apiHits.map(h => h.split('/').slice(0, 4).join('/')))].join(', ')}`);
+  ok((await page.$$eval('#indices-grid > .market-card', cs => cs.length)) === 8 && !!(await page.$('#indices-grid .year-chart')), '/market 에서도 카드 8장·그래프 그대로');
+  await page.close();
+  apiHits.length = 0;
+  page = await open(1320);
+  const root = await page.evaluate(() => getComputedStyle(document.querySelector('.sitenav')).display);
+  ok(root === 'none' && apiHits.every(h => h.startsWith('/api/')), `예전 '/'(서버 IP:8000·슬랙 캡처): 사이트 탭 숨김, 데이터는 예전처럼 /api/* (${root})`);
+  await page.close();
+  page = await open(390, 'market');
+  const hsM = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  ok(!hsM, '/market 폰 390px: 탭이 줄바꿈되어 가로 스크롤 없음');
   await page.close();
 
   await browser.close(); srv.close();

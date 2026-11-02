@@ -34,7 +34,7 @@ except Exception as _gate_err:
     @app.middleware("http")
     async def _gate_failsafe(request, call_next):
         p = request.url.path
-        if p in ("/economy", "/slack", "/dig", "/ai", "/challenge") or p.startswith(("/economy/", "/slack/", "/dig/", "/api/dig/", "/api/news/", "/ai/", "/api/ai/", "/challenge/", "/api/challenge/")):
+        if p in ("/economy", "/slack", "/dig", "/ai", "/challenge", "/market") or p.startswith(("/economy/", "/slack/", "/dig/", "/api/dig/", "/api/news/", "/ai/", "/api/ai/", "/challenge/", "/api/challenge/", "/market/")):
             from fastapi.responses import JSONResponse as _J
             return _J({"ok": False, "reason": "로그인 모듈 오류 — 운영자에게 알려 주세요"}, status_code=503)
         return await call_next(request)
@@ -824,6 +824,45 @@ def post_briefing_send(background_tasks: BackgroundTasks):
     """
     background_tasks.add_task(capture_and_send)
     return {"status": "accepted", "message": "briefing capture & send started"}
+
+
+def _dashboard_html():
+    for p in ("templates/index.html", "index.html"):
+        if os.path.exists(p):
+            with open(p, encoding="utf-8") as f:
+                return f.read()
+    return None
+
+
+# 2026-11-02 사용자 요청 "주가 대시보드를 mystatus-btr.duckdns.org/economy 쪽(사이트 탭)에 추가":
+# 같은 화면을 /market 으로도 내준다 — 맨 위 사이트 탭(📰 신문 요약 · 📈 시장 지수 · …)·로그인 이름이 채워지고,
+# 로그인한 사람만 볼 수 있다(gate 가 /market, /market/* 를 잠금). 데이터는 /market/api/* 로 받는다:
+# 도메인의 다른 앱(PT 대시보드)에도 /api/summary 같은 같은 이름 주소가 있어서, nginx 에 /market 하나만 연결하면 되게.
+# (서버 IP:8000 의 '/' 와 슬랙 15:40 캡처는 예전 그대로 — 잠금 없음, 탭 숨김)
+@app.get("/market", response_class=HTMLResponse)
+def market_view(request: Request):
+    html_text = _dashboard_html()
+    if html_text is None:
+        return HTMLResponse("<h1>Dashboard template loading...</h1>")
+    return HTMLResponse(_with_gate_footer(html_text, request))
+
+
+_MARKET_API = {"indices": get_indices, "crypto": get_crypto, "fx": get_fx, "alerts": get_alerts,
+               "custom-stocks": get_custom_stocks, "summary": get_summary}
+
+
+@app.get("/market/api/charts")
+def market_charts(period: str = "5y"):
+    return get_charts_api(period)
+
+
+@app.get("/market/api/{name}")
+def market_api(name: str):
+    """/api/* 읽기 전용 주소의 /market 쪽 별칭(같은 함수). 캡처·발송 같은 쓰기 주소는 일부러 없음."""
+    fn = _MARKET_API.get(name)
+    if fn is None:
+        return JSONResponse({"status": "error", "message": "not found"}, status_code=404)
+    return fn()
 
 
 # Version 2.6 - Stock Dashboard Modern UI with Country Flags & Slack Integration

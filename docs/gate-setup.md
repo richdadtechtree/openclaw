@@ -67,8 +67,9 @@ PT 대시보드 설정 파일(보통 `/etc/nginx/sites-enabled/` 아래, `server
 **HTTPS(443) server { } 안**에 아래 두 블록을 추가합니다. 기존 `location /` 는 그대로 둡니다.
 
 ```nginx
-    # 신문 요약·경제 공부·AI 소식·🔥 챌린지·로그인 화면 → stock 앱(8000)
-    location ~ ^/(economy|slack|dig|ai|challenge|gate|privacy)(/|$) {
+    # 신문 요약·📈 시장 지수(market, 2026-11-02)·경제 공부·AI 소식·🔥 챌린지·로그인 화면 → stock 앱(8000)
+    #   (시장 지수의 데이터 주소는 /market/api/* 라 이 줄 하나로 함께 연결된다 — /api/summary 는 PT 대시보드와 이름이 겹쳐 쓰지 않음)
+    location ~ ^/(economy|market|slack|dig|ai|challenge|gate|privacy)(/|$) {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;

@@ -707,5 +707,21 @@ check("수집하지 않는 것을 명시(이메일 등)", "이메일" in pv and 
 os.environ["PRIVACY_OPERATOR"] = ""
 check("운영자 정보가 비면 빨간 안내(빈칸 공개 방지)", "PRIVACY_OPERATOR" in client(make_app()).get("/privacy").text)
 
+print("[📈 시장 지수 /market — 2026-11-02 주가 대시보드를 사이트 탭으로]")
+check("/market 과 그 데이터 주소(/market/api/*)는 잠금", gate._is_gated("/market") and gate._is_gated("/market/api/indices"))
+check("서버 IP:8000 의 예전 대시보드('/', /api/*)는 잠그지 않음(슬랙 캡처 그대로)", not gate._is_gated("/") and not gate._is_gated("/api/indices"))
+check("/market/api/* 는 API 로 판정(로그인 안 됐으면 이동 대신 401 JSON)", gate._is_api("/market/api/charts"))
+check("로그인 뒤 /market 으로 돌아오기 허용", gate.safe_next("/market") == "/market" and gate.safe_next("/market?period=1y") == "/market?period=1y")
+_U = lambda **k: {"is_admin": 0, "status": "approved", "role": None, **k}
+_hrefs = lambda u, ip=False: [h for h, _ in gate.nav_links(u, ip)]
+check("일반·관리자·완수자·IP 관리자 탭에 📈 시장 지수(신문 요약 바로 뒤)",
+      all(_hrefs(u, ip)[:2] == ["/economy", "/market"] for u, ip in ((_U(), False), (_U(is_admin=1), False), (_U(role="graduate"), False), (None, True))))
+check("찰스 탭엔 없음 + 찰스는 /market 못 씀(디그·챌린지만)", "/market" not in _hrefs(_U(role="charles")) and not gate._charles_ok("/market"))
+r = client(make_app()).get("/market", follow_redirects=False)
+check("로그인 안 한 채 /market → 로그인 화면(돌아올 곳 /market)", r.status_code == 302
+      and r.headers.get("location", "").startswith("/gate/login") and urllib.parse.unquote(r.headers["location"]).endswith("next=/market"))
+r = client(make_app()).get("/market/api/indices", follow_redirects=False)
+check("로그인 안 한 채 /market/api/* → 401(데이터 안 줌)", r.status_code == 401)
+
 print("\n결과:", "전부 통과" if not fails else "실패 %d개: %s" % (len(fails), fails))
 sys.exit(1 if fails else 0)

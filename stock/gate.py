@@ -1,6 +1,6 @@
 """로그인(구글·카카오) + 개인정보 동의 + 승인 게이트 (2026-10-23 사용자 요청).
 
-잠그는 곳: /economy(신문 요약, 옛 /slack 은 넘겨 줌) · /dig(경제 공부) · /ai(AI 소식, 2026-10-28) 와 그 화면이 쓰는 /api/news/* · /api/dig/* · /api/ai/* · /slack/* 주소.
+잠그는 곳: /economy(신문 요약, 옛 /slack 은 넘겨 줌) · /dig(경제 공부) · /ai(AI 소식, 2026-10-28) · /market(시장 지수, 2026-11-02) 와 그 화면이 쓰는 /api/news/* · /api/dig/* · /api/ai/* · /slack/* · /market/api/* 주소.
           (주가 대시보드 '/' 와 나머지는 그대로 둔다)
 
 흐름
@@ -172,7 +172,7 @@ def _unsign(token):
         return None
 
 
-_NEXT_OK = re.compile(r"^/(economy|slack|dig|ai|challenge)(/[A-Za-z0-9_\-./]*)?(\?[A-Za-z0-9_\-=&%.]*)?$")
+_NEXT_OK = re.compile(r"^/(economy|slack|dig|ai|challenge|market)(/[A-Za-z0-9_\-./]*)?(\?[A-Za-z0-9_\-=&%.]*)?$")
 
 
 def safe_next(target, default="/economy"):
@@ -486,11 +486,12 @@ def can_challenge(u):
 def nav_links(u, ip_admin=False):
     """맨 위 탭에 보일 (주소, 글자) 목록. 찰스는 디그·챌린지만."""
     eco, dig, ai, ch = ("/economy", "📰 신문 요약"), ("/dig", "📚 경제 공부 (디그)"), ("/ai", "🤖 AI 소식"), ("/challenge", "🔥 챌린지")
+    mk = ("/market", "📈 시장 지수")     # 2026-11-02 주가 대시보드(:8000 의 '/')를 같은 사이트 탭으로
     if ip_admin or (u and is_admin(u)) or role_of(u) == "graduate":
-        return [eco, dig, ai, ch]
+        return [eco, mk, dig, ai, ch]
     if is_charles(u):
         return [dig, ch]
-    return [eco, dig, ai]
+    return [eco, mk, dig, ai]
 
 
 def nav_html(request, current):
@@ -1111,8 +1112,9 @@ def admin_html(me, rows, counts, flt, msg, d=""):
 
 
 def _is_gated(path):
-    return (path in ("/economy", "/slack", "/dig", "/ai", "/challenge")
-            or path.startswith(("/economy/", "/slack/", "/dig/", "/api/dig/", "/api/news/", "/ai/", "/api/ai/", "/challenge/", "/api/challenge/")))
+    return (path in ("/economy", "/slack", "/dig", "/ai", "/challenge", "/market")
+            or path.startswith(("/economy/", "/slack/", "/dig/", "/api/dig/", "/api/news/", "/ai/", "/api/ai/", "/challenge/", "/api/challenge/",
+                                "/market/")))
 
 
 def _is_challenge_path(path):
@@ -1125,7 +1127,7 @@ def _charles_ok(path):
 
 
 def _is_api(path):
-    return path.startswith(("/api/", "/economy/", "/slack/"))
+    return path.startswith(("/api/", "/economy/", "/slack/", "/market/"))
 
 
 def _cookie_args(max_age):
