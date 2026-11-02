@@ -1724,6 +1724,7 @@ document.getElementById("pod-slots").addEventListener("click",e=>{
   POD.slot=b.dataset.slot; POD.picked=true; showPodcast();
 });
 async function loadNews(){
+  resetMarksIfNewDate();
   if(state.edition==="online"){                        // 온라인신문엔 지면 원본·사설 칸이 없다(오디오는 시간대별로 있음)
     ["news","mk-ed"].forEach(id=>{ const el=document.getElementById(id); if(el) el.hidden=true; });
     ED.at=0;                                           // 종이신문으로 돌아오면 다시 그리게
@@ -1956,31 +1957,101 @@ function placeNav(){
      PC 에서 엉뚱한 데 찍힌다. 사진 왼쪽 위를 0,0 / 오른쪽 아래를 1,1 로 보면
      어디서 보든 같은 글자 위에 얹힌다.
 
-   저장은 하지 않는다 — 이 창의 메모리에만 있다(아래 '일회성' 설명 참고). */
+   관리자 표시는 서버에 보관하고, 일반 이용자 표시는 이 페이지 메모리에만 둔다. */
 const M={on:false, erase:false, color:"#ff5b5b", tool:"line", wk:1,
          marks:{}, date:"", cur:null, sel:null, move:null};
 
-/* ── 형광펜은 '일회성' 이다 (2026-09-17) ──────────────────────────────
-   그은 줄은 이 창의 메모리(M.marks)에만 있다.
-     · 새로고침하거나 창을 닫으면 사라진다.
-     · 서버에도, 브라우저 저장소에도 **아무것도 남기지 않는다.**
-     · 접속한 사람마다 각자의 창에서만 보이므로 자연히 완전히 분리된다.
-       (IP 로 나누는 것보다 정확하다 — 같은 WiFi 를 쓰는 가족은 IP 가 같고,
-        휴대폰은 이동하면 IP 가 바뀐다.)
-   창이 열려 있는 동안에는 장을 넘겨도, 뷰어를 닫았다 다시 열어도 유지된다.
-   날짜를 바꾸면 다른 신문이므로 비운다. */
-function resetMarksIfNewDate(){
-  if(M.date!==state.date){ M.marks={}; M.date=state.date; M.cur=null; M.sel=null; }
+/* 관리자만 날짜+파일 이름별 자동 저장. 권한은 서버가 판정하며 localStorage는 쓰지 않는다.
+   게스트는 뷰어를 닫았다 열 때만 유지, 날짜 변경·페이지 이탈·새로고침 때 비운다. */
+const MARK_DAYS=new Map();
+let markDay=null;
+function marksHint(){
+  return markDay?.mode==="admin" ? "관리자 표시 자동 저장" :
+    markDay?.mode==="guest" ? "임시 표시 · 페이지를 벗어나면 사라져요" :
+    markDay?.mode==="error" ? "표시를 불러오지 못했어요 · 뷰어를 다시 열어 주세요" : "저장된 표시 불러오는 중…";
 }
+function resetMarksIfNewDate(){
+  if(M.date===state.date && markDay && markDay.mode!=="error") return;
+  if(markDay?.mode==="guest") MARK_DAYS.delete(M.date);
+  M.cur=null; M.sel=null; M.move=null; M.date=state.date;
+  let d=MARK_DAYS.get(M.date);
+  if(!d || d.mode==="error"){
+    d={date:M.date, mode:"loading", marks:{}, jobs:new Map()};
+    MARK_DAYS.set(M.date,d);
+    fetch(`/api/news/marks?date=${encodeURIComponent(d.date)}`,{cache:"no-store",signal:AbortSignal.timeout(15000)})
+      .then(async r=>{
+        if(r.status===401 || r.status===403){ d.mode="guest"; return; }
+        const b=await r.json();
+        if(!r.ok || !b.ok || !b.pages) throw Error("load");
+        for(const [page,v] of Object.entries(b.pages)){
+          d.marks[page]=v.strokes;
+          d.jobs.set(page,{revision:v.revision, dirty:false, busy:false, conflict:false, timer:null});
+        }
+        d.mode="admin";
+      }).catch(()=>{d.mode="error";})
+      .finally(()=>{if(markDay===d){drawMarks();drawSideMarks();setSaved(marksHint());}});
+  }
+  markDay=d; M.marks=d.marks;
+}
+function marksChanged(){
+  const d=markDay, page=markName();
+  if(!d || d.mode!=="admin" || !page) return;
+  let j=d.jobs.get(page);
+  if(!j){ j={revision:0,dirty:false,busy:false,conflict:false,timer:null}; d.jobs.set(page,j); }
+  j.dirty=true;
+  clearTimeout(j.timer);
+  if(j.conflict){setSaved("다른 창에서 표시가 바뀌었어요 · 새로고침이 필요해요",true);return;}
+  setSaved("표시 저장 중…",true);
+  j.timer=setTimeout(()=>saveMarks(d,page,j),150);
+}
+async function saveMarks(d,page,j){
+  clearTimeout(j.timer);
+  if(!j.dirty || j.busy || j.conflict) return;
+  const body=JSON.stringify({date:d.date,page,revision:j.revision,strokes:d.marks[page]||[]});
+  j.busy=true; j.dirty=false;
+  let ok=false;
+  try{
+    const r=await fetch("/api/news/marks",{method:"POST",headers:{"Content-Type":"application/json"},
+      body,keepalive:new Blob([body]).size<60000,signal:AbortSignal.timeout(15000)});
+    const b=await r.json();
+    if(!r.ok || !b.ok){j.conflict=r.status===409;throw Error(b.message||"표시를 저장하지 못했어요");}
+    j.revision=b.revision; ok=true;
+    if(markDay===d) setSaved(j.dirty?"표시 저장 중…":"표시 저장됨",j.dirty);
+  }catch(e){
+    j.dirty=true;
+    if(markDay===d) setSaved(`${e.message} · 페이지를 닫기 전에 다시 확인해 주세요`,true);
+  }finally{
+    j.busy=false;
+    if(ok && j.dirty) saveMarks(d,page,j); // 먼저 보낸 저장이 끝난 뒤 최신 상태 저장(응답 순서 역전 방지)
+  }
+}
+function flushMarks(){
+  for(const d of MARK_DAYS.values()) for(const [page,j] of d.jobs) saveMarks(d,page,j);
+}
+window.addEventListener("beforeunload",e=>{
+  if([...MARK_DAYS.values()].some(d=>[...d.jobs.values()].some(j=>j.dirty||j.busy))){
+    flushMarks(); e.preventDefault(); e.returnValue="";
+  }
+});
+window.addEventListener("pagehide",()=>{
+  flushMarks();
+  // 뒤로 가기 캐시(bfcache)로 복원되어도 게스트 표시가 되살아나지 않게 비운다.
+  if(markDay?.mode!=="admin"){
+    MARK_DAYS.clear(); markDay=null; M.marks={}; M.date=""; M.cur=null; M.sel=null; M.move=null;
+  }
+});
+window.addEventListener("pageshow",e=>{if(e.persisted){resetMarksIfNewDate();drawMarks();drawSideMarks();}});
+window.addEventListener("online",flushMarks);
+document.addEventListener("visibilitychange",()=>{if(document.hidden) flushMarks();});
 
 const markName=()=> (V.list[V.i]||{}).name || "";          // 지금 보는 사진의 파일 이름
 const markList=()=> (M.marks[markName()] ||= []);          // 그 사진에 그은 줄 목록
 
 let savedT=null;
-function setSaved(t){
+function setSaved(t,persist=false){
   const el=$("lb-saved"); if(!el) return;
   el.textContent=t; clearTimeout(savedT);
-  if(t) savedT=setTimeout(()=>{ if(el.textContent===t) el.textContent=""; },2000);
+  if(t && !persist) savedT=setTimeout(()=>{ if(el.textContent===t) el.textContent=""; },2000);
 }
 
 /* ── 도구: 직선 · 동그라미 · 자유 ─────────────────────────────────────
@@ -2046,6 +2117,7 @@ function moveSel(st,orig,dx,dy){
   dx=Math.max(-Math.min(...xs), Math.min(1-Math.max(...xs), dx));
   dy=Math.max(-Math.min(...ys), Math.min(1-Math.max(...ys), dy));
   st.pts=orig.map(([x,y])=>[x+dx,y+dy]);
+  marksChanged();
   drawMarks();
 }
 
@@ -2133,7 +2205,7 @@ function eraseAt(nx,ny){
   }
   if(hit>=0 && best<0.035){
     if(list[hit]===M.sel) M.sel=null;            // 고른 동그라미를 지웠으면 점선도 없앤다
-    list.splice(hit,1); drawMarks(); return true;
+    list.splice(hit,1); marksChanged(); drawMarks(); return true;
   }
   return false;
 }
@@ -2148,7 +2220,7 @@ function setPen(on){
   const eraseBtn=$("lb-erase"); if(eraseBtn) eraseBtn.setAttribute("aria-pressed","false");
   // 도구모음 줄이 생기거나 사라지면 사진이 쓸 수 있는 높이가 달라진다 → 다시 맞춘다
   if($("lb-img").naturalWidth) measure(true);   // 보던 자리 그대로(가운데로 되돌리지 않음)
-  if(on){ showNav(); setSaved("이 창에서만 유지 · 새로고침하면 사라짐"); }
+  if(on){ showNav(); setSaved(marksHint()); }
 }
 
 /* opts (2026-09-23, '글+지면' 보기에서 쓰는 선택 사항 — 안 주면 예전과 똑같이 열린다)
@@ -2192,6 +2264,7 @@ function ctxProbe(){
 }
 function openViewer(i,opts={}){
   if(!newsState.images||!newsState.images.length) return;
+  resetMarksIfNewDate();
   if(!V.guards) lbGuards(true);
   V.list=newsState.images; V.i=Math.max(0,Math.min(i,V.list.length-1));
   resetPointers();                             // 이전에 꼬인 터치 상태를 새 기사로 가져오지 않게
@@ -2225,7 +2298,8 @@ function closeViewer(){
   if(M.on) setPen(false);                      // 형광펜 모드였다면 꺼 둔다
   V.pick=null; $("lb-pick").hidden=true;
   V.fromArt=null;
-  // 그은 줄은 메모리에 그대로 남는다 → 다시 열면 보인다(새로고침하면 사라짐)
+  flushMarks();
+  // 같은 페이지 안에서 다시 열면 게스트 표시도 그대로 보인다.
   drawSideMarks();                             // 기사 옆 작은 사진에도 방금 그은 줄을 반영
 }
 function showPage(){
@@ -2430,7 +2504,7 @@ COLORS.forEach(([id,col])=>{
     M.color=col; setErase(false); setHand(false,true);   // 색을 고르면 '그리려는 것' → 손바닥 끔
     COLORS.forEach(([k])=>$(k).setAttribute("aria-pressed", k===id?"true":"false"));
     const sel=selStroke();                     // 방금 그린 동그라미는 색도 바로 바뀐다
-    if(sel){ sel.c=col; drawMarks(); }
+    if(sel){ sel.c=col; marksChanged(); drawMarks(); }
   };
 });
 $("lb-c1").setAttribute("aria-pressed","true");        // 기본은 빨강
@@ -2452,7 +2526,7 @@ function setWeight(k){
   M.wk=k;
   WEIGHTS.forEach(([id,v])=>$(id).setAttribute("aria-pressed", v===k?"true":"false"));
   const sel=selStroke();
-  if(sel){ sel.w=strokeW(sel.t); drawMarks(); }
+  if(sel){ sel.w=strokeW(sel.t); marksChanged(); drawMarks(); }
 }
 WEIGHTS.forEach(([id,v])=>{ $(id).onclick=()=>setWeight(v); });
 
@@ -2466,14 +2540,14 @@ $("lb-undo").onclick=()=>{
   const list=M.marks[markName()];
   if(list&&list.length){
     if(M.sel===list[list.length-1]) M.sel=null;  // 되돌린 게 고른 것이면 같이 푼다
-    list.pop(); drawMarks();
+    list.pop(); marksChanged(); drawMarks();
   }
 };
 $("lb-clear").onclick=()=>{
   const list=M.marks[markName()];
   if(!list||!list.length) return;
   if(!confirm(`이 장(${V.i+1}쪽)에 그은 형광펜을 모두 지울까요?`)) return;
-  M.marks[markName()]=[]; M.sel=null; drawMarks();
+  M.marks[markName()]=[]; M.sel=null; marksChanged(); drawMarks();
 };
 // 도구모음을 누를 때 사진 쪽 동작(그리기·닫기)이 같이 일어나지 않게 막는다
 $("lb-tools").addEventListener("pointerdown",e=>e.stopPropagation());
@@ -2622,6 +2696,7 @@ stage.addEventListener("pointerdown",e=>{
   }
   // 형광펜 모드: 손가락 하나면 '그리기'. 두 손가락이면 평소처럼 확대(핀치).
   if(M.on && V.pts.size===1){
+    if(!markDay || !["admin","guest"].includes(markDay.mode)){setSaved(marksHint(),true);return;}
     const q=toImgXY(e.clientX,e.clientY);
     if(q){
       if(M.erase){ eraseAt(q[0],q[1]); V.drag=null; return; }
@@ -2693,7 +2768,7 @@ function endPointer(e){
   V.pts.delete(e.pointerId);
   if(V.pts.size<2) V.pinch=null;
   if(M.move){                                  // 옮기기 끝 — 고른 상태는 그대로 둔다(계속 조정 가능)
-    M.move=null; stage.classList.remove("moving"); V.drag=null; return;
+    M.move=null; flushMarks(); stage.classList.remove("moving"); V.drag=null; return;
   }
   if(M.cur){                                   // 긋기 끝
     const st=M.cur; M.cur=null;
@@ -2701,6 +2776,7 @@ function endPointer(e){
     const tooSmall = st.t!=="free" && strokeSpan(st) < 0.012;
     if(!tooSmall){
       markList().push(st);
+      marksChanged(); flushMarks();
       // 동그라미는 한 번에 맞추기 어렵다 → 방금 그린 것을 고른 상태로 두어 옮길 수 있게
       M.sel = st.t==="oval" ? st : null;
       if(M.sel) setSaved("동그라미 안쪽을 끌면 옮길 수 있어요 · 방향키로 미세조정 · Esc 로 확정");
@@ -2740,7 +2816,7 @@ function cancelPointer(e){
   if(M.move){ M.move=null; return; }           // 옮기던 중 끊겼으면 그 자리에 둔다
   if(M.cur){
     const st=M.cur; M.cur=null;
-    if(!(st.t!=="free" && strokeSpan(st)<0.012)) markList().push(st);
+    if(!(st.t!=="free" && strokeSpan(st)<0.012)){markList().push(st);marksChanged();flushMarks();}
     drawMarks();
   }
 }
@@ -2751,7 +2827,7 @@ stage.addEventListener("lostpointercapture",e=>{ if(V.pts.has(e.pointerId)) canc
 /* 손가락·끌기·확대 중 상태를 전부 비운다(그리던 선은 살린다). 뷰어를 열고 닫을 때와
    유령 손가락을 발견했을 때 부른다 → 한 기사에서 꼬인 상태가 다른 기사로 넘어가지 않는다. */
 function resetPointers(){
-  if(M.cur){ const st=M.cur; M.cur=null; if(!(st.t!=="free" && strokeSpan(st)<0.012)) markList().push(st); }
+  if(M.cur){ const st=M.cur; M.cur=null; if(!(st.t!=="free" && strokeSpan(st)<0.012)){markList().push(st);marksChanged();flushMarks();} }
   V.pts.clear(); V.pinch=null; V.drag=null; M.move=null;
   stage.classList.remove("panning","moving");
 }
@@ -2769,7 +2845,7 @@ window.addEventListener("resize",()=>{ if(!$("lb").hidden) measure(); });
    무엇을 브라우저에 남기나 (localStorage — 이 브라우저에서만, 서버로 안 보냄)
      · 고른 보기 방식            digest.view
      · 직접 연결한 기사→사진     digest.pageLinks  { "2026-09-23": { "<기사 제목>": "07.jpg" } }
-     ⚠️ 형광펜 줄은 여전히 **어디에도 저장하지 않는다**(일회성 규칙 그대로).
+     형광펜 줄은 관리자만 서버 저장, 일반 이용자는 페이지 메모리에서만 유지한다.
      저장소가 막힌 브라우저(사생활 모드 등)에서도 이 창에서는 그대로 동작한다. */
 const LINK_KEY="digest.pageLinks";
 const mem={view:null, links:null, font:null};             // 저장소가 막혔을 때의 대체 기억 장소
@@ -3108,7 +3184,7 @@ function decorate(force){
 }
 
 /* 기사 옆 작은 사진 위에 형광펜 줄을 겹쳐 그린다 — 뷰어에서 그은 줄이 여기서도 보이게.
-   (그은 줄은 여전히 이 창 메모리에만 있다. 새로고침하면 둘 다 사라진다.) */
+   (관리자는 서버에서 복원, 일반 이용자는 이 페이지 안에서만 유지.) */
 function drawSideMark(side){
   const img=side.querySelector(".side-fig img"), cv=side.querySelector(".side-fig canvas");
   if(!img||!cv||side.dataset.box) return;          // 잘라 보인 칸은 줄을 겹치지 않는다(뷰어에선 그대로 보인다)
