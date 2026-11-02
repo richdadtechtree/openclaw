@@ -1,6 +1,7 @@
 # HANDOFF — 현재 상태 & 다음 할 일
 
 > 먼저 `CLAUDE.md`(규칙/함정)를 읽으세요. 이 문서는 진행 현황과 남은 작업입니다.
+> 📦 **2026-11-02 인수인계서: `docs/HANDOFF-2026-11.md`** — 처음 맡는 사람용 요약(인계 범위·남은 일·서버 미확인 항목·인계 제외 목록).
 > 서버: openclaw = `/home/ubuntu/.openclaw`, stock = `/home/ubuntu/stock/stock`.
 
 ## 🗂️ 무엇이 어디서 도나 (편집 위치)
