@@ -460,5 +460,24 @@ r = cAd.post("/api/news/terms/delete", json={"id": tid}).json()
 check("지우기", r["ok"] and all(x["id"] != tid for x in r["items"]))
 check("서버에 계속 저장(다시 불러도 그대로)", [x["term"] for x in cAd.get("/api/news/terms").json()["items"]] == [x["term"] for x in r["items"]])
 
+print("[📖 IP 관리자 모드 = 관리자 계정과 같은 노트 (2026-11-02)]")
+os.environ["GATE_IP_ADMIN_PASSWORD"] = "ip-admin-password-123"
+with gate._db() as con:                                   # 예전에 IP 모드(번호 0)로 저장해 둔 용어 2개(하나는 관리자 노트에도 있음)
+    challenge._admin_terms_table(con)
+    con.execute("INSERT INTO admin_terms(user_id,key,term,date,page,article,count,created_at,updated_at) VALUES(0,'예전용어','예전용어','2026-10-30','01.jpg','',1,'x','2026-10-30T09:00:00')")
+    con.execute("INSERT INTO admin_terms(user_id,key,term,date,page,article,count,created_at,updated_at) VALUES(0,'환율','환율','2026-10-31','02.jpg','',2,'x','2026-10-31T09:00:00')")
+ca.post("/api/news/terms", json={"term": "환율", "date": "2026-10-20", "page": "09.jpg"})   # 관리자 계정(가장 먼저 만든 관리자) 노트에도 환율
+ci = TestClient(APP, base_url="http://203.0.113.5:8000", follow_redirects=False)
+ci.post("/gate/ip-login", content="password=ip-admin-password-123&next=%2Feconomy", headers={"Content-Type": "application/x-www-form-urlencoded"})
+ipl = ci.get("/api/news/terms").json()
+own = ca.get("/api/news/terms").json()
+check("IP 관리자 모드가 관리자 계정과 같은 노트를 봄", ipl.get("ok") and [x["term"] for x in ipl["items"]] == [x["term"] for x in own["items"]] and len(own["items"]) >= 2)
+fx = [x for x in own["items"] if x["term"] == "환율"]
+check("예전 IP 모드 용어는 관리자 노트로 옮겨 합침(같은 용어는 횟수 합침)", "예전용어" in [x["term"] for x in own["items"]] and len(fx) == 1 and fx[0]["count"] == 3
+      and not gate._db().execute("SELECT 1 FROM admin_terms WHERE user_id=0").fetchone())
+ci.post("/api/news/terms", json={"term": "디플레이션", "date": "2026-11-02"})
+check("IP 모드에서 찾은 용어가 관리자 계정 화면에도 보임", "디플레이션" in [x["term"] for x in ca.get("/api/news/terms").json()["items"]])
+check("다른 관리자 노트와는 여전히 따로", "디플레이션" not in [x["term"] for x in cAd.get("/api/news/terms").json()["items"]])
+
 print("\n결과: %s" % ("전부 통과" if not fails else "실패 %d개: %s" % (len(fails), fails)))
 sys.exit(1 if fails else 0)
