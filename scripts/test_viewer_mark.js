@@ -1,7 +1,7 @@
 /**
  * test_viewer_mark.js — 신문 사진 '형광펜' 기능 확인 (실제 Chromium)
  *
- * 형광펜은 **일회성**이다 — 이 창의 메모리에만 있고 새로고침하면 사라진다.
+ * 게스트 형광펜은 **일회성**이다 — 이 창의 메모리에만 있고 새로고침하면 사라진다.
  * 서버에도 브라우저 저장소에도 아무것도 남기지 않는다.
  *
  * 확인하는 것
@@ -26,7 +26,8 @@ const { chromium } = require('playwright');
 const http = require('http'), fs = require('fs'), path = require('path'), zlib = require('zlib');
 
 const HTML = path.join(__dirname, '..', 'stock', 'slack_digest_live.html');
-const CHROME = process.env.PW_CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const CHROME = process.env.PW_CHROME || (process.platform === 'win32'
+  ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : '/opt/pw-browsers/chromium-1194/chrome-linux/chrome');
 
 function makePng(w, h) {
   const crc32 = (buf) => { let c, crc = 0xffffffff;
@@ -52,11 +53,14 @@ const strayCalls = [];
 const srv = http.createServer((req, res) => {
   const u = req.url.split('?')[0];
   const send = (t, b) => { res.writeHead(200, { 'Content-Type': t }); res.end(b); };
-  if (u === '/' || u === '/slack') return send('text/html; charset=utf-8', fs.readFileSync(HTML));
-  if (u === '/slack/data') return send('application/json', JSON.stringify({ date: '2026-09-17', messages: [] }));
+  if (u === '/' || u === '/slack' || u === '/economy') return send('text/html; charset=utf-8', fs.readFileSync(HTML));
+  if (u === '/slack/data' || u === '/economy/data') return send('application/json', JSON.stringify({ date: '2026-09-17', messages: [] }));
   if (u === '/api/news/today') return send('application/json', JSON.stringify({ ok: true, ready: false, date: '2026-09-17' }));
   if (u === '/page.png') return send('image/png', PNG);
-  if (u.includes('marks')) {                      // 형광펜 관련 요청은 오면 안 된다
+  if (u === '/api/news/marks' && req.method === 'GET') {
+    res.writeHead(403, {'Content-Type':'application/json'}); return res.end('{"ok":false}');
+  }
+  if (u.includes('marks')) {                      // 게스트는 조회만, 저장 요청은 오면 안 된다
     strayCalls.push(req.method + ' ' + req.url);
     res.writeHead(404); return res.end();
   }
@@ -155,8 +159,9 @@ const selInfo = (page) => page.evaluate(() => {
   check(stored.length === 0, '브라우저 저장소에도 아무것도 안 남긴다',
         stored.length ? stored.join(', ') : '저장된 값 0개');
   // 저장하지 않으므로 '저장됨' 대신 일회성이라는 안내가 떠야 한다
+  await page.evaluate(() => setPen(true));
   const notice = await page.textContent('#lb-saved');
-  check(/새로고침하면 사라짐/.test(notice || ''), '"이 창에서만 유지" 안내가 보인다',
+  check(/페이지를 벗어나면 사라져요/.test(notice || ''), '게스트 임시 표시 안내가 보인다',
         `"${notice}"`);
 
   console.log('\n[확대해도 글씨에 붙어 따라가나]');
