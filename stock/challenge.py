@@ -409,10 +409,32 @@ def _admin_terms_table(con):
                 "created_at TEXT, updated_at TEXT, UNIQUE(user_id, key))")
 
 
+def _ip_admin_uid():
+    """서버 IP 관리자 모드(회원번호 없음)가 쓸 노트 주인 = 관리자 계정 중 가장 먼저 만든 사람(2026-11-02 사용자 요청:
+    'IP 관리자 모드와 관리자의 용어 정리는 공유 — 같은 관리자'). 예전에 IP 모드(번호 0)로 저장한 용어는 그 계정으로 옮겨 합친다."""
+    with gate._db() as con:
+        _admin_terms_table(con)
+        row = con.execute("SELECT id FROM users WHERE is_admin=1 ORDER BY id LIMIT 1").fetchone()
+        if not row:
+            return 0
+        uid = row["id"]
+        for r in con.execute("SELECT * FROM admin_terms WHERE user_id=0").fetchall():
+            have = con.execute("SELECT id, updated_at FROM admin_terms WHERE user_id=? AND key=?", (uid, r["key"])).fetchone()
+            if have:                                  # 둘 다 있으면 횟수를 합치고, 더 최근 것의 '어디서 봤나'를 남긴다
+                newer = (r["updated_at"] or "") > (have["updated_at"] or "")
+                con.execute("UPDATE admin_terms SET count=count+?" + (", date=?, page=?, article=?, updated_at=?" if newer else "") + " WHERE id=?",
+                            ((r["count"] or 1), r["date"], r["page"], r["article"], r["updated_at"], have["id"]) if newer else ((r["count"] or 1), have["id"]))
+                con.execute("DELETE FROM admin_terms WHERE id=?", (r["id"],))
+            else:
+                con.execute("UPDATE admin_terms SET user_id=? WHERE id=?", (uid, r["id"]))
+        return uid
+
+
 def news_admin(request):
-    """신문 요약 화면의 관리자(로그인 관리자 또는 서버 IP 관리자) → challenge 와 같은 모양의 v, 아니면 None."""
+    """신문 요약 화면의 관리자(로그인 관리자 또는 서버 IP 관리자) → challenge 와 같은 모양의 v, 아니면 None.
+    IP 관리자는 관리자 계정과 같은 노트를 쓴다(_ip_admin_uid)."""
     if gate.is_ip_host(request):
-        return {"uid": 0, "admin": True} if gate.ip_admin_ok(request) else None
+        return {"uid": _ip_admin_uid(), "admin": True} if gate.ip_admin_ok(request) else None
     u = gate.session_user(request)
     return {"uid": u["id"], "admin": True} if u and gate.is_admin(u) else None
 
