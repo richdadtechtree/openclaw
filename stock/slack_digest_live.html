@@ -3527,7 +3527,7 @@ tnLoad();
     if(!target || target.hidden) return;
     const top=Math.max(0,window.scrollY+target.getBoundingClientRect().top-offset());
     target.focus({preventScroll:true});
-    window.scrollTo({top,behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});
+    window.scrollTo({top,behavior:"instant"});
     setCurrent(target.id);
   });
   let queued=false;
