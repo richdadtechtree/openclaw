@@ -674,9 +674,43 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   .tn-item .m{font-size:12px;color:#8a826f;margin-top:2px}
   .tn-item .m a{color:#2f6fd6;cursor:pointer;text-decoration:underline}
   .tn-empty{color:#8a826f;padding:10px 0;font-size:13px}
+
+  /* 왼쪽 빠른 이동 — 본문 밖에 은은한 반투명 버튼, 작은 화면은 왼쪽 아래 한 줄. */
+  .section-jump{position:fixed;left:12px;top:50%;transform:translateY(-50%);z-index:20;
+    display:flex;flex-direction:column;gap:5px;padding:6px;width:126px;border-radius:14px;
+    background:color-mix(in srgb,var(--surface) 65%,transparent);
+    border:1px solid color-mix(in srgb,var(--line-strong) 45%,transparent);
+    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    box-shadow:0 4px 18px #00000008}
+  .section-jump[hidden]{display:none}
+  .section-jump button{appearance:none;display:flex;align-items:center;gap:7px;min-height:42px;
+    padding:9px 8px;border:0;border-radius:9px;background:transparent;color:var(--muted);
+    font:500 12px/1.4 var(--sans);text-align:left;white-space:nowrap;cursor:pointer;
+    opacity:.78;transition:background .15s,opacity .15s}
+  .section-jump button:hover:not(:disabled),.section-jump button:focus-visible{opacity:1;
+    background:color-mix(in srgb,var(--accent) 9%,transparent)}
+  .section-jump button:focus-visible{outline:2px solid var(--accent-bright);outline-offset:1px}
+  .section-jump button[aria-current="location"]{opacity:1;color:var(--accent);
+    background:color-mix(in srgb,var(--accent) 7%,transparent)}
+  .section-jump button:disabled{opacity:.4;cursor:default}
+  .section-jump .jump-icon{font-size:15px;width:18px;text-align:center;flex:none}
+  @media (min-width:900px){body{padding-left:150px}}
+  @media (max-width:899px){
+    .section-jump{left:10px;top:auto;bottom:calc(12px + env(safe-area-inset-bottom,0px));
+      transform:none;flex-direction:row;gap:2px;width:auto;padding:4px;max-width:calc(100vw - 20px)}
+    .section-jump button{min-height:42px;padding:8px;gap:5px;font-size:11px}
+    .section-jump .jump-icon{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){.section-jump button{transition:none}}
+  @media print{.section-jump{display:none}body{padding-left:0}}
 </style>
 </head>
 <body class="paper">
+<nav class="section-jump" id="section-jump" aria-label="신문 본문 바로가기">
+  <button type="button" data-section="pod" aria-controls="pod" disabled title="오디오 브리핑이 아직 준비되지 않았어요"><span class="jump-icon" aria-hidden="true">🎧</span><span>오디오 브리핑</span></button>
+  <button type="button" data-section="feed" aria-controls="feed" title="기사요약으로 이동"><span class="jump-icon" aria-hidden="true">📰</span><span>기사요약</span></button>
+  <button type="button" data-section="mk-ed" aria-controls="mk-ed" disabled title="사설이 아직 준비되지 않았어요"><span class="jump-icon" aria-hidden="true">✒️</span><span>사설</span></button>
+</nav>
 <div class="wrap">
   <nav class="sitenav" aria-label="페이지 이동">
     <!--GATE_NAV:economy-->
@@ -717,7 +751,7 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   </section>
 
   <!-- 2026-10-27 사용자 요청: 그날 요약으로 만든 NotebookLM 오디오 오버뷰(팟캐스트)를 바로 듣는 칸 -->
-  <section class="news pod" id="pod" hidden aria-labelledby="pod-h">
+  <section class="news pod" id="pod" tabindex="-1" hidden aria-labelledby="pod-h">
     <div class="news-head">
       <span class="news-kicker" id="pod-h"><span class="ico">🎧</span><span id="pod-t">오늘의 AI 오디오 브리핑</span></span>
       <span class="news-sub" id="pod-sub"></span>
@@ -736,9 +770,9 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
     set(); if(window.ResizeObserver) new ResizeObserver(set).observe(nav); else addEventListener("resize", set);
   })();
   </script>
-  <main class="feed" id="feed"></main>
+  <main class="feed" id="feed" tabindex="-1" aria-label="기사 요약"></main>
   <!-- 2026-10-20 사용자 요청: 매일경제 사설을 맨 아래 늘 (서버 stock/mk_editorial.py → /api/news/editorial) -->
-  <section class="mk-ed" id="mk-ed" hidden aria-labelledby="mk-ed-h">
+  <section class="mk-ed" id="mk-ed" tabindex="-1" hidden aria-labelledby="mk-ed-h">
     <div class="mk-ed-head"><span class="mk-ed-kicker">오피니언</span><h2 id="mk-ed-h">매일경제 사설</h2><span class="mk-ed-date" id="mk-ed-date"></span></div>
     <div id="mk-ed-list"></div>
   </section>
@@ -3454,6 +3488,56 @@ for(const t of ["keydown","keyup","wheel","pointerdown","pointermove","pointerup
   $("tn-fab").addEventListener(t,e=>e.stopPropagation(),{passive:true});
 }
 tnLoad();
+
+/* 빠른 이동: 고정된 상단 메뉴·글자 크기 도구줄 아래에 제목을 맞춘다.
+   날짜·종이/온라인 전환으로 숨겨진 칸은 이동하지 않고, 사진 창에선 단추도 숨긴다. */
+(function initSectionJump(){
+  const nav=document.getElementById("section-jump");
+  const buttons=[...nav.querySelectorAll("button[data-section]")];
+  const sections=buttons.map(b=>document.getElementById(b.dataset.section));
+  const viewer=document.getElementById("lb");
+  const offset=()=>[document.querySelector(".sitenav"),document.getElementById("toolbar")]
+    .reduce((h,el)=>h+(el?el.getBoundingClientRect().height:0),16);
+  function setCurrent(id){
+    buttons.forEach(b=>{
+      if(b.dataset.section===id && !b.disabled) b.setAttribute("aria-current","location");
+      else b.removeAttribute("aria-current");
+    });
+  }
+  function update(){
+    nav.hidden=!!viewer && !viewer.hidden;
+    buttons.forEach((b,i)=>{
+      b.disabled=!sections[i] || sections[i].hidden;
+      b.title=b.disabled ? b.textContent.trim()+"이 아직 준비되지 않았어요" : b.textContent.trim()+"으로 이동";
+    });
+    const visible=sections.filter(el=>el && !el.hidden);
+    let current=null;
+    for(const el of visible){
+      if(el.getBoundingClientRect().top<=offset()+24) current=el.id;
+    }
+    // 페이지 맨 아래에서는 짧은 사설 칸도 현재 위치로 표시한다.
+    if(visible.length && window.scrollY>0 &&
+       window.innerHeight+window.scrollY>=document.documentElement.scrollHeight-4) current=visible[visible.length-1].id;
+    setCurrent(current);
+  }
+  nav.addEventListener("click",e=>{
+    const b=e.target.closest("button[data-section]");
+    if(!b || !nav.contains(b) || b.disabled) return;
+    const target=document.getElementById(b.dataset.section);
+    if(!target || target.hidden) return;
+    const top=Math.max(0,window.scrollY+target.getBoundingClientRect().top-offset());
+    target.focus({preventScroll:true});
+    window.scrollTo({top,behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth"});
+    setCurrent(target.id);
+  });
+  let queued=false;
+  const schedule=()=>{if(queued) return;queued=true;requestAnimationFrame(()=>{queued=false;update();});};
+  window.addEventListener("scroll",schedule,{passive:true});
+  window.addEventListener("resize",schedule);
+  const observer=new MutationObserver(schedule);
+  [...sections,viewer].filter(Boolean).forEach(el=>observer.observe(el,{attributes:true,attributeFilter:["hidden"]}));
+  update();
+})();
 </script>
 </body>
 </html>
