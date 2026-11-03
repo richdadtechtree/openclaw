@@ -325,13 +325,16 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
      그대로 따라가므로, 확대하거나 끌어도 형광펜이 글씨에 딱 붙어 있다.
      mix-blend-mode:multiply → 진짜 형광펜처럼 글씨가 비쳐 보인다(덧칠해도 안 진해짐). */
   .lb-mark{position:absolute;left:0;top:0;pointer-events:none;mix-blend-mode:multiply;opacity:.62}
-  .lb-stage.marking{cursor:crosshair}
-  .lb-stage.marking img{cursor:crosshair}
-  /* 방금 그린 동그라미 위에 커서를 올리면 '옮길 수 있다'고 모양으로 알려준다.
-     .marking 보다 클래스가 하나 더 많아 우선순위가 높다 → 십자 커서를 이긴다. */
+  /* 편집 중엔 확대·누름 상태의 grab/grabbing 보다 펜 커서를 우선한다.
+     펜촉(4,28)이 실제 긋는 자리. 손바닥·임시 이동·표시 옮기기는 기존 커서를 쓴다. */
+  .lb-stage.marking:not(.hand):not(.spacepan):not(.panning):not(.movable):not(.moving),
+  .lb-stage.marking:not(.hand):not(.spacepan):not(.panning):not(.movable):not(.moving) img{
+    cursor:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2232%22%20height%3D%2232%22%20viewBox%3D%220%200%2032%2032%22%3E%3Cpath%20d%3D%22M4%2028l2-8L23%203l6%206-17%2017z%22%20fill%3D%22%23fbbf24%22%20stroke%3D%22%23fff%22%20stroke-width%3D%223%22%20stroke-linejoin%3D%22round%22%2F%3E%3Cpath%20d%3D%22M4%2028l2-8L23%203l6%206-17%2017z%22%20fill%3D%22%23fbbf24%22%20stroke%3D%22%23111827%22%20stroke-width%3D%221.5%22%20stroke-linejoin%3D%22round%22%2F%3E%3Cpath%20d%3D%22M6%2020l6%206M20%206l6%206%22%20stroke%3D%22%23111827%22%20stroke-width%3D%221.5%22%2F%3E%3Cpath%20d%3D%22M4%2028l2-8%206%206z%22%20fill%3D%22%23111827%22%2F%3E%3C%2Fsvg%3E") 4 28,crosshair;
+  }
+  /* 방금 그린 동그라미 위에서는 펜 대신 '옮길 수 있다'는 커서를 쓴다. */
   .lb-stage.marking.movable,.lb-stage.marking.movable img{cursor:move}
   .lb-stage.moving,.lb-stage.moving img{cursor:grabbing}
-  /* ✋ 손바닥 모드 — 형광펜이 켜져 있어도 왼쪽 버튼은 '옮기기'. 커서도 손 모양으로(십자 커서보다 우선) */
+  /* ✋ 손바닥 모드 — 형광펜이 켜져 있어도 왼쪽 버튼은 '옮기기'. 커서도 손 모양으로. */
   .lb-stage.hand,.lb-stage.hand img,.lb-stage.hand.marking,.lb-stage.hand.marking img{cursor:grab}
   .lb-stage.hand.panning,.lb-stage.hand.panning img{cursor:grabbing}
   #lb-note-btn[aria-pressed="true"]{background:#2f4272;border-color:#7f9bf5;color:#fff}
