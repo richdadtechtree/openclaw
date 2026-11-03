@@ -2210,10 +2210,13 @@ function stickerAt(x,y){
 function drawSticker(ctx,st,pw,ph){
   const color=STICKER_COLORS[st.label];if(!color)return;
   const [a,b]=st.pts,x=a[0]*pw,y=a[1]*ph,w=(b[0]-a[0])*pw,h=(b[1]-a[1])*ph;
-  // 배경과 글자 내부는 비워 두고 글자의 외곽선에만 색을 입힌다.
-  ctx.save();ctx.strokeStyle=color;ctx.lineWidth=Math.max(.9,h*.055);ctx.lineJoin="round";
-  ctx.font="700 "+Math.max(1,h*.6)+"px system-ui, sans-serif";
-  ctx.textAlign="center";ctx.textBaseline="middle";ctx.strokeText(st.label,x+w/2,y+h/2,Math.max(1,w*.86));
+  // 지면 글자와 겹쳐도 읽히도록 불투명한 색 배경과 흰색 굵은 글씨를 쓴다.
+  ctx.save();
+  const border=Math.min(w,h)*.05,inset=border/2;
+  ctx.beginPath();ctx.roundRect(x+inset,y+inset,w-border,h-border,Math.min(w,h)*.18);
+  ctx.fillStyle=color;ctx.fill();ctx.strokeStyle="#fff";ctx.lineWidth=border;ctx.stroke();
+  ctx.fillStyle="#fff";ctx.font="800 "+Math.max(1,h*.6)+"px system-ui, sans-serif";
+  ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(st.label,x+w/2,y+h/2,Math.max(1,w*.86));
   ctx.restore();
 }
 function drawStickerOverlay(pw,ph,w,h,transform){

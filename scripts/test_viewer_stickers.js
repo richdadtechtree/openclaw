@@ -58,7 +58,7 @@ const server=http.createServer((req,res)=>{
     check(Math.abs((what.pts[0][0]+what.pts[1][0])/2-.25)<.01,'stamp is centered at the mouse');
     check(await page.evaluate(()=>STICK.active&&V.hand&&!M.on),'sticker movement preserves hand/pen state');
     check(await page.locator('#lb-stage').evaluate(el=>getComputedStyle(el).cursor)==='move','movement cursor shown');
-    check(await page.locator('#lb-stickers').evaluate(el=>getComputedStyle(el).opacity==='1'),'sticker outline layer preserves its original color');
+    check(await page.locator('#lb-stickers').evaluate(el=>getComputedStyle(el).opacity==='1'),'sticker layer preserves its original color');
     await page.keyboard.press('Escape');
     check(await page.locator('#lb-stage').evaluate(el=>getComputedStyle(el).cursor)===prior,'Escape restores previous hand cursor');
     check(await page.evaluate(()=>!document.getElementById('lb').hidden&&!STICK.active),'Escape keeps the viewer and sticker');
@@ -113,20 +113,31 @@ const server=http.createServer((req,res)=>{
     check(true,'sticker layer follows image zoom');
     const exported=await page.evaluate(async()=>{
       const st=markList().find(s=>s.t==='sticker'),[a,b]=st.pts;
-      const transparent=document.createElement("canvas");transparent.width=1200;transparent.height=1800;
-      drawSticker(transparent.getContext("2d"),st,1200,1800);
       const x=Math.floor(a[0]*1200),y=Math.floor(a[1]*1800),w=Math.ceil((b[0]-a[0])*1200),h=Math.ceil((b[1]-a[1])*1800);
-      const pixels=transparent.getContext("2d").getImageData(x,y,w,h).data;
-      let colored=0;for(let i=3;i<pixels.length;i+=4)if(pixels[i])colored++;
-      const margin=transparent.getContext("2d").getImageData(x+Math.floor(w*.08),y+Math.floor(h*.5),1,1).data[3];
+      const samples=[];
+      for(const label of Object.keys(STICKER_COLORS)){
+        const layer=document.createElement("canvas");layer.width=1200;layer.height=1800;
+        const context=layer.getContext("2d");
+        drawSticker(context,{...st,label},1200,1800);
+        const pixels=context.getImageData(x,y,w,h).data;
+        const expected=STICKER_COLORS[label].slice(1).match(/../g).map(v=>parseInt(v,16));
+        let opaque=0,whiteText=0,colored=0;
+        for(let row=Math.floor(h*.2);row<h*.8;row++)for(let col=Math.floor(w*.1);col<w*.9;col++){
+          const i=(row*w+col)*4;
+          if(pixels[i+3]===255)opaque++;
+          if(pixels[i]===255&&pixels[i+1]===255&&pixels[i+2]===255&&pixels[i+3]===255)whiteText++;
+          if(expected.every((v,k)=>pixels[i+k]===v)&&pixels[i+3]===255)colored++;
+        }
+        samples.push({label,opaque,whiteText,colored,outside:context.getImageData(x-2,y-2,1,1).data[3]});
+      }
       const cv=await renderPage(V.list[V.i]);
       const background=[...cv.getContext("2d").getImageData(x+Math.floor(w*.08),y+Math.floor(h*.5),1,1).data];
-      const out=cv.getContext("2d").getImageData(x,y,w,h).data;
-      let blueEdges=0;for(let i=0;i<out.length;i+=4)if(out[i+2]>out[i]&&out[i]<240)blueEdges++;
-      return {colored,area:w*h,margin,background,blueEdges};
+      return {samples,background};
     });
-    check(exported.margin===0&&exported.colored>20&&exported.colored<exported.area*.4,'sticker uses colored letter outlines with a transparent background');
-    check(exported.background.every(v=>v===255)&&exported.blueEdges>20,'image/PDF output keeps paper visible and includes colored text outlines');
+    check(exported.samples.every(s=>s.opaque>100&&s.whiteText>20&&s.colored>100&&s.outside===0),
+      'all four stickers use opaque colored backgrounds and bold white text');
+    check(exported.background.join(',')==='29,78,216,255',
+      'image/PDF output preserves the high contrast sticker background');
     await saved(page);const persisted=await list(page);
     await page.reload();await open(page);
     assert.deepEqual(await list(page),persisted);check(true,'admin stickers including CHECK and pen marks survive reload');
@@ -140,7 +151,7 @@ const server=http.createServer((req,res)=>{
     check((await list(page)).length===beforeUndo,'undo removes the last added sticker');await saved(page);
     await page.evaluate(()=>{finishStickerMode();closeViewer();drawSideMarks();});
     await page.waitForFunction(()=>document.querySelector('.side-stickers')?.width>0);
-    check(await page.locator('.side-stickers').first().evaluate(el=>getComputedStyle(el).mixBlendMode==='normal'&&getComputedStyle(el).opacity==='1'),'article previews preserve outline colors without highlight blending');
+    check(await page.locator('.side-stickers').first().evaluate(el=>getComputedStyle(el).mixBlendMode==='normal'&&getComputedStyle(el).opacity==='1'),'article previews preserve solid sticker colors without highlight blending');
     const outsideCount=(await list(page)).length;await page.keyboard.press('1');
     check((await list(page)).length===outsideCount,'shortcuts are inactive outside the paper viewer');
     await ctx.close();admin=false;
