@@ -1593,6 +1593,7 @@ function syncEdition(){
   const on=state.edition==="online";
   document.querySelectorAll("#edtog button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.ed===state.edition)));
   document.getElementById("ed-label").textContent=on?"온라인 신문 요약 · 9시·18시":"오늘 신문 요약";
+  window.dispatchEvent(new Event("digest-edition-updated"));
 }
 
 async function load(){
@@ -1615,6 +1616,32 @@ async function load(){
 function snapshot(){ return JSON.stringify([state.data,[...state.active].sort()]); }   // JSON 묶음도 메시지 안에 있어 함께 바뀐다
 let lastSnapshot=null;      // 마지막으로 그린 지문
 let seenKeys=new Set();     // 이미 화면에 있던 메시지들 → 이번에 처음 보이는 것만 애니메이션
+
+
+/* 온라인 시간대는 글 머리의 발행 회차를 우선한다. 기사 본문 속 '18시'는 회차로 쓰지 않는다. */
+function onlineNewsSlot(message){
+  const declared=String(message.slot||"");
+  if(/^(?:0?9|18)$/.test(declared))return declared==="18"?"18":"09";
+  const lines=slackDecode(message.text||"").split("\n").map(s=>s.trim()).filter(Boolean);
+  const headers=[];
+  for(const line of lines.slice(0,12)){
+    if(/^\d{1,3}[.)]\s|^[•·-]\s*(?:WHAT|WHY|HOW)\s*:/i.test(line))break;
+    headers.push(line);
+  }
+  const header=headers.join("\n");
+  const match=header.match(/\b(0?9|18)\s*시\s*(?:온라인\s*)?(?:신문|뉴스|브리핑|한\s*줄)/)
+    ||header.match(/온라인\s*(?:신문|뉴스|브리핑)[^\n]{0,80}?\b(0?9|18)\s*시/)
+    ||header.match(/\b(0?9|18):00\s*기준/);
+  if(match)return match[1]==="18"?"18":"09";
+  // 머리글 없는 연속 글은 저장된 게시 시각(한국시간)으로 묶는다.
+  let stamp=String(message.ts||"");
+  if(!/^\d{4}-\d\d-\d\dT/.test(stamp))return "";
+  if(!/(?:Z|[+-]\d\d:\d\d)$/.test(stamp))stamp+="+09:00";
+  const instant=new Date(stamp);
+  if(!Number.isFinite(instant.getTime()))return "";
+  const hour=Number(new Intl.DateTimeFormat("en",{timeZone:"Asia/Seoul",hour:"2-digit",hourCycle:"h23"}).format(instant));
+  return hour>=18?"18":hour>=9?"09":"";
+}
 
 function render(){
   const snap=snapshot();
@@ -1653,10 +1680,18 @@ function render(){
       ?'<div class="empty"><div class="big">아직 온라인신문 요약이 없어요</div>최근 12시간 안에 나온 네이버 경제 주요 기사를 매일 9시·18시에 최대 5개 요약해 올립니다.</div>'
       :'<div class="empty"><div class="big">아직 표시할 메시지가 없어요</div>이 날짜에 #gpt 채널에 올라온 대화가 없습니다.</div>');
   }
+  const onlineAnchors=new Set();
   shown.forEach(m=>{
     const c=cat(m.source);const el=document.createElement("article");
     // 이번에 처음 등장하는 메시지에만 'is-new' → 그 카드만 스윽 나타난다
     el.className="entry"+(seenKeys.has(msgKey(m))?"":" is-new");
+    if(state.edition==="online"){
+      const slot=onlineNewsSlot(m);
+      if(slot){
+        el.dataset.onlineSlot=slot;el.dataset.onlineDate=state.date;
+        if(!onlineAnchors.has(slot)){el.id="online-news-"+slot;el.tabIndex=-1;onlineAnchors.add(slot);}
+      }
+    }
     el.style.setProperty("--dot",c.color);
     const raw=bodyOf.get(m)||"";                    // 꼬리표·JSON 묶음을 뗀 사람이 읽는 글
     const txt=dropNotes(raw)||raw;                  // 안내문 줄을 걷어낸 본문(다 지워지면 원문 유지)
@@ -1675,6 +1710,7 @@ function render(){
   seenKeys=new Set(msgs.map(msgKey));   // 다음 렌더 때 '새 것'을 가려내기 위한 기준
   feedVer++; decorate();                // 피드를 새로 그렸으면 '글+지면' 사진 칸도 다시 붙인다
   decorateFlows();                      // '연결 5가지' 를 기사 고리로(2026-10-20)
+  window.dispatchEvent(new Event("digest-content-updated"));
 }
 /* '오늘의 한줄 요약'(종이) · 'HH시 온라인 한줄 요약'(온라인) 메시지 → 번호 달린 큰 글씨 상자. 아니면 null.
    모양: [신문요약 n/N] 머리줄(있으면 뗌) → '📌 …한줄 요약' 줄 → 흐름 문장들(한 줄에 하나). */
@@ -3520,48 +3556,59 @@ tnLoad();
 (function initSectionJump(){
   const nav=document.getElementById("section-jump");
   const buttons=[...nav.querySelectorAll("button[data-section]")];
-  const sections=buttons.map(b=>document.getElementById(b.dataset.section));
   const viewer=document.getElementById("lb");
   const offset=()=>[document.querySelector(".sitenav"),document.getElementById("toolbar")]
     .reduce((h,el)=>h+(el?el.getBoundingClientRect().height:0),16);
+  function setMode(){
+    const mode=state.edition==="online"?"online":"paper";
+    if(nav.dataset.edition===mode)return;
+    nav.dataset.edition=mode;
+    const entries=mode==="online"
+      ? [["pod","🎧","브리핑"],["online-news-09","🕘","9시 뉴스"],["online-news-18","🕕","18시 뉴스"]]
+      : [["pod","🎧","오디오 브리핑"],["feed","📰","기사요약"],["mk-ed","✒️","사설"]];
+    buttons.forEach((b,i)=>{
+      const [id,icon,label]=entries[i];b.dataset.section=id;b.setAttribute("aria-controls",id);
+      b.querySelector(".jump-icon").textContent=icon;b.lastElementChild.textContent=label;
+    });
+  }
+  function targetFor(button){
+    const el=document.getElementById(button.dataset.section);
+    if(!el||el.hidden)return null;
+    if(el.dataset.onlineSlot && (state.edition!=="online"||el.dataset.onlineDate!==state.date))return null;
+    return el;
+  }
   function setCurrent(id){
     buttons.forEach(b=>{
-      if(b.dataset.section===id && !b.disabled) b.setAttribute("aria-current","location");
+      if(b.dataset.section===id&&!b.disabled)b.setAttribute("aria-current","location");
       else b.removeAttribute("aria-current");
     });
   }
   function update(){
-    nav.hidden=!!viewer && !viewer.hidden;
-    buttons.forEach((b,i)=>{
-      b.disabled=!sections[i] || sections[i].hidden;
-      b.title=b.disabled ? b.textContent.trim()+"이 아직 준비되지 않았어요" : b.textContent.trim()+"으로 이동";
+    setMode();nav.hidden=!!viewer&&!viewer.hidden;
+    buttons.forEach(b=>{
+      b.disabled=!targetFor(b);
+      b.title=b.disabled?b.lastElementChild.textContent+" 준비 중":b.lastElementChild.textContent+" 보기";
     });
-    const visible=sections.filter(el=>el && !el.hidden);
+    const visible=buttons.map(targetFor).filter(Boolean).sort((a,b)=>a.getBoundingClientRect().top-b.getBoundingClientRect().top);
     let current=null;
-    for(const el of visible){
-      if(el.getBoundingClientRect().top<=offset()+24) current=el.id;
-    }
-    // 페이지 맨 아래에서는 짧은 사설 칸도 현재 위치로 표시한다.
-    if(visible.length && window.scrollY>0 &&
-       window.innerHeight+window.scrollY>=document.documentElement.scrollHeight-4) current=visible[visible.length-1].id;
+    for(const el of visible){if(el.getBoundingClientRect().top<=offset()+24)current=el.id;}
+    if(visible.length&&window.scrollY>0&&window.innerHeight+window.scrollY>=document.documentElement.scrollHeight-4)current=visible[visible.length-1].id;
     setCurrent(current);
   }
   nav.addEventListener("click",e=>{
     const b=e.target.closest("button[data-section]");
-    if(!b || !nav.contains(b) || b.disabled) return;
-    const target=document.getElementById(b.dataset.section);
-    if(!target || target.hidden) return;
+    if(!b||!nav.contains(b))return;
+    update();if(b.disabled)return;
+    const target=targetFor(b);if(!target)return;
     const top=Math.max(0,window.scrollY+target.getBoundingClientRect().top-offset());
-    target.focus({preventScroll:true});
-    window.scrollTo({top,behavior:"instant"});
-    setCurrent(target.id);
+    target.focus({preventScroll:true});window.scrollTo({top,behavior:"instant"});setCurrent(target.id);
   });
   let queued=false;
-  const schedule=()=>{if(queued) return;queued=true;requestAnimationFrame(()=>{queued=false;update();});};
-  window.addEventListener("scroll",schedule,{passive:true});
-  window.addEventListener("resize",schedule);
+  const schedule=()=>{if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;update();});};
+  window.addEventListener("scroll",schedule,{passive:true});window.addEventListener("resize",schedule);
+  window.addEventListener("digest-edition-updated",schedule);window.addEventListener("digest-content-updated",schedule);
   const observer=new MutationObserver(schedule);
-  [...sections,viewer].filter(Boolean).forEach(el=>observer.observe(el,{attributes:true,attributeFilter:["hidden"]}));
+  ["pod","mk-ed","lb"].map(id=>document.getElementById(id)).filter(Boolean).forEach(el=>observer.observe(el,{attributes:true,attributeFilter:["hidden"]}));
   update();
 })();
 

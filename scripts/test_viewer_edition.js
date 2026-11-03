@@ -13,7 +13,7 @@
 const { chromium } = require('playwright');
 const http = require('http'), fs = require('fs'), path = require('path');
 const HTML = path.join(__dirname, '..', 'stock', 'slack_digest_live.html');
-const CHROME = process.env.PW_CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const CHROME = process.env.PW_CHROME || chromium.executablePath();
 const D = '2026-10-27';
 const PAPER = `[신문요약 1/1] ${D}\n\n1. 🔵 종이기사 제목가\n• 사진: 01\n• WHAT: 종이 기사 내용.\n• WHY: 기사에 원인 언급 없음.\n• HOW:\n• [확정] 종이 사실.\n• 원문: <https://n.news.naver.com/mnews/article/009/0000000001|매일경제>`;
 const HEAD = '🕘 온라인 신문 · 2026-10-27 09:00 기준 (한국시간)\n기사 범위: 2026-10-26 21:00 ~ 2026-10-27 09:00';
@@ -44,8 +44,8 @@ const srv = http.createServer((req, res) => {
   await new Promise(r => srv.listen(0, r));
   const base = `http://127.0.0.1:${srv.address().port}`;
   const browser = await chromium.launch({ executablePath: CHROME });
-  let pass = true;
-  const check = (ok, msg, extra = '') => { pass &&= ok; console.log((ok ? '  ✅ ' : '  ❌ ') + msg + (extra ? `  ${extra}` : '')); };
+  let pass = true, checks = 0;
+  const check = (ok, msg, extra = '') => { checks++; pass &&= ok; console.log((ok ? '  ✅ ' : '  ❌ ') + msg + (extra ? `  ${extra}` : '')); };
   const look = page => page.evaluate(() => {
     const vis = id => { const el = document.getElementById(id); return !!el && !el.hidden && el.getBoundingClientRect().height > 0; };
     return { feed: document.getElementById('feed').textContent, pod: vis('pod'), ed: vis('mk-ed'),
@@ -56,6 +56,7 @@ const srv = http.createServer((req, res) => {
 
   console.log('\n[① 처음엔 종이신문]');
   const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  await ctx.route('https://**/*',r=>r.abort());
   let page = await ctx.newPage();
   await page.goto(base + '/economy');
   await page.waitForSelector('#mk-ed:not([hidden])');
@@ -112,6 +113,7 @@ const srv = http.createServer((req, res) => {
   console.log('\n[⑤ 폰]');
   onlineMsgs = [ONLINE];
   page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await page.route('https://**/*',r=>r.abort());
   await page.goto(base + '/economy?edition=online');
   await page.waitForFunction(() => /온라인기사/.test(document.getElementById('feed').textContent));
   const over = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
@@ -121,6 +123,7 @@ const srv = http.createServer((req, res) => {
 
   console.log('\n[⑥ 머리글·상태 메시지]');
   page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await page.route('https://**/*',r=>r.abort());
   await page.goto(base + '/economy?edition=online');
   await page.waitForFunction(() => /온라인기사 제목나/.test(document.getElementById('feed').textContent));
   let f = await page.evaluate(() => document.getElementById('feed').innerText);
@@ -134,7 +137,70 @@ const srv = http.createServer((req, res) => {
 
   await page.close();
 
+
+  console.log('\n[⑦ 온라인 시간대별 바로 이동]');
+  const MORNING = ONLINE.replace('온라인 기사 내용.', '오전 기사 본문입니다. '.repeat(130));
+  const EVENING = MORNING.replaceAll('09시 온라인신문','18시 온라인신문').replaceAll('09:00 기준','18:00 기준').replaceAll('온라인기사 제목나','저녁기사 제목다');
+  onlineMsgs = [MORNING, MORNING.replace('1/1','2/2'), EVENING];
+  page = await browser.newPage({viewport:{width:1280,height:900}});
+  await page.route('https://**/*',r=>r.abort());
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto(base+'/economy?edition=online');
+  await page.waitForSelector('#online-news-09');
+  await page.waitForSelector('#online-news-18');
+  await page.waitForFunction(()=>[...document.querySelectorAll('#section-jump button')].every(b=>!b.disabled));
+  const labels=()=>page.evaluate(()=>[...document.querySelectorAll('#section-jump button')].map(b=>b.lastElementChild.textContent).join('|'));
+  check(await labels()==='브리핑|9시 뉴스|18시 뉴스','온라인에서는 브리핑·9시 뉴스·18시 뉴스');
+  check(await page.locator('#online-news-09').count()===1,'9시 요약이 여러 메시지여도 이동 지점은 하나');
+  check((await page.locator('#online-news-18').textContent()).includes('저녁기사 제목다'),'게시 시각이 9시여도 머리글 18시 뉴스로 분류');
+  await page.evaluate(()=>{
+    window.__jumpCalls=[];const original=window.scrollTo;
+    window.scrollTo=function(options){window.__jumpCalls.push(options);return original.call(window,options);};
+  });
+  for(const id of ['online-news-18','online-news-09']){
+    await page.click('#section-jump [data-section="'+id+'"]');
+    const result=await page.evaluate(id=>{
+      const top=document.getElementById(id).getBoundingClientRect().top;
+      const offset=document.querySelector('.sitenav').getBoundingClientRect().height+document.getElementById('toolbar').getBoundingClientRect().height+16;
+      return {top,offset,selected:document.querySelector('#section-jump [aria-current=location]')?.dataset.section};
+    },id);
+    check(Math.abs(result.top-result.offset)<2&&result.selected===id,id+' 누르면 상단 메뉴 아래로 즉시 이동',JSON.stringify(result));
+  }
+  check(await page.evaluate(()=>window.__jumpCalls.length===2&&window.__jumpCalls.every(c=>c.behavior==='instant')),'스크롤 애니메이션 없음');
+  await page.click('#section-jump [data-section=pod]');
+  check(await page.evaluate(()=>document.getElementById('pod').getBoundingClientRect().top>=0),'브리핑 버튼은 오디오 칸으로 이동');
+  onlineMsgs=[MORNING];
+  await page.reload();
+  await page.waitForFunction(()=>!document.querySelector('#section-jump [data-section="online-news-09"]').disabled);
+  check(await page.locator('#section-jump [data-section="online-news-18"]').isDisabled(),'18시 뉴스가 없으면 해당 버튼 비활성');
+  check(await page.locator('#online-news-18').count()===0,'없는 시간대로 잘못 이동하지 않음');
+  onlineMsgs=[];
+  await page.reload();
+  await page.waitForSelector('#feed .empty');
+  await page.waitForFunction(()=>document.querySelector('#section-jump [data-section="online-news-09"]').disabled);
+  check(await page.locator('#section-jump [data-section="online-news-18"]').isDisabled(),'뉴스가 없으면 두 시간대 모두 비활성');
+  await page.click('#edtog [data-ed=paper]');
+  await page.waitForFunction(()=>document.getElementById('section-jump').dataset.edition==='paper');
+  check(await labels()==='오디오 브리핑|기사요약|사설','종이신문으로 돌아가면 기존 메뉴 복원');
+  check(errors.length===0,'온라인 이동 중 자바스크립트 오류 없음',errors.join(','));
+  await page.close();
+  onlineMsgs=[MORNING,EVENING];
+  page=await browser.newPage({viewport:{width:390,height:844}});
+  await page.route('https://**/*',r=>r.abort());
+  await page.goto(base+'/economy?edition=online');
+  await page.waitForSelector('#online-news-18');
+  await page.click('#section-jump [data-section="online-news-18"]');
+  const mobile=await page.evaluate(()=>{
+    const nav=document.getElementById('section-jump').getBoundingClientRect();
+    const target=document.getElementById('online-news-18').getBoundingClientRect();
+    return {overflow:document.documentElement.scrollWidth-innerWidth,left:nav.left,right:nav.right,top:target.top};
+  });
+  check(mobile.overflow<=0&&mobile.left>=0&&mobile.right<=390,'모바일에서도 버튼 세 개가 화면 안에 표시',JSON.stringify(mobile));
+  check(mobile.top>=0&&mobile.top<844,'모바일 18시 뉴스 이동');
+  await page.close();
+
   await browser.close(); srv.close();
   console.log('\n총평: ' + (pass ? '✅ 전부 통과' : '❌ 실패 있음'));
+  if(pass)console.log('PASS: '+checks+' edition and online navigation browser checks');
   process.exit(pass ? 0 : 1);
 })().catch(e => { console.error(e); srv.close(); process.exit(1); });
