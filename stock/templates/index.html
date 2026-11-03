@@ -699,6 +699,30 @@
     .sitenav a.logout, .sitenav a.adminlink { padding: 5px 12px; font-size: 13px; }
     .sitenav a[aria-current="page"] { background: #6366f1; color: #fff; border-color: #6366f1; cursor: default; }
     @media (max-width: 768px) { .sitenav a { padding: 5px 11px; font-size: 13px; } }
+
+    /* 관리자 관심종목과 2% 구간 팝업 */
+    #watch-section[hidden],#watch-form[hidden]{display:none}
+    .watch-help,.watch-message{font-size:13px;color:var(--text-muted);line-height:1.7;margin:8px 0 14px}
+    .watch-form{display:flex;flex-wrap:wrap;gap:10px;align-items:end;padding:16px;margin:14px 0;
+      border:1px solid var(--border-color);border-radius:12px;background:var(--bg-surface)}
+    .watch-form label{display:flex;flex-direction:column;gap:5px;font-size:13px;color:var(--text-muted)}
+    .watch-form input{width:180px;max-width:100%;font:inherit;padding:10px;border-radius:8px;
+      color:var(--text-main);background:var(--bg-surface-hover);border:1px solid var(--border-color)}
+    .watch-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:12px}
+    .watch-card{padding:16px;border-radius:12px;background:var(--bg-surface);border:1px solid var(--border-color)}
+    .watch-card h3{margin:0 0 8px;font-size:16px;overflow-wrap:anywhere}
+    .watch-card p{margin:6px 0;color:var(--text-muted);font-size:13px}
+    .watch-card .watch-price{font-size:21px;font-weight:700;color:var(--text-main)}
+    .watch-card .watch-rise{color:var(--color-up)}
+    .surge-popups{position:fixed;right:16px;bottom:16px;z-index:10000;display:flex;flex-direction:column;
+      gap:10px;width:min(360px,calc(100vw - 32px));max-height:65vh;overflow-y:auto}
+    .surge-popup{position:relative;padding:18px 42px 18px 18px;border-radius:14px;
+      background:var(--bg-surface);border:1px solid var(--color-up-border);box-shadow:var(--shadow-lg)}
+    .surge-popup strong{display:block;color:var(--color-up);font-size:17px}
+    .surge-popup p{margin:8px 0 0;font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+    .surge-popup button{position:absolute;right:8px;top:8px;border:0;background:transparent;
+      color:var(--text-muted);font-size:20px;cursor:pointer;min-width:32px;min-height:32px}
+    @media print{#watch-section,.surge-popups{display:none}}
   </style>
   <script>
     // /market 으로 열렸는지(사이트 탭 보이기·데이터 주소 고르기). 그림 그리기 전에 정해 깜빡임 없게.
@@ -789,6 +813,21 @@
       </div>
     </section>
 
+
+    <section class="market-section" id="watch-section" hidden aria-labelledby="watch-heading">
+      <div class="section-title"><h2 id="watch-heading">🔔 관심종목 급등 알림</h2></div>
+      <p class="watch-help">전일 종가 대비 +2%·+4%·+6%… 구간 도달 시 팝업으로 알려드려요.
+        페이지를 열어 둔 동안 확인하며, 같은 시장 날짜·같은 구간은 이 브라우저에서 한 번만 표시합니다.
+        시세는 최대 1분 간격으로 확인하며 제공처에 따라 지연될 수 있어요.</p>
+      <form class="watch-form" id="watch-form" hidden>
+        <label>종목코드 / 미국 티커<input id="watch-symbol" name="symbol" required maxlength="10" placeholder="005930 또는 AAPL" autocomplete="off"></label>
+        <label>종목 이름<input id="watch-name" name="name" required maxlength="40" placeholder="삼성전자 또는 애플" autocomplete="off"></label>
+        <button class="btn" type="submit" id="watch-add">＋ 종목 추가</button>
+      </form>
+      <p class="watch-message" id="watch-message" role="status"></p>
+      <div class="watch-grid" id="watch-grid"></div>
+    </section>
+
     <!-- Section 4: AI Market Executive Summary -->
     <section class="summary-section">
       <div class="section-title">
@@ -806,6 +845,8 @@
       <div>20초마다 자동 갱신 (KST) · 역대 최고가 단조 증가 검증 적용</div>
     </footer>
   </div>
+
+  <div class="surge-popups" id="surge-popups" role="region" aria-label="관심종목 급등 알림" aria-live="polite"></div>
 
   <!-- Toast Container -->
   <div class="toast-container" id="toast-container"></div>
@@ -1512,6 +1553,130 @@
     // Initial Execution
     fetchDashboardData();
     startAutoRefreshTimer();
+  </script>
+  <script>
+
+(function initMarketWatch(){
+  if(!document.documentElement.classList.contains('in-market')) return;
+  const section=document.getElementById('watch-section'), form=document.getElementById('watch-form');
+  const grid=document.getElementById('watch-grid'), message=document.getElementById('watch-message');
+  const popups=document.getElementById('surge-popups');
+  let csrf='',canManage=false,viewer='',busy=false,changing=false;
+  const memory={};
+  const node=(tag,text,cls)=>{const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(cls)el.className=cls;return el;};
+  function surgeTier(rate){
+    return typeof rate==='number' && Number.isFinite(rate) && rate>=2 ? Math.floor(rate/2)*2 : 0;
+  }
+  function alertPlan(row,history,now){
+    const q=row.quote;
+    if(!q || !Number.isFinite(q.observed_at) || now-q.observed_at*1000>180000 ||
+       q.observed_at*1000>now+60000 || !/^\d{4}-\d{2}-\d{2}$/.test(q.market_date)) return null;
+    const level=surgeTier(q.change_rate), key=row.id+':'+q.market_date;
+    const last=history[key] && Number(history[key].level)||0;
+    return level>last ? {key,level,from:last+2} : null;
+  }
+  function historyKey(){return 'market.watch.rise.v1.'+viewer;}
+  function readHistory(){
+    try{const v=JSON.parse(localStorage.getItem(historyKey())||'{}');return v && typeof v==='object' && !Array.isArray(v)?v:{};}
+    catch(_){return memory[viewer]||{};}
+  }
+  function saveHistory(history){
+    const cutoff=Date.now()-7*86400000;
+    for(const k of Object.keys(history)){if(!history[k] || history[k].at<cutoff)delete history[k];}
+    memory[viewer]=history;
+    try{localStorage.setItem(historyKey(),JSON.stringify(history));}catch(_){}
+  }
+  function popup(row,plan){
+    const q=row.quote, card=node('article',undefined,'surge-popup');
+    card.append(node('strong','📈 +'+plan.level+'% 구간 도달'));
+    card.append(node('p',row.name+' ('+row.symbol+') · 전일 대비 +'+q.change_rate.toFixed(2)+'%'));
+    card.append(node('p',new Intl.NumberFormat('ko-KR',{maximumFractionDigits:2}).format(q.current)+' '+q.currency+
+      (plan.from<plan.level?' · 이번 확인: +'+plan.from+'% → +'+plan.level+'%':'')));
+    card.append(node('p',q.source+' · '+new Date(q.observed_at*1000).toLocaleTimeString('ko-KR')+' 확인'));
+    const close=node('button','×');close.type='button';close.setAttribute('aria-label',row.name+' 급등 알림 닫기');
+    close.onclick=()=>card.remove();card.append(close);popups.append(card);
+    while(popups.children.length>3)popups.firstElementChild.remove();
+  }
+  async function processAlerts(rows){
+    if(document.visibilityState==='hidden' || !viewer)return;
+    const run=()=>{
+      const history=readHistory(),now=Date.now();
+      for(const row of rows){
+        const plan=alertPlan(row,history,now);if(!plan)continue;
+        history[plan.key]={level:plan.level,at:now};popup(row,plan);
+      }
+      saveHistory(history);
+    };
+    if(navigator.locks && navigator.locks.request)await navigator.locks.request(historyKey(),run);
+    else run();
+  }
+  async function json(url,options){
+    const r=await fetch(url,Object.assign({credentials:'same-origin',cache:'no-store'},options));
+    const data=await r.json();
+    if(!r.ok || !data.ok)throw new Error(data.message||'로그인 상태 또는 연결을 확인해 주세요.');
+    return data;
+  }
+  function render(rows){
+    grid.replaceChildren();
+    if(!rows.length){grid.append(node('p','등록된 종목이 없어요. 관리자가 종목을 추가하면 이곳에 표시됩니다.','watch-message'));return;}
+    for(const row of rows){
+      const card=node('article',undefined,'watch-card'),q=row.quote;
+      card.append(node('h3',row.name+' · '+row.symbol));
+      if(q){
+        card.append(node('p',new Intl.NumberFormat('ko-KR',{maximumFractionDigits:2}).format(q.current)+' '+q.currency,'watch-price'));
+        const rate=node('p',(q.change_rate>=0?'+':'')+q.change_rate.toFixed(2)+'% · 전일 종가 대비',q.change_rate>=2?'watch-rise':'');
+        card.append(rate,node('p',q.source+' · '+new Date(q.observed_at*1000).toLocaleTimeString('ko-KR')+' 확인'));
+      }else card.append(node('p','시세 확인 중이거나 제공처에 연결하지 못했어요. 잠시 후 다시 확인합니다.'));
+      if(canManage){
+        const del=node('button','삭제','btn');del.type='button';del.disabled=changing;
+        del.setAttribute('aria-label',row.name+' 관심종목에서 삭제');
+        del.onclick=async()=>{
+          if(!confirm(row.name+' 종목을 관심목록에서 삭제할까요?'))return;
+          await change({action:'remove',id:row.id});
+        };card.append(del);
+      }
+      grid.append(card);
+    }
+  }
+  async function refresh(){
+    if(busy || changing)return;busy=true;
+    try{
+      const list=await json('/market/api/watchlist');
+      canManage=list.can_manage===true;csrf=list.csrf||'';
+      if(viewer!==list.viewer_key){popups.replaceChildren();viewer=list.viewer_key;}
+      form.hidden=!canManage;section.hidden=false;
+      const data=await json('/market/api/watchlist/quotes');
+      render(data.items);
+      if(!changing)message.textContent=canManage?'관리자만 종목을 추가·삭제할 수 있어요. 최대 20개까지 등록할 수 있습니다.':'관리자가 등록한 관심종목입니다.';
+      await processAlerts(data.items);
+    }catch(err){
+      canManage=false;csrf='';form.hidden=true;section.hidden=false;popups.replaceChildren();
+      message.textContent='관심종목을 불러오지 못했어요. '+err.message;
+    }finally{busy=false;}
+  }
+  async function change(data){
+    if(changing || !canManage)return;
+    changing=true;form.querySelector('button').disabled=true;
+    grid.querySelectorAll('button').forEach(b=>b.disabled=true);
+    message.textContent=data.action==='add'?'종목 시세를 확인하고 있어요…':'삭제 중…';
+    let changed=false;
+    try{
+      await json('/market/api/watchlist',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify(data)});
+      changed=true;
+      if(data.action==='add')form.reset();
+      message.textContent=data.action==='add'?'종목을 추가했어요.':'종목을 삭제했어요.';
+    }catch(err){message.textContent=err.message;}
+    finally{changing=false;form.querySelector('button').disabled=false;grid.querySelectorAll('button').forEach(b=>b.disabled=false);}
+    if(changed){await refresh();message.textContent=data.action==='add'?'종목을 추가했어요.':'종목을 삭제했어요.';}
+  }
+  form.addEventListener('submit',e=>{
+    e.preventDefault();
+    change({action:'add',symbol:document.getElementById('watch-symbol').value,name:document.getElementById('watch-name').value});
+  });
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refresh();});
+  refresh();setInterval(refresh,20000);
+})();
+
   </script>
 </body>
 </html>

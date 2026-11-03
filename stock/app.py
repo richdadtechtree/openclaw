@@ -48,6 +48,14 @@ except Exception as _marks_err:
     print("[news-marks] 로드 실패: %r" % (_marks_err,))
 
 
+# 시장 관심종목은 별도 저장소·웹 팝업만 사용한다. 기존 발송용 감시목록과 분리.
+try:
+    from market_watch import install as install_market_watch
+    install_market_watch(app, _gate)
+except Exception as _watch_err:
+    print("[market-watch] 로드 실패: %r" % (_watch_err,))
+
+
 def _with_gate_footer(html_text, request=None):
     """화면 자리표 채우기: 맨 위 탭(역할별 — 찰스는 디그·챌린지만)·'이름 님 · 구글/카카오'·맨 아래 링크·계정 화면 모드.
     (실제 일은 gate.fill_page. 로그인 모듈이 없으면 자리표만 지우고 기본 탭이 그대로 보인다)"""
