@@ -713,7 +713,11 @@
     .watch-card h3{margin:0 0 8px;font-size:16px;overflow-wrap:anywhere}
     .watch-card p{margin:6px 0;color:var(--text-muted);font-size:13px}
     .watch-card .watch-price{font-size:21px;font-weight:700;color:var(--text-main)}
-    .watch-card .watch-rise{color:var(--color-up)}
+    .watch-card .watch-rise{color:#f87171;font-weight:600}
+    .watch-card .watch-fall{color:#60a5fa;font-weight:600}
+    .watch-card .watch-flat{color:var(--text-muted)}
+    [data-theme="light"] .watch-card .watch-rise{color:#dc2626}
+    [data-theme="light"] .watch-card .watch-fall{color:#2563eb}
     .surge-popups{position:fixed;right:16px;bottom:16px;z-index:10000;display:flex;flex-direction:column;
       gap:10px;width:min(360px,calc(100vw - 32px));max-height:65vh;overflow-y:auto}
     .surge-popup{position:relative;padding:18px 42px 18px 18px;border-radius:14px;
@@ -1655,7 +1659,8 @@
       card.append(node('h3',row.name+' · '+row.symbol));
       if(q){
         card.append(node('p',new Intl.NumberFormat('ko-KR',{maximumFractionDigits:2}).format(q.current)+' '+q.currency,'watch-price'));
-        const rate=node('p',(q.change_rate>=0?'+':'')+q.change_rate.toFixed(2)+'% · 전일 종가 대비',q.change_rate>=2?'watch-rise':'');
+        const change=Number(q.change_rate.toFixed(2));
+        const rate=node('p',(change>=0?'+':'')+change.toFixed(2)+'% · 전일 종가 대비',change>0?'watch-rise':change<0?'watch-fall':'watch-flat');
         card.append(rate,node('p',q.source+' · '+new Date(q.observed_at*1000).toLocaleTimeString('ko-KR')+' 확인'));
       }else card.append(node('p','시세 확인 중이거나 제공처에 연결하지 못했어요. 잠시 후 다시 확인합니다.'));
       if(canManage){
