@@ -6,7 +6,7 @@ const path = require('node:path');
 const {chromium} = require('playwright');
 const html = fs.readFileSync(path.join(__dirname, '../stock/index.html'), 'utf8');
 assert.equal(html, fs.readFileSync(path.join(__dirname, '../stock/templates/index.html'), 'utf8'));
-let rows=[], indices={}, canManage=true, viewer='1', posts=[];
+let rows=[], indices={}, strategies=null, canManage=true, viewer='1', posts=[];
 const makeRow=(rate,id=1,date='2026-11-03')=>({id,symbol:'AAPL',name:'애플',quote:{
   current:102,change_rate:rate,source:'TEST',currency:'USD',market_date:date,observed_at:Date.now()/1000}});
 (async()=>{
@@ -20,6 +20,7 @@ const makeRow=(rate,id=1,date='2026-11-03')=>({id,symbol:'AAPL',name:'애플',qu
       if(url.hostname!=='127.0.0.1')return route.abort();
       if(!url.pathname.startsWith('/market/api/'))return route.continue();
       let body={status:'error',data:null};
+      if(url.pathname==='/market/api/alerts'&&strategies)body={status:'success',data:strategies};
       if(url.pathname==='/market/api/indices')body={status:'success',data:indices};
       if(url.pathname==='/market/api/watchlist'){
         if(route.request().method()==='POST'){
@@ -102,11 +103,53 @@ const makeRow=(rate,id=1,date='2026-11-03')=>({id,symbol:'AAPL',name:'애플',qu
     await syncIndex('KOSPI',20,'Naver Finance',0,false);
     assert.equal(await page.locator('.surge-popup').count(),0,'missing index timestamp');
 
+
+    // ATH 타겟은 현재 낙폭과 화면의 목표값으로 판단한다. 과거 triggered 값은 판정에 쓰지 않는다.
+    const target=async(symbol,dd,ath=9000,stale=false)=>{
+      const stages=symbol==='NASDAQ'?[-5,-10,-15,-20]:[-30,-40,-50,-60,-70];
+      strategies={[symbol]:{drawdown:dd,ath,stages:stages.map(stage=>({stage,triggered:dd<=stage})),
+        next_stage:stages.find(s=>dd>s)||null,gap_pp:1,done:stages.filter(s=>dd<=s).length,total:stages.length}};
+      indices={[symbol]:{current:ath*(1+dd/100),change_rate:-1,ath,ath_change_rate:dd,source:'Naver Finance',
+        observed_at:Date.now()/1000-(stale?300:0)}};
+      const before=await page.evaluate(()=>window.__targetEvents||0);
+      await page.locator('#refresh-btn').click();
+      await page.waitForFunction(n=>(window.__targetEvents||0)>n,before);
+      await page.evaluate(async key=>{if(navigator.locks)await navigator.locks.request(key,()=>{});},'market.watch.rise.v1.'+viewer);
+    };
+    await page.evaluate(()=>window.addEventListener('market-targets-updated',()=>window.__targetEvents=(window.__targetEvents||0)+1));
+    await closePopups();await target('KOSPI',-29.99);
+    assert.equal(await page.locator('.target-popup').count(),0,'before -30%');
+    await target('KOSPI',-30);
+    assert.match(await page.locator('.target-popup').textContent(),/ATH -30% 목표/);
+    await closePopups();await target('KOSPI',-39.81);
+    assert.equal(await page.locator('.target-popup').count(),0,'-39.81 is not -40');
+    await target('KOSPI',-40);
+    assert.match(await page.locator('.target-popup').textContent(),/ATH -40% 목표/);
+    await closePopups();await target('KOSPI',-38);await target('KOSPI',-40);
+    assert.equal(await page.locator('.target-popup').count(),0,'target rebound is suppressed');
+    await target('KOSDAQ',-42.71);
+    assert.match(await page.locator('.target-popup').textContent(),/ATH -40% 목표/);
+    await closePopups();await target('NASDAQ',-9.23);
+    assert.match(await page.locator('.target-popup').textContent(),/ATH -5% 목표/);
+    await closePopups();await target('NASDAQ',-10);
+    assert.match(await page.locator('.target-popup').textContent(),/ATH -10% 목표/);
+    await closePopups();await target('KOSPI',-50,9000,true);
+    assert.equal(await page.locator('.target-popup').count(),0,'stale target excluded');
+    await target('KOSPI',-30,10000);
+    assert.match(await page.locator('.target-popup').textContent(),/ATH -30% 목표/);
+    await closePopups();
+    await page.evaluate(()=>scrollTo({top:1000,behavior:'instant'}));
+    await page.waitForFunction(()=>Math.abs(document.querySelector('.sitenav').getBoundingClientRect().top)<1);
+    assert.equal(await page.locator('.sitenav a[aria-current=page]').isVisible(),true,'market navigation stays visible');
+
     canManage=false;viewer='2';await sync();
     await page.locator('#watch-form').waitFor({state:'hidden'});
     assert.equal(await page.locator('#watch-grid button').count(),0,'reader cannot delete');
     await page.setViewportSize({width:390,height:844});
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'mobile overflow');
-    console.log('PASS: admin-only controls, CSRF, safe names, 2% thresholds, repeated/rebound/reload suppression, next day, stale quotes, all 6 indices/ETFs, exact index units, exclusion of ETF approximations/stale indices, dismiss, mobile.');
+    await page.evaluate(()=>scrollTo({top:1000,behavior:'instant'}));
+    await page.waitForFunction(()=>Math.abs(document.querySelector('.sitenav').getBoundingClientRect().top)<1);
+    assert.equal(await page.locator('.sitenav a[aria-current=page]').isVisible(),true,'mobile sticky navigation');
+    console.log('PASS: admin-only controls, CSRF, safe names, 2% thresholds, repeated/rebound/reload suppression, next day, stale quotes, all 6 indices/ETFs, exact index units, exclusion of ETF approximations/stale indices, ATH targets and boundary/rebound/new ATH/stale checks, sticky desktop/mobile navigation, dismiss, mobile.');
   }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}
 })().catch(err=>{console.error(err);process.exitCode=1;});

@@ -703,6 +703,23 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   }
   @media (prefers-reduced-motion:reduce){.section-jump button{transition:none}}
   @media print{.section-jump{display:none}body{padding-left:0}}
+
+  /* 계정별 최신 책갈피 — 용어 버튼과 한 줄로 배치 */
+  .reader-actions{position:fixed;right:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));
+    z-index:70;display:flex;gap:8px;align-items:center;max-width:calc(100vw - 28px)}
+  .reader-actions .tn-fab{position:static;white-space:nowrap;min-height:40px}
+  .bm-panel{padding:12px;gap:8px}
+  .bm-panel h3{font-size:15px;margin:0}
+  .bm-panel p{margin:0;font-size:13px;overflow-wrap:anywhere}
+  .bm-panel .bm-caption{color:#756c5e;font-size:12px}
+  .bm-panel button{font:600 14px/1.4 var(--sans);padding:10px 12px;border-radius:9px;
+    color:#3d382f;background:#fffdf8;border:1px solid #ddd4c4;text-align:left;cursor:pointer}
+  .bm-panel button:disabled{opacity:.45;cursor:default}
+  .bm-panel button:focus-visible,.reader-actions button:focus-visible{outline:2px solid #3a5bd0;outline-offset:2px}
+  .bm-panel .bm-primary{background:#f0e7d1}
+  .bm-panel .bm-delete{font-size:12px;color:#8c3830}
+  @media(max-width:599px){.section-jump{bottom:calc(68px + env(safe-area-inset-bottom,0px))}}
+  @media print{.reader-actions,.bm-panel{display:none}}
 </style>
 </head>
 <body class="paper">
@@ -840,7 +857,19 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
 </div>
 
   <!-- 2026-11-01 사용자 요청: 관리자만 — 모르는 용어를 찾아 서버에 계속 저장(📖 용어 노트). 메인 화면·사진 뷰어 어디서나 오른쪽 아래에 떠 있다 -->
-  <button class="tn-fab" id="tn-fab" hidden title="모르는 용어 찾아서 저장 (관리자 전용)" aria-expanded="false">📖 용어<b id="tn-n"></b></button>
+  <div class="reader-actions" id="reader-actions">
+    <button class="tn-fab" id="bm-fab" hidden title="내 계정의 최신 책갈피" aria-controls="bm-panel" aria-expanded="false">🔖 책갈피</button>
+    <button class="tn-fab" id="tn-fab" hidden title="모르는 용어 찾아서 저장 (관리자 전용)" aria-expanded="false">📖 용어<b id="tn-n"></b></button>
+  </div>
+  <div class="tn-panel bm-panel" id="bm-panel" hidden role="dialog" aria-label="내 책갈피">
+    <h3>🔖 내 책갈피</h3>
+    <p class="bm-caption">계정별 최신 위치 하나만 기억합니다. 새로 저장하면 이전 위치를 바꿉니다.</p>
+    <p id="bm-location">저장된 책갈피가 없어요.</p>
+    <button type="button" class="bm-primary" id="bm-go" disabled>이어서 읽기</button>
+    <button type="button" id="bm-save">현재 위치 저장</button>
+    <button type="button" class="bm-delete" id="bm-clear" disabled>책갈피 지우기</button>
+    <p id="bm-status" role="status"></p>
+  </div>
   <div class="tn-panel" id="tn-panel" hidden role="dialog" aria-label="관리자 용어 노트">
     <div class="tn-head"><h3>📖 내 용어 노트 <small style="font-weight:500;color:#8a826f">관리자</small></h3><button id="tn-close" aria-label="닫기">✕</button></div>
     <form class="tn-ask" id="tn-form"><input id="tn-q" maxlength="30" placeholder="모르는 용어 (예: 디파이)" aria-label="모르는 용어" autocomplete="off"><button id="tn-go" type="submit">🔍 찾아서 저장</button></form>
@@ -1573,12 +1602,12 @@ function syncEdition(){
 }
 
 async function load(){
-  const ed=state.edition;
+  const ed=state.edition, day=state.date;
   try{
-    const r=await fetch(`/economy/data?date=${state.date}`+(ed==="online"?"&edition=online":""),{cache:"no-store"});
+    const r=await fetch(`/economy/data?date=${day}`+(ed==="online"?"&edition=online":""),{cache:"no-store"});
     if(!r.ok) throw new Error("HTTP "+r.status);
     const d=await r.json();
-    if(ed!==state.edition) return;                     // 그새 종이/온라인을 바꿨다
+    if(ed!==state.edition||day!==state.date) return;                     // 그새 종이/온라인을 바꿨다
     state.data=d;
     document.getElementById("updated").textContent="마지막 갱신 "+new Date().toTimeString().slice(0,8);
   }catch(e){
@@ -1687,10 +1716,11 @@ const ED={date:"",at:0,ok:false};
 async function loadEditorial(){
   const sec=document.getElementById("mk-ed"); if(!sec) return;
   if(ED.date===state.date && Date.now()-ED.at < (ED.ok?10:3)*60000) return;
-  ED.date=state.date; ED.at=Date.now();
+  const day=state.date;
+  ED.date=day; ED.at=Date.now();
   let d=null;
-  try{ const r=await fetch(`/api/news/editorial?date=${state.date}`,{cache:"no-store"}); d=await r.json(); }catch(_){ d=null; }
-  if(ED.date!==state.date) return;                     // 그새 날짜를 바꿨다
+  try{ const r=await fetch(`/api/news/editorial?date=${day}`,{cache:"no-store"}); d=await r.json(); }catch(_){ d=null; }
+  if(day!==state.date||ED.date!==day) return;                     // 그새 날짜를 바꿨다
   ED.ok=!!(d&&d.ok&&d.items&&d.items.length);
   const list=document.getElementById("mk-ed-list");
   document.getElementById("mk-ed-date").textContent=state.date.replace(/^(\d+)-(\d+)-(\d+)$/,"$1.$2.$3");
@@ -1761,6 +1791,7 @@ document.getElementById("pod-slots").addEventListener("click",e=>{
   POD.slot=b.dataset.slot; POD.picked=true; showPodcast();
 });
 async function loadNews(){
+  const day=state.date, edition=state.edition;
   resetMarksIfNewDate();
   if(state.edition==="online"){                        // 온라인신문엔 지면 원본·사설 칸이 없다(오디오는 시간대별로 있음)
     ["news","mk-ed"].forEach(id=>{ const el=document.getElementById(id); if(el) el.hidden=true; });
@@ -1774,9 +1805,10 @@ async function loadNews(){
   if(!box) return;
   let d=null;
   try{
-    const r=await fetch(`/api/news/today?date=${state.date}`,{cache:"no-store"});
+    const r=await fetch(`/api/news/today?date=${day}`,{cache:"no-store"});
     d=await r.json();
   }catch(e){ box.hidden=true; return; }
+  if(day!==state.date||edition!==state.edition)return;
   renderNews(d);
   decorate();                           // 사진 목록이 새로 왔으면 기사 옆 사진 칸도 맞춘다(바뀐 게 없으면 그대로)
 }
@@ -3538,6 +3570,135 @@ tnLoad();
   [...sections,viewer].filter(Boolean).forEach(el=>observer.observe(el,{attributes:true,attributeFilter:["hidden"]}));
   update();
 })();
+
+/* 최신 책갈피 한 개를 계정에 저장. 서버 응답만 사용하며 다른 계정의 위치는 브라우저에 보관하지 않는다. */
+(function initBookmark(){
+  const fab=$("bm-fab"),panel=$("bm-panel"),status=$("bm-status");
+  const BM={bookmark:null,csrf:"",busy:false};
+  const offset=()=>[document.querySelector(".sitenav"),$("toolbar")]
+    .reduce((n,el)=>n+(el?el.getBoundingClientRect().height:0),16);
+  function paintBookmark(){
+    const b=BM.bookmark;
+    $("bm-location").textContent=b
+      ? b.date+" · "+(b.edition==="paper"?"종이신문":"온라인신문")+" · "+
+        (b.view==="page"?"지면 "+b.page.replace(/\.[^.]+$/,""):b.article||({pod:"오디오 브리핑","mk-ed":"사설",feed:"기사요약"}[b.section]))
+      : "저장된 책갈피가 없어요.";
+    $("bm-go").disabled=BM.busy||!b;
+    $("bm-clear").disabled=BM.busy||!b;
+    $("bm-save").disabled=BM.busy||!BM.csrf;
+  }
+  function open(on){
+    panel.hidden=!on;fab.setAttribute("aria-expanded",String(on));
+    if(on){tnOpen(false);loadBookmark();}
+  }
+  async function api(options){
+    const r=await fetch("/api/news/bookmark",Object.assign({credentials:"same-origin",cache:"no-store"},options));
+    const j=await r.json();
+    if(!r.ok||!j.ok){const e=new Error(j.message||"책갈피에 연결하지 못했어요.");e.code=r.status;throw e;}
+    return j;
+  }
+  async function loadBookmark(){
+    if(BM.busy)return;BM.busy=true;paintBookmark();
+    try{
+      const j=await api();BM.bookmark=j.bookmark;BM.csrf=j.csrf;fab.hidden=false;status.textContent="";
+    }catch(e){
+      BM.csrf="";BM.bookmark=null;
+      if(e.code===401||e.code===403){fab.hidden=true;open(false);}
+      else{fab.hidden=false;status.textContent="책갈피를 불러오지 못했어요. 다시 열어 주세요.";}
+    }finally{BM.busy=false;paintBookmark();}
+  }
+  function capture(){
+    const arts=[...$("feed").querySelectorAll(".brf-art")],line=offset();
+    const art=arts.find(a=>a.getBoundingClientRect().bottom>line)||null;
+    let section="feed",target=art||$("feed");
+    for(const id of ["pod","mk-ed"]){
+      const el=$(id),r=el.getBoundingClientRect();
+      if(!el.hidden&&r.top<=line+24&&r.bottom>line){section=id;target=el;}
+    }
+    const rect=target.getBoundingClientRect(),im=!$("lb").hidden&&V.list[V.i];
+    const title=im&&V.fromArt?artTitle(V.fromArt):section==="feed"&&art?artTitle(art):"";
+    return {date:state.date,edition:state.edition,view:im?"page":"summary",section,
+      article:title.slice(0,300),index:Math.max(0,arts.indexOf(art)),
+      fraction:Math.max(0,Math.min(1,(line-rect.top)/Math.max(1,rect.height))),
+      y:Math.max(0,window.scrollY),page:im?im.name:""};
+  }
+  async function save(clear=false){
+    if(BM.busy||!BM.csrf)return;
+    BM.busy=true;paintBookmark();status.textContent="저장 중…";
+    try{
+      const body=clear?{action:"clear"}:{bookmark:capture()};
+      const j=await api({method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":BM.csrf},body:JSON.stringify(body)});
+      BM.bookmark=j.bookmark;status.textContent=clear?"책갈피를 지웠어요.":"현재 위치를 저장했어요.";
+    }catch(e){status.textContent=e.message;}
+    finally{BM.busy=false;paintBookmark();}
+  }
+  async function restore(){
+    if(BM.busy||!BM.bookmark)return;
+    const b=Object.assign({},BM.bookmark);
+    BM.busy=true;paintBookmark();status.textContent="저장한 위치를 여는 중…";
+    try{
+      if(!$("lb").hidden)closeViewer();
+      state.date=b.date;state.edition=b.edition;state.active.clear();
+      state.data={date:b.date,messages:[]};lastSnapshot=null;lastNewsSnapshot=null;
+      try{localStorage.setItem("digest.edition",b.edition);}catch(_){}
+      syncEdition();$("datepick").value=b.date;
+      await Promise.all([load(),loadNews()]);
+      if(state.date!==b.date||state.edition!==b.edition)throw new Error("신문 선택이 바뀌어 이동을 멈췄어요.");
+      await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+      const arts=[...$("feed").querySelectorAll(".brf-art")];
+      const art=b.article?arts.find(a=>artTitle(a)===b.article):arts[b.index];
+      if(b.view==="page"){
+        const images=newsState.date===b.date?newsState.images:[];
+        const i=images.findIndex(im=>im.name===b.page);
+        if(i<0)throw new Error("저장한 날짜는 열었지만 해당 지면이 없어요. 원본 보관 기간이 끝났을 수 있습니다.");
+        openViewer(i,art?{art}:{});open(false);return;
+      }
+      if(b.section==="feed"&&b.article&&!art)throw new Error("저장한 날짜는 열었지만 해당 기사 요약을 찾지 못했어요.");
+      const target=b.section==="feed"?(art||$("feed")):$(b.section);
+      if(target.hidden){
+        await new Promise(resolve=>{
+          let timer;const observer=new MutationObserver(()=>{if(!target.hidden){clearTimeout(timer);observer.disconnect();resolve();}});
+          observer.observe(target,{attributes:true,attributeFilter:["hidden"]});
+          timer=setTimeout(()=>{observer.disconnect();resolve();},5000);
+        });
+      }
+      if(target.hidden)throw new Error("저장한 날짜는 열었지만 해당 자료가 아직 없어요.");
+      const align=()=>{
+        if(state.date!==b.date||state.edition!==b.edition)return;
+        const r=target.getBoundingClientRect();
+        const top=window.scrollY+r.top+r.height*b.fraction-offset();
+        window.scrollTo({top:Math.max(0,top),behavior:"instant"});
+      };
+      align();
+      await Promise.all([...target.querySelectorAll("img")].map(img=>img.complete?Promise.resolve():
+        new Promise(resolve=>{const done=()=>{clearTimeout(timer);img.removeEventListener("load",done);img.removeEventListener("error",done);resolve();};
+          const timer=setTimeout(done,1500);img.addEventListener("load",done);img.addEventListener("error",done);})));
+      align();open(false);
+    }catch(e){status.textContent=e.message;}
+    finally{BM.busy=false;paintBookmark();}
+  }
+  fab.onclick=()=>open(panel.hidden);
+  $("bm-save").onclick=()=>save();
+  $("bm-clear").onclick=()=>save(true);
+  $("bm-go").onclick=restore;
+  $("tn-fab").addEventListener("click",()=>open(false));
+  // 버튼에 초점이 남아 있어도 Esc는 책갈피만 닫고, 뒤의 지면 뷰어에는 전달하지 않는다.
+  document.addEventListener("keydown",e=>{
+    if(e.key==="Escape"&&!panel.hidden){
+      e.preventDefault();e.stopImmediatePropagation();open(false);fab.focus({preventScroll:true});
+    }
+  },true);
+  document.addEventListener("pointerdown",e=>{if(!panel.hidden&&!panel.contains(e.target)&&!fab.contains(e.target))open(false);});
+  for(const type of ["keydown","keyup","wheel","pointerdown","pointermove","pointerup","dblclick"]){
+    panel.addEventListener(type,e=>{
+      if(type==="keydown"&&e.key==="Escape"){open(false);fab.focus();}
+      e.stopPropagation();
+    },{passive:type!=="keydown"});
+    fab.addEventListener(type,e=>e.stopPropagation(),{passive:true});
+  }
+  loadBookmark();
+})();
+
 </script>
 </body>
 </html>

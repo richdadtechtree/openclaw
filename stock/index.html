@@ -691,7 +691,10 @@
           신문 요약(/economy)·디그·AI 소식 화면과 같은 모양·같은 자리표(<!--GATE_NAV-->)를 서버가 역할별로 채운다.
           서버 IP:8000 의 '/' (슬랙 캡처 화면)에선 숨김 — 캡처 영역 밖이라 캡처엔 원래 안 찍힌다. */
     .sitenav { display: none; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 18px; }
-    html.in-market .sitenav { display: flex; }
+    html.in-market .sitenav { display:flex;position:sticky;top:0;z-index:50;padding:12px 0;
+      background:color-mix(in srgb,var(--bg-body) 94%,transparent);
+      backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--border-color); }
+    @media print{html.in-market .sitenav{display:none}}
     .sitenav a { display: inline-flex; align-items: center; padding: 6px 14px; border-radius: 999px; font-size: 14px; font-weight: 600;
                  color: var(--text-muted); text-decoration: none; border: 1px solid var(--border-color); background: var(--bg-surface); }
     .sitenav a:hover { color: var(--text-main); }
@@ -723,6 +726,9 @@
     .surge-popup{position:relative;padding:18px 42px 18px 18px;border-radius:14px;
       background:var(--bg-surface);border:1px solid var(--color-up-border);box-shadow:var(--shadow-lg)}
     .surge-popup strong{display:block;color:var(--color-up);font-size:17px}
+    .surge-popup.target-popup{border-color:#f8717180}
+    .surge-popup.target-popup strong{color:#f87171}
+    [data-theme="light"] .surge-popup.target-popup strong{color:#dc2626}
     .surge-popup p{margin:8px 0 0;font-size:13px;line-height:1.6;overflow-wrap:anywhere}
     .surge-popup button{position:absolute;right:8px;top:8px;border:0;background:transparent;
       color:var(--text-muted);font-size:20px;cursor:pointer;min-width:32px;min-height:32px}
@@ -805,6 +811,8 @@
         <h2>🎯 분할 매수 투자 타이밍 전략 (ATH 기준)</h2>
         <span class="subtitle">역대 최고가 대비 구간별 시드 분할 집행 엔진</span>
       </div>
+
+      <p class="watch-help">아래 지수가 ATH 대비 목표 구간에 도달하면 팝업으로 알려드려요. 같은 기준 ATH·목표 구간은 이 브라우저에서 반복하지 않습니다.</p>
 
       <!-- S&P 500 Global Market Condition Banner -->
       <div class="us-crash-banner normal" id="us-crash-banner">
@@ -1076,7 +1084,11 @@
           AppState.indices = resIndices.data;
           window.dispatchEvent(new CustomEvent('market-indices-updated',{detail:resIndices.data}));
         }
-        if (resAlerts.status === 'success') AppState.alerts = resAlerts.data;
+        if (resAlerts.status === 'success') {
+          AppState.alerts = resAlerts.data;
+          if(resIndices.status==='success') window.dispatchEvent(new CustomEvent('market-targets-updated',{
+            detail:{alerts:resAlerts.data,indices:resIndices.data}}));
+        }
         if (resSummary.status === 'success') AppState.summary = resSummary.text;
 
         document.getElementById('last-updated-time').textContent = `최종 갱신: ${new Date().toLocaleTimeString('ko-KR')}`;
@@ -1573,7 +1585,7 @@
   const popups=document.getElementById('surge-popups');
   let csrf='',canManage=false,viewer='',busy=false,changing=false;
   const memory={};
-  let indexRows=[];
+  let indexRows=[],targetRows=[];
   const INDEX_WATCH_NAMES={'KOSPI':'코스피','KOSDAQ':'코스닥','S&P 500':'S&P 500','NASDAQ':'나스닥','QLD':'QLD','TQQQ':'TQQQ'};
   function indexAlertRows(data){
     return Object.entries(INDEX_WATCH_NAMES).flatMap(([symbol,name])=>{
@@ -1610,6 +1622,29 @@
     const last=history[key] && Number(history[key].level)||0;
     return level>last ? {key,level,from:last+2} : null;
   }
+
+  function targetAlertRows(alerts,indices){
+    return indexAlertRows(indices).filter(r=>['KOSPI','KOSDAQ','NASDAQ'].includes(r.symbol)).flatMap(r=>{
+      const q=indices[r.symbol],item=alerts&&alerts[r.symbol];
+      if(!item||!Array.isArray(item.stages)||!Number.isFinite(q.ath)||q.ath<=0||!Number.isFinite(q.ath_change_rate))return [];
+      const targets=item.stages.map(s=>s.stage).filter(v=>Number.isFinite(v)&&v<0);
+      return [{...r,kind:'target',ath:q.ath,drawdown:q.ath_change_rate,targets}];
+    });
+  }
+  function targetPlan(row,history,now){
+    const q=row.quote;
+    if(!q||!Number.isFinite(q.observed_at)||now-q.observed_at*1000>180000||q.observed_at*1000>now+60000)return null;
+    const reached=row.targets.filter(t=>row.drawdown<=t);
+    if(!reached.length)return null;
+    const level=Math.min(...reached),key='target:'+row.symbol+':'+row.ath;
+    const last=history[key]&&Number(history[key].level)||0;
+    return level<last?{key,level,target:true}:null;
+  }
+  window.addEventListener('market-targets-updated',e=>{
+    targetRows=targetAlertRows(e.detail.alerts,e.detail.indices);
+    processAlerts(targetRows).catch(()=>{});
+  });
+
   function historyKey(){return 'market.watch.rise.v1.'+viewer;}
   function readHistory(){
     try{const v=JSON.parse(localStorage.getItem(historyKey())||'{}');return v && typeof v==='object' && !Array.isArray(v)?v:{};}
@@ -1617,16 +1652,22 @@
   }
   function saveHistory(history){
     const cutoff=Date.now()-7*86400000;
-    for(const k of Object.keys(history)){if(!history[k] || history[k].at<cutoff)delete history[k];}
+    for(const k of Object.keys(history)){const limit=k.startsWith('target:')?Date.now()-365*86400000:cutoff;if(!history[k] || history[k].at<limit)delete history[k];}
     memory[viewer]=history;
     try{localStorage.setItem(historyKey(),JSON.stringify(history));}catch(_){}
   }
   function popup(row,plan){
     const q=row.quote, card=node('article',undefined,'surge-popup');
-    card.append(node('strong','📈 +'+plan.level+'% 구간 도달'));
-    card.append(node('p',row.name+' ('+row.symbol+') · 전일 대비 +'+q.change_rate.toFixed(2)+'%'));
+    if(plan.target){
+      card.classList.add('target-popup');
+      card.append(node('strong','🎯 '+row.name+' ATH '+plan.level+'% 목표 도달'));
+      card.append(node('p','현재 ATH 대비 '+row.drawdown.toFixed(2)+'% · 기준 ATH '+
+        new Intl.NumberFormat('ko-KR',{maximumFractionDigits:2}).format(row.ath)+' '+q.currency));
+      card.append(node('p','화면의 분할 매수 목표 구간에 도달했습니다.'));
+    }else card.append(node('strong','📈 +'+plan.level+'% 구간 도달'));
+    card.append(node('p',row.name+' ('+row.symbol+') · 전일 대비 '+(q.change_rate>=0?'+':'')+q.change_rate.toFixed(2)+'%'));
     card.append(node('p',new Intl.NumberFormat('ko-KR',{maximumFractionDigits:2}).format(q.current)+' '+q.currency+
-      (plan.from<plan.level?' · 이번 확인: +'+plan.from+'% → +'+plan.level+'%':'')));
+      (!plan.target&&plan.from<plan.level?' · 이번 확인: +'+plan.from+'% → +'+plan.level+'%':'')));
     card.append(node('p',q.source+' · '+new Date(q.observed_at*1000).toLocaleTimeString('ko-KR')+' 확인'));
     const close=node('button','×');close.type='button';close.setAttribute('aria-label',row.name+' 급등 알림 닫기');
     close.onclick=()=>card.remove();card.append(close);popups.append(card);
@@ -1637,7 +1678,7 @@
     const run=()=>{
       const history=readHistory(),now=Date.now();
       for(const row of rows){
-        const plan=alertPlan(row,history,now);if(!plan)continue;
+        const plan=row.kind==='target'?targetPlan(row,history,now):alertPlan(row,history,now);if(!plan)continue;
         history[plan.key]={level:plan.level,at:now};popup(row,plan);
       }
       saveHistory(history);
@@ -1684,7 +1725,7 @@
       const data=await json('/market/api/watchlist/quotes');
       render(data.items);
       if(!changing)message.textContent=canManage?'관리자만 종목을 추가·삭제할 수 있어요. 최대 20개까지 등록할 수 있습니다.':'관리자가 등록한 관심종목입니다.';
-      await processAlerts([...indexRows,...data.items]);
+      await processAlerts([...indexRows,...targetRows,...data.items]);
     }catch(err){
       canManage=false;csrf='';viewer='';form.hidden=true;section.hidden=false;popups.replaceChildren();
       message.textContent='관심종목을 불러오지 못했어요. '+err.message;
