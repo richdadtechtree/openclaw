@@ -13,6 +13,7 @@ on:
       - 'stock/templates/index.html'
       - 'scripts/test_market_watch*'
       - 'scripts/test_news_bookmark*'
+      - 'scripts/test_viewer_edition.js'
       - '.github/workflows/market-watch.yml'
   push:
     branches: [main]
@@ -43,3 +44,4 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: node scripts/test_market_watch.js
       - run: node scripts/test_news_bookmark.js
+      - run: node scripts/test_viewer_edition.js
