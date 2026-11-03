@@ -2209,10 +2209,10 @@ function stickerAt(x,y){
 function drawSticker(ctx,st,pw,ph){
   const color=STICKER_COLORS[st.label];if(!color)return;
   const [a,b]=st.pts,x=a[0]*pw,y=a[1]*ph,w=(b[0]-a[0])*pw,h=(b[1]-a[1])*ph;
-  ctx.save();ctx.fillStyle=color;ctx.beginPath();
-  if(ctx.roundRect)ctx.roundRect(x,y,w,h,Math.min(w,h)*.18);else ctx.rect(x,y,w,h);
-  ctx.fill();ctx.fillStyle="#fff";ctx.font="700 "+Math.max(1,h*.53)+"px system-ui, sans-serif";
-  ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(st.label,x+w/2,y+h/2,Math.max(1,w*.86));
+  // 배경과 글자 내부는 비워 두고 글자의 외곽선에만 색을 입힌다.
+  ctx.save();ctx.strokeStyle=color;ctx.lineWidth=Math.max(.9,h*.055);ctx.lineJoin="round";
+  ctx.font="700 "+Math.max(1,h*.6)+"px system-ui, sans-serif";
+  ctx.textAlign="center";ctx.textBaseline="middle";ctx.strokeText(st.label,x+w/2,y+h/2,Math.max(1,w*.86));
   ctx.restore();
 }
 function drawStickerOverlay(pw,ph,w,h,transform){

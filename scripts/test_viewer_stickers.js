@@ -58,7 +58,7 @@ const server=http.createServer((req,res)=>{
     check(Math.abs((what.pts[0][0]+what.pts[1][0])/2-.25)<.01,'stamp is centered at the mouse');
     check(await page.evaluate(()=>STICK.active&&V.hand&&!M.on),'sticker movement preserves hand/pen state');
     check(await page.locator('#lb-stage').evaluate(el=>getComputedStyle(el).cursor)==='move','movement cursor shown');
-    check(await page.locator('#lb-stickers').evaluate(el=>getComputedStyle(el).opacity==='1'),'sticker text has full opacity');
+    check(await page.locator('#lb-stickers').evaluate(el=>getComputedStyle(el).opacity==='1'),'sticker outline layer preserves its original color');
     await page.keyboard.press('Escape');
     check(await page.locator('#lb-stage').evaluate(el=>getComputedStyle(el).cursor)===prior,'Escape restores previous hand cursor');
     check(await page.evaluate(()=>!document.getElementById('lb').hidden&&!STICK.active),'Escape keeps the viewer and sticker');
@@ -105,10 +105,21 @@ const server=http.createServer((req,res)=>{
     await page.waitForFunction(()=>Math.abs(document.getElementById('lb-img').getBoundingClientRect().width-V.fitW*V.zoom)<1&&Math.abs(document.getElementById('lb-img').getBoundingClientRect().width-document.getElementById('lb-stickers').getBoundingClientRect().width)<1);
     check(true,'sticker layer follows image zoom');
     const exported=await page.evaluate(async()=>{
-      const cv=await renderPage(V.list[V.i]),st=markList().find(s=>s.t==='sticker'),[a,b]=st.pts;
-      return [...cv.getContext('2d').getImageData(Math.floor((a[0]+(b[0]-a[0])*.08)*cv.width),Math.floor((a[1]+(b[1]-a[1])*.5)*cv.height),1,1).data];
+      const st=markList().find(s=>s.t==='sticker'),[a,b]=st.pts;
+      const transparent=document.createElement("canvas");transparent.width=1200;transparent.height=1800;
+      drawSticker(transparent.getContext("2d"),st,1200,1800);
+      const x=Math.floor(a[0]*1200),y=Math.floor(a[1]*1800),w=Math.ceil((b[0]-a[0])*1200),h=Math.ceil((b[1]-a[1])*1800);
+      const pixels=transparent.getContext("2d").getImageData(x,y,w,h).data;
+      let colored=0;for(let i=3;i<pixels.length;i+=4)if(pixels[i])colored++;
+      const margin=transparent.getContext("2d").getImageData(x+Math.floor(w*.08),y+Math.floor(h*.5),1,1).data[3];
+      const cv=await renderPage(V.list[V.i]);
+      const background=[...cv.getContext("2d").getImageData(x+Math.floor(w*.08),y+Math.floor(h*.5),1,1).data];
+      const out=cv.getContext("2d").getImageData(x,y,w,h).data;
+      let blueEdges=0;for(let i=0;i<out.length;i+=4)if(out[i+2]>out[i]&&out[i]<240)blueEdges++;
+      return {colored,area:w*h,margin,background,blueEdges};
     });
-    check(exported[2]>exported[0]&&exported[3]===255,'image/PDF rendering includes opaque colored stickers');
+    check(exported.margin===0&&exported.colored>20&&exported.colored<exported.area*.4,'sticker uses colored letter outlines with a transparent background');
+    check(exported.background.every(v=>v===255)&&exported.blueEdges>20,'image/PDF output keeps paper visible and includes colored text outlines');
     await saved(page);const persisted=await list(page);
     await page.reload();await open(page);
     assert.deepEqual(await list(page),persisted);check(true,'admin stickers and pen marks survive reload');
@@ -122,7 +133,7 @@ const server=http.createServer((req,res)=>{
     check((await list(page)).length===beforeUndo,'undo removes the last added sticker');await saved(page);
     await page.evaluate(()=>{finishStickerMode();closeViewer();drawSideMarks();});
     await page.waitForFunction(()=>document.querySelector('.side-stickers')?.width>0);
-    check(await page.locator('.side-stickers').first().evaluate(el=>getComputedStyle(el).mixBlendMode==='normal'&&getComputedStyle(el).opacity==='1'),'article previews use an opaque sticker layer');
+    check(await page.locator('.side-stickers').first().evaluate(el=>getComputedStyle(el).mixBlendMode==='normal'&&getComputedStyle(el).opacity==='1'),'article previews preserve outline colors without highlight blending');
     const outsideCount=(await list(page)).length;await page.keyboard.press('1');
     check((await list(page)).length===outsideCount,'shortcuts are inactive outside the paper viewer');
     await ctx.close();admin=false;
