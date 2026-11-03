@@ -54,14 +54,10 @@ def validate(b):
     if not isinstance(strokes, list) or len(strokes) > 1000:
         raise ValueError("표시가 너무 많아요.")
     clean = []
+    sticker_colors = {"WHAT": "#1d4ed8", "WHY": "#7c3aed", "HOW": "#047857"}
     for s in strokes:
-        if not isinstance(s, dict) or s.get("t") not in ("line", "oval", "free"):
+        if not isinstance(s, dict) or s.get("t") not in ("line", "oval", "free", "sticker"):
             raise ValueError("표시 종류를 확인해 주세요.")
-        if s.get("c") not in ("#ff5b5b", "#4da3ff", "#ffd93b"):
-            raise ValueError("표시 색을 확인해 주세요.")
-        w = s.get("w")
-        if type(w) not in (int, float) or not math.isfinite(w) or not 0 < w <= 0.2:
-            raise ValueError("표시 굵기를 확인해 주세요.")
         pts = s.get("pts")
         if not isinstance(pts, list) or not 1 <= len(pts) <= 10000 or (s["t"] != "free" and len(pts) != 2):
             raise ValueError("표시 좌표를 확인해 주세요.")
@@ -70,6 +66,17 @@ def validate(b):
                 type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1 for v in p
             ):
                 raise ValueError("표시 좌표를 확인해 주세요.")
+        if s["t"] == "sticker":
+            label = s.get("label")
+            if label not in sticker_colors or not 0.005 <= pts[1][0]-pts[0][0] <= 0.5 or not 0.005 <= pts[1][1]-pts[0][1] <= 0.2:
+                raise ValueError("스티커 종류와 크기를 확인해 주세요.")
+            clean.append({"t": "sticker", "label": label, "c": sticker_colors[label], "w": 0.01, "pts": pts})
+            continue
+        if s.get("c") not in ("#ff5b5b", "#4da3ff", "#ffd93b"):
+            raise ValueError("표시 색을 확인해 주세요.")
+        w = s.get("w")
+        if type(w) not in (int, float) or not math.isfinite(w) or not 0 < w <= 0.2:
+            raise ValueError("표시 굵기를 확인해 주세요.")
         clean.append({"t": s["t"], "c": s["c"], "w": w, "pts": pts})
     return clean
 

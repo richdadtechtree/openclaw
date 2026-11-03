@@ -324,6 +324,10 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
      사진 '위'에 투명한 그림판을 정확히 겹쳐 둔다. 사진과 똑같은 위치·크기·이동을
      그대로 따라가므로, 확대하거나 끌어도 형광펜이 글씨에 딱 붙어 있다.
      mix-blend-mode:multiply → 진짜 형광펜처럼 글씨가 비쳐 보인다(덧칠해도 안 진해짐). */
+  .lb-stickers{position:absolute;left:0;top:0;pointer-events:none}
+  .lb-stage.sticker-mode,.lb-stage.sticker-mode img{cursor:move!important}
+  .lb-stage.sticker-dragging,.lb-stage.sticker-dragging img{cursor:grabbing!important}
+  .side-fig canvas.side-stickers{mix-blend-mode:normal;opacity:1}
   .lb-mark{position:absolute;left:0;top:0;pointer-events:none;mix-blend-mode:multiply;opacity:.62}
   /* 편집 중엔 확대·누름 상태의 grab/grabbing 보다 펜 커서를 우선한다.
      펜촉(4,28)이 실제 긋는 자리. 손바닥·임시 이동·표시 옮기기는 기존 커서를 쓴다. */
@@ -842,17 +846,21 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
     <button id="lb-undo" title="되돌리기 (Ctrl+Z)">↩</button>
     <button id="lb-clear" title="이 장 표시 모두 지우기">🗑</button>
     <span class="sep"></span>
+    <span class="sep"></span>
+    <button id="lb-sticker-what" data-sticker="WHAT" title="WHAT 스티커 (1)">1 WHAT</button>
+    <button id="lb-sticker-why" data-sticker="WHY" title="WHY 스티커 (2)">2 WHY</button>
+    <button id="lb-sticker-how" data-sticker="HOW" title="HOW 스티커 (3)">3 HOW</button>
     <span class="lb-saved" id="lb-saved"></span>
     <button id="lb-pen-off" title="형광펜 끄기">✕ 끄기</button>
   </div>
   <div class="lb-body">
-    <div class="lb-stage" id="lb-stage"><img id="lb-img" alt="" draggable="false"><canvas class="lb-mark" id="lb-mark"></canvas></div>
+    <div class="lb-stage" id="lb-stage"><img id="lb-img" alt="" draggable="false"><canvas class="lb-mark" id="lb-mark"></canvas><canvas class="lb-stickers" id="lb-stickers"></canvas></div>
     <aside class="lb-note" id="lb-note" hidden aria-label="이 지면에 실린 기사 요약"></aside>
   </div>
   <button class="lb-nav next" id="lb-next" aria-label="다음 장">›</button>
   <!-- 2026-10-21: 확장 프로그램이 페이지보다 먼저 우클릭을 가로채면(우클릭 강제 허용 기능) 페이지 코드로는 메뉴를 못 막는다 → 알려 준다 -->
   <div class="lb-warn" id="lb-warn" hidden role="status"><span>⚠️ 크롬 <b>확장 프로그램</b>이 오른쪽 클릭을 먼저 가로채고 있어 메뉴가 뜰 수 있어요. 신문 옮기기는 <b>✋ 손바닥</b>·<b>Space 누른 채 끌기</b>·<b>휠 버튼 누른 채 끌기</b>를 쓰세요.</span><button type="button" id="lb-warn-x" aria-label="닫기">✕</button></div>
-  <div class="lb-hint" id="lb-hint">←→ 키·옆으로 쓸어 넘기기 · 휠/더블탭 확대 · 옮기기: ✋·Space+끌기·휠 버튼 끌기·방향키 · 🖍 형광펜(H) · Esc 닫기</div>
+  <div class="lb-hint" id="lb-hint">←→ 키·옆으로 쓸어 넘기기 · 휠/더블탭 확대 · 옮기기: ✋·Space+끌기·휠 버튼 끌기·방향키 · 🖍 형광펜(H) · 스티커 1 WHAT·2 WHY·3 HOW · Esc 돌아가기</div>
 </div>
 
   <!-- 2026-11-01 사용자 요청: 관리자만 — 모르는 용어를 찾아 서버에 계속 저장(📖 용어 노트). 메인 화면·사진 뷰어 어디서나 오른쪽 아래에 떠 있다 -->
@@ -2143,6 +2151,83 @@ window.addEventListener("pageshow",e=>{if(e.persisted){resetMarksIfNewDate();dra
 window.addEventListener("online",flushMarks);
 document.addEventListener("visibilitychange",()=>{if(document.hidden) flushMarks();});
 
+
+/* WHAT/WHY/HOW 스티커. 직전의 손바닥·펜 상태를 바꾸지 않고 입력만 잠깐 가로챈다. */
+const STICKER_COLORS={WHAT:"#1d4ed8",WHY:"#7c3aed",HOW:"#047857"};
+const STICK={active:false,selected:null,drag:null,pointer:null};
+function selectedSticker(){
+  return STICK.selected&&(M.marks[markName()]||[]).includes(STICK.selected)?STICK.selected:null;
+}
+function stickerHint(text){
+  $("lb-hint").textContent=text;$("lb-hint").classList.remove("gone");clearTimeout(V.hintT);
+}
+function finishStickerMode(){
+  if(!STICK.active&&!STICK.drag)return;
+  const drag=STICK.drag;STICK.drag=null;STICK.active=false;STICK.selected=null;
+  $("lb-stage").classList.remove("sticker-mode","sticker-dragging");
+  if(drag&&$("lb-stage").hasPointerCapture(drag.id))$("lb-stage").releasePointerCapture(drag.id);
+  flushMarks();drawMarks();
+  $("lb-hint").textContent=HINT_DEFAULT;
+  clearTimeout(V.hintT);V.hintT=setTimeout(()=>$("lb-hint").classList.add("gone"),2200);
+}
+function activateSticker(st){
+  M.sel=null;STICK.active=true;STICK.selected=st;
+  $("lb-stage").classList.add("sticker-mode");
+  stickerHint("스티커를 끌어 이동 · 방향키로 미세조정 · Esc: 원래 도구로 돌아가기");
+  drawMarks();
+}
+function stampSticker(label){
+  if($("lb").hidden||!STICKER_COLORS[label])return;
+  if(!markDay||!["admin","guest"].includes(markDay.mode)){
+    stickerHint(marksHint());return;
+  }
+  if(M.cur||M.move||V.pts.size||STICK.drag)return;
+  const r=$("lb-img").getBoundingClientRect(),box=$("lb-stage").getBoundingClientRect();
+  if(!$("lb-img").complete||!$("lb-img").naturalWidth||r.width<=0||r.height<=0)return;
+  if(markList().length>=1000){stickerHint("표시가 너무 많아요. 먼저 사용하지 않는 표시를 지워 주세요.");return;}
+  const left=Math.max(r.left,box.left,0),right=Math.min(r.right,box.right,innerWidth);
+  const top=Math.max(r.top,box.top,0),bottom=Math.min(r.bottom,box.bottom,innerHeight);
+  if(right<=left||bottom<=top)return;
+  const p=STICK.pointer;
+  const cx=p&&p.x>=left&&p.x<=right&&p.y>=top&&p.y<=bottom?p.x:(left+right)/2;
+  const cy=p&&p.x>=left&&p.x<=right&&p.y>=top&&p.y<=bottom?p.y:(top+bottom)/2;
+  const w=Math.max(.02,Math.min(.35,84/r.width)),h=Math.max(.01,Math.min(.12,28/r.height));
+  const x=Math.max(0,Math.min(1-w,(cx-r.left)/r.width-w/2));
+  const y=Math.max(0,Math.min(1-h,(cy-r.top)/r.height-h/2));
+  const st={t:"sticker",label,c:STICKER_COLORS[label],w:.01,pts:[[x,y],[x+w,y+h]]};
+  markList().push(st);marksChanged();activateSticker(st);flushMarks();
+}
+function stickerAt(x,y){
+  const list=M.marks[markName()]||[];
+  for(let i=list.length-1;i>=0;i--){
+    if(list[i].t!=="sticker")continue;
+    const [a,b]=list[i].pts;
+    if(x>=a[0]&&x<=b[0]&&y>=a[1]&&y<=b[1])return list[i];
+  }
+  return null;
+}
+function drawSticker(ctx,st,pw,ph){
+  const color=STICKER_COLORS[st.label];if(!color)return;
+  const [a,b]=st.pts,x=a[0]*pw,y=a[1]*ph,w=(b[0]-a[0])*pw,h=(b[1]-a[1])*ph;
+  ctx.save();ctx.fillStyle=color;ctx.beginPath();
+  if(ctx.roundRect)ctx.roundRect(x,y,w,h,Math.min(w,h)*.18);else ctx.rect(x,y,w,h);
+  ctx.fill();ctx.fillStyle="#fff";ctx.font="700 "+Math.max(1,h*.53)+"px system-ui, sans-serif";
+  ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(st.label,x+w/2,y+h/2,Math.max(1,w*.86));
+  ctx.restore();
+}
+function drawStickerOverlay(pw,ph,w,h,transform){
+  const cv=$("lb-stickers");if(!cv)return;
+  cv.style.width=w+"px";cv.style.height=h+"px";cv.style.transform=transform;
+  if(cv.width!==pw||cv.height!==ph){cv.width=pw;cv.height=ph;}
+  const ctx=cv.getContext("2d");ctx.clearRect(0,0,pw,ph);
+  for(const st of M.marks[markName()]||[])if(st.t==="sticker")drawSticker(ctx,st,pw,ph);
+  const sel=selectedSticker();
+  if(STICK.active&&sel){
+    const [a,b]=sel.pts;ctx.save();ctx.strokeStyle="#fff";ctx.lineWidth=2;ctx.setLineDash([5,4]);
+    ctx.strokeRect(a[0]*pw-3,a[1]*ph-3,(b[0]-a[0])*pw+6,(b[1]-a[1])*ph+6);ctx.restore();
+  }
+}
+
 const markName=()=> (V.list[V.i]||{}).name || "";          // 지금 보는 사진의 파일 이름
 const markList=()=> (M.marks[markName()] ||= []);          // 그 사진에 그은 줄 목록
 
@@ -2245,6 +2330,7 @@ function toImgXY(cx,cy){
 /* 표시 하나를 그림판에 그린다. 뷰어(큰 사진)와 기사 옆 작은 사진이 **같은 함수**를 쓴다
    → 좌표·굵기가 둘 다 '사진 대비 비율'이라 크기가 달라도 같은 글자 위에 같은 모양으로 얹힌다. */
 function strokeOne(ctx, st, pw, ph, minW){
+  if(st.t==="sticker"){drawSticker(ctx,st,pw,ph);return;}
   ctx.strokeStyle=st.c; ctx.lineWidth=Math.max(minW, st.w*ph);
   ctx.beginPath();
   if(st.t==="oval"){
@@ -2276,7 +2362,8 @@ function drawMarks(){
   ctx.clearRect(0,0,pw,ph);
   ctx.lineCap="round"; ctx.lineJoin="round";
   const all=(M.marks[markName()]||[]).concat(M.cur?[M.cur]:[]);
-  for(const st of all) strokeOne(ctx, st, pw, ph, 1.5);    // 가는 선도 가늘게 나오도록 최소 1.5
+  for(const st of all) if(st.t!=="sticker")strokeOne(ctx, st, pw, ph, 1.5);
+  drawStickerOverlay(pw,ph,w,h,img.style.transform);    // 가는 선도 가늘게 나오도록 최소 1.5
 
   /* 고른 동그라미에는 점선 네모를 덧그린다 — '여기를 끌면 옮길 수 있어요' 표시.
      점선은 표시가 아니라 안내라서, 옮기기가 끝나 고른 상태가 풀리면 같이 사라진다. */
@@ -2297,6 +2384,11 @@ function eraseAt(nx,ny){
   let hit=-1, best=Infinity;
   const ar=aspect();                               // 가로세로 비율을 맞춰야 거리 계산이 맞다
   for(let i=list.length-1;i>=0;i--){
+    if(list[i].t==="sticker"){
+      const [a,b]=list[i].pts;
+      if(nx>=a[0]&&nx<=b[0]&&ny>=a[1]&&ny<=b[1]){list.splice(i,1);finishStickerMode();marksChanged();drawMarks();return true;}
+      continue;
+    }
     for(const [x,y] of hitPoints(list[i])){        // 동그라미는 테두리를 풀어서 비교
       const d=Math.hypot(x-nx, (y-ny)*ar);
       if(d<best){ best=d; hit=i; }
@@ -2310,6 +2402,7 @@ function eraseAt(nx,ny){
 }
 
 function setPen(on){
+  finishStickerMode();
   M.on=on; M.erase=false; M.sel=null; M.move=null;
   $("lb-stage").classList.remove("movable","moving");
   $("lb-pen").setAttribute("aria-pressed", on?"true":"false");
@@ -2388,6 +2481,7 @@ function openViewer(i,opts={}){
   drawMarks();
 }
 function closeViewer(){
+  finishStickerMode();
   lbGuards(false);                             // 열 때 붙인 우클릭·끌기 막기를 뗀다
   dlMenu(false);
   $("lb").hidden=true;
@@ -2402,6 +2496,7 @@ function closeViewer(){
   drawSideMarks();                             // 기사 옆 작은 사진에도 방금 그은 줄을 반영
 }
 function showPage(){
+  finishStickerMode();
   const im=V.list[V.i]; if(!im) return;
   fillNote();                                  // 장이 바뀌면 옆 요약 칸도 그 장의 기사로(사진 크기 계산 전에 폭을 정한다)
   const img=$("lb-img");
@@ -2486,6 +2581,7 @@ const HAND_DEFAULT=(()=>{
 })();
 // ✋ 손바닥 모드 켜고 끄기 — 끄면 사진을 다시 정상 범위 안으로 돌려놓는다
 function setHand(on, keep){
+  finishStickerMode();
   V.hand=!!on;
   /* keep(2026-10-16): 🖍·색·도구·지우개를 고르느라 손바닥이 저절로 꺼질 땐 옮겨 둔 자리를 그대로 둔다
      ("손바닥으로 옮긴 뒤 펜을 누르면 사진이 원래 자리로 돌아간다" — 사용자 요청). ✋ 버튼·M 키로 직접 끌 때만 정상 범위로. */
@@ -2611,6 +2707,7 @@ $("lb-c1").setAttribute("aria-pressed","true");        // 기본은 빨강
 // 도구 고르기 — 직선(기본) · 동그라미 · 자유
 const TOOLS=[["lb-t-line","line"],["lb-t-oval","oval"],["lb-t-free","free"]];
 function setTool(t){
+  finishStickerMode();
   M.tool=t; setErase(false); setHand(false,true);
   M.sel=null;                                  // 도구를 바꾸면 '방금 그린 것' 고르기는 끝
   TOOLS.forEach(([id,k])=>$(id).setAttribute("aria-pressed", k===t?"true":"false"));
@@ -2630,12 +2727,14 @@ function setWeight(k){
 WEIGHTS.forEach(([id,v])=>{ $(id).onclick=()=>setWeight(v); });
 
 function setErase(on){
+  finishStickerMode();
   M.erase=on;
   if(on){ M.sel=null; drawMarks(); setHand(false,true); }   // 지울 땐 옮기기 안내(점선)를 치우고, 손바닥도 끈다
   $("lb-erase").setAttribute("aria-pressed", on?"true":"false");
 }
 $("lb-erase").onclick=()=>setErase(!M.erase);
 $("lb-undo").onclick=()=>{
+  finishStickerMode();
   const list=M.marks[markName()];
   if(list&&list.length){
     if(M.sel===list[list.length-1]) M.sel=null;  // 되돌린 게 고른 것이면 같이 푼다
@@ -2643,6 +2742,7 @@ $("lb-undo").onclick=()=>{
   }
 };
 $("lb-clear").onclick=()=>{
+  finishStickerMode();
   const list=M.marks[markName()];
   if(!list||!list.length) return;
   if(!confirm(`이 장(${V.i+1}쪽)에 그은 형광펜을 모두 지울까요?`)) return;
@@ -2729,6 +2829,68 @@ document.addEventListener("keydown",e=>{
 
 // ── 입력: 마우스 휠(Ctrl) / 더블클릭 ────────────────────────────────────
 const stage=$("lb-stage");
+
+/* 숫자는 즉시 찍기, 왼쪽 끌기는 스티커 이동. Esc 후에는 원래 손바닥/펜 입력이 그대로 동작한다. */
+document.addEventListener("keydown",e=>{
+  if($("lb").hidden||e.isComposing||e.target.closest?.("input,textarea,select,[contenteditable]:not([contenteditable='false'])"))return;
+  if(!$("tn-panel").hidden||!$("lb-dlmenu").hidden)return;
+  if(e.key==="Escape"&&STICK.active){
+    e.preventDefault();e.stopImmediatePropagation();finishStickerMode();return;
+  }
+  if(e.ctrlKey||e.metaKey||e.altKey)return;
+  const label={"1":"WHAT","2":"WHY","3":"HOW"}[e.key];
+  if(label){
+    e.preventDefault();e.stopImmediatePropagation();if(!e.repeat)stampSticker(label);return;
+  }
+  const arrows={ArrowLeft:[-.004,0],ArrowRight:[.004,0],ArrowUp:[0,-.004/aspect()],ArrowDown:[0,.004/aspect()]};
+  const sel=selectedSticker();
+  if(STICK.active&&sel&&arrows[e.key]&&!e.shiftKey){
+    e.preventDefault();e.stopImmediatePropagation();const [dx,dy]=arrows[e.key];
+    moveSel(sel,sel.pts.map(p=>p.slice()),dx,dy);flushMarks();
+  }
+},true);
+for(const button of document.querySelectorAll("[data-sticker]")){
+  button.onclick=()=>stampSticker(button.dataset.sticker);
+}
+$("lb-tools").addEventListener("click",e=>{
+  if(e.target.closest("button")&&!e.target.closest("[data-sticker]"))finishStickerMode();
+},true);
+stage.addEventListener("pointermove",e=>{
+  STICK.pointer={x:e.clientX,y:e.clientY};
+  const drag=STICK.drag;
+  if(!drag||drag.id!==e.pointerId)return;
+  e.preventDefault();e.stopImmediatePropagation();
+  const q=toImgXY(e.clientX,e.clientY);if(q)moveSel(drag.st,drag.orig,q[0]-drag.from[0],q[1]-drag.from[1]);
+},true);
+stage.addEventListener("pointerdown",e=>{
+  STICK.pointer={x:e.clientX,y:e.clientY};
+  if(e.button!==0||e.ctrlKey||V.space){finishStickerMode();return;}
+  if(M.erase&&M.on){finishStickerMode();return;}
+  const q=toImgXY(e.clientX,e.clientY),hit=q&&stickerAt(q[0],q[1]);
+  if(!hit&&!STICK.active)return;
+  e.preventDefault();e.stopImmediatePropagation();
+  if(STICK.drag||V.pts.size||M.cur||M.move)return;
+  if(!markDay||!["admin","guest"].includes(markDay.mode)){stickerHint(marksHint());return;}
+  if(hit){
+    activateSticker(hit);STICK.drag={id:e.pointerId,st:hit,from:q,orig:hit.pts.map(p=>p.slice())};
+    stage.setPointerCapture(e.pointerId);stage.classList.add("sticker-dragging");
+  }
+},true);
+function endStickerDrag(e){
+  const drag=STICK.drag;if(!drag||drag.id!==e.pointerId)return;
+  e.preventDefault();e.stopImmediatePropagation();STICK.drag=null;
+  stage.classList.remove("sticker-dragging");flushMarks();drawMarks();
+  if(stage.hasPointerCapture(e.pointerId))stage.releasePointerCapture(e.pointerId);
+}
+stage.addEventListener("pointerup",endStickerDrag,true);
+stage.addEventListener("pointercancel",endStickerDrag,true);
+stage.addEventListener("lostpointercapture",e=>{
+  if(STICK.drag?.id===e.pointerId){STICK.drag=null;stage.classList.remove("sticker-dragging");flushMarks();}
+},true);
+stage.addEventListener("dblclick",e=>{if(STICK.active){e.preventDefault();e.stopImmediatePropagation();}},true);
+window.addEventListener("blur",()=>{if(STICK.drag){STICK.drag=null;stage.classList.remove("sticker-dragging");flushMarks();}});
+window.addEventListener("pagehide",finishStickerMode);
+
 /* 마우스 휠로 확대·축소. 위로 굴리면 커지고 아래로 굴리면 작아진다.
    커서가 가리킨 지점을 기준으로 확대되므로(zoomAt), 보고 싶은 기사에 대고 굴리면 된다.
 
@@ -3262,7 +3424,7 @@ function decorate(force){
       // 기사 영역(box)이 있으면 그 부분만 잘라 보여준다 — 잘라 보이려면 선명해야 해서 썸네일 대신 원본을 쓴다
       side.innerHTML=
         `<button class="side-fig${box?" crop":""}" data-act="pen" title="눌러서 줄 긋기(형광펜) — ${no}번째 장${box?"의 이 기사":""}">`+
-          `<img loading="lazy" decoding="async" src="${box?im.url:(im.thumb||im.url)}" alt="${no}번째 신문 사진"><canvas></canvas>`+
+          `<img loading="lazy" decoding="async" src="${box?im.url:(im.thumb||im.url)}" alt="${no}번째 신문 사진"><canvas></canvas><canvas class="side-stickers"></canvas>`+
           `<span class="side-no">${no}</span></button>`+
         `<div class="side-acts">`+
           `<button class="primary" data-act="pen" title="형광펜을 켠 채로 크게 열기">🖍 줄 긋기</button>`+
@@ -3298,7 +3460,13 @@ function drawSideMark(side){
   ctx.lineCap="round"; ctx.lineJoin="round";
   const name=(newsState.images[+side.dataset.i]||{}).name;
   const list=(M.date===state.date && name && M.marks[name])||[];
-  for(const st of list) strokeOne(ctx, st, pw, ph, 1);
+  for(const st of list)if(st.t!=="sticker")strokeOne(ctx,st,pw,ph,1);
+  const sc=side.querySelector(".side-stickers");
+  if(sc){
+    sc.style.width=w+"px";sc.style.height=h+"px";if(sc.width!==pw||sc.height!==ph){sc.width=pw;sc.height=ph;}
+    const context=sc.getContext("2d");context.clearRect(0,0,pw,ph);
+    for(const st of list)if(st.t==="sticker")drawSticker(context,st,pw,ph);
+  }
 }
 /* 기사 영역만 잘라 보이기: 칸의 가로세로 비율을 '영역' 비율로 맞추고, 사진을 그만큼 키워 영역이 칸에 딱 차게 민다.
    (CSS 의 %: left·width 는 칸 너비 기준, top 은 칸 높이 기준이라 비율 계산만으로 정확히 맞는다) */
@@ -3345,11 +3513,12 @@ async function renderPage(im){
   if(list.length){
     const lay=document.createElement("canvas"); lay.width=w; lay.height=h;
     const lc=lay.getContext("2d"); lc.lineCap="round"; lc.lineJoin="round";
-    for(const st of list) strokeOne(lc, st, w, h, 1.5);
+    for(const st of list)if(st.t!=="sticker")strokeOne(lc,st,w,h,1.5);
     ctx.globalCompositeOperation="multiply"; ctx.globalAlpha=MARK_ALPHA;   // 화면의 형광펜과 똑같이 글씨가 비쳐 보이게
     ctx.drawImage(lay,0,0);
     ctx.globalCompositeOperation="source-over"; ctx.globalAlpha=1;
   }
+  for(const st of list)if(st.t==="sticker")drawSticker(ctx,st,w,h);
   return cv;
 }
 const toJpeg=(cv)=>new Promise((ok,fail)=>cv.toBlob(b=>b?ok(b):fail(new Error("그림 만들기 실패")),"image/jpeg",DL_Q));
