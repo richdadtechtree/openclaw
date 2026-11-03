@@ -31,6 +31,7 @@ const srv=http.createServer((req,res)=>{
   }
   return json({ok:false},404);
 });
+
 (async()=>{
   await new Promise(r=>srv.listen(0,'127.0.0.1',r));
   const base='http://127.0.0.1:'+srv.address().port;
@@ -42,92 +43,79 @@ const srv=http.createServer((req,res)=>{
   await page.route('https://**/*',r=>r.abort());
   async function ready(){
     await page.waitForFunction(()=>document.querySelectorAll('#feed .brf-art').length===15 && newsState.images.length===3);
-    await page.locator('#bm-fab').waitFor({state:'visible'});
-  }
-  async function openPanel(){
-    if(await page.locator('#bm-panel').isHidden())await page.locator('#bm-fab').click();
+    await page.locator('#bm-controls').waitFor({state:'visible'});
     await page.waitForFunction(()=>!document.getElementById('bm-save').disabled);
   }
-  async function save(mode){await openPanel();if(mode)await page.locator(mode==='page'?'#bm-page':'#bm-summary').check();await page.locator('#bm-save').click();await page.waitForFunction(()=>document.getElementById('bm-status').textContent.includes('저장했어요'));}
+  async function save(){
+    await page.locator('#bm-save').click();
+    await page.waitForFunction(()=>document.getElementById('bm-status').textContent==='저장했어요.'&&!document.getElementById('bm-save').disabled);
+  }
+  async function idle(){await page.waitForFunction(()=>!document.getElementById('bm-go').disabled);}
   try{
     await page.goto(base+'/economy');await ready();
-    const bb=await page.locator('#bm-fab').boundingBox(),tt=await page.locator('#tn-fab').boundingBox();
-    check(tt&&Math.abs(bb.y-tt.y)<2&&tt.x>bb.x,'책갈피가 용어 바로 옆');
-    await page.evaluate(()=>{document.querySelectorAll('#feed .brf-art')[5].scrollIntoView({behavior:'instant',block:'start'});});
-    await save();
-    const first=saved.get('a');
-    check(first.article.includes('6')&&first.view==='summary','읽던 기사 위치 저장');
-    await page.locator('#bm-fab').click();
+    check(await page.locator('#bm-controls button').count()===2,'책갈피는 저장·불러오기 두 버튼만 표시');
+    check(await page.locator('#bm-panel,#bm-kind,#bm-clear,#bm-fab').count()===0,'메뉴·종류 선택·삭제·추가 클릭 제거');
+    const bb=await page.locator('#bm-controls').boundingBox(),tt=await page.locator('#tn-fab').boundingBox();
+    check(tt&&Math.abs(bb.y-tt.y)<3&&tt.x>bb.x,'용어 옆에 바로 이용하는 버튼 배치');
+    await page.locator('#bm-go').click();
+    await page.waitForFunction(()=>document.getElementById('bm-status').textContent.includes('저장된 위치가 없어요'));
+    check(true,'빈 책갈피 불러오기는 짧게 안내');
+    await page.evaluate(()=>document.querySelectorAll('#feed .brf-art')[5].scrollIntoView({behavior:'instant',block:'start'}));
+    await save();const first=saved.get('a');
+    check(first.article.includes('6')&&first.view==='summary','저장 한 번으로 현재 요약 위치 자동 저장');
     await page.locator('#datepick').fill('2026-11-01');await page.locator('#datepick').dispatchEvent('change');
     await page.waitForFunction(()=>state.data.date==='2026-11-01');
-    await openPanel();await page.locator('#bm-go').click();await page.locator('#bm-panel').waitFor({state:'hidden'});
-    check(await page.evaluate(d=>state.date===d,first.date),'다른 날짜에서 저장 날짜로 이동');
-    const near=await page.evaluate(()=>{const r=document.querySelectorAll('#feed .brf-art')[5].getBoundingClientRect();return r.bottom>0&&r.top<innerHeight;});
-    check(near,'저장한 기사로 즉시 이동');
-    await page.evaluate(()=>{openViewer(2);});
+    await page.locator('#bm-go').click();
+    await page.waitForFunction(d=>state.date===d&&!document.getElementById('bm-go').disabled,first.date);
+    check(await page.evaluate(()=>{const r=document.querySelectorAll('#feed .brf-art')[5].getBoundingClientRect();return r.bottom>0&&r.top<innerHeight;}),'불러오기 한 번으로 저장한 날짜·기사로 이동');
+    await page.evaluate(()=>openViewer(2));
     await page.waitForFunction(()=>document.getElementById('lb-img').naturalWidth>0);
     await save();
-    check(saved.get('a').view==='page'&&saved.get('a').page==='03.jpg','크게 보는 지면 저장');
-    check(saved.size===1,'계정당 최신 책갈피 한 개');
-    await page.reload();await ready();await openPanel();await page.locator('#bm-go').click();
-    await page.waitForFunction(()=>!document.getElementById('lb').hidden&&V.i===2);
-    check(true,'새로고침 후 같은 지면 열기');
-    await save('summary');
-    check(saved.get('a').view==='summary'&&saved.get('a').article,'지면에서 요약 책갈피 선택 및 저장');
-    await page.locator('#bm-go').click();await page.locator('#bm-panel').waitFor({state:'hidden'});
-    check(await page.locator('#lb').isHidden(),'요약 책갈피는 지면을 닫고 요약으로 이동');
-    await save('page');
-    check(saved.get('a').view==='page'&&saved.get('a').page==='03.jpg','요약에서 연결된 지면 책갈피 선택 및 저장');
-    await page.locator('#bm-go').click();await page.waitForFunction(()=>!document.getElementById('lb').hidden&&V.i===2);
-    check(true,'선택한 지면 책갈피로 이동');
-
-    await page.evaluate(()=>closeViewer());
+    check(saved.get('a').view==='page'&&saved.get('a').page==='03.jpg','지면에서 저장을 누르면 종류 선택 없이 지면 저장');
+    check(saved.size===1,'최신 위치 한 개만 유지');
+    await page.reload();await ready();await page.locator('#bm-go').click();
+    await page.waitForFunction(()=>!document.getElementById('lb').hidden&&V.i===2&&!document.getElementById('bm-go').disabled);
+    check(true,'불러오기 한 번으로 저장한 지면 열기');
+    await page.keyboard.press('Escape');await page.locator('#lb').waitFor({state:'hidden'});
+    check(true,'단추에 초점이 있어도 Esc로 지면 닫기');
+    failSave=true;const prev=JSON.stringify(saved.get('a'));
+    await page.locator('#bm-save').click();
+    await page.waitForFunction(()=>document.getElementById('bm-status').textContent.includes('저장 실패'));
+    check(JSON.stringify(saved.get('a'))===prev,'저장 실패 시 기존 위치 유지');failSave=false;
+    photos=false;await page.locator('#bm-go').click();
+    await page.waitForFunction(()=>document.getElementById('bm-status').textContent.includes('지면이 없어요'));
+    check(saved.get('a').page==='03.jpg','원본이 없으면 간단한 안내와 기존 저장 유지');photos=true;
     await page.locator('#edtog button[data-ed=online]').click();
     await page.waitForFunction(()=>state.data.edition==='online');
     await page.evaluate(()=>document.querySelectorAll('#feed .brf-art')[7].scrollIntoView({behavior:'instant',block:'start'}));
-    await save();
-    check(saved.get('a').edition==='online','온라인신문 위치로 최신 책갈피 교체');
-    check(await page.locator('#bm-page').isDisabled(),'온라인신문에서는 지면 선택 비활성');
-    await page.locator('#bm-fab').click();await page.locator('#edtog button[data-ed=paper]').click();
+    await save();check(saved.get('a').edition==='online'&&saved.get('a').view==='summary','온라인신문도 자동 요약 위치 저장');
+    await page.locator('#edtog button[data-ed=paper]').click();
     await page.waitForFunction(()=>state.data.edition==='paper');
-    await openPanel();await page.locator('#bm-go').click();await page.locator('#bm-panel').waitFor({state:'hidden'});
-    check(await page.evaluate(()=>state.edition==='online'),'저장한 신문 종류 복원');
-    await openPanel();failSave=true;const prev=JSON.stringify(saved.get('a'));
-    await page.locator('#bm-save').click();await page.waitForFunction(()=>document.getElementById('bm-status').textContent.includes('저장 실패'));
-    check(JSON.stringify(saved.get('a'))===prev,'저장 실패 시 이전 책갈피 유지');failSave=false;
-    check(await page.locator('#bm-clear').count()===0,'책갈피 삭제 버튼 제거');
-    check(await page.locator('#bm-panel').getByRole('button',{name:/삭제|지우기/}).count()===0,'책갈피에 수동 삭제 메뉴 없음');
-    await page.locator('#bm-fab').click();await page.locator('#edtog button[data-ed=paper]').click();
-    await page.waitForFunction(()=>state.data.edition==='paper');await page.evaluate(()=>openViewer(2));await save();
-    await page.evaluate(()=>closeViewer());await page.locator('#bm-fab').click();photos=false;
-    await openPanel();await page.locator('#bm-go').click();
-    await page.waitForFunction(()=>document.getElementById('bm-status').textContent.includes('지면이 없어요'));
-    check(saved.get('a').page==='03.jpg','원본이 없어도 책갈피 보존 및 안내');photos=true;
-    await page.locator('#bm-fab').click();await page.setViewportSize({width:390,height:844});
-    await openPanel();
+    await page.locator('#bm-go').click();
+    await page.waitForFunction(()=>state.edition==='online'&&!document.getElementById('bm-go').disabled);
+    check(true,'신문 종류도 선택 단계 없이 복원');
+    await page.setViewportSize({width:390,height:844});
     check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'모바일 가로 넘침 없음');
     const actions=await page.locator('#reader-actions').boundingBox(),jump=await page.locator('#section-jump').boundingBox();
-    check(actions.y>=jump.y+jump.height,'모바일 빠른 이동·책갈피 버튼 겹침 없음');
-    await page.keyboard.press('Escape');check(await page.locator('#bm-panel').isHidden(),'Esc는 책갈피만 닫기');
+    check(actions.y>=jump.y+jump.height,'모바일에서 빠른 이동과 두 버튼이 겹치지 않음');
     const other=await browser.newContext({viewport:{width:1280,height:900}});
     await other.addCookies([{name:'test-user',value:'b',url:base}]);
     const p2=await other.newPage();await p2.route('https://**/*',r=>r.abort());
-    await p2.goto(base+'/economy');await p2.locator('#bm-fab').waitFor({state:'visible'});await p2.locator('#bm-fab').click();
-    await p2.waitForFunction(()=>!document.getElementById('bm-save').disabled);
-    check((await p2.locator('#bm-location').textContent()).includes('없어요'),'다른 계정 책갈피 분리');
-    check(await p2.locator('#tn-fab').isHidden(),'일반 계정도 용어 권한과 관계없이 책갈피 이용');
+    await p2.goto(base+'/economy');await p2.locator('#bm-controls').waitFor({state:'visible'});
+    await p2.waitForFunction(()=>!document.getElementById('bm-go').disabled);
+    await p2.locator('#bm-go').click();
+    await p2.waitForFunction(()=>document.getElementById('bm-status').textContent.includes('저장된 위치가 없어요'));
+    check(!saved.has('b')&&saved.has('a'),'계정별 저장 위치 분리');
+    check(await p2.locator('#tn-fab').isHidden(),'일반 계정도 두 버튼으로 이용 가능');
     await other.close();
-    const realNow=await page.evaluate(()=>Date.now());
-    await page.evaluate(()=>{const original=Date.now;Date.now=()=>original()+3*86400000;});
-    await openPanel();
-    check(!(await page.locator('#bm-go').isDisabled()),'기기 시계가 달라도 서버 만료시간 사용');
-    await page.keyboard.press('Escape');
     resetAt=Date.now()/1000+0.8;
-    await openPanel();
-    await page.waitForFunction(()=>document.getElementById('bm-location').textContent.includes('없어요')&&document.getElementById('bm-go').disabled);
-    check(!saved.has('a'),'열어둔 화면도 서버 날짜 변경에 자동 초기화');
-    check((await page.locator('#bm-status').textContent()).includes('초기화'),'날짜 변경 초기화 안내');
+    await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));await idle();
+    await page.waitForFunction(()=>document.getElementById('bm-status').textContent.includes('초기화'));await idle();
+    check(!saved.has('a'),'열어둔 화면에서도 자정 만료 규칙 유지');
+    await page.locator('#bm-go').click();
+    await page.waitForFunction(()=>document.getElementById('bm-status').textContent.includes('저장된 위치가 없어요'));
+    check(true,'초기화 후 불러오기는 이전 위치로 가지 않음');
     check(errors.length===0,'브라우저 오류 없음: '+errors.join('; '));
-    console.log('PASS: '+checks+' bookmark browser checks');
+    console.log('PASS: '+checks+' simple save/load bookmark browser checks');
   }finally{await ctx.close();await browser.close();await new Promise(r=>srv.close(r));}
 })().catch(e=>{console.error(e);process.exitCode=1;});
