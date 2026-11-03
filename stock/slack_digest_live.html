@@ -717,7 +717,11 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   .bm-panel button:disabled{opacity:.45;cursor:default}
   .bm-panel button:focus-visible,.reader-actions button:focus-visible{outline:2px solid #3a5bd0;outline-offset:2px}
   .bm-panel .bm-primary{background:#f0e7d1}
-  .bm-panel .bm-delete{font-size:12px;color:#8c3830}
+  .bm-kind{display:flex;gap:10px;flex-wrap:wrap;border:1px solid #ddd4c4;padding:8px 10px;border-radius:9px}
+  .bm-kind legend{font-size:12px;color:#756c5e;padding:0 4px}
+  .bm-kind label{display:flex;gap:5px;align-items:center;font-size:13px;cursor:pointer}
+  .bm-kind input{accent-color:#8a6d1d}
+  .bm-kind label:has(input:disabled){opacity:.45}
   @media(max-width:599px){.section-jump{bottom:calc(68px + env(safe-area-inset-bottom,0px))}}
   @media print{.reader-actions,.bm-panel{display:none}}
 </style>
@@ -863,11 +867,15 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   </div>
   <div class="tn-panel bm-panel" id="bm-panel" hidden role="dialog" aria-label="내 책갈피">
     <h3>🔖 내 책갈피</h3>
-    <p class="bm-caption">계정별 최신 위치 하나만 기억합니다. 새로 저장하면 이전 위치를 바꿉니다.</p>
+    <p class="bm-caption">종류를 골라 현재 위치를 저장하세요. 계정별 최신 하나만 기억하며, 한국시간 날짜가 바뀌면 초기화됩니다.</p>
+    <fieldset class="bm-kind" id="bm-kind">
+      <legend>저장할 책갈피 종류</legend>
+      <label><input type="radio" name="bm-view" id="bm-summary" value="summary" checked> 요약 책갈피</label>
+      <label><input type="radio" name="bm-view" id="bm-page" value="page"> 지면 책갈피</label>
+    </fieldset>
     <p id="bm-location">저장된 책갈피가 없어요.</p>
     <button type="button" class="bm-primary" id="bm-go" disabled>이어서 읽기</button>
     <button type="button" id="bm-save">현재 위치 저장</button>
-    <button type="button" class="bm-delete" id="bm-clear" disabled>책갈피 지우기</button>
     <p id="bm-status" role="status"></p>
   </div>
   <div class="tn-panel" id="tn-panel" hidden role="dialog" aria-label="관리자 용어 노트">
@@ -3574,33 +3582,50 @@ tnLoad();
 /* 최신 책갈피 한 개를 계정에 저장. 서버 응답만 사용하며 다른 계정의 위치는 브라우저에 보관하지 않는다. */
 (function initBookmark(){
   const fab=$("bm-fab"),panel=$("bm-panel"),status=$("bm-status");
-  const BM={bookmark:null,csrf:"",busy:false};
+  const BM={bookmark:null,csrf:"",busy:false,deadline:0,timer:null,expired:false};
   const offset=()=>[document.querySelector(".sitenav"),$("toolbar")]
     .reduce((n,el)=>n+(el?el.getBoundingClientRect().height:0),16);
   function paintBookmark(){
     const b=BM.bookmark;
     $("bm-location").textContent=b
-      ? b.date+" · "+(b.edition==="paper"?"종이신문":"온라인신문")+" · "+
+      ? (b.view==="page"?"지면 책갈피":"요약 책갈피")+" · "+b.date+" · "+(b.edition==="paper"?"종이신문":"온라인신문")+" · "+
         (b.view==="page"?"지면 "+b.page.replace(/\.[^.]+$/,""):b.article||({pod:"오디오 브리핑","mk-ed":"사설",feed:"기사요약"}[b.section]))
       : "저장된 책갈피가 없어요.";
     $("bm-go").disabled=BM.busy||!b;
-    $("bm-clear").disabled=BM.busy||!b;
+    $("bm-go").textContent=b?(b.view==="page"?"지면 책갈피로 이동":"요약 책갈피로 이동"):"이어서 읽기";
+    $("bm-page").disabled=BM.busy||state.edition==="online";
+    $("bm-summary").disabled=BM.busy;
+    if($("bm-page").disabled && !BM.busy)$("bm-summary").checked=true;
+    $("bm-save").textContent=$("bm-page").checked?"현재 지면 저장":"현재 요약 위치 저장";
     $("bm-save").disabled=BM.busy||!BM.csrf;
   }
   function open(on){
     panel.hidden=!on;fab.setAttribute("aria-expanded",String(on));
-    if(on){tnOpen(false);loadBookmark();}
+    if(on){tnOpen(false);$("bm-page").checked=!$("lb").hidden&&state.edition==="paper";$("bm-summary").checked=!$("bm-page").checked;loadBookmark();}
   }
   async function api(options){
+    const started=performance.now();
     const r=await fetch("/api/news/bookmark",Object.assign({credentials:"same-origin",cache:"no-store"},options));
     const j=await r.json();
     if(!r.ok||!j.ok){const e=new Error(j.message||"책갈피에 연결하지 못했어요.");e.code=r.status;throw e;}
-    return j;
+    j.requestStarted=started;return j;
   }
-  async function loadBookmark(){
+  function expire(){
+    BM.bookmark=null;BM.expired=true;paintBookmark();
+    status.textContent="날짜가 바뀌어 책갈피가 초기화됐어요.";
+    if(!BM.busy)loadBookmark(true);
+  }
+  function setLifetime(j){
+    clearTimeout(BM.timer);BM.expired=false;
+    if(!Number.isFinite(j.expires_at)||!Number.isFinite(j.server_now)){BM.deadline=0;return;}
+    BM.deadline=j.requestStarted+Math.max(0,j.expires_at-j.server_now)*1000;
+    BM.timer=setTimeout(expire,Math.max(0,BM.deadline-performance.now()));
+  }
+  function expired(){return BM.expired || (BM.deadline>0&&performance.now()>=BM.deadline);}
+  async function loadBookmark(keepNotice=false){
     if(BM.busy)return;BM.busy=true;paintBookmark();
     try{
-      const j=await api();BM.bookmark=j.bookmark;BM.csrf=j.csrf;fab.hidden=false;status.textContent="";
+      const j=await api();BM.bookmark=j.bookmark;BM.csrf=j.csrf;setLifetime(j);fab.hidden=false;if(!keepNotice)status.textContent="";
     }catch(e){
       BM.csrf="";BM.bookmark=null;
       if(e.code===401||e.code===403){fab.hidden=true;open(false);}
@@ -3609,31 +3634,52 @@ tnLoad();
   }
   function capture(){
     const arts=[...$("feed").querySelectorAll(".brf-art")],line=offset();
-    const art=arts.find(a=>a.getBoundingClientRect().bottom>line)||null;
+    const inViewer=!$("lb").hidden,view=$("bm-page").checked?"page":"summary";
+    let art=arts.find(a=>a.getBoundingClientRect().bottom>line)||null;
+    if(inViewer){
+      const available=noteArts();
+      const notes=[...$("lb-note").querySelectorAll(".nt-art")],box=$("lb-note").getBoundingClientRect();
+      const visible=notes.find(a=>a.getBoundingClientRect().bottom>box.top+16);
+      const title=visible?artTitle(visible):"";
+      art=available.find(a=>artTitle(a)===title)||(available.includes(V.fromArt)?V.fromArt:available[0])||null;
+      if(view==="summary"&&!art)throw new Error("현재 지면에 연결된 요약이 없어요. 지면 책갈피를 선택해 주세요.");
+    }
     let section="feed",target=art||$("feed");
-    for(const id of ["pod","mk-ed"]){
+    if(!inViewer)for(const id of ["pod","mk-ed"]){
       const el=$(id),r=el.getBoundingClientRect();
       if(!el.hidden&&r.top<=line+24&&r.bottom>line){section=id;target=el;}
     }
-    const rect=target.getBoundingClientRect(),im=!$("lb").hidden&&V.list[V.i];
-    const title=im&&V.fromArt?artTitle(V.fromArt):section==="feed"&&art?artTitle(art):"";
-    return {date:state.date,edition:state.edition,view:im?"page":"summary",section,
-      article:title.slice(0,300),index:Math.max(0,arts.indexOf(art)),
-      fraction:Math.max(0,Math.min(1,(line-rect.top)/Math.max(1,rect.height))),
-      y:Math.max(0,window.scrollY),page:im?im.name:""};
+    let page="";
+    if(view==="page"){
+      if(state.edition!=="paper")throw new Error("온라인신문은 요약 책갈피로 저장해 주세요.");
+      const images=newsState.date===state.date?newsState.images:[];
+      if(inViewer)page=V.list[V.i]?.name||"";
+      else{
+        const side=art&&art.querySelector(".brf-side[data-i]");
+        let index=side?Number(side.dataset.i):-1;
+        if(index<0&&art){const meta=findMeta(artTitle(art));index=Number(meta?.page||art.dataset.page||0)-1;}
+        page=images[index]?.name||"";
+      }
+      if(!page)throw new Error("현재 기사에 연결된 지면이 아직 없어요. 지면을 연 뒤 저장해 주세요.");
+    }
+    const rect=target.getBoundingClientRect();
+    return {date:state.date,edition:state.edition,view,section,article:(art&&section==="feed"?artTitle(art):"").slice(0,300),
+      index:Math.max(0,arts.indexOf(art)),fraction:inViewer?0:Math.max(0,Math.min(1,(line-rect.top)/Math.max(1,rect.height))),
+      y:Math.max(0,window.scrollY),page};
   }
-  async function save(clear=false){
+  async function save(){
     if(BM.busy||!BM.csrf)return;
     BM.busy=true;paintBookmark();status.textContent="저장 중…";
     try{
-      const body=clear?{action:"clear"}:{bookmark:capture()};
+      const body={bookmark:capture()};
       const j=await api({method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":BM.csrf},body:JSON.stringify(body)});
-      BM.bookmark=j.bookmark;status.textContent=clear?"책갈피를 지웠어요.":"현재 위치를 저장했어요.";
+      BM.bookmark=j.bookmark;setLifetime(j);status.textContent=BM.bookmark.view==="page"?"현재 지면을 저장했어요.":"현재 요약 위치를 저장했어요.";
     }catch(e){status.textContent=e.message;}
     finally{BM.busy=false;paintBookmark();}
   }
   async function restore(){
     if(BM.busy||!BM.bookmark)return;
+    if(expired()){expire();return;}
     const b=Object.assign({},BM.bookmark);
     BM.busy=true;paintBookmark();status.textContent="저장한 위치를 여는 중…";
     try{
@@ -3643,6 +3689,7 @@ tnLoad();
       try{localStorage.setItem("digest.edition",b.edition);}catch(_){}
       syncEdition();$("datepick").value=b.date;
       await Promise.all([load(),loadNews()]);
+      if(expired())throw new Error("날짜가 바뀌어 책갈피가 초기화됐어요.");
       if(state.date!==b.date||state.edition!==b.edition)throw new Error("신문 선택이 바뀌어 이동을 멈췄어요.");
       await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
       const arts=[...$("feed").querySelectorAll(".brf-art")];
@@ -3679,7 +3726,7 @@ tnLoad();
   }
   fab.onclick=()=>open(panel.hidden);
   $("bm-save").onclick=()=>save();
-  $("bm-clear").onclick=()=>save(true);
+  $("bm-kind").addEventListener("change",paintBookmark);
   $("bm-go").onclick=restore;
   $("tn-fab").addEventListener("click",()=>open(false));
   // 버튼에 초점이 남아 있어도 Esc는 책갈피만 닫고, 뒤의 지면 뷰어에는 전달하지 않는다.
@@ -3696,6 +3743,7 @@ tnLoad();
     },{passive:type!=="keydown"});
     fab.addEventListener(type,e=>e.stopPropagation(),{passive:true});
   }
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden){if(expired())expire();else loadBookmark();}});
   loadBookmark();
 })();
 

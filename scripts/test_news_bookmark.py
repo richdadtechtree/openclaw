@@ -3,6 +3,8 @@ import os
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta
+from unittest.mock import patch
 from pathlib import Path
 
 TMP = tempfile.TemporaryDirectory(prefix="news_bookmark_", ignore_cleanup_errors=True)
@@ -41,6 +43,8 @@ class BookmarkTests(unittest.TestCase):
             con.execute("DELETE FROM news_bookmarks")
         for uid in self.ids.values():
             gate.set_access(uid, "approved", None)
+        self.clock = patch.object(bm, "now", return_value=datetime(2026, 11, 3, 12, 0, tzinfo=gate.KST)).start()
+        self.addCleanup(patch.stopall)
         self.c = self.clients["reader"]
         self.value = {"date": "2026-11-03", "edition": "paper", "view": "summary", "section": "feed",
                       "article": "신문 기사", "index": 2, "fraction": 0.3, "y": 1200, "page": ""}
@@ -81,14 +85,48 @@ class BookmarkTests(unittest.TestCase):
             c.cookies.update(self.c.cookies)
             self.assertEqual(self.get(c).json()["bookmark"], self.value)
 
-    def test_clear_only_my_latest(self):
+    def test_manual_delete_is_not_available(self):
         self.put()
-        self.put(c=self.clients["other"])
         r = self.c.post("/api/news/bookmark", json={"action": "clear"},
                         headers={"x-csrf-token": self.get().json()["csrf"]})
-        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(self.get().json()["bookmark"], self.value)
+
+    def test_midnight_kst_resets_all_previous_day_bookmarks(self):
+        self.clock.return_value = datetime(2026, 11, 3, 23, 59, 59, tzinfo=gate.KST)
+        self.put()
+        self.put(c=self.clients["other"])
+        response = self.get().json()
+        self.assertEqual(response["expires_at"], datetime(2026, 11, 4, tzinfo=gate.KST).timestamp())
+        self.assertEqual(response["expires_at"] - response["server_now"], 1)
+        self.assertIsNotNone(response["bookmark"])
+        self.clock.return_value += timedelta(seconds=1)
         self.assertIsNone(self.get().json()["bookmark"])
-        self.assertIsNotNone(self.get(self.clients["other"]).json()["bookmark"])
+        self.assertIsNone(self.get(self.clients["other"]).json()["bookmark"])
+        with gate._db() as con:
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM news_bookmarks").fetchone()[0], 0)
+
+    def test_expiry_uses_save_day_not_newspaper_date(self):
+        old = dict(self.value, date="2026-10-01")
+        self.assertEqual(self.put(old).status_code, 200)
+        self.assertEqual(self.get().json()["bookmark"]["date"], "2026-10-01")
+        self.clock.return_value += timedelta(days=1)
+        self.assertIsNone(self.get().json()["bookmark"])
+
+    def test_new_day_save_replaces_expired_bookmark(self):
+        self.put()
+        self.clock.return_value += timedelta(days=1)
+        latest = dict(self.value, view="page", page="05.jpg")
+        self.assertEqual(self.put(latest).status_code, 200)
+        self.assertEqual(self.get().json()["bookmark"]["page"], "05.jpg")
+        with gate._db() as con:
+            self.assertEqual(con.execute("SELECT COUNT(*) FROM news_bookmarks").fetchone()[0], 1)
+
+    def test_legacy_bookmark_from_previous_day_is_reset(self):
+        self.put()
+        with gate._db() as con:
+            con.execute("UPDATE news_bookmarks SET updated_at='2026-11-02T22:00:00'")
+        self.assertIsNone(self.get().json()["bookmark"])
 
     def test_anonymous_and_blocked(self):
         with TestClient(self.app, base_url="https://example.test") as c:
