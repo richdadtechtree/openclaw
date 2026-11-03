@@ -190,6 +190,8 @@ CREATE TABLE IF NOT EXISTS users(
   consent_version TEXT, consent_at TEXT,
   created_at TEXT NOT NULL, last_login_at TEXT,
   UNIQUE(provider, provider_uid));
+CREATE TABLE IF NOT EXISTS news_bookmarks(
+  owner INTEGER PRIMARY KEY, payload TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS consents(
   id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL,
   version TEXT NOT NULL, items TEXT NOT NULL, agreed_at TEXT NOT NULL);
@@ -412,6 +414,7 @@ def delete_user(uid):
         con.execute("DELETE FROM consents WHERE user_id=?", (uid,))
         con.execute("DELETE FROM challenge_posts WHERE user_id=?", (uid,))
         con.execute("DELETE FROM challenge_excused WHERE user_id=?", (uid,))
+        con.execute("DELETE FROM news_bookmarks WHERE owner=?", (uid,))
         con.execute("DELETE FROM users WHERE id=?", (uid,))
 
 
@@ -765,7 +768,7 @@ def privacy_html():
 
 <h2>1. 처리하는 개인정보 항목과 목적</h2>
 <table>
-<tr><th>항목</th><td>소셜 로그인(구글 또는 카카오)이 알려 주는 <b>고유 식별번호</b>, 가입할 때 이용자가 직접 정한 <b>닉네임</b>, 가입 시각·최근 접속 시각, 동의 이력, <b>화면 모드 설정</b>(화이트/다크/자동 — 선택한 경우에만),
+<tr><th>항목</th><td>소셜 로그인(구글 또는 카카오)이 알려 주는 <b>고유 식별번호</b>, 가입할 때 이용자가 직접 정한 <b>닉네임</b>, 가입 시각·최근 접속 시각, 동의 이력, <b>화면 모드 설정</b>(화이트/다크/자동 — 선택한 경우에만), <b>최신 신문 책갈피</b>(저장한 날짜·신문 종류·읽던 위치 한 개, 선택 시),
 <b>(챌린지 참가자만)</b> 이용자가 직접 작성한 <b>챌린지 글</b>(WHAT·WHY·HOW·생각 &amp; 투자에 적용할 점, 고른 신문 쪽)과 작성·수정 시각</td></tr>
 <tr><th>목적</th><td>이용자 확인(본인 계정 식별), 서비스 이용 권한·기한 관리(승인 여부와 이용 기한 확인), 부정 이용 방지,
 챌린지 운영(참여 기록·진행도 확인, 같은 기수 참가자 간 글 공유, 완수 시 이용 권한 부여)</td></tr>
@@ -817,7 +820,7 @@ def consent_html(nick_value, nxt, error="", checks=()):
 <b>실명·전화번호·이메일은 쓰지 마세요.</b> 나중에 내 정보 화면에서 바꿀 수 있어요.</p>
 <h2>개인정보 수집·이용 동의 (필수)</h2>
 <table>
-<tr><th>수집 항목</th><td>소셜 로그인 고유 식별번호, 위에서 직접 입력한 닉네임, 화면 모드 설정(선택 시), (챌린지 참가자만) 직접 작성한 챌린지 글과 작성 시각 (구글·카카오의 이름·이메일은 받지 않아요)</td></tr>
+<tr><th>수집 항목</th><td>소셜 로그인 고유 식별번호, 위에서 직접 입력한 닉네임, 화면 모드 설정·최신 신문 책갈피(선택 시), (챌린지 참가자만) 직접 작성한 챌린지 글과 작성 시각 (구글·카카오의 이름·이메일은 받지 않아요)</td></tr>
 <tr><th>이용 목적</th><td>이용자 확인, 서비스 이용 권한·기한 관리, 부정 이용 방지, 챌린지 운영(진행도·같은 기수 글 공유)</td></tr>
 <tr><th>보유 기간</th><td>탈퇴 시까지 (탈퇴하면 즉시 삭제)</td></tr>
 <tr><th>동의 거부 권리</th><td>동의하지 않을 수 있으며, 이 경우 서비스를 이용할 수 없습니다.</td></tr>

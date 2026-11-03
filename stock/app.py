@@ -56,6 +56,13 @@ except Exception as _watch_err:
     print("[market-watch] 로드 실패: %r" % (_watch_err,))
 
 
+try:
+    from news_bookmark import install as install_news_bookmark
+    install_news_bookmark(app)
+except Exception as _bookmark_err:
+    print("[news-bookmark] 로드 실패: %r" % (_bookmark_err,))
+
+
 def _with_gate_footer(html_text, request=None):
     """화면 자리표 채우기: 맨 위 탭(역할별 — 찰스는 디그·챌린지만)·'이름 님 · 구글/카카오'·맨 아래 링크·계정 화면 모드.
     (실제 일은 gate.fill_page. 로그인 모듈이 없으면 자리표만 지우고 기본 탭이 그대로 보인다)"""

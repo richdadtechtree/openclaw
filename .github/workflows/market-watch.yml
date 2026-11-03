@@ -1,7 +1,10 @@
-name: Market watch checks
+name: Reader and market checks
 on:
   pull_request:
     paths:
+      - 'stock/news_bookmark.py'
+      - 'stock/slack_digest_live.html'
+      - 'stock/gate.py'
       - 'stock/market_watch.py'
       - 'stock/market_data.py'
       - 'stock/app.py'
@@ -9,16 +12,19 @@ on:
       - 'stock/index.html'
       - 'stock/templates/index.html'
       - 'scripts/test_market_watch*'
+      - 'scripts/test_news_bookmark*'
       - '.github/workflows/market-watch.yml'
   push:
     branches: [main]
     paths:
+      - 'stock/news_bookmark.py'
       - 'stock/market_watch.py'
       - 'scripts/test_market_watch*'
+      - 'scripts/test_news_bookmark*'
 permissions:
   contents: read
 jobs:
-  market-watch:
+  reader-market:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -30,8 +36,10 @@ jobs:
         with:
           node-version: '22'
       - run: pip install fastapi httpx
-      - run: python -m py_compile stock/market_watch.py stock/market_data.py stock/app.py stock/kis_client.py
+      - run: python -m py_compile stock/news_bookmark.py stock/gate.py stock/market_watch.py stock/market_data.py stock/app.py stock/kis_client.py
       - run: python -m unittest discover -s scripts -p test_market_watch.py -v
+      - run: python -m unittest discover -s scripts -p test_news_bookmark.py -v
       - run: npm install --no-save --package-lock=false playwright
       - run: npx playwright install --with-deps chromium
       - run: node scripts/test_market_watch.js
+      - run: node scripts/test_news_bookmark.js
