@@ -1,4 +1,4 @@
-/* WHAT/WHY/HOW stickers: real Chromium, mock price-free newspaper server. */
+/* WHAT/WHY/HOW/CHECK stickers: real Chromium, mock price-free newspaper server. */
 const {chromium}=require('playwright');
 const http=require('node:http'),fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const html=fs.readFileSync(path.join(__dirname,'../stock/slack_digest_live.html'),'utf8');
@@ -75,11 +75,18 @@ const server=http.createServer((req,res)=>{
     check(JSON.stringify((await list(page))[0].pts)===fixed,'Escape stops an active drag at its current position');
     await page.mouse.move(r.x+r.width*.65,r.y+r.height*.5);await page.keyboard.press('2');await page.keyboard.press('3');
     rows=await list(page);check(rows.map(s=>s.label).join(',')==='WHAT,WHY,HOW','2 and 3 stamp WHY and HOW');
+    await page.mouse.move(r.x+r.width*.3,r.y+r.height*.6);await page.keyboard.press('4');
+    rows=await list(page);
+    check(rows.at(-1).label==='CHECK'&&rows.at(-1).c==='#b45309','4 stamps CHECK with its own outline color');
+    const checkStamp=rows.at(-1),cp=await point(page,checkStamp);
+    await page.mouse.move(cp.x,cp.y);await page.mouse.down();await page.mouse.move(cp.x+20,cp.y+10,{steps:4});await page.mouse.up();
+    rows=await list(page);
+    check(rows.at(-1).pts[0][0]>checkStamp.pts[0][0],'CHECK can be dragged to a new position');
     await page.keyboard.press('ArrowRight');await page.keyboard.press('Escape');await saved(page);
     const count=rows.length;
     await page.evaluate(()=>{document.getElementById('tn-panel').hidden=false;document.getElementById('tn-q').focus();});
-    await page.keyboard.type('123');
-    check(await page.locator('#tn-q').inputValue()==='123'&&(await list(page)).length===count,'typing 123 in a text input does not stamp');
+    await page.keyboard.type('1234');
+    check(await page.locator('#tn-q').inputValue()==='1234'&&(await list(page)).length===count,'typing 1234 in a text input does not stamp');
     await page.evaluate(()=>{document.getElementById('tn-panel').hidden=true;document.getElementById('tn-q').blur();});
     await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'1',ctrlKey:true,bubbles:true})));
     check((await list(page)).length===count,'modified numeric shortcuts are ignored');
@@ -122,7 +129,7 @@ const server=http.createServer((req,res)=>{
     check(exported.background.every(v=>v===255)&&exported.blueEdges>20,'image/PDF output keeps paper visible and includes colored text outlines');
     await saved(page);const persisted=await list(page);
     await page.reload();await open(page);
-    assert.deepEqual(await list(page),persisted);check(true,'admin stickers and pen marks survive reload');
+    assert.deepEqual(await list(page),persisted);check(true,'admin stickers including CHECK and pen marks survive reload');
     await page.evaluate(()=>{setPen(true);setHand(false,true);setErase(true);});
     const st=(await list(page)).find(s=>s.t==='sticker'),hit=await point(page,st);
     const before=(await list(page)).filter(s=>s.t==='sticker').length;
@@ -139,8 +146,8 @@ const server=http.createServer((req,res)=>{
     await ctx.close();admin=false;
     [ctx,page]=await context({width:390,height:844});
     await page.goto(base+'/economy');await open(page,true);
-    const requests=posts;await page.locator('#lb-sticker-what').click();
-    check((await list(page))[0].label==='WHAT','toolbar can add stickers on a narrow screen');
+    const requests=posts;await page.locator('#lb-sticker-check').click();
+    check((await list(page))[0].label==='CHECK','toolbar can add CHECK on a narrow screen');
     await page.keyboard.press('Escape');
     check(await page.evaluate(()=>M.on&&!V.hand),'mobile toolbar preserves previous pen mode after Escape');
     const toolbar=await page.locator('#lb-tools').boundingBox();

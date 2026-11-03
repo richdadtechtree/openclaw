@@ -139,7 +139,7 @@ class MarksTests(unittest.TestCase):
 
 
     def test_stickers_are_saved_with_safe_labels_and_rectangles(self):
-        for i, label in enumerate(("WHAT", "WHY", "HOW")):
+        for i, label in enumerate(("WHAT", "WHY", "HOW", "CHECK")):
             body = dict(self.body, revision=i, strokes=[{
                 "t": "sticker", "label": label, "c": "untrusted", "w": 999,
                 "pts": [[.1, .2], [.25, .24]]}])
@@ -148,7 +148,7 @@ class MarksTests(unittest.TestCase):
             self.assertEqual(sticker["label"], label)
             self.assertEqual(sticker["t"], "sticker")
             self.assertEqual(sticker["w"], .01)
-            self.assertIn(sticker["c"], ("#1d4ed8", "#7c3aed", "#047857"))
+            self.assertEqual(sticker["c"], {"WHAT": "#1d4ed8", "WHY": "#7c3aed", "HOW": "#047857", "CHECK": "#b45309"}[label])
 
     def test_sticker_validation(self):
         base = {"t": "sticker", "label": "WHAT", "pts": [[.1, .2], [.25, .24]]}
