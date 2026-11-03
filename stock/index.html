@@ -815,8 +815,11 @@
 
 
     <section class="market-section" id="watch-section" hidden aria-labelledby="watch-heading">
-      <div class="section-title"><h2 id="watch-heading">🔔 관심종목 급등 알림</h2></div>
-      <p class="watch-help">전일 종가 대비 +2%·+4%·+6%… 구간 도달 시 팝업으로 알려드려요.
+      <div class="section-title"><h2 id="watch-heading">🔔 지수·관심종목 급등 알림</h2></div>
+      <p class="watch-help">코스피·코스닥·S&amp;P 500·나스닥·QLD·TQQQ와 등록한 관심종목이
+        전일 종가 대비 +2%·+4%·+6%… 구간에 도달하면 팝업으로 알려드려요.
+        주요 지수·ETF는 별도로 추가하지 않아도 자동으로 확인합니다.
+        ETF 환산값과 오래된 시세는 지수 알림에서 제외합니다.
         페이지를 열어 둔 동안 확인하며, 같은 시장 날짜·같은 구간은 이 브라우저에서 한 번만 표시합니다.
         시세는 최대 1분 간격으로 확인하며 제공처에 따라 지연될 수 있어요.</p>
       <form class="watch-form" id="watch-form" hidden>
@@ -846,7 +849,7 @@
     </footer>
   </div>
 
-  <div class="surge-popups" id="surge-popups" role="region" aria-label="관심종목 급등 알림" aria-live="polite"></div>
+  <div class="surge-popups" id="surge-popups" role="region" aria-label="지수·관심종목 급등 알림" aria-live="polite"></div>
 
   <!-- Toast Container -->
   <div class="toast-container" id="toast-container"></div>
@@ -1065,7 +1068,10 @@
         AppState.fx = (resFx && resFx.status === 'success') ? resFx.data.USDKRW : null;
         AppState.crypto = (resCrypto && resCrypto.status === 'success') ? resCrypto.data.BTC : null;
 
-        if (resIndices.status === 'success') AppState.indices = resIndices.data;
+        if (resIndices.status === 'success') {
+          AppState.indices = resIndices.data;
+          window.dispatchEvent(new CustomEvent('market-indices-updated',{detail:resIndices.data}));
+        }
         if (resAlerts.status === 'success') AppState.alerts = resAlerts.data;
         if (resSummary.status === 'success') AppState.summary = resSummary.text;
 
@@ -1563,6 +1569,31 @@
   const popups=document.getElementById('surge-popups');
   let csrf='',canManage=false,viewer='',busy=false,changing=false;
   const memory={};
+  let indexRows=[];
+  const INDEX_WATCH_NAMES={'KOSPI':'코스피','KOSDAQ':'코스닥','S&P 500':'S&P 500','NASDAQ':'나스닥','QLD':'QLD','TQQQ':'TQQQ'};
+  function indexAlertRows(data){
+    return Object.entries(INDEX_WATCH_NAMES).flatMap(([symbol,name])=>{
+      const q=data && data[symbol];
+      if(!q || !Number.isFinite(q.current) || q.current<=0 || !Number.isFinite(q.change_rate) ||
+         !Number.isFinite(q.observed_at)) return [];
+      // 미국 지수를 SPY·QQQ 가격으로 환산한 예비 경로는 실제 지수 급등 알림으로 쓰지 않는다.
+      if((symbol==='S&P 500'||symbol==='NASDAQ') && /^(Korea Investment|KIS)/i.test(q.source||'')) return [];
+      const domestic=symbol==='KOSPI'||symbol==='KOSDAQ';
+      const date=new Date(q.observed_at*1000);
+      if(!Number.isFinite(date.getTime()))return [];
+      const parts=new Intl.DateTimeFormat('en',{timeZone:domestic?'Asia/Seoul':'America/New_York',
+        year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date);
+      const part=k=>parts.find(p=>p.type===k).value;
+      return [{id:'index-'+symbol,symbol,name,quote:{current:q.current,change_rate:q.change_rate,
+        observed_at:q.observed_at,source:q.source||'출처 미확인',
+        currency:symbol==='QLD'||symbol==='TQQQ'?'USD':'pt',
+        market_date:part('year')+'-'+part('month')+'-'+part('day')}}];
+    });
+  }
+  window.addEventListener('market-indices-updated',e=>{
+    indexRows=indexAlertRows(e.detail);
+    processAlerts(indexRows).catch(()=>{});
+  });
   const node=(tag,text,cls)=>{const el=document.createElement(tag);if(text!==undefined)el.textContent=text;if(cls)el.className=cls;return el;};
   function surgeTier(rate){
     return typeof rate==='number' && Number.isFinite(rate) && rate>=2 ? Math.floor(rate/2)*2 : 0;
@@ -1618,7 +1649,7 @@
   }
   function render(rows){
     grid.replaceChildren();
-    if(!rows.length){grid.append(node('p','등록된 종목이 없어요. 관리자가 종목을 추가하면 이곳에 표시됩니다.','watch-message'));return;}
+    if(!rows.length){grid.append(node('p','등록된 관심종목이 없어요. 주요 지수·ETF 알림은 자동으로 확인합니다.','watch-message'));return;}
     for(const row of rows){
       const card=node('article',undefined,'watch-card'),q=row.quote;
       card.append(node('h3',row.name+' · '+row.symbol));
@@ -1648,9 +1679,9 @@
       const data=await json('/market/api/watchlist/quotes');
       render(data.items);
       if(!changing)message.textContent=canManage?'관리자만 종목을 추가·삭제할 수 있어요. 최대 20개까지 등록할 수 있습니다.':'관리자가 등록한 관심종목입니다.';
-      await processAlerts(data.items);
+      await processAlerts([...indexRows,...data.items]);
     }catch(err){
-      canManage=false;csrf='';form.hidden=true;section.hidden=false;popups.replaceChildren();
+      canManage=false;csrf='';viewer='';form.hidden=true;section.hidden=false;popups.replaceChildren();
       message.textContent='관심종목을 불러오지 못했어요. '+err.message;
     }finally{busy=false;}
   }

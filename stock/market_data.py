@@ -617,6 +617,7 @@ def get_snapshot(include_sparkline=False, use_cache=True):
                     "ath": round(ath, 2),
                     "ath_change_rate": round(ath_change_rate, 2),
                     "source": source,
+                    "observed_at": time.time(),  # 새 시세를 받은 시각. 캐시 조회 때는 갱신하지 않는다.
                 }
             _snapshot_cache["ts"] = now
             _snapshot_cache["data"] = {k: dict(v) for k, v in data.items()}

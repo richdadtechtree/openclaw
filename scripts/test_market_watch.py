@@ -153,5 +153,26 @@ class MarketWatchTests(unittest.TestCase):
         self.assertEqual(self.post({"action": "remove", "id": "../"}).status_code, 400)
 
 
+    def test_index_quote_cache_keeps_original_timestamp(self):
+        import importlib.util
+        from unittest.mock import MagicMock
+        spec = importlib.util.spec_from_file_location(
+            "market_data_cache_test", Path(__file__).resolve().parents[1] / "stock" / "market_data.py")
+        md = importlib.util.module_from_spec(spec)
+        with patch.dict(sys.modules, {"requests": MagicMock(), "yfinance": MagicMock(), "kis_client": MagicMock()}):
+            spec.loader.exec_module(md)
+        with patch.object(md, "SYMBOLS", {"KOSPI": {"kis_type": "domestic"}}), \
+             patch.object(md, "_fetch_naver_quote", return_value={"current": 6000.0, "change_rate": 2.0}) as fetch, \
+             patch.object(md, "get_ath_and_drawdown", return_value=(9000, -33.33)), \
+             patch.object(md.time, "time", return_value=1000) as clock:
+            md._snapshot_cache = {"ts": 0, "data": None}
+            self.assertEqual(md.get_snapshot()["KOSPI"]["observed_at"], 1000)
+            clock.return_value = 1030
+            self.assertEqual(md.get_snapshot()["KOSPI"]["observed_at"], 1000)
+            clock.return_value = 1061
+            self.assertEqual(md.get_snapshot()["KOSPI"]["observed_at"], 1061)
+            self.assertEqual(fetch.call_count, 2)
+
+
 if __name__ == "__main__":
     unittest.main()
