@@ -92,6 +92,15 @@ const server=http.createServer((req,res)=>{
     r=await page.locator('#lb-img').boundingBox();
     await page.mouse.move(r.x+r.width*.2,r.y+r.height*.8);await page.mouse.down();await page.mouse.move(r.x+r.width*.5,r.y+r.height*.8,{steps:6});await page.mouse.up();
     check((await list(page)).at(-1).t==='line','normal highlighting works after Escape');
+    await page.evaluate(()=>setErase(true));
+    r=await page.locator('#lb-img').boundingBox();
+    await page.mouse.move(r.x+r.width*.72,r.y+r.height*.22);await page.keyboard.press('2');
+    const eraserSticker=(await list(page)).at(-1),ep=await point(page,eraserSticker);
+    await page.mouse.move(ep.x,ep.y);await page.mouse.down();await page.mouse.move(ep.x+20,ep.y+10,{steps:4});await page.mouse.up();
+    check((await list(page)).at(-1).pts[0][0]>eraserSticker.pts[0][0],'sticker movement takes priority while the previous tool is eraser');
+    await page.keyboard.press('Escape');
+    check(await page.evaluate(()=>M.on&&M.erase&&!STICK.active),'Escape restores the previous eraser tool');
+    await page.evaluate(()=>setErase(false));
     await page.evaluate(()=>zoomAt(1.7));
     await page.waitForFunction(()=>Math.abs(document.getElementById('lb-img').getBoundingClientRect().width-V.fitW*V.zoom)<1&&Math.abs(document.getElementById('lb-img').getBoundingClientRect().width-document.getElementById('lb-stickers').getBoundingClientRect().width)<1);
     check(true,'sticker layer follows image zoom');

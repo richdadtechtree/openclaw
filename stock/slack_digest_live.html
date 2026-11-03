@@ -2865,7 +2865,7 @@ stage.addEventListener("pointermove",e=>{
 stage.addEventListener("pointerdown",e=>{
   STICK.pointer={x:e.clientX,y:e.clientY};
   if(e.button!==0||e.ctrlKey||V.space){finishStickerMode();return;}
-  if(M.erase&&M.on){finishStickerMode();return;}
+  if(M.erase&&M.on&&!STICK.active)return;
   const q=toImgXY(e.clientX,e.clientY),hit=q&&stickerAt(q[0],q[1]);
   if(!hit&&!STICK.active)return;
   e.preventDefault();e.stopImmediatePropagation();
