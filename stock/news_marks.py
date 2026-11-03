@@ -54,7 +54,7 @@ def validate(b):
     if not isinstance(strokes, list) or len(strokes) > 1000:
         raise ValueError("표시가 너무 많아요.")
     clean = []
-    sticker_colors = {"WHAT": "#1d4ed8", "WHY": "#7c3aed", "HOW": "#047857"}
+    sticker_colors = {"WHAT": "#1d4ed8", "WHY": "#7c3aed", "HOW": "#047857", "CHECK": "#b45309"}
     for s in strokes:
         if not isinstance(s, dict) or s.get("t") not in ("line", "oval", "free", "sticker"):
             raise ValueError("표시 종류를 확인해 주세요.")
