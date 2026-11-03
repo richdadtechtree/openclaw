@@ -6,7 +6,7 @@ const path = require('node:path');
 const {chromium} = require('playwright');
 const html = fs.readFileSync(path.join(__dirname, '../stock/index.html'), 'utf8');
 assert.equal(html, fs.readFileSync(path.join(__dirname, '../stock/templates/index.html'), 'utf8'));
-let rows=[], canManage=true, viewer='1', posts=[];
+let rows=[], indices={}, canManage=true, viewer='1', posts=[];
 const makeRow=(rate,id=1,date='2026-11-03')=>({id,symbol:'AAPL',name:'애플',quote:{
   current:102,change_rate:rate,source:'TEST',currency:'USD',market_date:date,observed_at:Date.now()/1000}});
 (async()=>{
@@ -20,6 +20,7 @@ const makeRow=(rate,id=1,date='2026-11-03')=>({id,symbol:'AAPL',name:'애플',qu
       if(url.hostname!=='127.0.0.1')return route.abort();
       if(!url.pathname.startsWith('/market/api/'))return route.continue();
       let body={status:'error',data:null};
+      if(url.pathname==='/market/api/indices')body={status:'success',data:indices};
       if(url.pathname==='/market/api/watchlist'){
         if(route.request().method()==='POST'){
           posts.push({data:route.request().postDataJSON(),headers:route.request().headers()});
@@ -68,11 +69,44 @@ const makeRow=(rate,id=1,date='2026-11-03')=>({id,symbol:'AAPL',name:'애플',qu
     await page.waitForFunction(()=>document.querySelector('#watch-grid').textContent.includes('<img src=x'));
     assert.equal(posts.at(-1).headers['x-csrf-token'],'test-csrf');
     assert.equal(await page.locator('#watch-grid img').count(),0,'name must be text');
+
+    // 지수 응답은 실제 화면의 갱신 흐름으로 넣어 모든 지수·ETF 팝업을 확인한다.
+    await page.evaluate(()=>window.addEventListener('market-indices-updated',()=>window.__indexEvents=(window.__indexEvents||0)+1));
+    const syncIndex=async(symbol,rate,source='Naver Finance',age=0,stamp=true)=>{
+      indices={[symbol]:{current:6000,change_rate:rate,ath:9000,ath_change_rate:-33.33,source,
+        ...(stamp?{observed_at:Date.now()/1000-age}:{})}};
+      const before=await page.evaluate(()=>window.__indexEvents||0);
+      await page.locator('#refresh-btn').click();
+      await page.waitForFunction(n=>(window.__indexEvents||0)>n,before);
+      await page.evaluate(async key=>{if(navigator.locks)await navigator.locks.request(key,()=>{});},'market.watch.rise.v1.'+viewer);
+    };
+    const closePopups=()=>page.evaluate(()=>document.querySelectorAll('.surge-popup button').forEach(b=>b.click()));
+    for(const symbol of ['KOSPI','KOSDAQ','S&P 500','NASDAQ','QLD','TQQQ']){
+      await closePopups();await syncIndex(symbol,2);
+      assert.equal(await page.locator('.surge-popup').count(),1,'index popup: '+symbol);
+      assert.ok((await page.locator('.surge-popup').textContent()).includes('('+symbol+')'));
+      const unit=symbol==='QLD'||symbol==='TQQQ'?' USD':' pt';
+      assert.ok((await page.locator('.surge-popup').textContent()).includes(unit),'correct price unit: '+symbol);
+    }
+    await closePopups();await syncIndex('KOSPI',2);
+    assert.equal(await page.locator('.surge-popup').count(),0,'index repeated 2%');
+    await syncIndex('KOSPI',4);
+    assert.match(await page.locator('.surge-popup').textContent(),/\+4% 구간/);
+    await closePopups();await syncIndex('KOSPI',3);await syncIndex('KOSPI',4);
+    assert.equal(await page.locator('.surge-popup').count(),0,'index rebound');
+    await syncIndex('S&P 500',10,'Korea Investment API');
+    await syncIndex('NASDAQ',10,'Korea Investment API');
+    assert.equal(await page.locator('.surge-popup').count(),0,'ETF approximations are not index alerts');
+    await syncIndex('KOSPI',20,'Naver Finance',300);
+    assert.equal(await page.locator('.surge-popup').count(),0,'stale index quote');
+    await syncIndex('KOSPI',20,'Naver Finance',0,false);
+    assert.equal(await page.locator('.surge-popup').count(),0,'missing index timestamp');
+
     canManage=false;viewer='2';await sync();
     await page.locator('#watch-form').waitFor({state:'hidden'});
     assert.equal(await page.locator('#watch-grid button').count(),0,'reader cannot delete');
     await page.setViewportSize({width:390,height:844});
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'mobile overflow');
-    console.log('PASS: admin-only controls, CSRF, safe names, 2% thresholds, repeated/rebound/reload suppression, next day, stale quotes, dismiss, mobile.');
+    console.log('PASS: admin-only controls, CSRF, safe names, 2% thresholds, repeated/rebound/reload suppression, next day, stale quotes, all 6 indices/ETFs, exact index units, exclusion of ETF approximations/stale indices, dismiss, mobile.');
   }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}
 })().catch(err=>{console.error(err);process.exitCode=1;});

@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'stock/market_watch.py'
+      - 'stock/market_data.py'
       - 'stock/app.py'
       - 'stock/kis_client.py'
       - 'stock/index.html'
@@ -29,7 +30,7 @@ jobs:
         with:
           node-version: '22'
       - run: pip install fastapi httpx
-      - run: python -m py_compile stock/market_watch.py stock/app.py stock/kis_client.py
+      - run: python -m py_compile stock/market_watch.py stock/market_data.py stock/app.py stock/kis_client.py
       - run: python -m unittest discover -s scripts -p test_market_watch.py -v
       - run: npm install --no-save --package-lock=false playwright
       - run: npx playwright install --with-deps chromium

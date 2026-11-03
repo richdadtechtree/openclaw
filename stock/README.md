@@ -72,3 +72,13 @@ push 후 claude.ai 에서 `git pull` 하면 그때부터 여기서 편집·동�
   페이지를 닫았을 때의 시스템 푸시·메신저 발송은 하지 않는다.
 - 검증: python -m unittest discover -s scripts -p test_market_watch.py -v,
   node scripts/test_market_watch.js (Playwright Chromium 필요). GitHub Actions: Market watch checks.
+
+### 지수·ETF 자동 급등 팝업
+- 코스피·코스닥·S&P 500·나스닥·QLD·TQQQ는 관심목록에 추가하지 않아도 같은 +2% 구간 팝업을 제공한다.
+  지수와 관심종목의 중복 방지 기록은 분리된다.
+- /api/indices 의 실제 응답에 받은 시각(observed_at)을 포함하고 캐시 재조회 때 갱신하지 않는다.
+  180초 이상 된 값·시각 누락·비정상 수치는 팝업에 쓰지 않는다.
+- SPY/QQQ를 배율로 환산한 KIS의 미국 지수 예비값은 실제 지수 알림에서 제외한다.
+- 현재 수집은 REST 조회 + 60초 캐시, 화면 20초 갱신이다. KIS 연결만으로 웹소켓 스트리밍이 활성화되지는 않는다.
+  공식 미국 주식·ETF HDFSCNT0은 무료 0분지연 시세를 지원하나 실제 지수는 별도 구분해야 한다.
+  공식 샘플: https://github.com/koreainvestment/open-trading-api/blob/main/examples_llm/overseas_stock/delayed_ccnl/delayed_ccnl.py
