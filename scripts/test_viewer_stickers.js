@@ -62,11 +62,11 @@ const server=http.createServer((req,res)=>{
     await page.keyboard.press('Escape');
     check(await page.locator('#lb-stage').evaluate(el=>getComputedStyle(el).cursor)===prior,'Escape restores previous hand cursor');
     check(await page.evaluate(()=>!document.getElementById('lb').hidden&&!STICK.active),'Escape keeps the viewer and sticker');
-    const start=await point(page,what),beforePan=await page.evaluate(()=>[V.tx,V.ty]);
+    const start=await point(page,what),originalPoint=what.pts[0].slice(),beforePan=await page.evaluate(()=>[V.tx,V.ty]);
     await page.mouse.move(start.x,start.y);await page.mouse.down();
     await page.mouse.move(start.x+r.width*.12,start.y+r.height*.10,{steps:8});await page.mouse.up();
     rows=await list(page);what=rows[0];
-    check(what.pts[0][0]>.3&&what.pts[0][1]>.3,'existing sticker can be dragged again');
+    check(Math.abs(what.pts[0][0]-originalPoint[0]-.12)<.01&&Math.abs(what.pts[0][1]-originalPoint[1]-.10)<.01,'existing sticker can be dragged again: '+JSON.stringify({before:originalPoint,after:what.pts[0]}));
     assert.deepEqual(await page.evaluate(()=>[V.tx,V.ty]),beforePan);check(true,'dragging a sticker does not pan the newspaper');
     await page.mouse.move((await point(page,what)).x,(await point(page,what)).y);await page.mouse.down();
     await page.mouse.move(start.x+r.width*.15,start.y+r.height*.12);await page.keyboard.press('Escape');
@@ -93,7 +93,7 @@ const server=http.createServer((req,res)=>{
     await page.mouse.move(r.x+r.width*.2,r.y+r.height*.8);await page.mouse.down();await page.mouse.move(r.x+r.width*.5,r.y+r.height*.8,{steps:6});await page.mouse.up();
     check((await list(page)).at(-1).t==='line','normal highlighting works after Escape');
     await page.evaluate(()=>zoomAt(1.7));
-    await page.waitForFunction(()=>Math.abs(document.getElementById('lb-img').getBoundingClientRect().width-document.getElementById('lb-stickers').getBoundingClientRect().width)<1);
+    await page.waitForFunction(()=>Math.abs(document.getElementById('lb-img').getBoundingClientRect().width-V.fitW*V.zoom)<1&&Math.abs(document.getElementById('lb-img').getBoundingClientRect().width-document.getElementById('lb-stickers').getBoundingClientRect().width)<1);
     check(true,'sticker layer follows image zoom');
     const exported=await page.evaluate(async()=>{
       const cv=await renderPage(V.list[V.i]),st=markList().find(s=>s.t==='sticker'),[a,b]=st.pts;
