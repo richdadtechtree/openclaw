@@ -87,6 +87,9 @@ const server=http.createServer((req,res)=>{
     await page.evaluate(()=>{document.getElementById('tn-panel').hidden=false;document.getElementById('tn-q').focus();});
     await page.keyboard.type('1234');
     check(await page.locator('#tn-q').inputValue()==='1234'&&(await list(page)).length===count,'typing 1234 in a text input does not stamp');
+    await page.keyboard.press('Home');await page.keyboard.press('Delete');
+    check(await page.locator('#tn-q').inputValue()==='234'&&await page.evaluate(()=>!M.on&&!M.erase),
+      'Delete edits text without activating the eraser');
     await page.evaluate(()=>{document.getElementById('tn-panel').hidden=true;document.getElementById('tn-q').blur();});
     await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'1',ctrlKey:true,bubbles:true})));
     check((await list(page)).length===count,'modified numeric shortcuts are ignored');
@@ -141,12 +144,32 @@ const server=http.createServer((req,res)=>{
     await saved(page);const persisted=await list(page);
     await page.reload();await open(page);
     assert.deepEqual(await list(page),persisted);check(true,'admin stickers including CHECK and pen marks survive reload');
-    await page.evaluate(()=>{setPen(true);setHand(false,true);setErase(true);});
+    const beforeDelete=await list(page);
+    await page.keyboard.press('Delete');
+    check(await page.evaluate(()=>M.on&&M.erase&&!V.hand&&!STICK.active&&document.getElementById('lb-erase').getAttribute('aria-pressed')==='true'),
+      'Delete activates the eraser from hand mode and opens its toolbar');
+    assert.deepEqual(await list(page),beforeDelete);check(true,'Delete only activates the tool until a sticker is clicked');
+    await page.keyboard.press('Delete');
+    check(await page.evaluate(()=>M.erase),'pressing Delete again keeps the eraser active');
     const st=(await list(page)).find(s=>s.t==='sticker'),hit=await point(page,st);
     const before=(await list(page)).filter(s=>s.t==='sticker').length;
     await page.mouse.click(hit.x,hit.y);await saved(page);
-    check((await list(page)).filter(s=>s.t==='sticker').length===before-1,'eraser removes a sticker inside its rectangle');
-    await page.evaluate(()=>setErase(false));
+    check((await list(page)).filter(s=>s.t==='sticker').length===before-1,'Delete eraser removes a clicked saved sticker');
+    for(const [key,label] of [['1','WHAT'],['2','WHY'],['3','HOW'],['4','CHECK']]){
+      const original=await list(page),rect=await page.locator('#lb-img').boundingBox();
+      await page.mouse.move(rect.x+rect.width*.25,rect.y+rect.height*.15);
+      await page.keyboard.press(key);
+      check(await page.evaluate(()=>STICK.active),'sticker selected before Delete: '+label);
+      await page.keyboard.press('Delete');
+      check(await page.evaluate(()=>M.erase&&!STICK.active),'Delete leaves sticker movement and activates eraser: '+label);
+      const added=(await list(page)).at(-1),p=await point(page,added);
+      await page.mouse.click(p.x,p.y);await saved(page);
+      assert.deepEqual(await list(page),original);
+      check(true,'Delete eraser removes only the clicked '+label+' sticker');
+    }
+    const afterDelete=await list(page);await page.reload();await open(page);
+    assert.deepEqual(await list(page),afterDelete);check(true,'deleted stickers remain removed after reload');
+    await page.evaluate(()=>{setPen(true);setHand(false,true);setErase(false);});
     const beforeUndo=(await list(page)).length;await page.keyboard.press('3');await page.keyboard.press('Control+z');
     check((await list(page)).length===beforeUndo,'undo removes the last added sticker');await saved(page);
     await page.evaluate(()=>{finishStickerMode();closeViewer();drawSideMarks();});
@@ -154,6 +177,10 @@ const server=http.createServer((req,res)=>{
     check(await page.locator('.side-stickers').first().evaluate(el=>getComputedStyle(el).mixBlendMode==='normal'&&getComputedStyle(el).opacity==='1'),'article previews preserve solid sticker colors without highlight blending');
     const outsideCount=(await list(page)).length;await page.keyboard.press('1');
     check((await list(page)).length===outsideCount,'shortcuts are inactive outside the paper viewer');
+    const outsideMode=await page.evaluate(()=>[M.on,M.erase]);
+    await page.keyboard.press('Delete');
+    assert.deepEqual(await page.evaluate(()=>[M.on,M.erase]),outsideMode);
+    check(true,'Delete is inactive outside the paper viewer');
     await ctx.close();admin=false;
     [ctx,page]=await context({width:390,height:844});
     await page.goto(base+'/economy');await open(page,true);
