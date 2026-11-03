@@ -4,7 +4,7 @@ import json
 import math
 import re
 from contextlib import closing
-from datetime import date
+from datetime import date, datetime, timedelta
 from fastapi import Request
 from fastapi.responses import JSONResponse
 import gate
@@ -54,16 +54,33 @@ def validate(value):
             "index": index, "fraction": fraction, "y": y}
 
 
+
+def now():
+    return datetime.now(gate.KST)
+
+
+def lifetime(instant):
+    midnight = (instant + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return {"server_now": instant.timestamp(), "expires_at": midnight.timestamp()}
+
+
+def purge_previous_days(con, instant):
+    con.execute("DELETE FROM news_bookmarks WHERE substr(updated_at,1,10)<>?", (instant.date().isoformat(),))
+
+
 def install(app):
     @app.get("/api/news/bookmark")
     def get_bookmark(request: Request):
         uid, deny = account(request)
         if deny is not None:
             return deny
-        with closing(gate._db()) as con:
+        with closing(gate._db()) as con, con:
+            con.execute("BEGIN IMMEDIATE")
+            instant = now()
+            purge_previous_days(con, instant)
             row = con.execute("SELECT payload,updated_at FROM news_bookmarks WHERE owner=?", (uid,)).fetchone()
         return reply({"ok": True, "bookmark": json.loads(row["payload"]) if row else None,
-                      "updated_at": row["updated_at"] if row else None, "csrf": gate._csrf(uid)})
+                      "updated_at": row["updated_at"] if row else None, "csrf": gate._csrf(uid), **lifetime(instant)})
 
     @app.post("/api/news/bookmark")
     async def put_bookmark(request: Request):
@@ -81,21 +98,19 @@ def install(app):
                 return reply({"ok": False, "message": "책갈피 내용이 너무 길어요."}, 413)
         try:
             body = json.loads(raw)
-            if not isinstance(body, dict):
+            if not isinstance(body, dict) or body.get("action"):
                 raise ValueError()
-            clear = body.get("action") == "clear"
-            bookmark = None if clear else validate(body.get("bookmark"))
+            bookmark = validate(body.get("bookmark"))
         except (ValueError, TypeError):
             return reply({"ok": False, "message": "책갈피 위치를 확인해 주세요."}, 400)
-        updated = gate._now()
         with closing(gate._db()) as con, con:
             con.execute("BEGIN IMMEDIATE")
             if uid > 0 and not con.execute("SELECT 1 FROM users WHERE id=?", (uid,)).fetchone():
                 return reply({"ok": False}, 401)
-            if clear:
-                con.execute("DELETE FROM news_bookmarks WHERE owner=?", (uid,))
-            else:
-                con.execute("""INSERT INTO news_bookmarks(owner,payload,updated_at) VALUES(?,?,?)
-                    ON CONFLICT(owner) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at""",
-                    (uid, json.dumps(bookmark, ensure_ascii=False), updated))
-        return reply({"ok": True, "bookmark": bookmark, "updated_at": None if clear else updated})
+            instant = now()
+            purge_previous_days(con, instant)
+            updated = instant.isoformat(timespec="seconds")
+            con.execute("""INSERT INTO news_bookmarks(owner,payload,updated_at) VALUES(?,?,?)
+                ON CONFLICT(owner) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at""",
+                (uid, json.dumps(bookmark, ensure_ascii=False), updated))
+        return reply({"ok": True, "bookmark": bookmark, "updated_at": updated, **lifetime(instant)})
