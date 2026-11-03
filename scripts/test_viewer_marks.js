@@ -3,8 +3,7 @@
 const { chromium } = require('playwright');
 const http = require('http'), fs = require('fs'), path = require('path'), assert = require('assert/strict');
 const HTML = path.join(__dirname, '..', 'stock', 'slack_digest_live.html');
-const CHROME = process.env.PW_CHROME || (process.platform === 'win32'
-  ? 'C:/Program Files/Google/Chrome/Application/chrome.exe' : '/opt/pw-browsers/chromium-1194/chrome-linux/chrome');
+const CHROME = process.env.PW_CHROME || chromium.executablePath();
 const SAVED = new Map();
 let admin = true, failSave = false, failLoad = false, loadDelay = 0, saveDelay = 0, posts = 0;
 const srv = http.createServer((req, res) => {

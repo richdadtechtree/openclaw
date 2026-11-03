@@ -138,6 +138,34 @@ class MarksTests(unittest.TestCase):
             self.assertEqual(self.post(client=c).status_code, 403)
 
 
+    def test_stickers_are_saved_with_safe_labels_and_rectangles(self):
+        for i, label in enumerate(("WHAT", "WHY", "HOW")):
+            body = dict(self.body, revision=i, strokes=[{
+                "t": "sticker", "label": label, "c": "untrusted", "w": 999,
+                "pts": [[.1, .2], [.25, .24]]}])
+            self.assertEqual(self.post(body).status_code, 200)
+            sticker = self.get().json()["pages"]["01.jpg"]["strokes"][0]
+            self.assertEqual(sticker["label"], label)
+            self.assertEqual(sticker["t"], "sticker")
+            self.assertEqual(sticker["w"], .01)
+            self.assertIn(sticker["c"], ("#1d4ed8", "#7c3aed", "#047857"))
+
+    def test_sticker_validation(self):
+        base = {"t": "sticker", "label": "WHAT", "pts": [[.1, .2], [.25, .24]]}
+        for key, value in (("label", "<img src=x>"), ("label", "OTHER"), ("pts", [[-1, 0], [.2, .2]]),
+                           ("pts", [[.1, .2]]), ("pts", [[.3, .2], [.1, .3]]),
+                           ("pts", [[0, 0], [1, 1]]), ("pts", [[True, .1], [.2, .2]])):
+            body = dict(self.body, strokes=[dict(base, **{key: value})])
+            self.assertEqual(self.post(body).status_code, 400)
+
+    def test_sticker_and_line_coexist_and_guest_cannot_save(self):
+        sticker = {"t": "sticker", "label": "HOW", "pts": [[.2, .4], [.4, .45]]}
+        body = dict(self.body, strokes=self.body["strokes"] + [sticker])
+        self.assertEqual(self.post(body).status_code, 200)
+        self.assertEqual(len(self.get().json()["pages"]["01.jpg"]["strokes"]), 2)
+        self.assertEqual(self.post(body, self.guest).status_code, 403)
+
+
 if __name__ == "__main__":
     try:
         unittest.main()
