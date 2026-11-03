@@ -3682,6 +3682,12 @@ tnLoad();
   $("bm-clear").onclick=()=>save(true);
   $("bm-go").onclick=restore;
   $("tn-fab").addEventListener("click",()=>open(false));
+  // 버튼에 초점이 남아 있어도 Esc는 책갈피만 닫고, 뒤의 지면 뷰어에는 전달하지 않는다.
+  document.addEventListener("keydown",e=>{
+    if(e.key==="Escape"&&!panel.hidden){
+      e.preventDefault();e.stopImmediatePropagation();open(false);fab.focus({preventScroll:true});
+    }
+  },true);
   document.addEventListener("pointerdown",e=>{if(!panel.hidden&&!panel.contains(e.target)&&!fab.contains(e.target))open(false);});
   for(const type of ["keydown","keyup","wheel","pointerdown","pointermove","pointerup","dblclick"]){
     panel.addEventListener(type,e=>{
