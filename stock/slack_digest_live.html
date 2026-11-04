@@ -749,6 +749,14 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   .custom-only .wrap>:not(#customize),.custom-only #section-jump,.custom-only .reader-actions,
   .custom-only .bm-toast,.custom-only #tn-panel,.custom-only>footer{display:none!important}
   .custom-only #customize{margin:0;min-height:100vh;border:0;border-radius:0}
+  /* 모바일 편집 중에는 사진 칸 가운데에서 이동/펜을 전환한다. */
+  .mobile-hand{display:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:8;
+    width:58px;height:58px;min-height:58px;padding:0;border-radius:50%;border:1px solid #64748b;
+    background:#fff;color:#172033;font:30px/1 system-ui,sans-serif;opacity:.28;box-shadow:0 2px 10px #0003;
+    cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+  .mobile-hand[aria-pressed="true"]{opacity:.5;background:#dbeafe;border-color:#2563eb}
+  .mobile-hand:focus-visible{outline:3px solid #2563eb;outline-offset:3px}
+  @media(max-width:900px){.mobile-hand:not([hidden]){display:grid;place-items:center}}
 </style>
 </head>
 <body class="paper">
@@ -894,7 +902,7 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
     <button id="lb-pen-off" title="형광펜 끄기">✕ 끄기</button>
   </div>
   <div class="lb-body">
-    <div class="lb-stage" id="lb-stage"><img id="lb-img" alt="" draggable="false"><canvas class="lb-mark" id="lb-mark"></canvas><canvas class="lb-stickers" id="lb-stickers"></canvas></div>
+    <div class="lb-stage" id="lb-stage"><button type="button" class="mobile-hand" id="lb-hand-float" aria-label="화면 이동 켜기" aria-pressed="false" title="화면 이동 · 다시 누르면 펜" hidden>✋</button><img id="lb-img" alt="" draggable="false"><canvas class="lb-mark" id="lb-mark"></canvas><canvas class="lb-stickers" id="lb-stickers"></canvas></div>
     <aside class="lb-note" id="lb-note" hidden aria-label="이 지면에 실린 기사 요약"></aside>
   </div>
   <button class="lb-nav next" id="lb-next" aria-label="다음 장">›</button>
@@ -2577,6 +2585,7 @@ function setPen(on){
   $("lb-stage").classList.remove("movable","moving");
   $("lb-pen").setAttribute("aria-pressed", on?"true":"false");
   $("lb-tools").hidden=!on;
+  $("lb-hand-float").hidden=!on;
   $("lb").classList.toggle("marking", on);    // 상단 ✋ 숨기고 도구모음 안 ✋ 를 쓴다
   $("lb-stage").classList.toggle("marking", on);
   const eraseBtn=$("lb-erase"); if(eraseBtn) eraseBtn.setAttribute("aria-pressed","false");
@@ -2765,6 +2774,8 @@ function setHand(on, keep){
   if(!on && keep){ if(V.stage) keepLoose(); } else if(!on){ V.loose=false; if(V.stage) clampPan(); }   // 직접 끄면 바로 정상 범위로
   $("lb-hand").setAttribute("aria-pressed", V.hand?"true":"false");
   $("lb-t-hand").setAttribute("aria-pressed", V.hand?"true":"false");
+  $("lb-hand-float").setAttribute("aria-pressed",V.hand?"true":"false");
+  $("lb-hand-float").setAttribute("aria-label",V.hand?"펜으로 돌아가기":"화면 이동 켜기");
   // 도구모음은 '하나만 고르기' 처럼 보이게 — 손바닥이면 직선·동그라미·자유 표시를 잠시 끈다(끄면 고르던 도구로 돌아옴)
   try{ TOOLS.forEach(([id,k])=>$(id).setAttribute("aria-pressed", !V.hand && k===M.tool?"true":"false")); }catch(e){}
   $("lb-stage").classList.toggle("hand", V.hand);
@@ -2868,6 +2879,10 @@ $("lb-hand").onclick=()=>setHand(!V.hand);
 $("lb-warn-x").onclick=()=>{ $("lb-warn").hidden=true; };   // 확장 프로그램 우클릭 가로채기 알림 닫기
 // 편집 도구모음 안 ✋: 켜면 옮기기, 다시 누르면 옮겨 둔 자리 그대로 긋기로(가운데로 안 돌아감)
 $("lb-t-hand").onclick=()=>{ if(V.hand) setHand(false,true); else { if(M.erase) setErase(false); setHand(true); } };
+$("lb-hand-float").onclick=e=>{e.stopPropagation();$("lb-t-hand").click();};
+for(const type of ["pointerdown","pointermove","pointerup","pointercancel","dblclick"]){
+  $("lb-hand-float").addEventListener(type,e=>e.stopPropagation());
+}
 $("lb-pen-off").onclick=()=>setPen(false);
 // 색 고르기 — 빨강 · 파랑 · 노랑
 const COLORS=[["lb-c1","#ff5b5b"],["lb-c2","#4da3ff"],["lb-c3","#ffd93b"]];
@@ -3045,6 +3060,7 @@ stage.addEventListener("pointermove",e=>{
   const q=toImgXY(e.clientX,e.clientY);if(q)moveSel(drag.st,drag.orig,q[0]-drag.from[0],q[1]-drag.from[1]);
 },true);
 stage.addEventListener("pointerdown",e=>{
+  if(e.target.closest("#lb-hand-float"))return;
   STICK.pointer={x:e.clientX,y:e.clientY};
   if(e.button!==0||e.ctrlKey||V.space){finishStickerMode();return;}
   if(M.erase&&M.on&&!STICK.active)return;

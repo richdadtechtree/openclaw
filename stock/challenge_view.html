@@ -307,6 +307,14 @@
   #challenge-custom-frame{display:block;width:100%;height:calc(100dvh - 140px);min-height:480px;max-height:960px;border:0;background:var(--card)}
   #customcard.custom-editor-open{position:fixed;inset:0;z-index:100;margin:0;border:0;border-radius:0}
   #customcard.custom-editor-open #challenge-custom-frame{height:100dvh;min-height:0;max-height:none}
+  /* 모바일 편집 중에는 사진 칸 가운데에서 이동/펜을 전환한다. */
+  .mobile-hand{display:none;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:8;
+    width:58px;height:58px;min-height:58px;padding:0;border-radius:50%;border:1px solid #64748b;
+    background:#fff;color:#172033;font:30px/1 system-ui,sans-serif;opacity:.28;box-shadow:0 2px 10px #0003;
+    cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+  .mobile-hand[aria-pressed="true"]{opacity:.5;background:#dbeafe;border-color:#2563eb}
+  .mobile-hand:focus-visible{outline:3px solid #2563eb;outline-offset:3px}
+  @media(max-width:900px){.mobile-hand:not([hidden]){display:grid;place-items:center}}
 </style>
 </head>
 <body>
@@ -377,6 +385,7 @@
           <span class="pv-zoom"><button id="zout" aria-label="축소" title="축소 (−)">−</button><button id="zfit" title="폭에 맞춤 (0)">맞춤</button><button id="zin" aria-label="확대" title="확대 (+)">+</button></span>
         </div>
         <div class="pv-stage" id="pv-stage">
+          <button type="button" class="mobile-hand" id="pv-hand-float" aria-label="화면 이동 켜기" aria-pressed="false" title="화면 이동 · 다시 누르면 펜" hidden>✋</button>
           <div class="pv-wrap" id="pv-wrap"><img id="ed-photo" alt="신문 사진" draggable="false"><svg id="pv-svg" xmlns="http://www.w3.org/2000/svg"></svg></div>
           <div class="pv-hint" id="pv-hint">휠: 확대 · 끌기: 옮기기 · 🖍 로 줄 긋기 (줄은 새로고침하면 사라져요)</div>
         </div>
@@ -401,7 +410,7 @@
 (function(){
 "use strict";
 const FIELDS=[["what","WHAT","무슨 일이 있었나 (사실)"],["why","WHY","왜 중요한가 / 왜 일어났나"],
-              ["how","HOW","앞으로 어떻게 될까 / 어떻게 대응하나"],["think","생각 & 투자에 적용할 점","내 생각, 내 투자에 어떻게 쓸까"]];
+              ["how","HOW","구체적으로 어떤 내용이 있나"],["think","생각 & 투자에 적용할 점","내 생각, 내 투자에 어떻게 쓸까"]];
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const WD=["일","월","화","수","목","금","토"];
@@ -622,8 +631,9 @@ const PV=(()=>{
   }
   /* 모드 */
   function setHand(on){V.hand=!!on;$("pv-hand").setAttribute("aria-pressed",V.hand);
+    $("pv-hand-float").setAttribute("aria-pressed",V.hand);$("pv-hand-float").setAttribute("aria-label",V.hand?"펜으로 돌아가기":"화면 이동 켜기");
     if(V.hand){V.erase=false;$("pv-erase").setAttribute("aria-pressed","false");}cursor();}
-  function setPen(on){V.pen=!!on;$("pv-pen").setAttribute("aria-pressed",V.pen);$("pv-pentools").hidden=!V.pen;
+  function setPen(on){V.pen=!!on;$("pv-pen").setAttribute("aria-pressed",V.pen);$("pv-pentools").hidden=!V.pen;$("pv-hand-float").hidden=!V.pen;
     setHand(!V.pen);layout(true);}
   function cursor(){st.classList.toggle("pen",V.pen&&!V.hand&&!V.erase);st.classList.toggle("erase",V.pen&&!V.hand&&V.erase);}
   function pick(attr,val,sel){document.querySelectorAll(sel).forEach(b=>b.setAttribute("aria-pressed",b.dataset[attr]===val));}
@@ -637,6 +647,10 @@ const PV=(()=>{
   $("pv-undo").onclick=undo;
   $("pv-clear").onclick=()=>{if(!list().length)return;hist().push({clear:list().slice()});V.marks[V.key]=[];draw();};
   $("pv-hand").onclick=()=>setHand(!V.hand);
+  $("pv-hand-float").onclick=e=>{e.stopPropagation();setHand(!V.hand);};
+  for(const type of ["pointerdown","pointermove","pointerup","pointercancel","dblclick"]){
+    $("pv-hand-float").addEventListener(type,e=>e.stopPropagation());
+  }
   $("pv-pen").onclick=()=>setPen(!V.pen);
   $("zin").onclick=()=>zoomCenter(1.4);$("zout").onclick=()=>zoomCenter(1/1.4);$("zfit").onclick=fit;
   /* 마우스·손가락 */
