@@ -86,7 +86,7 @@ const check=(v,label)=>{assert.ok(v,label);checks++;console.log('OK '+label);};
       check(Object.keys(day.mine).length===0&&day.others.locked,'custom editing does not submit a challenge article or unlock cohort posts: '+width);
       check((await context.request.get(base+'/api/news/today')).status()===403,'Charles newspaper data permission remains unchanged: '+width);
       check(restricted.length===0&&writes.length===0,'standalone editor never requests restricted newspaper data or saves challenge posts: '+width);
-      await page.goto(base+'/challenge#customize');await frameUI.locator('#custom-drop').waitFor();
+      await page.goto(base+'/challenge#customize');await page.reload();await frameUI.locator('#custom-drop').waitFor();
       check(await page.locator('#v-custom').getAttribute('aria-selected')==='true'&&await frameUI.locator('.custom-card').count()===0,'customize link opens directly with the stated tab-only lifetime: '+width);
       await context.close();
     }
