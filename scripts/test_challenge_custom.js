@@ -52,10 +52,14 @@ const check=(v,label)=>{assert.ok(v,label);checks++;console.log('OK '+label);};
       await frameUI.locator('#custom-drop').dispatchEvent('drop',{dataTransfer:transfer});await frame.evaluate(()=>CUSTOM.pending);await transfer.dispose();
       check(await frameUI.locator('.custom-card').count()===2,'Charles can drag and drop images: '+width);
       await frameUI.locator('.custom-preview').first().click();
+      await page.waitForFunction(()=>document.getElementById("customcard").classList.contains("custom-editor-open"));
       await frame.waitForFunction(()=>{
-        const img=document.getElementById('lb-img'),r=img.getBoundingClientRect();
-        return V.custom&&M.on&&!V.hand&&img.naturalWidth>0&&V.loadedTok===V.loadTok&&Math.abs(r.width-V.fitW*V.zoom)<1;
+        const img=document.getElementById('lb-img'),r=img.getBoundingClientRect(),stage=document.getElementById('lb-stage').getBoundingClientRect();
+        return V.custom&&M.on&&!V.hand&&img.naturalWidth>0&&V.loadedTok===V.loadTok&&innerWidth===parent.innerWidth&&innerHeight===parent.innerHeight&&
+          Math.abs(stage.width-V.stage.w)<1&&Math.abs(stage.height-V.stage.h)<1&&Math.abs(r.width-V.fitW*V.zoom)<1&&Math.abs(r.height-V.fitH*V.zoom)<1;
       });
+      check(await page.locator("#customcard").evaluate(el=>{const r=el.getBoundingClientRect();return r.top===0&&r.width===innerWidth&&r.height===innerHeight;}),
+        "editing fills the screen above the challenge header: "+width);
       let r=await frameUI.locator('#lb-img').boundingBox();
       await page.mouse.move(r.x+r.width*.2,r.y+r.height*.7);await page.mouse.down();await page.mouse.move(r.x+r.width*.7,r.y+r.height*.7,{steps:6});await page.mouse.up();
       for(const [key,x,y]of [['1',.25,.25],['2',.5,.3],['3',.7,.4],['4',.4,.55]]){
@@ -78,6 +82,7 @@ const check=(v,label)=>{assert.ok(v,label);checks++;console.log('OK '+label);};
       waiting=page.waitForEvent('download');await frameUI.locator('#lb-dl-pdf').click();download=await waiting;
       const pdf=fs.readFileSync(await download.path());check(pdf.subarray(0,5).toString()==='%PDF-'&&/\/Count 2\b/.test(pdf.toString('latin1')),'Charles downloads custom images as a PDF: '+width);
       const before=await frame.evaluate(()=>JSON.stringify(CUSTOM.marks));await frameUI.locator('#lb-close').click();
+      await page.waitForFunction(()=>!document.getElementById('customcard').classList.contains('custom-editor-open')&&document.body.style.overflow!=='hidden');
       await page.locator('#v-day').click();check(await page.locator('#customcard').isHidden()&&await page.locator('#daycard').isVisible(),'today newspaper tab still works: '+width);
       await page.locator('#v-custom').click();check(await frame.evaluate(()=>JSON.stringify(CUSTOM.marks))===before,'switching tabs preserves pasted images and edits: '+width);
       await page.locator('#v-gloss').click();check(await page.locator('#glosscard').isVisible()&&await page.locator('#customcard').isHidden(),'cohort glossary tab still works: '+width);

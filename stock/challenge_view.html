@@ -305,6 +305,8 @@
   .vtabs{flex-wrap:wrap}
   #customcard{padding:0;overflow:hidden;scroll-margin-top:110px}
   #challenge-custom-frame{display:block;width:100%;height:calc(100dvh - 140px);min-height:480px;max-height:960px;border:0;background:var(--card)}
+  #customcard.custom-editor-open{position:fixed;inset:0;z-index:100;margin:0;border:0;border-radius:0}
+  #customcard.custom-editor-open #challenge-custom-frame{height:100dvh;min-height:0;max-height:none}
 </style>
 </head>
 <body>
@@ -838,13 +840,27 @@ $("cele-close").onclick=async()=>{$("cele").classList.remove("open");await celeb
 
 /* ── 📖 우리 기수 용어장 ─────────────────────────── */
 S.view="day";S.gloss=null;
+let customOverflow=null;
+function customOverlay(open){
+  $("customcard").classList.toggle("custom-editor-open",open);
+  if(open&&customOverflow===null){customOverflow=document.body.style.overflow;document.body.style.overflow="hidden";}
+  else if(!open&&customOverflow!==null){document.body.style.overflow=customOverflow;customOverflow=null;}
+}
+window.addEventListener("message",e=>{
+  if(e.origin!==location.origin||e.source!==$("challenge-custom-frame").contentWindow)return;
+  if(e.data?.type!=="custom-editor"||typeof e.data.open!=="boolean")return;
+  if(e.data.open&&S.view!=="custom")return;
+  customOverlay(e.data.open);
+});
 function setView(v){
   S.view=v;
   $("v-day").setAttribute("aria-selected",v==="day");$("v-gloss").setAttribute("aria-selected",v==="gloss");$("v-custom").setAttribute("aria-selected",v==="custom");
   $("daycard").hidden=$("posts").hidden=$("eds").hidden=v!=="day";$("glosscard").hidden=v!=="gloss";
   $("customcard").hidden=v!=="custom";
+  if(v!=="custom")customOverlay(false);
   if(v==="custom"){
     const frame=$("challenge-custom-frame");if(!frame.getAttribute("src"))frame.src=frame.dataset.src;
+    else frame.contentWindow.postMessage({type:"custom-editor-state"},location.origin);
     requestAnimationFrame(()=>$("customcard").scrollIntoView({block:"start",behavior:"instant"}));
   }
   try{history.replaceState(null,"",v==="gloss"?"#glossary":v==="custom"?"#customize":location.pathname);}catch(e){}
