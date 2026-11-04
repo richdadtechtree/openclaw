@@ -78,6 +78,7 @@ const TEXT = { what: '반도체 수출이 석 달 연속 늘었다는 기사', w
       await pg.waitForSelector('#ed.open');
       check(await pg.$eval('#ed-photo', i => i.src.includes('/api/challenge/photo')), '사진을 누르면 큰 사진 + 입력칸');
       check(await pg.$$eval('#ed-form textarea', t => t.length) === 4, '입력칸 4개(WHAT·WHY·HOW·생각)');
+      check(await pg.getAttribute('#f-how','placeholder') === '구체적으로 어떤 내용이 있나', 'HOW 안내는 구체적인 내용 질문');
       await pg.waitForFunction(() => document.querySelector('#f-title') && document.querySelector('#f-title').value !== '', null, { timeout: 5000 }).catch(() => {});
       check((await pg.inputValue('#f-title')) === '성북·서대문구 역세권 아파트 상승', '📰 기사 제목 칸이 신문 요약에서 자동으로 채워짐');
       // 🖼 사진 뷰어: 휠 확대 · 끌어 옮기기 · 🖍 줄 긋기 · 되돌리기 (경제 화면 뷰어와 같은 사용법)
@@ -101,6 +102,7 @@ const TEXT = { what: '반도체 수출이 석 달 연속 늘었다는 기사', w
         check((await st()).tx !== z2.tx, '오른쪽 버튼으로도 옮기기(우클릭 메뉴 없이)');
         await pg.click('#pv-pen');
         check(await pg.$eval('#pv-pentools', e => !e.hidden) && !(await st()).hand, '🖍 켜면 도구(직선·동그라미·자유·색·굵기) 나오고 손바닥 꺼짐');
+        check(!(await pg.isVisible('#pv-hand-float')), 'PC에서는 가운데 손바닥 버튼 숨김');
         await pg.mouse.move(cx - 100, cy); await pg.mouse.down(); await pg.mouse.move(cx + 100, cy + 4, { steps: 6 }); await pg.mouse.up();
         check((await st()).marks === 1 && await pg.$$eval('#pv-svg polyline', l => l.length) === 1, '직선 긋기 → 줄 1개');
         const ys = await pg.$eval('#pv-svg polyline', l => l.getAttribute('points').split(' ').map(p => +p.split(',')[1]));
@@ -127,6 +129,31 @@ const TEXT = { what: '반도체 수출이 석 달 연속 늘었다는 기사', w
         await pg.click('#ed-wide');
         await sleep(200);
         check(await pg.$eval('#ed-form', e => getComputedStyle(e).display !== 'none'), '✍️ 글 칸 펴기 → 다시 입력 칸');
+      }
+      if(w<500){
+        await pg.click('#pv-pen');
+        const floating=await pg.$eval('#pv-hand-float',b=>{
+          const r=b.getBoundingClientRect(),s=document.getElementById('pv-stage').getBoundingClientRect();
+          return {dx:Math.abs(r.x+r.width/2-s.x-s.width/2),dy:Math.abs(r.y+r.height/2-s.y-s.height/2),opacity:+getComputedStyle(b).opacity};
+        });
+        check(floating.dx<1&&floating.dy<1&&floating.opacity<=.3,'모바일 손바닥은 사진 칸 정가운데 반투명');
+        const before=await st();await pg.tap('#pv-hand-float');
+        check((await st()).hand&&(await st()).pen&&(await st()).marks===before.marks,'가운데 ✋ 터치 → 이동 모드(그은 줄 추가 없음)');
+        await pg.keyboard.press('=');await pg.keyboard.press('=');
+        const p=await pg.$eval('#pv-stage',e=>{const r=e.getBoundingClientRect();return{x:r.x+r.width*.25,y:r.y+r.height*.72,w:r.width,h:r.height};});
+        const old=await st(),touch=await ctx.newCDPSession(pg);
+        await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:p.x,y:p.y,id:1}]});
+        await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:p.x+42,y:p.y+20,id:1}]});
+        await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+        const moved=await st();check((moved.tx!==old.tx||moved.ty!==old.ty)&&moved.marks===before.marks,'손가락 끌기로 사진 이동 · 펜 자국 없음');
+        await pg.tap('#pv-hand-float');check(!(await st()).hand&&(await st()).pen,'가운데 ✋ 다시 터치 → 펜으로 복귀');
+        const q=await pg.$eval('#pv-stage',e=>{const r=e.getBoundingClientRect();return{x:r.x+r.width*.2,y:r.y+r.height*.3,w:r.width};});
+        await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:q.x,y:q.y,id:2}]});
+        for(let i=1;i<=5;i++)await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:q.x+q.w*.08*i,y:q.y,id:2}]});
+        await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+        check((await st()).marks===before.marks+1,'펜으로 복귀 후 손가락으로 줄 긋기');
+        await pg.click('#pv-undo');await pg.click('#pv-pen');
+        check(!(await pg.isVisible('#pv-hand-float')),'편집을 끄면 가운데 손바닥도 숨김');await touch.detach();
       }
       await pg.fill('#f-what', '짧음');
       await pg.click('#ed-save');

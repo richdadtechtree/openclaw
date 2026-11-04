@@ -16,7 +16,7 @@ const check=(v,label)=>{assert.ok(v,label);checks++;console.log('OK '+label);};
     const cookies=JSON.parse(fs.readFileSync(cookiesFile,'utf8'));
     browser=await chromium.launch({headless:true});
     for(const width of [1280,390]){
-      const context=await browser.newContext({viewport:{width,height:width===390?844:900},acceptDownloads:true});
+      const context=await browser.newContext({viewport:{width,height:width===390?844:900},acceptDownloads:true,hasTouch:width===390,isMobile:width===390});
       await context.addCookies([{name:'gate_sess',value:cookies.b,url:base}]);
       await context.route('https://**/*',r=>r.abort());
       const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
@@ -60,6 +60,29 @@ const check=(v,label)=>{assert.ok(v,label);checks++;console.log('OK '+label);};
       });
       check(await page.locator("#customcard").evaluate(el=>{const r=el.getBoundingClientRect();return r.top===0&&r.width===innerWidth&&r.height===innerHeight;}),
         "editing fills the screen above the challenge header: "+width);
+      if(width===390){
+        const position=await frameUI.locator("#lb-hand-float").evaluate(b=>{
+          const r=b.getBoundingClientRect(),s=document.getElementById("lb-stage").getBoundingClientRect();
+          return {dx:Math.abs(r.x+r.width/2-s.x-s.width/2),dy:Math.abs(r.y+r.height/2-s.y-s.height/2),opacity:+getComputedStyle(b).opacity};
+        });
+        check(position.dx<1&&position.dy<1&&position.opacity<=.3,"shared editor hand button is centered and translucent");
+        await frameUI.locator("#lb-hand-float").tap();
+        check(await frame.evaluate(()=>V.hand&&M.on&&markList().length===0),"touching the shared hand button activates movement without drawing");
+        await frame.evaluate(()=>zoomAt(1.6));
+        await frame.waitForFunction(()=>Math.abs(document.getElementById("lb-img").getBoundingClientRect().width-V.fitW*V.zoom)<1);
+        const drag=await frameUI.locator("#lb-stage").boundingBox(),touch=await context.newCDPSession(page);
+        const prior=await frame.evaluate(()=>[V.tx,V.ty]);
+        await touch.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[{x:drag.x+drag.width*.25,y:drag.y+drag.height*.75,id:1}]});
+        await touch.send("Input.dispatchTouchEvent",{type:"touchMove",touchPoints:[{x:drag.x+drag.width*.25+40,y:drag.y+drag.height*.75+20,id:1}]});
+        await touch.send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]});await touch.detach();
+        check(await frame.evaluate(p=>(V.tx!==p[0]||V.ty!==p[1])&&markList().length===0,prior),"touch drag pans the shared editor without highlights");
+        await frameUI.locator("#lb-hand-float").tap();
+        check(await frame.evaluate(()=>!V.hand&&M.on),"second tap restores the shared pen");
+        await frame.waitForTimeout(350);
+        check(await frame.evaluate(()=>!V.hand&&M.on),"delayed touch clicks do not toggle the hand twice");
+        await frame.evaluate(()=>resetZoom());
+        await frame.waitForFunction(()=>Math.abs(document.getElementById("lb-img").getBoundingClientRect().width-V.fitW)<1);
+      }else check(await frameUI.locator("#lb-hand-float").isHidden(),"desktop keeps its existing hand controls");
       let r=await frameUI.locator('#lb-img').boundingBox();
       await page.mouse.move(r.x+r.width*.2,r.y+r.height*.7);await page.mouse.down();await page.mouse.move(r.x+r.width*.7,r.y+r.height*.7,{steps:6});await page.mouse.up();
       for(const [key,x,y]of [['1',.25,.25],['2',.5,.3],['3',.7,.4],['4',.4,.55]]){
