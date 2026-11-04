@@ -94,8 +94,8 @@ const server=http.createServer((req,res)=>{
     await page.locator('.custom-preview').first().click();await viewer();
     check(await page.evaluate(()=>V.custom&&M.on&&!V.hand&&document.getElementById('lb-note').hidden),'custom image opens with editing ready and no unrelated newspaper summary');
     check(await page.evaluate(()=>document.getElementById('lb-img').naturalWidth===800),'viewer uses the imported image');
-    await line();await stamp('1',.2,.2);await stamp('2',.5,.3);await stamp('3',.7,.4);await stamp('4',.4,.5);
-    check((await marks()).map(s=>s.t==='sticker'?s.label:s.t).join(',')==='line,WHAT,WHY,HOW,CHECK','imported image supports highlights and all four stamps');
+    await line();console.log('CUSTOM AFTER LINE',JSON.stringify(await marks()),await page.evaluate(()=>({on:M.on,erase:M.erase,hand:V.hand,custom:V.custom,pts:V.pts.size,cur:M.cur,focus:document.activeElement?.outerHTML.slice(0,100)})));await stamp('1',.2,.2);await stamp('2',.5,.3);await stamp('3',.7,.4);await stamp('4',.4,.5);
+    check((await marks()).map(s=>s.t==='sticker'?s.label:s.t).join(',')==='line,WHAT,WHY,HOW,CHECK','imported image supports highlights and all four stamps: '+JSON.stringify(await marks())+' '+JSON.stringify(await page.evaluate(()=>({pts:V.pts.size,cur:M.cur,move:M.move,drag:STICK.drag,hint:document.getElementById('lb-hint').textContent}))));
     const what=(await marks()).find(s=>s.label==='WHAT');let r=await page.locator('#lb-img').boundingBox();
     await page.mouse.move(r.x+(what.pts[0][0]+what.pts[1][0])/2*r.width,r.y+(what.pts[0][1]+what.pts[1][1])/2*r.height);
     await page.mouse.down();await page.mouse.move(r.x+r.width*.3,r.y+r.height*.25,{steps:5});await page.mouse.up();await page.keyboard.press('Escape');
