@@ -70,7 +70,13 @@ def validate(b):
             label = s.get("label")
             if label not in sticker_colors or not 0.005 <= pts[1][0]-pts[0][0] <= 0.5 or not 0.005 <= pts[1][1]-pts[0][1] <= 0.2:
                 raise ValueError("스티커 종류와 크기를 확인해 주세요.")
-            clean.append({"t": "sticker", "label": label, "c": sticker_colors[label], "w": 0.01, "pts": pts})
+            sticker = {"t": "sticker", "label": label, "c": sticker_colors[label], "w": 0.01, "pts": pts}
+            if label == "CHECK" and "article" in s:
+                article = s["article"]
+                if not isinstance(article, str) or not re.fullmatch(r"[0-9A-Za-z가-힣]{1,60}", article):
+                    raise ValueError("체크한 기사를 확인해 주세요.")
+                sticker["article"] = article
+            clean.append(sticker)
             continue
         if s.get("c") not in ("#ff5b5b", "#4da3ff", "#ffd93b"):
             raise ValueError("표시 색을 확인해 주세요.")

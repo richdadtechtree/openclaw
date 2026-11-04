@@ -428,6 +428,9 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   .brf-side{display:flex;flex-direction:column;gap:7px;min-width:0}
   .side-fig{appearance:none;display:block;position:relative;width:100%;padding:0;border:1px solid var(--line-strong);
             border-radius:8px;overflow:hidden;background:#fff;cursor:pointer;line-height:0}
+  .brf-check{display:inline-block;vertical-align:middle;margin-inline-start:8px;padding:3px 8px;border-radius:999px;
+    background:#92400e;color:#fff;font:800 12px/1.4 system-ui,sans-serif;letter-spacing:0;white-space:nowrap}
+  .brf-check[data-check="page"]{background:#fff7ed;color:#92400e;border:1px solid #b45309}
   .side-fig:hover{border-color:var(--accent-bright)}
   .side-fig:focus-visible{outline:2px solid var(--accent-bright);outline-offset:2px}
   .side-fig img{display:block;width:100%;height:auto;min-height:60px}
@@ -2029,6 +2032,7 @@ function fillNote(){
       const m=a.querySelector(".brf-main"); if(!m) continue;
       const c=document.createElement("section");
       c.className="nt-art"+(a===V.fromArt?" cur":"");
+      c.dataset.checkKey=artKey(artTitle(a));
       c.innerHTML=m.innerHTML;
       c.querySelectorAll("[id]").forEach(e=>e.removeAttribute("id"));
       // 2026-10-22 사용자 요청: 숫자 노란 강조(markNums)는 빼고 화면 요약과 똑같이 보여 준다
@@ -2102,6 +2106,7 @@ function resetMarksIfNewDate(){
   markDay=d; M.marks=d.marks;
 }
 function marksChanged(){
+  syncArticleChecks();
   const d=markDay, page=markName();
   if(!d || d.mode!=="admin" || !page) return;
   let j=d.jobs.get(page);
@@ -2196,6 +2201,12 @@ function stampSticker(label){
   const x=Math.max(0,Math.min(1-w,(cx-r.left)/r.width-w/2));
   const y=Math.max(0,Math.min(1-h,(cy-r.top)/r.height-h/2));
   const st={t:"sticker",label,c:STICKER_COLORS[label],w:.01,pts:[[x,y],[x+w,y+h]]};
+  if(label==="CHECK"){
+    const side=V.fromArt?.querySelector(".brf-side[data-i]");
+    const context=side&&newsState.images[+side.dataset.i]?.name===markName()?side.dataset.key:"";
+    const key=checkArticleKey(st,markName(),context);
+    if(key)st.article=key;
+  }
   markList().push(st);marksChanged();activateSticker(st);flushMarks();
 }
 function stickerAt(x,y){
@@ -2305,6 +2316,10 @@ function moveSel(st,orig,dx,dy){
   dx=Math.max(-Math.min(...xs), Math.min(1-Math.max(...xs), dx));
   dy=Math.max(-Math.min(...ys), Math.min(1-Math.max(...ys), dy));
   st.pts=orig.map(([x,y])=>[x+dx,y+dy]);
+  if(st.t==="sticker"&&st.label==="CHECK"){
+    const key=checkArticleKey(st,markName(),st.article||"");
+    if(key)st.article=key;else delete st.article;
+  }
   marksChanged();
   drawMarks();
 }
@@ -3214,7 +3229,7 @@ function fontCtl(){
 function artTitle(art){
   const t=art.querySelector(".brf-title");
   let s="";
-  if(t){ const c=t.cloneNode(true); c.querySelectorAll(".brf-flag,.brf-pg").forEach(n=>n.remove()); s=c.textContent; }   // 쪽 꼬리표(2026-10-20)도 빼야 📌 연결 열쇠가 예전과 같다
+  if(t){ const c=t.cloneNode(true); c.querySelectorAll(".brf-flag,.brf-pg,.brf-check").forEach(n=>n.remove()); s=c.textContent; }   // 쪽 꼬리표(2026-10-20)도 빼야 📌 연결 열쇠가 예전과 같다
   else s=(art.querySelector(".brf-main")||art).textContent;
   return s.replace(/\s+/g," ").trim();
 }
@@ -3391,7 +3406,7 @@ function decorate(force){
   document.body.classList.toggle("paper", paper);
   feed.querySelectorAll(".brf-side,.paper-note").forEach(n=>n.remove());
   feed.querySelectorAll(".brf-art.has-side").forEach(a=>a.classList.remove("has-side"));
-  if(!paper) return;                                   // 글만 = 기존 화면 그대로
+  if(!paper){syncArticleChecks();return;}               // 온라인신문에는 지면 CHECK를 붙이지 않는다
 
   const arts=[...feed.querySelectorAll(".brf-art")].filter(a=>a.querySelector(".brf-main"));
   if(!arts.length) return;                             // 기사가 없으면 붙일 것도 없다(안내문 없이 조용히)
@@ -3451,6 +3466,7 @@ function decorate(force){
     art.classList.add("has-side");
     art.appendChild(side);
   });
+  syncArticleChecks();
 }
 
 /* 기사 옆 작은 사진 위에 형광펜 줄을 겹쳐 그린다 — 뷰어에서 그은 줄이 여기서도 보이게.
@@ -3594,7 +3610,54 @@ $("lb-dl-img").onclick=async()=>{
   finally{ DL.busy=false; }
 };
 
-function drawSideMarks(){ document.querySelectorAll(".brf-side[data-i]").forEach(drawSideMark); }
+/* CHECK는 날짜·지면·기사 연결을 함께 본다. 영역 정보가 있으면 스티커 중심으로 기사를 구별한다. */
+function checkPageSides(page){
+  if(state.edition==="online"||newsState.date!==state.date)return [];
+  return [...document.querySelectorAll("#feed .brf-side[data-i]")].filter(side=>
+    newsState.images[+side.dataset.i]?.name===page);
+}
+function checkArticleKey(st,page,context=""){
+  const sides=checkPageSides(page),[a,b]=st.pts,cx=(a[0]+b[0])/2,cy=(a[1]+b[1])/2;
+  const hits=sides.map(side=>({side,box:validBox((side.dataset.box||"").split(",").map(Number))}))
+    .filter(({box})=>box&&cx>=box[0]&&cx<=box[0]+box[2]&&cy>=box[1]&&cy<=box[1]+box[3])
+    .sort((a,b)=>a.box[2]*a.box[3]-b.box[2]*b.box[3]);
+  if(hits.length)return hits[0].side.dataset.key;
+  const from=sides.find(side=>side.dataset.key===context&&!side.dataset.box);
+  if(from)return from.dataset.key;
+  const keys=new Set(sides.filter(side=>!side.dataset.box).map(side=>side.dataset.key));
+  return keys.size===1&&sides.every(side=>!side.dataset.box)?[...keys][0]:"";
+}
+function paintArticleCheck(art,status){
+  const title=art.querySelector(".brf-title");if(!title)return;
+  let badge=title.querySelector(".brf-check");
+  if(!status){if(badge)badge.remove();return;}
+  if(!badge){badge=document.createElement("span");badge.className="brf-check";title.appendChild(badge);}
+  const text=status==="article"?"✓ CHECK":"✓ 지면 CHECK";
+  if(badge.textContent!==text)badge.textContent=text;
+  badge.dataset.check=status;
+  badge.title=status==="article"?"이 기사에 CHECK 스티커가 있어요":"연결 지면에 CHECK가 있어요 · 기사 위치를 구분할 정보가 없어요";
+}
+function syncArticleChecks(){
+  const statuses=new Map(),ready=M.date===state.date&&state.edition!=="online"&&newsState.date===state.date;
+  for(const art of document.querySelectorAll("#feed .brf-art")){
+    const side=art.querySelector(".brf-side[data-i]"),key=side?.dataset.key;
+    const page=side&&newsState.images[+side.dataset.i]?.name;
+    let status="";
+    if(ready&&page&&key)for(const st of M.marks[page]||[]){
+      if(st.t!=="sticker"||st.label!=="CHECK")continue;
+      const assigned=checkArticleKey(st,page,st.article||"");
+      if(assigned===key){status="article";break;}
+      if(!assigned&&!st.article)status="page";
+    }
+    paintArticleCheck(art,status);
+    if(key)statuses.set(key,status);
+  }
+  for(const note of document.querySelectorAll("#lb-note .nt-art"))paintArticleCheck(note,statuses.get(note.dataset.checkKey)||"");
+}
+function drawSideMarks(){
+  document.querySelectorAll(".brf-side[data-i]").forEach(drawSideMark);
+  syncArticleChecks();
+}
 
 // 사진 칸의 버튼들 — 하나의 리스너로 처리(피드가 다시 그려져도 다시 달 필요 없음)
 document.getElementById("feed").addEventListener("click",e=>{

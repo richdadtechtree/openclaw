@@ -150,6 +150,17 @@ class MarksTests(unittest.TestCase):
             self.assertEqual(sticker["w"], .01)
             self.assertEqual(sticker["c"], {"WHAT": "#1d4ed8", "WHY": "#7c3aed", "HOW": "#047857", "CHECK": "#b45309"}[label])
 
+    def test_check_article_survives_save_and_reload(self):
+        sticker = {"t": "sticker", "label": "CHECK", "article": "1테스트기사", "pts": [[.1, .2], [.25, .24]]}
+        self.assertEqual(self.post(dict(self.body, strokes=[sticker])).status_code, 200)
+        self.assertEqual(self.get().json()["pages"]["01.jpg"]["strokes"][0]["article"], "1테스트기사")
+
+    def test_check_article_validation(self):
+        sticker = {"t": "sticker", "label": "CHECK", "pts": [[.1, .2], [.25, .24]]}
+        for value in ("", "<img>", "x" * 61, None, [], 123):
+            with self.subTest(value=value):
+                self.assertEqual(self.post(dict(self.body, strokes=[dict(sticker, article=value)])).status_code, 400)
+
     def test_sticker_validation(self):
         base = {"t": "sticker", "label": "WHAT", "pts": [[.1, .2], [.25, .24]]}
         for key, value in (("label", "<img src=x>"), ("label", "OTHER"), ("pts", [[-1, 0], [.2, .2]]),

@@ -18,6 +18,7 @@ on:
       - 'scripts/test_news_marks.py'
       - 'scripts/test_viewer_marks.js'
       - 'scripts/test_viewer_stickers.js'
+      - 'scripts/test_article_checks.js'
       - '.github/workflows/market-watch.yml'
   push:
     branches: [main]
@@ -52,3 +53,4 @@ jobs:
       - run: node scripts/test_viewer_edition.js
       - run: node scripts/test_viewer_marks.js
       - run: node scripts/test_viewer_stickers.js
+      - run: node scripts/test_article_checks.js
