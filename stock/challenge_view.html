@@ -647,7 +647,15 @@ const PV=(()=>{
   $("pv-undo").onclick=undo;
   $("pv-clear").onclick=()=>{if(!list().length)return;hist().push({clear:list().slice()});V.marks[V.key]=[];draw();};
   $("pv-hand").onclick=()=>setHand(!V.hand);
-  $("pv-hand-float").onclick=e=>{e.stopPropagation();setHand(!V.hand);};
+  let handTouchUntil=0;
+  $("pv-hand-float").onclick=e=>{
+    e.stopPropagation();if(e.detail&&performance.now()<handTouchUntil)return;setHand(!V.hand);
+  };
+  $("pv-hand-float").addEventListener("pointerup",e=>{
+    e.stopPropagation();
+    if(!e.isPrimary||e.button!==0||!["touch","pen"].includes(e.pointerType))return;
+    e.preventDefault();handTouchUntil=performance.now()+800;setHand(!V.hand);
+  });
   for(const type of ["pointerdown","pointermove","pointerup","pointercancel","dblclick"]){
     $("pv-hand-float").addEventListener(type,e=>e.stopPropagation());
   }

@@ -2879,7 +2879,16 @@ $("lb-hand").onclick=()=>setHand(!V.hand);
 $("lb-warn-x").onclick=()=>{ $("lb-warn").hidden=true; };   // 확장 프로그램 우클릭 가로채기 알림 닫기
 // 편집 도구모음 안 ✋: 켜면 옮기기, 다시 누르면 옮겨 둔 자리 그대로 긋기로(가운데로 안 돌아감)
 $("lb-t-hand").onclick=()=>{ if(V.hand) setHand(false,true); else { if(M.erase) setErase(false); setHand(true); } };
-$("lb-hand-float").onclick=e=>{e.stopPropagation();$("lb-t-hand").click();};
+let handTouchUntil=0;
+$("lb-hand-float").onclick=e=>{
+  e.stopPropagation();if(e.detail&&performance.now()<handTouchUntil)return;
+  $("lb-t-hand").click();
+};
+$("lb-hand-float").addEventListener("pointerup",e=>{
+  e.stopPropagation();
+  if(!e.isPrimary||e.button!==0||!["touch","pen"].includes(e.pointerType))return;
+  e.preventDefault();handTouchUntil=performance.now()+800;$("lb-t-hand").click();
+});
 for(const type of ["pointerdown","pointermove","pointerup","pointercancel","dblclick"]){
   $("lb-hand-float").addEventListener(type,e=>e.stopPropagation());
 }
