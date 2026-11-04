@@ -428,9 +428,9 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   .brf-side{display:flex;flex-direction:column;gap:7px;min-width:0}
   .side-fig{appearance:none;display:block;position:relative;width:100%;padding:0;border:1px solid var(--line-strong);
             border-radius:8px;overflow:hidden;background:#fff;cursor:pointer;line-height:0}
-  .brf-check{display:inline-block;vertical-align:middle;margin-inline-start:8px;padding:3px 8px;border-radius:999px;
-    background:#92400e;color:#fff;font:800 12px/1.4 system-ui,sans-serif;letter-spacing:0;white-space:nowrap}
-  .brf-check[data-check="page"]{background:#fff7ed;color:#92400e;border:1px solid #b45309}
+  .brf-check{display:inline-block;vertical-align:middle;margin-inline-start:10px;padding:6px 12px;border-radius:999px;
+    background:#dc2626;color:#fff;border:2px solid #fff;box-shadow:0 0 0 1px #dc2626,0 2px 6px #0002;
+    font:900 16px/1.3 system-ui,sans-serif;letter-spacing:.02em;white-space:nowrap}
   .side-fig:hover{border-color:var(--accent-bright)}
   .side-fig:focus-visible{outline:2px solid var(--accent-bright);outline-offset:2px}
   .side-fig img{display:block;width:100%;height:auto;min-height:60px}
@@ -2291,7 +2291,7 @@ document.addEventListener("visibilitychange",()=>{if(document.hidden) flushMarks
 
 
 /* WHAT/WHY/HOW/CHECK 스티커. 직전의 손바닥·펜 상태를 바꾸지 않고 입력만 잠깐 가로챈다. */
-const STICKER_COLORS={WHAT:"#1d4ed8",WHY:"#7c3aed",HOW:"#047857",CHECK:"#b45309"};
+const STICKER_COLORS={WHAT:"#1d4ed8",WHY:"#7c3aed",HOW:"#047857",CHECK:"#dc2626"};
 const STICK={active:false,selected:null,drag:null,pointer:null};
 function selectedSticker(){
   return STICK.selected&&(viewerMarks()[markName()]||[]).includes(STICK.selected)?STICK.selected:null;
@@ -2345,14 +2345,21 @@ function stickerAt(x,y){
   const list=viewerMarks()[markName()]||[];
   for(let i=list.length-1;i>=0;i--){
     if(list[i].t!=="sticker")continue;
-    const [a,b]=list[i].pts;
+    const [a,b]=stickerBounds(list[i]);
     if(x>=a[0]&&x<=b[0]&&y>=a[1]&&y<=b[1])return list[i];
   }
   return null;
 }
+/* CHECK는 기존 저장 좌표도 그대로 유지하면서 표시·선택·지우기 영역을 함께 1.5배 키운다. */
+function stickerBounds(st){
+  if(st.label!=="CHECK")return st.pts;
+  const [a,b]=st.pts,w=Math.min(1,(b[0]-a[0])*1.5),h=Math.min(1,(b[1]-a[1])*1.5);
+  const x=Math.max(0,Math.min(1-w,(a[0]+b[0]-w)/2)),y=Math.max(0,Math.min(1-h,(a[1]+b[1]-h)/2));
+  return [[x,y],[x+w,y+h]];
+}
 function drawSticker(ctx,st,pw,ph){
   const color=STICKER_COLORS[st.label];if(!color)return;
-  const [a,b]=st.pts,x=a[0]*pw,y=a[1]*ph,w=(b[0]-a[0])*pw,h=(b[1]-a[1])*ph;
+  const [a,b]=stickerBounds(st),x=a[0]*pw,y=a[1]*ph,w=(b[0]-a[0])*pw,h=(b[1]-a[1])*ph;
   // 지면 글자와 겹쳐도 읽히도록 불투명한 색 배경과 흰색 굵은 글씨를 쓴다.
   ctx.save();
   const border=Math.min(w,h)*.05,inset=border/2;
@@ -2370,7 +2377,7 @@ function drawStickerOverlay(pw,ph,w,h,transform){
   for(const st of viewerMarks()[markName()]||[])if(st.t==="sticker")drawSticker(ctx,st,pw,ph);
   const sel=selectedSticker();
   if(STICK.active&&sel){
-    const [a,b]=sel.pts;ctx.save();ctx.strokeStyle="#fff";ctx.lineWidth=2;ctx.setLineDash([5,4]);
+    const [a,b]=stickerBounds(sel);ctx.save();ctx.strokeStyle="#fff";ctx.lineWidth=2;ctx.setLineDash([5,4]);
     ctx.strokeRect(a[0]*pw-3,a[1]*ph-3,(b[0]-a[0])*pw+6,(b[1]-a[1])*ph+6);ctx.restore();
   }
 }
@@ -2539,7 +2546,7 @@ function eraseAt(nx,ny){
   const ar=aspect();                               // 가로세로 비율을 맞춰야 거리 계산이 맞다
   for(let i=list.length-1;i>=0;i--){
     if(list[i].t==="sticker"){
-      const [a,b]=list[i].pts;
+      const [a,b]=stickerBounds(list[i]);
       if(nx>=a[0]&&nx<=b[0]&&ny>=a[1]&&ny<=b[1]){list.splice(i,1);finishStickerMode();marksChanged();drawMarks();return true;}
       continue;
     }
