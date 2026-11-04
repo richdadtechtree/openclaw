@@ -96,7 +96,7 @@ const server=http.createServer((req,res)=>{
     check(await page.evaluate(()=>V.custom&&M.on&&!V.hand&&document.getElementById('lb-note').hidden),'custom image opens with editing ready and no unrelated newspaper summary');
     check(await page.evaluate(()=>document.getElementById('lb-img').naturalWidth===800),'viewer uses the imported image');
     await line();await stamp('1',.2,.2);await stamp('2',.5,.3);await stamp('3',.7,.4);await stamp('4',.4,.5);
-    check((await marks()).map(s=>s.t==='sticker'?s.label:s.t).join(',')==='line,WHAT,WHY,HOW,CHECK','imported image supports highlights and all four stamps: '+JSON.stringify(await marks())+' '+JSON.stringify(await page.evaluate(()=>({pts:V.pts.size,cur:M.cur,move:M.move,drag:STICK.drag,hint:document.getElementById('lb-hint').textContent}))));
+    check((await marks()).map(s=>s.t==='sticker'?s.label:s.t).join(',')==='line,WHAT,WHY,HOW,CHECK','imported image supports highlights and all four stamps');
     const what=(await marks()).find(s=>s.label==='WHAT');let r=await page.locator('#lb-img').boundingBox();
     await page.mouse.move(r.x+(what.pts[0][0]+what.pts[1][0])/2*r.width,r.y+(what.pts[0][1]+what.pts[1][1])/2*r.height);
     await page.mouse.down();await page.mouse.move(r.x+r.width*.3,r.y+r.height*.25,{steps:5});await page.mouse.up();await page.keyboard.press('Escape');
@@ -128,7 +128,7 @@ const server=http.createServer((req,res)=>{
     check(await page.evaluate(()=>JSON.stringify(M.marks))===newsBefore&&await page.locator('#feed .brf-check').count()===0,'custom CHECK never changes newspaper marks or article badges');
     await page.locator('.custom-preview').first().click();await viewer();
     assert.deepEqual(await marks(),edited);check(true,'custom annotations survive closing and reopening the image');
-    await page.locator('#lb-next').click();await viewer();
+    await page.keyboard.press('PageDown');await viewer();
     check((await marks()).length===0&&await page.evaluate(()=>V.list[V.i].fileName==='drop.png'),'custom images keep separate annotations and support next/previous');
     await stamp('4');await page.keyboard.press('Escape');
     page.once('dialog',d=>d.accept());await page.locator('#lb-clear').click();check((await marks()).length===0,'clear removes only the current custom image annotations');
