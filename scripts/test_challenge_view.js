@@ -31,6 +31,7 @@ const TEXT = { what: '반도체 수출이 석 달 연속 늘었다는 기사', w
     const browser = await chromium.launch(CHROME ? { executablePath: CHROME } : {});
     const ctxFor = async (who, w, h) => {
       const ctx = await browser.newContext({ viewport: { width: w, height: h }, isMobile: w < 500, hasTouch: w < 500 });
+      await ctx.route('https://**/*', r => r.abort());
       await ctx.addCookies([{ name: 'gate_sess', value: cookies[who], url: BASE }]);
       return ctx;
     };
