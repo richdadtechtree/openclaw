@@ -743,6 +743,12 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   .custom-card-actions{display:flex;gap:8px;flex-wrap:wrap}.custom-card-actions button{font:inherit;font-size:13px;cursor:pointer;border:1px solid var(--line-strong);border-radius:8px;padding:7px 10px;background:var(--surface);color:var(--ink)}
   .custom-card-actions button:first-child{color:var(--accent);font-weight:700}.custom-card-actions button:disabled{opacity:.5;cursor:wait}
   @media(max-width:599px){.custom-workspace{padding:16px}.custom-drop{padding:24px 12px}.custom-head h2{font-size:20px}}
+  /* 챌린지에 넣는 편집 전용 보기: 신문 피드와 계정 도구는 표시하지 않는다. */
+  body.custom-only{padding:0}
+  .custom-only .wrap{max-width:none;margin:0;padding:0}
+  .custom-only .wrap>:not(#customize),.custom-only #section-jump,.custom-only .reader-actions,
+  .custom-only .bm-toast,.custom-only #tn-panel,.custom-only>footer{display:none!important}
+  .custom-only #customize{margin:0;min-height:100vh;border:0;border-radius:0}
 </style>
 </head>
 <body class="paper">
@@ -1639,6 +1645,7 @@ function syncEdition(){
 }
 
 async function load(){
+  if(window.__CUSTOM_ONLY)return;
   const ed=state.edition, day=state.date;
   try{
     const r=await fetch(`/economy/data?date=${day}`+(ed==="online"?"&edition=online":""),{cache:"no-store"});
@@ -1863,6 +1870,7 @@ document.getElementById("pod-slots").addEventListener("click",e=>{
   POD.slot=b.dataset.slot; POD.picked=true; showPodcast();
 });
 async function loadNews(){
+  if(window.__CUSTOM_ONLY)return;
   const day=state.date, edition=state.edition;
   resetMarksIfNewDate();
   if(state.edition==="online"){                        // 온라인신문엔 지면 원본·사설 칸이 없다(오디오는 시간대별로 있음)
@@ -2214,6 +2222,7 @@ function marksHint(){
     markDay?.mode==="error" ? "표시를 불러오지 못했어요 · 뷰어를 다시 열어 주세요" : "저장된 표시 불러오는 중…";
 }
 function resetMarksIfNewDate(){
+  if(window.__CUSTOM_ONLY)return;
   if(M.date===state.date && markDay && markDay.mode!=="error") return;
   if(markDay?.mode==="guest") MARK_DAYS.delete(M.date);
   M.cur=null; M.sel=null; M.move=null; M.date=state.date;
@@ -2616,6 +2625,7 @@ function ctxProbe(){
   return ctxProbe.ok;
 }
 function openViewer(i,opts={}){
+  if(window.__CUSTOM_ONLY&&!opts.custom)return;
   const list=opts.custom?CUSTOM.items:newsState.images;
   if(!list||!list.length)return;
   if(!$("lb").hidden)closeViewer();
@@ -3348,7 +3358,7 @@ function saveThemeToAccount(t){
   try{ fetch("/gate/theme",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({theme:t}),keepalive:true}).catch(()=>{}); }catch(e){}
 }
 // 계정에 아직 저장된 값이 없고 이 브라우저에 예전 선택이 있으면 한 번 올려 준다(옮겨 담기)
-try{ if(!window.__GATE_THEME){ const o=localStorage.getItem(THEME_KEY); if(o==="light"||o==="dark") saveThemeToAccount(o); } }catch(e){}
+try{ if(!window.__CUSTOM_ONLY&&!window.__GATE_THEME){ const o=localStorage.getItem(THEME_KEY); if(o==="light"||o==="dark") saveThemeToAccount(o); } }catch(e){}
 function themeCtl(){
   const g=document.createElement("div");
   g.className="fontctl themectl"; g.setAttribute("role","group"); g.setAttribute("aria-label","화이트·다크 모드");
@@ -3862,7 +3872,7 @@ document.getElementById("today").addEventListener("click",()=>{state.date=todayK
 
 applyFont();                                   // 첫 화면부터 고른 크기로(깜빡임 없이)
 load(); loadNews();
-setInterval(()=>{ if(state.date===todayKST()){ load(); loadNews(); } },20000); // 오늘 볼 때만 자동 갱신
+if(!window.__CUSTOM_ONLY)setInterval(()=>{ if(state.date===todayKST()){ load(); loadNews(); } },20000); // 오늘 볼 때만 자동 갱신
 document.addEventListener("visibilitychange",()=>{ if(!document.hidden) load(); });
 
 /* ── 📖 관리자 용어 노트 (2026-11-01 사용자 요청) ─────────────────────────────
@@ -3897,6 +3907,7 @@ function tnRender(){
   }).join(""):'<div class="tn-empty">'+(TN.items.length?"찾는 용어가 없어요.":"아직 저장한 용어가 없어요. 위 칸에 모르는 말을 넣고 🔍 를 눌러 보세요.")+'</div>';
 }
 async function tnLoad(){
+  if(window.__CUSTOM_ONLY)return;
   try{ const r=await fetch("/api/news/terms",{credentials:"same-origin",cache:"no-store"}); if(!r.ok) return;
        const j=await r.json(); if(!j.ok) return; TN.admin=true; TN.items=j.items||[]; $("tn-fab").hidden=false; tnRender(); }catch(e){}
 }
@@ -3944,6 +3955,7 @@ tnLoad();
 /* 빠른 이동: 고정된 상단 메뉴·글자 크기 도구줄 아래에 제목을 맞춘다.
    날짜·종이/온라인 전환으로 숨겨진 칸은 이동하지 않고, 사진 창에선 단추도 숨긴다. */
 (function initSectionJump(){
+  if(window.__CUSTOM_ONLY)return;
   const nav=document.getElementById("section-jump");
   const buttons=[...nav.querySelectorAll("button[data-section]")];
   const viewer=document.getElementById("lb");
@@ -4004,6 +4016,7 @@ tnLoad();
 
 /* 최신 책갈피 한 개를 계정에 저장. 서버 응답만 사용하며 다른 계정의 위치는 브라우저에 보관하지 않는다. */
 (function initBookmark(){
+  if(window.__CUSTOM_ONLY)return;
   const controls=$("bm-controls"),status=$("bm-status");
   const BM={bookmark:null,csrf:"",busy:false,deadline:0,timer:null,expired:false,notice:null};
   const offset=()=>[document.querySelector(".sitenav"),$("toolbar")]

@@ -302,6 +302,9 @@
   .eds .eb:not(.open) p:nth-child(n+3){display:none}
   .eds .stale{font-size:11px;margin-left:6px;padding:1px 7px;border-radius:99px;background:var(--line);color:var(--sub);font-weight:600;vertical-align:middle}
   .eds .more{font-size:13px;padding:5px 12px}
+  .vtabs{flex-wrap:wrap}
+  #customcard{padding:0;overflow:hidden;scroll-margin-top:110px}
+  #challenge-custom-frame{display:block;width:100%;height:calc(100dvh - 140px);min-height:480px;max-height:960px;border:0;background:var(--card)}
 </style>
 </head>
 <body>
@@ -320,7 +323,11 @@
   <div class="vtabs" role="tablist" aria-label="보기">
     <button role="tab" id="v-day" aria-selected="true">📰 오늘 신문</button>
     <button role="tab" id="v-gloss" aria-selected="false">📖 우리 기수 용어장</button>
+    <button role="tab" id="v-custom" aria-controls="customcard" aria-selected="false">✂️ 커스터마이징</button>
   </div>
+  <section class="card" id="customcard" role="tabpanel" aria-labelledby="v-custom" hidden>
+    <iframe id="challenge-custom-frame" title="커스터마이징 기사 사진 편집" data-src="/challenge/customize"></iframe>
+  </section>
   <section class="card" id="glosscard" hidden>
     <div class="gtools"><input id="g-q" type="search" placeholder="용어 찾기" aria-label="용어 찾기">
       <select id="g-sort" aria-label="정렬"><option value="abc">가나다순</option><option value="many">많이 나온 순</option><option value="new">최근 순</option></select>
@@ -496,7 +503,7 @@ async function loadEds(date){
   $("eds-list").innerHTML=html;
   $("eds-list").querySelectorAll("button[data-eb]").forEach(b=>b.onclick=()=>{const e=$(b.dataset.eb),o=!e.classList.contains("open");
     e.classList.toggle("open",o);b.textContent=o?"접기":"전문 펼치기";b.setAttribute("aria-expanded",String(o));});
-  $("eds").hidden=S.view==="gloss";
+  $("eds").hidden=S.view!=="day";
 }
 function renderDay(){
   const d=S.day;let msg="";
@@ -833,9 +840,14 @@ $("cele-close").onclick=async()=>{$("cele").classList.remove("open");await celeb
 S.view="day";S.gloss=null;
 function setView(v){
   S.view=v;
-  $("v-day").setAttribute("aria-selected",v==="day");$("v-gloss").setAttribute("aria-selected",v==="gloss");
+  $("v-day").setAttribute("aria-selected",v==="day");$("v-gloss").setAttribute("aria-selected",v==="gloss");$("v-custom").setAttribute("aria-selected",v==="custom");
   $("daycard").hidden=$("posts").hidden=$("eds").hidden=v!=="day";$("glosscard").hidden=v!=="gloss";
-  try{history.replaceState(null,"",v==="gloss"?"#glossary":location.pathname);}catch(e){}
+  $("customcard").hidden=v!=="custom";
+  if(v==="custom"){
+    const frame=$("challenge-custom-frame");if(!frame.getAttribute("src"))frame.src=frame.dataset.src;
+    requestAnimationFrame(()=>$("customcard").scrollIntoView({block:"start",behavior:"instant"}));
+  }
+  try{history.replaceState(null,"",v==="gloss"?"#glossary":v==="custom"?"#customize":location.pathname);}catch(e){}
   if(v==="gloss")loadGloss();
 }
 async function loadGloss(){
@@ -862,7 +874,7 @@ function renderGloss(){
     try{await api("/api/challenge/terms",{method:"POST",body:JSON.stringify({terms:[b.dataset.find]})});}catch(e){}
     loadGloss();});
 }
-$("v-day").onclick=()=>setView("day");$("v-gloss").onclick=()=>setView("gloss");
+$("v-day").onclick=()=>setView("day");$("v-gloss").onclick=()=>setView("gloss");$("v-custom").onclick=()=>setView("custom");
 $("g-q").addEventListener("input",renderGloss);$("g-sort").onchange=renderGloss;
 
 /* ── 시작 ─────────────────────────── */
@@ -884,6 +896,7 @@ async function boot(){
     if(!me.ok){$("hero").innerHTML='<div class="empty">'+esc(me.message||"챌린지 정보를 불러오지 못했어요.")+'</div>';return;}
     S.me=me;renderHero();await loadDay(me.today);
     if(location.hash==="#glossary")setView("gloss");
+    else if(location.hash==="#customize")setView("custom");
     if(me.celebrate)setTimeout(celebrate,400);
     // 신문이 아직이면 5분마다 다시 확인
     setInterval(async()=>{if(S.date===S.me.today&&S.day&&!S.day.images.length&&!$("ed").classList.contains("open")){S.me=await api("/api/challenge/me");loadDay(S.me.today);}},300000);

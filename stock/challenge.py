@@ -929,6 +929,22 @@ def install(app):
         except Exception as e:
             return HTMLResponse("<h1>챌린지 화면 로드 실패</h1><pre>%s</pre>" % html.escape(str(e)), status_code=500)
 
+    @app.get("/challenge/customize", response_class=HTMLResponse)
+    def customizer_page(request: Request):
+        if not viewer(request):
+            return deny()
+        # 신문과 같은 편집기를 사용하되, 편집 전용 모드에서는 신문/관리자 API를 호출하지 않는다.
+        p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "slack_digest_live.html")
+        try:
+            with open(p, encoding="utf-8") as f:
+                source = f.read()
+            source = source.replace("<head>", "<head>\n<script>window.__CUSTOM_ONLY=true;</script>", 1)
+            source = source.replace('<body class="paper">', '<body class="paper custom-only">', 1)
+            source = source.replace("<title>오늘 신문 요약</title>", "<title>커스터마이징</title>", 1)
+            return HTMLResponse(gate.fill_page(source, request), headers={"Cache-Control": "no-store"})
+        except Exception:
+            return HTMLResponse("<h1>편집 화면을 불러오지 못했어요. 새로고침해 주세요.</h1>", status_code=500)
+
     @app.get("/api/challenge/me")
     def api_me(request: Request):
         v = viewer(request)
