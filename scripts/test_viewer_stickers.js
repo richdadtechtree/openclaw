@@ -32,8 +32,8 @@ const server=http.createServer((req,res)=>{
   const base='http://127.0.0.1:'+server.address().port,browser=await chromium.launch({headless:true});
   const check=(value,label)=>{assert.ok(value,label);checks++;console.log('OK '+label);};
   const errors=[];
-  async function context(viewport={width:1280,height:900}){
-    const ctx=await browser.newContext({viewport});await ctx.route('https://**/*',r=>r.abort());
+  async function context(viewport={width:1280,height:900},touch=false){
+    const ctx=await browser.newContext({viewport,hasTouch:touch});await ctx.route('https://**/*',r=>r.abort());
     const page=await ctx.newPage();page.on('pageerror',e=>errors.push(e.message));return [ctx,page];
   }
   async function open(page,pen=false){
@@ -209,6 +209,16 @@ const server=http.createServer((req,res)=>{
     check(posts===requests,'guest stickers are not sent to admin storage');
     await page.reload();await open(page,true);
     check((await list(page)).length===0,'guest stickers follow existing temporary-mark lifetime');
+    await ctx.close();[ctx,page]=await context({width:1024,height:1366},true);
+    await page.goto(base+'/economy');await open(page);
+    check(await page.locator("#lb-hand-float").isVisible()&&await page.evaluate(()=>!M.on),
+      "wide tablet shows the centered hand before the newspaper pen is enabled");
+    await page.locator("#lb-hand-float").tap();
+    check(await page.evaluate(()=>M.on&&V.hand&&markList().length===0),
+      "tablet newspaper hand enables movement without drawing");
+    await page.locator("#lb-hand-float").tap();
+    check(await page.evaluate(()=>M.on&&!V.hand&&markList().length===0),
+      "tablet newspaper hand returns to the pen without the top toolbar");
     check(errors.length===0,'no browser script errors: '+errors.join(';'));
     console.log('PASS: '+checks+' sticker browser checks');
   }finally{await ctx.close();await browser.close();await new Promise(r=>server.close(r));}
