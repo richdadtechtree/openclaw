@@ -83,10 +83,10 @@ const server=http.createServer((req,res)=>{
       const [a,b]=stickerBounds(st),cv=document.createElement("canvas");cv.width=1200;cv.height=1800;
       drawSticker(cv.getContext("2d"),st,1200,1800);
       return {width:(b[0]-a[0])/.15,height:(b[1]-a[1])/.04,
-        color:[...cv.getContext("2d").getImageData(Math.round((a[0]+(b[0]-a[0])*.08)*1200),396,1,1).data]};
+        color:[...cv.getContext("2d").getImageData(Math.round((a[0]+(b[0]-a[0])*.04)*1200),396,1,1).data]};
     });
     check(Math.abs(legacy.width-1.5)<.001&&Math.abs(legacy.height-1.5)<.001&&legacy.color.join(",")==="220,38,38,255",
-      "previously saved CHECK stickers become 1.5 times larger and vivid red");
+      "previously saved CHECK stickers become 1.5 times larger and vivid red: "+JSON.stringify(legacy));
     const checkStamp=rows.at(-1),cp=await point(page,checkStamp);
     cp.x-=(checkStamp.pts[1][0]-checkStamp.pts[0][0])*r.width*.6;
     await page.mouse.move(cp.x,cp.y);await page.mouse.down();await page.mouse.move(cp.x+20,cp.y+10,{steps:4});await page.mouse.up();
