@@ -150,7 +150,7 @@ const srv = http.createServer((req, res) => {
   await page.waitForSelector('#online-news-18');
   await page.waitForFunction(()=>[...document.querySelectorAll('#section-jump button')].every(b=>!b.disabled));
   const labels=()=>page.evaluate(()=>[...document.querySelectorAll('#section-jump button')].map(b=>b.lastElementChild.textContent).join('|'));
-  check(await labels()==='브리핑|9시 뉴스|18시 뉴스','온라인에서는 브리핑·9시 뉴스·18시 뉴스');
+  check(await labels()==='브리핑|9시 뉴스|18시 뉴스|커스터마이징','온라인에서는 브리핑·9시 뉴스·18시 뉴스');
   check(await page.locator('#online-news-09').count()===1,'9시 요약이 여러 메시지여도 이동 지점은 하나');
   check((await page.locator('#online-news-18').textContent()).includes('저녁기사 제목다'),'게시 시각이 9시여도 머리글 18시 뉴스로 분류');
   await page.evaluate(()=>{
@@ -181,7 +181,7 @@ const srv = http.createServer((req, res) => {
   check(await page.locator('#section-jump [data-section="online-news-18"]').isDisabled(),'뉴스가 없으면 두 시간대 모두 비활성');
   await page.click('#edtog [data-ed=paper]');
   await page.waitForFunction(()=>document.getElementById('section-jump').dataset.edition==='paper');
-  check(await labels()==='오디오 브리핑|기사요약|사설','종이신문으로 돌아가면 기존 메뉴 복원');
+  check(await labels()==='오디오 브리핑|기사요약|사설|커스터마이징','종이신문으로 돌아가면 기존 메뉴 복원');
   check(errors.length===0,'온라인 이동 중 자바스크립트 오류 없음',errors.join(','));
   await page.close();
   onlineMsgs=[MORNING,EVENING];

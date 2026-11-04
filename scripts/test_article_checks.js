@@ -47,6 +47,7 @@ const server=http.createServer((req,res)=>{
   async function open(index,article=null){
     await page.evaluate(({index,article})=>openViewer(index,article===null?{}:{art:document.querySelectorAll('#feed .brf-art')[article]}),{index,article});
     await page.waitForFunction(()=>document.getElementById('lb-img').naturalWidth>0&&V.loadedTok===V.loadTok&&V.fitW>0);
+    await page.waitForFunction(()=>{const r=document.getElementById('lb-img').getBoundingClientRect();return Math.abs(r.width-V.fitW*V.zoom)<1&&Math.abs(r.height-V.fitH*V.zoom)<1;});
   }
   async function stamp(x=.25,y=.3,key='4'){
     const r=await page.locator('#lb-img').boundingBox();
@@ -58,6 +59,7 @@ const server=http.createServer((req,res)=>{
   async function close(){await page.evaluate(()=>closeViewer());await saved();}
   async function erase(st){
     await page.keyboard.press('Delete');
+    await page.waitForFunction(()=>{const r=document.getElementById('lb-img').getBoundingClientRect();return Math.abs(r.width-V.fitW*V.zoom)<1&&Math.abs(r.height-V.fitH*V.zoom)<1;});
     const r=await page.locator('#lb-img').boundingBox();
     await page.mouse.click(r.x+(st.pts[0][0]+st.pts[1][0])/2*r.width,r.y+(st.pts[0][1]+st.pts[1][1])/2*r.height);
     await saved();
