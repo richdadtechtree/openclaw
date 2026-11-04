@@ -726,6 +726,23 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   .bm-toast[hidden]{display:none}
   @media(max-width:599px){.section-jump{bottom:calc(68px + env(safe-area-inset-bottom,0px))}}
   @media print{.reader-actions,.bm-toast{display:none}}
+  .custom-workspace{margin:36px 0 24px;padding:24px;border:1px solid var(--line-strong);border-radius:18px;background:var(--surface)}
+  .custom-head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  .custom-head h2{margin:0;font-size:22px}.custom-head p{margin:8px 0 16px;color:var(--muted);font-size:14px}
+  .custom-drop{display:grid;gap:10px;padding:32px 20px;text-align:center;border:2px dashed var(--line-strong);border-radius:14px;cursor:copy;background:color-mix(in srgb,var(--accent) 4%,var(--surface))}
+  .custom-drop span{color:var(--muted);font-size:14px;line-height:1.8}.custom-drop kbd{font:inherit;font-weight:700}
+  .custom-drop:focus,.custom-drop.drag-over{outline:3px solid var(--accent-bright);outline-offset:3px;border-color:var(--accent-bright)}
+  .custom-status{font-size:13px;color:var(--muted);line-height:1.7;overflow-wrap:anywhere}
+  .custom-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:16px}
+  .custom-card{min-width:0;border:1px solid var(--line-strong);border-radius:12px;overflow:hidden}
+  .custom-preview{display:block;position:relative;width:100%;padding:0;border:0;background:#fff;cursor:pointer;max-height:380px;overflow:hidden}
+  .custom-preview img{display:block;width:100%;height:auto}
+  .custom-preview canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;mix-blend-mode:multiply;opacity:.62}
+  .custom-preview canvas.custom-stickers{mix-blend-mode:normal;opacity:1}
+  .custom-card-info{padding:12px}.custom-card-title{font-size:14px;font-weight:700;overflow-wrap:anywhere;margin:0 0 8px}
+  .custom-card-actions{display:flex;gap:8px;flex-wrap:wrap}.custom-card-actions button{font:inherit;font-size:13px;cursor:pointer;border:1px solid var(--line-strong);border-radius:8px;padding:7px 10px;background:var(--surface);color:var(--ink)}
+  .custom-card-actions button:first-child{color:var(--accent);font-weight:700}.custom-card-actions button:disabled{opacity:.5;cursor:wait}
+  @media(max-width:599px){.custom-workspace{padding:16px}.custom-drop{padding:24px 12px}.custom-head h2{font-size:20px}}
 </style>
 </head>
 <body class="paper">
@@ -733,6 +750,7 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   <button type="button" data-section="pod" aria-controls="pod" disabled title="오디오 브리핑이 아직 준비되지 않았어요"><span class="jump-icon" aria-hidden="true">🎧</span><span>오디오 브리핑</span></button>
   <button type="button" data-section="feed" aria-controls="feed" title="기사요약으로 이동"><span class="jump-icon" aria-hidden="true">📰</span><span>기사요약</span></button>
   <button type="button" data-section="mk-ed" aria-controls="mk-ed" disabled title="사설이 아직 준비되지 않았어요"><span class="jump-icon" aria-hidden="true">✒️</span><span>사설</span></button>
+  <button type="button" data-section="customize" aria-controls="customize" title="커스터마이징으로 이동"><span class="jump-icon" aria-hidden="true">✂️</span><span>커스터마이징</span></button>
 </nav>
 <div class="wrap">
   <nav class="sitenav" aria-label="페이지 이동">
@@ -798,6 +816,18 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   <section class="mk-ed" id="mk-ed" tabindex="-1" hidden aria-labelledby="mk-ed-h">
     <div class="mk-ed-head"><span class="mk-ed-kicker">오피니언</span><h2 id="mk-ed-h">매일경제 사설</h2><span class="mk-ed-date" id="mk-ed-date"></span></div>
     <div id="mk-ed-list"></div>
+  </section>
+  <section class="custom-workspace" id="customize" tabindex="-1" aria-labelledby="custom-h">
+    <div class="custom-head"><div><h2 id="custom-h">✂️ 커스터마이징</h2><p>직접 넣은 기사 사진에 줄을 긋고 스티커를 붙여 보세요.</p></div>
+      <button class="btn" type="button" id="custom-add">사진 선택</button>
+      <input id="custom-files" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/avif" multiple hidden>
+    </div>
+    <div class="custom-drop" id="custom-drop" tabindex="0" role="group" aria-label="기사 사진 붙여넣기 또는 드래그하여 추가">
+      <strong>캡처한 사진을 여기에 붙여넣으세요</strong>
+      <span>이 영역을 누른 뒤 <kbd>Ctrl</kbd> + <kbd>V</kbd> · Mac은 ⌘V<br>사진 파일을 끌어다 놓아도 돼요.</span>
+    </div>
+    <p class="custom-status" id="custom-status" role="status" aria-live="polite">추가한 사진과 표시는 이 탭에서 유지돼요. 편집한 내용은 다운로드해 보관하세요.</p>
+    <div class="custom-grid" id="custom-grid"></div>
   </section>
   <footer>
     <span id="foot-count">—</span>
@@ -1952,9 +1982,108 @@ function fillGrid(d){
 /* ── 신문 넘겨 보기(뷰어) ───────────────────────────────────────────────
    신문은 글씨가 작아서 '크게 띄우기'만으론 부족하다. 확대(핀치·더블탭·＋−)와
    이동(드래그)까지 있어야 실제로 읽힌다. 아래가 그 최소 구현. */
-const V={list:[],i:0,zoom:1,tx:0,ty:0,nat:{w:1,h:1},fitW:0,fitH:0,stage:null,drag:null,pts:new Map(),pinch:null,
+const V={custom:false,list:[],i:0,zoom:1,tx:0,ty:0,nat:{w:1,h:1},fitW:0,fitH:0,stage:null,drag:null,pts:new Map(),pinch:null,
          navT:null,navPos:null};
 const $=id=>document.getElementById(id);
+
+/* 직접 가져온 기사 사진은 이 탭의 별도 목록에서 편집한다. 신문 API로 보내지 않는다. */
+const CUSTOM={items:[],marks:{},sequence:0,pending:Promise.resolve(),busy:new Set()};
+function customStatus(text){$("custom-status").textContent=text;}
+function customRefresh(){
+  const grid=$("custom-grid");if(!grid)return;
+  grid.replaceChildren();
+  CUSTOM.items.forEach((im,index)=>{
+    const card=document.createElement("article");card.className="custom-card";
+    const preview=document.createElement("button");preview.type="button";preview.className="custom-preview";
+    preview.setAttribute("aria-label",im.fileName+" 편집");
+    const img=document.createElement("img");img.src=im.url;img.alt=im.fileName;img.loading="lazy";
+    const lines=document.createElement("canvas"),stickers=document.createElement("canvas");stickers.className="custom-stickers";
+    preview.append(img,lines,stickers);preview.onclick=()=>customOpen(index);
+    function draw(){
+      const w=img.clientWidth,h=img.clientHeight;if(!w||!h)return;
+      const scale=Math.min(devicePixelRatio||1,2),pw=Math.round(w*scale),ph=Math.round(h*scale);
+      for(const cv of [lines,stickers]){
+        cv.width=pw;cv.height=ph;cv.style.height=h+"px";
+      }
+      const lc=lines.getContext("2d"),sc=stickers.getContext("2d");lc.lineCap="round";lc.lineJoin="round";
+      for(const st of CUSTOM.marks[im.name]||[])st.t==="sticker"?drawSticker(sc,st,pw,ph):strokeOne(lc,st,pw,ph,1);
+    }
+    img.addEventListener("load",draw);if(img.complete)requestAnimationFrame(draw);
+    const info=document.createElement("div");info.className="custom-card-info";
+    const title=document.createElement("p");title.className="custom-card-title";title.textContent=im.fileName;
+    const acts=document.createElement("div");acts.className="custom-card-actions";
+    for(const [label,action] of [["✎ 편집",()=>customOpen(index)],["⤓ JPG 다운로드",()=>customDownload(im)],["삭제",()=>{
+      if(CUSTOM.busy.has(im.name))return;
+      CUSTOM.items=CUSTOM.items.filter(item=>item!==im);delete CUSTOM.marks[im.name];URL.revokeObjectURL(im.url);
+      customRefresh();customStatus("사진을 삭제했어요.");
+    }]]){
+      const b=document.createElement("button");b.type="button";b.textContent=label;b.disabled=CUSTOM.busy.has(im.name);b.onclick=action;acts.append(b);
+    }
+    info.append(title,acts);card.append(preview,info);grid.append(card);
+  });
+}
+function customOpen(index){
+  openViewer(index,{custom:true,pen:true});setHand(false,true);
+}
+async function customDownload(im){
+  if(CUSTOM.busy.has(im.name))return;
+  CUSTOM.busy.add(im.name);customRefresh();customStatus("편집한 사진을 만드는 중…");
+  try{const cv=await renderPage(im);saveBlob(await toJpeg(cv),"custom_"+(CUSTOM.items.indexOf(im)+1)+"_edited.jpg");customStatus("편집한 사진을 다운로드했어요.");}
+  catch(e){customStatus("다운로드하지 못했어요. 다시 눌러 주세요.");}
+  finally{CUSTOM.busy.delete(im.name);customRefresh();}
+}
+function customImport(files){
+  const incoming=Array.from(files||[]);
+  CUSTOM.pending=CUSTOM.pending.then(async()=>{
+    let added=0;const errors=[];
+    customStatus("사진을 불러오는 중…");
+    for(const file of incoming){
+      if(CUSTOM.items.length>=20){errors.push("사진은 한 번에 20장까지 넣을 수 있어요.");break;}
+      if(!/^image\/(?:png|jpeg|webp|gif|bmp|avif)$/i.test(file.type||"")&&
+         !(file.type===""&&/\.(?:png|jpe?g|webp|gif|bmp|avif)$/i.test(file.name||""))){
+        errors.push("PNG·JPG·WebP 등 사진 파일을 넣어 주세요.");continue;
+      }
+      if(file.size>20*1024*1024){errors.push("사진 한 장은 20MB 이하로 넣어 주세요.");continue;}
+      const url=URL.createObjectURL(file);
+      try{
+        const image=await loadImg(url);
+        if(!image.naturalWidth||!image.naturalHeight||image.naturalWidth*image.naturalHeight>30000000)throw Error("size");
+        const name="custom-"+Date.now().toString(36)+"-"+(++CUSTOM.sequence)+".png";
+        CUSTOM.items.push({custom:true,name,fileName:file.name||"캡처 이미지 "+CUSTOM.sequence,url,thumb:url,download_url:url});
+        CUSTOM.marks[name]=[];added++;
+      }catch(e){URL.revokeObjectURL(url);errors.push(e.message==="size"?"사진은 3,000만 화소 이하로 넣어 주세요.":"이 사진을 열지 못했어요. PNG나 JPG로 다시 넣어 주세요.");}
+    }
+    customRefresh();
+    customStatus((added?added+"장 추가했어요. 사진을 눌러 편집하세요. ":"")+(errors.length?[...new Set(errors)].join(" "):"추가한 사진과 표시는 이 탭에서 유지돼요. 다운로드해 보관하세요."));
+  }).catch(()=>customStatus("사진을 불러오지 못했어요. 다시 넣어 주세요."));
+  return CUSTOM.pending;
+}
+function customTransferFiles(data){
+  const files=Array.from(data?.files||[]);
+  return files.length?files:Array.from(data?.items||[]).filter(i=>i.kind==="file").map(i=>i.getAsFile()).filter(Boolean);
+}
+$("custom-add").onclick=()=>$("custom-files").click();
+$("custom-files").onchange=e=>{customImport(e.target.files);e.target.value="";};
+$("customize").addEventListener("click",e=>{
+  if(!e.target.closest("button,input,.custom-card"))$("custom-drop").focus({preventScroll:true});
+});
+document.addEventListener("paste",e=>{
+  if(!$("lb").hidden||!$("customize").contains(document.activeElement))return;
+  const files=customTransferFiles(e.clipboardData);if(!files.length)return;
+  e.preventDefault();customImport(files);
+});
+const customDrop=$("custom-drop");
+for(const type of ["dragenter","dragover"])customDrop.addEventListener(type,e=>{
+  e.preventDefault();customDrop.classList.add("drag-over");if(e.dataTransfer)e.dataTransfer.dropEffect="copy";
+});
+customDrop.addEventListener("dragleave",e=>{if(!customDrop.contains(e.relatedTarget))customDrop.classList.remove("drag-over");});
+customDrop.addEventListener("drop",e=>{
+  e.preventDefault();e.stopPropagation();customDrop.classList.remove("drag-over");customDrop.focus({preventScroll:true});
+  const files=customTransferFiles(e.dataTransfer);
+  if(files.length)customImport(files);else customStatus("사진 파일을 끌어다 놓아 주세요.");
+});
+window.addEventListener("resize",()=>{if($("lb").hidden)customRefresh();});
+
 
 /* ── 넘김 화살표: 자동 숨김 ───────────────────────────────────────────
    신문 사진 위에 화살표가 얹혀 글씨를 가린다는 문제. 1초 동안 아무 조작이
@@ -1999,6 +2128,7 @@ function markNums(root){
   }
 }
 function noteArts(){
+  if(V.custom)return [];
   /* ⚠ 2026-10-01: GPT 가 같은 기사를 두 번 보내는 날이 있다(처음 요약 + 고친 요약).
      그대로 모으면 옆 칸에 같은 기사가 2개 나온다 → 같은 기사면 하나만.
      '같은 기사' 판단: 번호를 뺀 제목이 **대부분 같으면**(두 글자 조각 80% 이상 겹침 — 실제 재전송 0.93·1.00, 비슷한 다른 기사 0.64).
@@ -2020,7 +2150,7 @@ function noteArts(){
 }
 function fillNote(){
   const box=$("lb-note"), btn=$("lb-note-btn");
-  const arts=V.pick?[]:noteArts();
+  const arts=V.pick||V.custom?[]:noteArts();
   btn.hidden=!arts.length;
   btn.setAttribute("aria-pressed", noteWanted()?"true":"false");
   const show=arts.length>0 && noteWanted();
@@ -2078,6 +2208,7 @@ const M={on:false, erase:false, color:"#ff5b5b", tool:"line", wk:1,
 const MARK_DAYS=new Map();
 let markDay=null;
 function marksHint(){
+  if(V.custom)return "이 탭에서 편집 중 · 다운로드해 보관하세요";
   return markDay?.mode==="admin" ? "관리자 표시 자동 저장" :
     markDay?.mode==="guest" ? "임시 표시 · 페이지를 벗어나면 사라져요" :
     markDay?.mode==="error" ? "표시를 불러오지 못했어요 · 뷰어를 다시 열어 주세요" : "저장된 표시 불러오는 중…";
@@ -2106,6 +2237,7 @@ function resetMarksIfNewDate(){
   markDay=d; M.marks=d.marks;
 }
 function marksChanged(){
+  if(V.custom){setSaved(marksHint());return;}
   syncArticleChecks();
   const d=markDay, page=markName();
   if(!d || d.mode!=="admin" || !page) return;
@@ -2162,7 +2294,7 @@ document.addEventListener("visibilitychange",()=>{if(document.hidden) flushMarks
 const STICKER_COLORS={WHAT:"#1d4ed8",WHY:"#7c3aed",HOW:"#047857",CHECK:"#b45309"};
 const STICK={active:false,selected:null,drag:null,pointer:null};
 function selectedSticker(){
-  return STICK.selected&&(M.marks[markName()]||[]).includes(STICK.selected)?STICK.selected:null;
+  return STICK.selected&&(viewerMarks()[markName()]||[]).includes(STICK.selected)?STICK.selected:null;
 }
 function stickerHint(text){
   $("lb-hint").textContent=text;$("lb-hint").classList.remove("gone");clearTimeout(V.hintT);
@@ -2184,7 +2316,7 @@ function activateSticker(st){
 }
 function stampSticker(label){
   if($("lb").hidden||!STICKER_COLORS[label])return;
-  if(!markDay||!["admin","guest"].includes(markDay.mode)){
+  if(!marksEditable()){
     stickerHint(marksHint());return;
   }
   if(M.cur||M.move||V.pts.size||STICK.drag)return;
@@ -2201,7 +2333,7 @@ function stampSticker(label){
   const x=Math.max(0,Math.min(1-w,(cx-r.left)/r.width-w/2));
   const y=Math.max(0,Math.min(1-h,(cy-r.top)/r.height-h/2));
   const st={t:"sticker",label,c:STICKER_COLORS[label],w:.01,pts:[[x,y],[x+w,y+h]]};
-  if(label==="CHECK"){
+  if(label==="CHECK"&&!V.custom){
     const side=V.fromArt?.querySelector(".brf-side[data-i]");
     const context=side&&newsState.images[+side.dataset.i]?.name===markName()?side.dataset.key:"";
     const key=checkArticleKey(st,markName(),context);
@@ -2210,7 +2342,7 @@ function stampSticker(label){
   markList().push(st);marksChanged();activateSticker(st);flushMarks();
 }
 function stickerAt(x,y){
-  const list=M.marks[markName()]||[];
+  const list=viewerMarks()[markName()]||[];
   for(let i=list.length-1;i>=0;i--){
     if(list[i].t!=="sticker")continue;
     const [a,b]=list[i].pts;
@@ -2235,7 +2367,7 @@ function drawStickerOverlay(pw,ph,w,h,transform){
   cv.style.width=w+"px";cv.style.height=h+"px";cv.style.transform=transform;
   if(cv.width!==pw||cv.height!==ph){cv.width=pw;cv.height=ph;}
   const ctx=cv.getContext("2d");ctx.clearRect(0,0,pw,ph);
-  for(const st of M.marks[markName()]||[])if(st.t==="sticker")drawSticker(ctx,st,pw,ph);
+  for(const st of viewerMarks()[markName()]||[])if(st.t==="sticker")drawSticker(ctx,st,pw,ph);
   const sel=selectedSticker();
   if(STICK.active&&sel){
     const [a,b]=sel.pts;ctx.save();ctx.strokeStyle="#fff";ctx.lineWidth=2;ctx.setLineDash([5,4]);
@@ -2244,7 +2376,10 @@ function drawStickerOverlay(pw,ph,w,h,transform){
 }
 
 const markName=()=> (V.list[V.i]||{}).name || "";          // 지금 보는 사진의 파일 이름
-const markList=()=> (M.marks[markName()] ||= []);          // 그 사진에 그은 줄 목록
+const viewerMarks=()=>V.custom?CUSTOM.marks:M.marks;
+const marksEditable=()=>V.custom||!!markDay&&["admin","guest"].includes(markDay.mode);
+const marksForImage=im=>im.custom?(CUSTOM.marks[im.name]||[]):((M.date===state.date&&M.marks[im.name])||[]);
+const markList=()=> (viewerMarks()[markName()] ||= []);          // 그 사진에 그은 줄 목록
 
 let savedT=null;
 function setSaved(t,persist=false){
@@ -2293,7 +2428,7 @@ const strokeW=(tool)=> (BASE_W[tool]||0.018)*M.wk;
    (색·굵기를 바꾸는 건 '고른 동그라미'에 바로 적용되므로 풀리지 않는다)
    풀린 뒤에는 예전처럼 지우개로 지우고 다시 그린다 — 평소 '긋기'와 헷갈리지 않게 '방금 것'만 허용. */
 function selStroke(){
-  const list=M.marks[markName()];
+  const list=viewerMarks()[markName()];
   // 지워지거나 장이 바뀌어 목록에서 사라졌으면 고른 상태가 아니다
   if(!M.sel||!list||list.indexOf(M.sel)<0){ M.sel=null; return null; }
   return M.sel;
@@ -2316,7 +2451,7 @@ function moveSel(st,orig,dx,dy){
   dx=Math.max(-Math.min(...xs), Math.min(1-Math.max(...xs), dx));
   dy=Math.max(-Math.min(...ys), Math.min(1-Math.max(...ys), dy));
   st.pts=orig.map(([x,y])=>[x+dx,y+dy]);
-  if(st.t==="sticker"&&st.label==="CHECK"){
+  if(st.t==="sticker"&&st.label==="CHECK"&&!V.custom){
     const key=checkArticleKey(st,markName(),st.article||"");
     if(key)st.article=key;else delete st.article;
   }
@@ -2380,7 +2515,7 @@ function drawMarks(){
   const ctx=cv.getContext("2d");
   ctx.clearRect(0,0,pw,ph);
   ctx.lineCap="round"; ctx.lineJoin="round";
-  const all=(M.marks[markName()]||[]).concat(M.cur?[M.cur]:[]);
+  const all=(viewerMarks()[markName()]||[]).concat(M.cur?[M.cur]:[]);
   for(const st of all) if(st.t!=="sticker")strokeOne(ctx, st, pw, ph, 1.5);
   drawStickerOverlay(pw,ph,w,h,img.style.transform);    // 가는 선도 가늘게 나오도록 최소 1.5
 
@@ -2399,7 +2534,7 @@ function drawMarks(){
 
 /* 지우개 — 톡 친 자리에서 가장 가까운 줄을 지운다. */
 function eraseAt(nx,ny){
-  const list=M.marks[markName()]||[];
+  const list=viewerMarks()[markName()]||[];
   let hit=-1, best=Infinity;
   const ar=aspect();                               // 가로세로 비율을 맞춰야 거리 계산이 맞다
   for(let i=list.length-1;i>=0;i--){
@@ -2474,10 +2609,13 @@ function ctxProbe(){
   return ctxProbe.ok;
 }
 function openViewer(i,opts={}){
-  if(!newsState.images||!newsState.images.length) return;
-  resetMarksIfNewDate();
+  const list=opts.custom?CUSTOM.items:newsState.images;
+  if(!list||!list.length)return;
+  if(!$("lb").hidden)closeViewer();
+  V.custom=!!opts.custom;
+  if(!V.custom)resetMarksIfNewDate();
   if(!V.guards) lbGuards(true);
-  V.list=newsState.images; V.i=Math.max(0,Math.min(i,V.list.length-1));
+  V.list=list; V.i=Math.max(0,Math.min(i,V.list.length-1));
   resetPointers();                             // 이전에 꼬인 터치 상태를 새 기사로 가져오지 않게
   V.pick=opts.pick||null;
   V.box=opts.box||null;                        // 열자마자 이 기사 영역으로 확대(요약 JSON 의 bbox)
@@ -2495,7 +2633,7 @@ function openViewer(i,opts={}){
   $("lb-hint").classList.remove("gone");
   clearTimeout(V.hintT); V.hintT=setTimeout(()=>$("lb-hint").classList.add("gone"), V.pick?6000:2600);
   V.navPos=null; showNav();                    // 열자마자 한 번 보여주고 1초 뒤 감춘다
-  resetMarksIfNewDate();                       // 날짜가 바뀌었으면 비운다
+  if(!V.custom)resetMarksIfNewDate();          // 커스텀 이미지는 신문 저장과 분리
   setHand(HAND_DEFAULT);                       // 열 때 기본은 ✋ 손바닥(PC) — 2026-10-01 사용자 요청
   drawMarks();
 }
@@ -2512,6 +2650,8 @@ function closeViewer(){
   V.fromArt=null;
   flushMarks();
   // 같은 페이지 안에서 다시 열면 게스트 표시도 그대로 보인다.
+  V.custom=false;
+  customRefresh();
   drawSideMarks();                             // 기사 옆 작은 사진에도 방금 그은 줄을 반영
 }
 function showPage(){
@@ -2524,6 +2664,7 @@ function showPage(){
   img.alt=`${V.i+1}번째 장`;
   $("lb-count").innerHTML=`<b>${String(V.i+1).padStart(2,"0")}</b> / ${V.list.length}`;
   $("lb-dl-orig").href=im.download_url;
+  $("lb-dl-orig").download=im.custom?im.fileName:"";
   $("lb-prev").disabled=V.i<=0;
   $("lb-next").disabled=V.i>=V.list.length-1;
   V.zoom=1;
@@ -2754,7 +2895,7 @@ function setErase(on){
 $("lb-erase").onclick=()=>setErase(!M.erase);
 $("lb-undo").onclick=()=>{
   finishStickerMode();
-  const list=M.marks[markName()];
+  const list=viewerMarks()[markName()];
   if(list&&list.length){
     if(M.sel===list[list.length-1]) M.sel=null;  // 되돌린 게 고른 것이면 같이 푼다
     list.pop(); marksChanged(); drawMarks();
@@ -2762,10 +2903,10 @@ $("lb-undo").onclick=()=>{
 };
 $("lb-clear").onclick=()=>{
   finishStickerMode();
-  const list=M.marks[markName()];
+  const list=viewerMarks()[markName()];
   if(!list||!list.length) return;
   if(!confirm(`이 장(${V.i+1}쪽)에 그은 형광펜을 모두 지울까요?`)) return;
-  M.marks[markName()]=[]; M.sel=null; marksChanged(); drawMarks();
+  viewerMarks()[markName()]=[]; M.sel=null; marksChanged(); drawMarks();
 };
 // 도구모음을 누를 때 사진 쪽 동작(그리기·닫기)이 같이 일어나지 않게 막는다
 $("lb-tools").addEventListener("pointerdown",e=>e.stopPropagation());
@@ -2894,7 +3035,7 @@ stage.addEventListener("pointerdown",e=>{
   if(!hit&&!STICK.active)return;
   e.preventDefault();e.stopImmediatePropagation();
   if(STICK.drag||V.pts.size||M.cur||M.move)return;
-  if(!markDay||!["admin","guest"].includes(markDay.mode)){stickerHint(marksHint());return;}
+  if(!marksEditable()){stickerHint(marksHint());return;}
   if(hit){
     activateSticker(hit);STICK.drag={id:e.pointerId,st:hit,from:q,orig:hit.pts.map(p=>p.slice())};
     stage.setPointerCapture(e.pointerId);stage.classList.add("sticker-dragging");
@@ -2981,7 +3122,7 @@ stage.addEventListener("pointerdown",e=>{
   }
   // 형광펜 모드: 손가락 하나면 '그리기'. 두 손가락이면 평소처럼 확대(핀치).
   if(M.on && V.pts.size===1){
-    if(!markDay || !["admin","guest"].includes(markDay.mode)){setSaved(marksHint(),true);return;}
+    if(!marksEditable()){setSaved(marksHint(),true);return;}
     const q=toImgXY(e.clientX,e.clientY);
     if(q){
       if(M.erase){ eraseAt(q[0],q[1]); V.drag=null; return; }
@@ -3510,7 +3651,7 @@ function dlMenu(open){
   const m=$("lb-dlmenu"); if(!m) return;
   m.hidden=!open; $("lb-dl").setAttribute("aria-expanded", open?"true":"false");
   if(open){
-    const any=(V.list||[]).some(im=>(M.marks[im.name]||[]).length);
+    const any=(V.list||[]).some(im=>marksForImage(im).length);
     $("lb-dl-pdfm").disabled=!any || DL.busy;
     $("lb-dl-pdfm").title=any?"":"아직 줄을 그은 장이 없어요";
     $("lb-dl-pdf").disabled=$("lb-dl-img").disabled=DL.busy;
@@ -3534,7 +3675,7 @@ async function renderPage(im){
   const ctx=cv.getContext("2d");
   ctx.fillStyle="#fff"; ctx.fillRect(0,0,w,h);           // 투명 PNG·GIF 도 흰 종이 위에
   ctx.drawImage(img,0,0,w,h);
-  const list=(M.date===state.date && M.marks[im.name])||[];
+  const list=marksForImage(im);
   if(list.length){
     const lay=document.createElement("canvas"); lay.width=w; lay.height=h;
     const lc=lay.getContext("2d"); lc.lineCap="round"; lc.lineJoin="round";
@@ -3552,7 +3693,7 @@ function saveBlob(blob,name){
   a.href=u; a.download=name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(u), 60000);
 }
-const dlBase=()=>(state.date||"newspaper");   // ⚠️ 파일 이름은 영문·숫자만 — 한글 이름은 일부 브라우저가 "download" 로 바꿔 버린다
+const dlBase=()=>(V.custom?"custom":state.date||"newspaper");   // ⚠️ 파일 이름은 영문·숫자만 — 한글 이름은 일부 브라우저가 "download" 로 바꿔 버린다
 const pageNo=(i)=>String(i+1).padStart(2,"0");
 /* 아주 작은 PDF 만들기 — JPG 를 장마다 하나씩 그대로(DCTDecode) 붙인다. 쪽 크기 = 가로 A4(595pt), 세로는 사진 비율. */
 function makePdf(pages){                       // pages: [{w,h,jpg:Uint8Array}]
@@ -3579,20 +3720,21 @@ function makePdf(pages){                       // pages: [{w,h,jpg:Uint8Array}]
 }
 async function dlPdf(onlyMarked){
   if(DL.busy) return;
-  const idx=(V.list||[]).map((im,i)=>i).filter(i=>!onlyMarked || (M.marks[V.list[i].name]||[]).length);
+  const images=(V.list||[]).slice(),base=dlBase();
+  const idx=images.map((im,i)=>i).filter(i=>!onlyMarked || marksForImage(images[i]).length);
   if(!idx.length){ dlMsg("줄 그은 장이 없어요"); return; }
   DL.busy=true; dlMenu(true);
   try{
     const pages=[];
     for(let k=0;k<idx.length;k++){
       dlMsg(`PDF 만드는 중… ${k+1}/${idx.length}장`);
-      const cv=await renderPage(V.list[idx[k]]);
+      const cv=await renderPage(images[idx[k]]);
       const jpg=new Uint8Array(await (await toJpeg(cv)).arrayBuffer());
       pages.push({w:cv.width,h:cv.height,jpg});
       cv.width=cv.height=0;                    // 메모리 바로 돌려주기(폰에서 30장)
     }
     const blob=makePdf(pages);
-    saveBlob(blob, `${dlBase()}_${onlyMarked?"marked":"all"}_${idx.length}p.pdf`);
+    saveBlob(blob, `${base}_${onlyMarked?"marked":"all"}_${idx.length}p.pdf`);
     dlMsg(`✅ 저장함 · ${idx.length}장 · ${(blob.size/1048576).toFixed(1)}MB`);
   }catch(err){ dlMsg("❌ PDF 만들기 실패: "+(err.message||err)); }
   finally{ DL.busy=false; if(!$("lb-dlmenu").hidden) dlMenu(true); }
@@ -3602,9 +3744,9 @@ $("lb-dl-pdfm").onclick=()=>dlPdf(true);
 $("lb-dl-img").onclick=async()=>{
   if(DL.busy) return; DL.busy=true; dlMsg("그림 만드는 중…");
   try{
-    const im=V.list[V.i], cv=await renderPage(im);
-    const marked=(M.marks[im.name]||[]).length;
-    saveBlob(await toJpeg(cv), `${dlBase()}_p${pageNo(V.i)}${marked?"_marked":""}.jpg`);
+    const im=V.list[V.i],index=V.i,base=dlBase(),cv=await renderPage(im);
+    const marked=marksForImage(im).length;
+    saveBlob(await toJpeg(cv), `${base}_p${pageNo(index)}${marked?"_marked":""}.jpg`);
     dlMsg(`✅ 저장함 · ${pageNo(V.i)}번째 장${marked?" (줄 포함)":""}`);
   }catch(err){ dlMsg("❌ 저장 실패: "+(err.message||err)); }
   finally{ DL.busy=false; }
@@ -3722,7 +3864,7 @@ document.addEventListener("visibilitychange",()=>{ if(!document.hidden) load(); 
    같은 공용 캐시(같은 용어는 AI 에 한 번만). 입력 중 키(h·n·화살표·Space…)가 뷰어 단축키로 새지 않게 막는다. */
 const TN={admin:false,items:[]};
 function tnCtx(){
-  const inViewer=!$("lb").hidden && V.list;      // 메인 화면에선 지금 보는 면·기사가 없다(날짜만)
+  const inViewer=!$("lb").hidden && V.list && !V.custom;      // 메인 화면에선 지금 보는 면·기사가 없다(날짜만)
   const page=inViewer?markName():"";
   let art="";
   if(inViewer) try{ const a=V.fromArt||(noteArts()[0]); if(a) art=artTitle(a); }catch(e){}
@@ -3805,8 +3947,8 @@ tnLoad();
     if(nav.dataset.edition===mode)return;
     nav.dataset.edition=mode;
     const entries=mode==="online"
-      ? [["pod","🎧","브리핑"],["online-news-09","🕘","9시 뉴스"],["online-news-18","🕕","18시 뉴스"]]
-      : [["pod","🎧","오디오 브리핑"],["feed","📰","기사요약"],["mk-ed","✒️","사설"]];
+      ? [["pod","🎧","브리핑"],["online-news-09","🕘","9시 뉴스"],["online-news-18","🕕","18시 뉴스"],["customize","✂️","커스터마이징"]]
+      : [["pod","🎧","오디오 브리핑"],["feed","📰","기사요약"],["mk-ed","✒️","사설"],["customize","✂️","커스터마이징"]];
     buttons.forEach((b,i)=>{
       const [id,icon,label]=entries[i];b.dataset.section=id;b.setAttribute("aria-controls",id);
       b.querySelector(".jump-icon").textContent=icon;b.lastElementChild.textContent=label;
@@ -3900,6 +4042,7 @@ tnLoad();
     }finally{BM.busy=false;paintBookmark();}
   }
   function capture(){
+    if(V.custom&&!$("lb").hidden)throw new Error("커스터마이징 사진은 다운로드해 보관해 주세요.");
     const arts=[...$("feed").querySelectorAll(".brf-art")],line=offset();
     const inViewer=!$("lb").hidden,view=inViewer?"page":"summary";
     let art=arts.find(a=>a.getBoundingClientRect().bottom>line)||null;
