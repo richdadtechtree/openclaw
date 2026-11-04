@@ -756,7 +756,8 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
     cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
   .mobile-hand[aria-pressed="true"]{opacity:.5;background:#dbeafe;border-color:#2563eb}
   .mobile-hand:focus-visible{outline:3px solid #2563eb;outline-offset:3px}
-  @media(max-width:900px){.mobile-hand:not([hidden]){display:grid;place-items:center}}
+  .touch-reader .mobile-hand:not([hidden]){display:grid;place-items:center}
+  @media(max-width:900px),(any-pointer:coarse),(hover:none){.mobile-hand:not([hidden]){display:grid;place-items:center}}
 </style>
 </head>
 <body class="paper">
@@ -2001,6 +2002,7 @@ function fillGrid(d){
 const V={custom:false,list:[],i:0,zoom:1,tx:0,ty:0,nat:{w:1,h:1},fitW:0,fitH:0,stage:null,drag:null,pts:new Map(),pinch:null,
          navT:null,navPos:null};
 const $=id=>document.getElementById(id);
+document.documentElement.classList.toggle("touch-reader",(navigator.maxTouchPoints||0)>0);
 
 /* 직접 가져온 기사 사진은 이 탭의 별도 목록에서 편집한다. 신문 API로 보내지 않는다. */
 const CUSTOM={items:[],marks:{},sequence:0,pending:Promise.resolve(),busy:new Set()};
@@ -2585,7 +2587,7 @@ function setPen(on){
   $("lb-stage").classList.remove("movable","moving");
   $("lb-pen").setAttribute("aria-pressed", on?"true":"false");
   $("lb-tools").hidden=!on;
-  $("lb-hand-float").hidden=!on;
+  $("lb-hand-float").hidden=$("lb").hidden;
   $("lb").classList.toggle("marking", on);    // 상단 ✋ 숨기고 도구모음 안 ✋ 를 쓴다
   $("lb-stage").classList.toggle("marking", on);
   const eraseBtn=$("lb-erase"); if(eraseBtn) eraseBtn.setAttribute("aria-pressed","false");
@@ -2648,6 +2650,7 @@ function openViewer(i,opts={}){
   V.fromArt=opts.art||null;                    // 이 기사에서 열었다 → 옆 요약 칸에서 맨 위·강조
   $("lb-pick").hidden=!V.pick;
   $("lb").hidden=false;
+  $("lb-hand-float").hidden=false;
   document.body.style.overflow="hidden";     // 뒤쪽 페이지가 같이 스크롤되지 않게
   ctxProbe();                                  // 확장 프로그램이 우클릭을 가로채는지(처음 한 번)
   if(opts.pen && !M.on) setPen(true);         // 도구모음을 먼저 펴 두고 사진 크기를 잰다(다시 열어도 기사 확대가 풀리지 않게)
@@ -2668,6 +2671,7 @@ function closeViewer(){
   lbGuards(false);                             // 열 때 붙인 우클릭·끌기 막기를 뗀다
   dlMenu(false);
   $("lb").hidden=true;
+  $("lb-hand-float").hidden=true;
   document.body.style.overflow="";
   clearTimeout(V.navT);                        // 닫은 뒤 타이머가 남아 돌지 않게
   resetPointers();                             // 닫는 순간 남은 손가락 기록도 비운다
@@ -2879,15 +2883,19 @@ $("lb-hand").onclick=()=>setHand(!V.hand);
 $("lb-warn-x").onclick=()=>{ $("lb-warn").hidden=true; };   // 확장 프로그램 우클릭 가로채기 알림 닫기
 // 편집 도구모음 안 ✋: 켜면 옮기기, 다시 누르면 옮겨 둔 자리 그대로 긋기로(가운데로 안 돌아감)
 $("lb-t-hand").onclick=()=>{ if(V.hand) setHand(false,true); else { if(M.erase) setErase(false); setHand(true); } };
+function toggleFloatingHand(){
+  if(!M.on)setPen(true);
+  $("lb-t-hand").click();
+}
 let handTouchUntil=0;
 $("lb-hand-float").onclick=e=>{
   e.stopPropagation();if(e.detail&&performance.now()<handTouchUntil)return;
-  $("lb-t-hand").click();
+  toggleFloatingHand();
 };
 $("lb-hand-float").addEventListener("pointerup",e=>{
   e.stopPropagation();
   if(!e.isPrimary||e.button!==0||!["touch","pen"].includes(e.pointerType))return;
-  e.preventDefault();handTouchUntil=performance.now()+800;$("lb-t-hand").click();
+  e.preventDefault();handTouchUntil=performance.now()+800;toggleFloatingHand();
 });
 for(const type of ["pointerdown","pointermove","pointerup","pointercancel","dblclick"]){
   $("lb-hand-float").addEventListener(type,e=>e.stopPropagation());

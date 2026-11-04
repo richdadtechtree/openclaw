@@ -15,8 +15,13 @@ const check=(v,label)=>{assert.ok(v,label);checks++;console.log('OK '+label);};
     assert.ok(up,'challenge demo server starts');
     const cookies=JSON.parse(fs.readFileSync(cookiesFile,'utf8'));
     browser=await chromium.launch({headless:true});
-    for(const width of [1280,390]){
-      const context=await browser.newContext({viewport:{width,height:width===390?844:900},acceptDownloads:true,hasTouch:width===390,isMobile:width===390});
+    for(const {width,height,touch,mobile} of [
+      {width:1280,height:900,touch:false,mobile:false},
+      {width:390,height:844,touch:true,mobile:true},
+      {width:1024,height:1366,touch:true,mobile:false},
+      {width:1366,height:1024,touch:true,mobile:false}
+    ]){
+      const context=await browser.newContext({viewport:{width,height},acceptDownloads:true,hasTouch:touch,isMobile:mobile});
       await context.addCookies([{name:'gate_sess',value:cookies.b,url:base}]);
       await context.route('https://**/*',r=>r.abort());
       const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
@@ -60,7 +65,7 @@ const check=(v,label)=>{assert.ok(v,label);checks++;console.log('OK '+label);};
       });
       check(await page.locator("#customcard").evaluate(el=>{const r=el.getBoundingClientRect();return r.top===0&&r.width===innerWidth&&r.height===innerHeight;}),
         "editing fills the screen above the challenge header: "+width);
-      if(width===390){
+      if(touch){
         const position=await frameUI.locator("#lb-hand-float").evaluate(b=>{
           const r=b.getBoundingClientRect(),s=document.getElementById("lb-stage").getBoundingClientRect();
           return {dx:Math.abs(r.x+r.width/2-s.x-s.width/2),dy:Math.abs(r.y+r.height/2-s.y-s.height/2),opacity:+getComputedStyle(b).opacity};
@@ -114,6 +119,19 @@ const check=(v,label)=>{assert.ok(v,label);checks++;console.log('OK '+label);};
       check(Object.keys(day.mine).length===0&&day.others.locked,'custom editing does not submit a challenge article or unlock cohort posts: '+width);
       check((await context.request.get(base+'/api/news/today')).status()===403,'Charles newspaper data permission remains unchanged: '+width);
       check(restricted.length===0&&writes.length===0,'standalone editor never requests restricted newspaper data or saves challenge posts: '+width);
+      if(touch){
+        await page.locator("#v-day").click();await page.locator(".tile").nth(2).click();
+        await page.waitForSelector("#ed.open");
+        check(await page.locator("#pv-hand-float").isVisible()&&await page.evaluate(()=>!window.__PV.state().pen),
+          "phone/tablet hand is visible immediately before enabling the pen: "+width);
+        await page.locator("#pv-hand-float").tap();
+        check(await page.evaluate(()=>window.__PV.state().pen&&!window.__PV.state().hand),
+          "center hand enters pen mode without reaching the toolbar: "+width);
+        await page.locator("#pv-hand-float").tap();
+        check(await page.evaluate(()=>window.__PV.state().pen&&window.__PV.state().hand),
+          "center hand switches the native Charles page to movement: "+width);
+        await page.locator("#ed-close").click();
+      }
       await page.goto(base+'/challenge#customize');await page.reload();await frameUI.locator('#custom-drop').waitFor();
       check(await page.locator('#v-custom').getAttribute('aria-selected')==='true'&&await frameUI.locator('.custom-card').count()===0,'customize link opens directly with the stated tab-only lifetime: '+width);
       await context.close();

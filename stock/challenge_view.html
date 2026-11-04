@@ -314,7 +314,8 @@
     cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
   .mobile-hand[aria-pressed="true"]{opacity:.5;background:#dbeafe;border-color:#2563eb}
   .mobile-hand:focus-visible{outline:3px solid #2563eb;outline-offset:3px}
-  @media(max-width:900px){.mobile-hand:not([hidden]){display:grid;place-items:center}}
+  .touch-reader .mobile-hand:not([hidden]){display:grid;place-items:center}
+  @media(max-width:900px),(any-pointer:coarse),(hover:none){.mobile-hand:not([hidden]){display:grid;place-items:center}}
 </style>
 </head>
 <body>
@@ -412,6 +413,7 @@
 const FIELDS=[["what","WHAT","무슨 일이 있었나 (사실)"],["why","WHY","왜 중요한가 / 왜 일어났나"],
               ["how","HOW","구체적으로 어떤 내용이 있나"],["think","생각 & 투자에 적용할 점","내 생각, 내 투자에 어떻게 쓸까"]];
 const $=id=>document.getElementById(id);
+document.documentElement.classList.toggle("touch-reader",(navigator.maxTouchPoints||0)>0);
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const WD=["일","월","화","수","목","금","토"];
 const S={me:null,day:null,date:null,cohort:"",zoom:1,page:null,terms:[],gl:{}};
@@ -633,7 +635,7 @@ const PV=(()=>{
   function setHand(on){V.hand=!!on;$("pv-hand").setAttribute("aria-pressed",V.hand);
     $("pv-hand-float").setAttribute("aria-pressed",V.hand);$("pv-hand-float").setAttribute("aria-label",V.hand?"펜으로 돌아가기":"화면 이동 켜기");
     if(V.hand){V.erase=false;$("pv-erase").setAttribute("aria-pressed","false");}cursor();}
-  function setPen(on){V.pen=!!on;$("pv-pen").setAttribute("aria-pressed",V.pen);$("pv-pentools").hidden=!V.pen;$("pv-hand-float").hidden=!V.pen;
+  function setPen(on){V.pen=!!on;$("pv-pen").setAttribute("aria-pressed",V.pen);$("pv-pentools").hidden=!V.pen;$("pv-hand-float").hidden=false;
     setHand(!V.pen);layout(true);}
   function cursor(){st.classList.toggle("pen",V.pen&&!V.hand&&!V.erase);st.classList.toggle("erase",V.pen&&!V.hand&&V.erase);}
   function pick(attr,val,sel){document.querySelectorAll(sel).forEach(b=>b.setAttribute("aria-pressed",b.dataset[attr]===val));}
@@ -647,14 +649,15 @@ const PV=(()=>{
   $("pv-undo").onclick=undo;
   $("pv-clear").onclick=()=>{if(!list().length)return;hist().push({clear:list().slice()});V.marks[V.key]=[];draw();};
   $("pv-hand").onclick=()=>setHand(!V.hand);
+  function toggleFloatingHand(){if(!V.pen)setPen(true);else setHand(!V.hand);}
   let handTouchUntil=0;
   $("pv-hand-float").onclick=e=>{
-    e.stopPropagation();if(e.detail&&performance.now()<handTouchUntil)return;setHand(!V.hand);
+    e.stopPropagation();if(e.detail&&performance.now()<handTouchUntil)return;toggleFloatingHand();
   };
   $("pv-hand-float").addEventListener("pointerup",e=>{
     e.stopPropagation();
     if(!e.isPrimary||e.button!==0||!["touch","pen"].includes(e.pointerType))return;
-    e.preventDefault();handTouchUntil=performance.now()+800;setHand(!V.hand);
+    e.preventDefault();handTouchUntil=performance.now()+800;toggleFloatingHand();
   });
   for(const type of ["pointerdown","pointermove","pointerup","pointercancel","dblclick"]){
     $("pv-hand-float").addEventListener(type,e=>e.stopPropagation());
@@ -711,11 +714,11 @@ const PV=(()=>{
   document.addEventListener("keyup",e=>{if(e.key===" ")V.space=false;});
   let rz;addEventListener("resize",()=>{clearTimeout(rz);rz=setTimeout(()=>{if($("ed").classList.contains("open"))layout(true);},120);});
   return{
-    open(src,key){V.key=key;V.act=null;V.ptr.clear();svg.innerHTML="";
+    open(src,key){V.key=key;V.act=null;V.ptr.clear();svg.innerHTML="";$("pv-hand-float").hidden=false;
       img.onload=()=>{V.nw=img.naturalWidth||1;V.nh=img.naturalHeight||1;layout(false);draw();};
       img.src=src;if(img.complete&&img.naturalWidth){V.nw=img.naturalWidth;V.nh=img.naturalHeight;}
       requestAnimationFrame(()=>{layout(false);draw();});},
-    close(){img.removeAttribute("src");V.act=null;V.ptr.clear();},
+    close(){img.removeAttribute("src");V.act=null;V.ptr.clear();$("pv-hand-float").hidden=true;},
     busy:()=>!!V.act,
     state:()=>({s:V.s,tx:V.tx,ty:V.ty,hand:V.hand,pen:V.pen,marks:(V.marks[V.key]||[]).length})   // 검사용
   };

@@ -153,7 +153,10 @@ const TEXT = { what: '반도체 수출이 석 달 연속 늘었다는 기사', w
         await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
         check((await st()).marks===before.marks+1,'펜으로 복귀 후 손가락으로 줄 긋기');
         await pg.click('#pv-undo');await pg.click('#pv-pen');
-        check(!(await pg.isVisible('#pv-hand-float')),'편집을 끄면 가운데 손바닥도 숨김');await touch.detach();
+        check(await pg.isVisible('#pv-hand-float'),'펜을 꺼도 가운데 손바닥은 표시');
+        await pg.tap('#pv-hand-float');
+        check((await st()).pen&&!(await st()).hand,'가운데 손바닥에서 펜을 다시 켤 수 있음');
+        await pg.click('#pv-pen');await touch.detach();
       }
       await pg.fill('#f-what', '짧음');
       await pg.click('#ed-save');
