@@ -71,6 +71,9 @@ const server=http.createServer((req,res)=>{
     await open(0,0);await stamp();await saved();
     assert.deepEqual(await badges(),['article','','','','','']);check(true,'CHECK identifies the opened article without checking another article on the same page');
     check((await marks()).at(-1).article===keys[0],'CHECK stores its article identity');
+    check(await page.locator("#feed .brf-check").evaluate(el=>{
+      const s=getComputedStyle(el);return s.backgroundColor==="rgb(220, 38, 38)"&&s.color==="rgb(255, 255, 255)"&&parseFloat(s.fontSize)>=16&&el.getBoundingClientRect().height>=34;
+    }),"summary CHECK uses a larger red badge with bold white text");
     check(await page.locator('#lb-note .nt-art').first().locator('.brf-check').textContent()==='✓ CHECK','viewer summary updates immediately');
     await close();await open(0,1);await stamp(.6,.6,'1');
     assert.deepEqual(await badges(),['article','','','','','']);check(true,'WHAT does not check an article');
@@ -110,6 +113,8 @@ const server=http.createServer((req,res)=>{
     await close();await open(0);await stamp(.8,.2);await saved();
     check(!(await marks()).at(-1).article,'ambiguous full-page CHECK does not invent an article association');
     assert.deepEqual(await badges(),['article','page','','','','']);check(true,'unknown location is clearly labeled page CHECK instead of marking every article checked');
+    check(await page.locator('#feed .brf-check[data-check=page]').evaluate(el=>getComputedStyle(el).backgroundColor==="rgb(220, 38, 38)"&&parseFloat(getComputedStyle(el).fontSize)>=16),
+      "page CHECK also uses the larger vivid red style");
     await erase((await marks()).at(-1));await close();
     stored.set(day+'/03.jpg',{revision:1,strokes:[{t:'sticker',label:'CHECK',c:'#b45309',w:.01,pts:[[.2,.2],[.4,.25]]}]});
     await page.reload();await ready();

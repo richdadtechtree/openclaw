@@ -148,7 +148,7 @@ class MarksTests(unittest.TestCase):
             self.assertEqual(sticker["label"], label)
             self.assertEqual(sticker["t"], "sticker")
             self.assertEqual(sticker["w"], .01)
-            self.assertEqual(sticker["c"], {"WHAT": "#1d4ed8", "WHY": "#7c3aed", "HOW": "#047857", "CHECK": "#b45309"}[label])
+            self.assertEqual(sticker["c"], {"WHAT": "#1d4ed8", "WHY": "#7c3aed", "HOW": "#047857", "CHECK": "#dc2626"}[label])
 
     def test_check_article_survives_save_and_reload(self):
         sticker = {"t": "sticker", "label": "CHECK", "article": "1테스트기사", "pts": [[.1, .2], [.25, .24]]}

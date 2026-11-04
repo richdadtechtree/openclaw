@@ -77,11 +77,21 @@ const server=http.createServer((req,res)=>{
     rows=await list(page);check(rows.map(s=>s.label).join(',')==='WHAT,WHY,HOW','2 and 3 stamp WHY and HOW');
     await page.mouse.move(r.x+r.width*.3,r.y+r.height*.6);await page.keyboard.press('4');
     rows=await list(page);
-    check(rows.at(-1).label==='CHECK'&&rows.at(-1).c==='#b45309','4 stamps CHECK with its own outline color');
+    check(rows.at(-1).label==='CHECK'&&rows.at(-1).c==='#dc2626','4 stamps CHECK with a vivid red color');
+    const legacy=await page.evaluate(()=>{
+      const st={t:"sticker",label:"CHECK",c:"#b45309",pts:[[.2,.2],[.35,.24]]};
+      const [a,b]=stickerBounds(st),cv=document.createElement("canvas");cv.width=1200;cv.height=1800;
+      drawSticker(cv.getContext("2d"),st,1200,1800);
+      return {width:(b[0]-a[0])/.15,height:(b[1]-a[1])/.04,
+        color:[...cv.getContext("2d").getImageData(Math.round((a[0]+(b[0]-a[0])*.08)*1200),396,1,1).data]};
+    });
+    check(Math.abs(legacy.width-1.5)<.001&&Math.abs(legacy.height-1.5)<.001&&legacy.color.join(",")==="220,38,38,255",
+      "previously saved CHECK stickers become 1.5 times larger and vivid red");
     const checkStamp=rows.at(-1),cp=await point(page,checkStamp);
+    cp.x-=(checkStamp.pts[1][0]-checkStamp.pts[0][0])*r.width*.6;
     await page.mouse.move(cp.x,cp.y);await page.mouse.down();await page.mouse.move(cp.x+20,cp.y+10,{steps:4});await page.mouse.up();
     rows=await list(page);
-    check(rows.at(-1).pts[0][0]>checkStamp.pts[0][0],'CHECK can be dragged to a new position');
+    check(rows.at(-1).pts[0][0]>checkStamp.pts[0][0],'CHECK can be dragged from its enlarged outer area');
     await page.keyboard.press('ArrowRight');await page.keyboard.press('Escape');await saved(page);
     const count=rows.length;
     await page.evaluate(()=>{document.getElementById('tn-panel').hidden=false;document.getElementById('tn-q').focus();});
@@ -122,16 +132,18 @@ const server=http.createServer((req,res)=>{
         const layer=document.createElement("canvas");layer.width=1200;layer.height=1800;
         const context=layer.getContext("2d");
         drawSticker(context,{...st,label},1200,1800);
-        const pixels=context.getImageData(x,y,w,h).data;
+        const [sa,sb]=stickerBounds({...st,label}),sx=Math.floor(sa[0]*1200),sy=Math.floor(sa[1]*1800);
+        const sw=Math.ceil((sb[0]-sa[0])*1200),sh=Math.ceil((sb[1]-sa[1])*1800);
+        const pixels=context.getImageData(sx,sy,sw,sh).data;
         const expected=STICKER_COLORS[label].slice(1).match(/../g).map(v=>parseInt(v,16));
         let opaque=0,whiteText=0,colored=0;
-        for(let row=Math.floor(h*.2);row<h*.8;row++)for(let col=Math.floor(w*.1);col<w*.9;col++){
-          const i=(row*w+col)*4;
+        for(let row=Math.floor(sh*.2);row<sh*.8;row++)for(let col=Math.floor(sw*.1);col<sw*.9;col++){
+          const i=(row*sw+col)*4;
           if(pixels[i+3]===255)opaque++;
           if(pixels[i]===255&&pixels[i+1]===255&&pixels[i+2]===255&&pixels[i+3]===255)whiteText++;
           if(expected.every((v,k)=>pixels[i+k]===v)&&pixels[i+3]===255)colored++;
         }
-        samples.push({label,opaque,whiteText,colored,outside:context.getImageData(x-2,y-2,1,1).data[3]});
+        samples.push({label,opaque,whiteText,colored,outside:context.getImageData(sx-2,sy-2,1,1).data[3]});
       }
       const cv=await renderPage(V.list[V.i]);
       const background=[...cv.getContext("2d").getImageData(x+Math.floor(w*.08),y+Math.floor(h*.5),1,1).data];
@@ -163,6 +175,10 @@ const server=http.createServer((req,res)=>{
       await page.keyboard.press('Delete');
       check(await page.evaluate(()=>M.erase&&!STICK.active),'Delete leaves sticker movement and activates eraser: '+label);
       const added=(await list(page)).at(-1),p=await point(page,added);
+      if(label==="CHECK"){
+        const rect=await page.locator("#lb-img").boundingBox();
+        p.x-=(added.pts[1][0]-added.pts[0][0])*rect.width*.6;
+      }
       await page.mouse.click(p.x,p.y);await saved(page);
       assert.deepEqual(await list(page),original);
       check(true,'Delete eraser removes only the clicked '+label+' sticker');
