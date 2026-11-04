@@ -77,7 +77,7 @@ const TEXT = { what: '반도체 수출이 석 달 연속 늘었다는 기사', w
       await pg.click('.tile >> nth=2');
       await pg.waitForSelector('#ed.open');
       check(await pg.$eval('#ed-photo', i => i.src.includes('/api/challenge/photo')), '사진을 누르면 큰 사진 + 입력칸');
-      check(await pg.$eval('#ed-form textarea', t => t.length) === 4, '입력칸 4개(WHAT·WHY·HOW·생각)');
+      check(await pg.$$eval('#ed-form textarea', t => t.length) === 4, '입력칸 4개(WHAT·WHY·HOW·생각)');
       check(await pg.getAttribute('#f-how','placeholder') === '구체적으로 어떤 내용이 있나', 'HOW 안내는 구체적인 내용 질문');
       await pg.waitForFunction(() => document.querySelector('#f-title') && document.querySelector('#f-title').value !== '', null, { timeout: 5000 }).catch(() => {});
       check((await pg.inputValue('#f-title')) === '성북·서대문구 역세권 아파트 상승', '📰 기사 제목 칸이 신문 요약에서 자동으로 채워짐');
@@ -139,7 +139,7 @@ const TEXT = { what: '반도체 수출이 석 달 연속 늘었다는 기사', w
         check(floating.dx<1&&floating.dy<1&&floating.opacity<=.3,'모바일 손바닥은 사진 칸 정가운데 반투명');
         const before=await st();await pg.tap('#pv-hand-float');
         check((await st()).hand&&(await st()).pen&&(await st()).marks===before.marks,'가운데 ✋ 터치 → 이동 모드(그은 줄 추가 없음)');
-        await pg.click('#zin');await pg.click('#zin');
+        await pg.keyboard.press('=');await pg.keyboard.press('=');
         const p=await pg.$eval('#pv-stage',e=>{const r=e.getBoundingClientRect();return{x:r.x+r.width*.25,y:r.y+r.height*.72,w:r.width,h:r.height};});
         const old=await st(),touch=await ctx.newCDPSession(pg);
         await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:p.x,y:p.y,id:1}]});
