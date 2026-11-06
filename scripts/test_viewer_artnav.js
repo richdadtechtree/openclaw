@@ -1,8 +1,8 @@
 /**
  * test_viewer_artnav.js — 신문 사진 뷰어 **폰용 '◀ 이전 / 다음 ▶ 기사' 이동 줄** 확인 (실제 Chromium) — 2026-11-06 사용자 요청
- *   ① 기사에서 사진을 열면 위쪽에 기사 이동 줄(1/3 + 제목)이 생기고, 첫 기사에선 ◀ 가 꺼짐
+ *   ① 기사에서 사진을 열면 맨 아래에 기사 이동 줄(1/3 + 제목)이 생기고, 첫 기사에선 ◀ 가 꺼짐
  *   ② 다음 ▶ : 창을 닫지 않고 다음 기사로 — 같은 장이면 장 그대로(요약 칸·표시만 바뀜), 다른 장이면 그 장으로
- *   ③ 마지막 기사에선 ▶ 가 꺼짐 · ◀ 로 되돌아옴 · 사진 칸을 가리지 않음(줄이 사진 위에 얹히지 않음)
+ *   ③ 마지막 기사에선 ▶ 가 꺼짐 · ◀ 로 되돌아옴 · 사진 칸을 가리지 않음(줄이 사진 위에 얹히지 않음·책갈피/용어 버튼과 안 겹침)
  *   ④ 닫으면 피드가 지금 보던 기사 자리로 이동 · PC(넓은 화면)에선 줄이 안 보임
  * 실행: node scripts/test_viewer_artnav.js   (개발 환경 전용)
  */
@@ -81,8 +81,10 @@ const srv = http.createServer((req, res) => {
   check(s.shown && s.mid.startsWith('1/3') && s.mid.includes('첫째 기사'), '① 기사 이동 줄 표시 · 1/3 + 제목', s.mid);
   check(s.prevOff && !s.nextOff, '   첫 기사: ◀ 꺼짐 · ▶ 켜짐');
   check(s.count.startsWith('03/'), '   03번째 장', s.count);
-  const geo = await page.evaluate(() => { const a = document.getElementById('lb-artnav').getBoundingClientRect(), b = document.getElementById('lb-stage').getBoundingClientRect(); return { aBottom: a.bottom, sTop: b.top, w: a.width, vw: innerWidth }; });
-  check(geo.aBottom <= geo.sTop + 0.5 && geo.w <= geo.vw, '   줄이 사진 칸 위에 얹히지 않고 화면 폭을 안 넘음', JSON.stringify(geo));
+  const geo = await page.evaluate(() => { const a = document.getElementById('lb-artnav').getBoundingClientRect(), b = document.getElementById('lb-stage').getBoundingClientRect(); const ra = document.getElementById('reader-actions').getBoundingClientRect(); return { aTop: a.top, aBottom: a.bottom, sBottom: b.bottom, w: a.width, vw: innerWidth, vh: innerHeight, raBottom: ra.bottom, raVisible: ra.width > 0 }; });
+  check(geo.aTop >= geo.sBottom - 0.5 && geo.w <= geo.vw, '   줄이 사진 칸 아래(맨 아래)에 있고 화면 폭을 안 넘음', JSON.stringify(geo));
+  check(geo.vh - geo.aBottom < 12, '   화면 맨 아래에 붙어 있음(엄지 닿는 곳)');
+  check(!geo.raVisible || geo.raBottom <= geo.aTop + 0.5, '   책갈피·용어 버튼이 이동 줄을 가리지 않음(한 줄 위로 올라감)');
 
   await page.tap('#lb-anext'); await page.waitForTimeout(250);
   s = await st(page);
