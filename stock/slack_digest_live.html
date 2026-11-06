@@ -280,6 +280,19 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   .lb-btn:hover{border-color:#7f9bf5;color:#fff}
   .lb-btn:disabled{opacity:.35;cursor:default}
   .lb-stage{flex:1;position:relative;overflow:hidden}
+  /* 기사 이동 줄(폰·태블릿 전용). 사진 위에 얹지 않고 상단 바 아래 한 줄을 차지한다 → 지면을 안 가리고,
+     화면 아래 오른쪽에 떠 있는 책갈피·용어 버튼과도 안 겹친다. */
+  .lb-artnav{display:none}
+  @media (max-width:899px){
+    .lb-artnav:not([hidden]){display:flex;align-items:center;gap:8px;padding:4px 10px 6px;position:relative;z-index:3;background:#0b0e14}
+    .lb-artnav button{appearance:none;flex:none;height:42px;min-width:84px;padding:0 12px;border-radius:10px;
+      border:1px solid #2b3244;background:#161a23;color:#e7eaf1;font-size:14px;font-weight:600;cursor:pointer}
+    .lb-artnav button:active{background:#2f4272;border-color:#7f9bf5}
+    .lb-artnav button:disabled{opacity:.3}
+    .lb-artnav .an-mid{flex:1;min-width:0;text-align:center;font-size:12px;color:#c7cedb;line-height:1.3;
+      display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+    .lb-artnav .an-mid b{color:#fff;font-family:var(--mono);margin-right:4px}
+  }
   /* ── 뷰어 옆 기사 요약 칸 (2026-09-30) ─────────────────────────────────
      신문 사진을 크게 연 채로 요약(WHAT·WHY·HOW·표)의 **수치를 지면과 맞춰 보려고** 오른쪽에 붙인다.
      사진 칸(.lb-stage)과 나란히 놓여 자리를 나눠 쓰므로 **지면을 가리지 않는다**
@@ -872,6 +885,12 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
       <div class="lb-dlmsg" id="lb-dlmsg" aria-live="polite"></div>
     </div>
     <button class="lb-btn" id="lb-close" title="닫기 (Esc)" aria-label="닫기">✕</button>
+  </div>
+  <!-- 2026-11-06 사용자 요청: 폰에서 다음 기사를 보려고 사진 창을 닫았다 열지 않게 → 닫지 않고 이전/다음 기사로 바로 이동(폰·태블릿만) -->
+  <div class="lb-artnav" id="lb-artnav" hidden role="group" aria-label="기사 이동">
+    <button type="button" id="lb-aprev" aria-label="이전 기사">◀ 이전</button>
+    <span class="an-mid" id="lb-amid"></span>
+    <button type="button" id="lb-anext" aria-label="다음 기사">다음 ▶</button>
   </div>
   <button class="lb-nav prev" id="lb-prev" aria-label="이전 장">‹</button>
   <div class="lb-tools" id="lb-tools" hidden>
@@ -2677,6 +2696,10 @@ function closeViewer(){
   resetPointers();                             // 닫는 순간 남은 손가락 기록도 비운다
   if(M.on) setPen(false);                      // 형광펜 모드였다면 꺼 둔다
   V.pick=null; $("lb-pick").hidden=true;
+  $("lb-artnav").hidden=true;
+  // 창 안에서 다른 기사로 옮겨 봤다면, 닫을 때 피드도 그 기사 자리로 데려다 준다
+  if(V.movedArt && V.fromArt){ try{ V.fromArt.scrollIntoView({block:"center"}); }catch(e){} }
+  V.movedArt=false;
   V.fromArt=null;
   flushMarks();
   // 같은 페이지 안에서 다시 열면 게스트 표시도 그대로 보인다.
@@ -2688,6 +2711,7 @@ function showPage(){
   finishStickerMode();
   const im=V.list[V.i]; if(!im) return;
   fillNote();                                  // 장이 바뀌면 옆 요약 칸도 그 장의 기사로(사진 크기 계산 전에 폭을 정한다)
+  updateArtNav();                              // 폰 위쪽 '◀ 이전 / 다음 ▶ 기사' 줄(사진 크기 계산 전에 높이를 정한다)
   const img=$("lb-img");
   img.style.visibility="hidden";
   img.src=im.url;                              // 뷰어는 썸네일이 아니라 원본을 쓴다
@@ -2860,8 +2884,61 @@ function go(step){
   drawMarks();                                 // 장마다 형광펜이 따로 있다
 }
 
+/* ── 기사 단위 이동 (2026-11-06 사용자 요청) ──────────────────────────────
+   폰에선 옆 요약 칸이 없어서, 다음 기사를 보려면 사진 창을 닫고 피드에서 다시 눌러야 했다.
+   → 창 위쪽 줄의 ◀ 이전 / 다음 ▶ 로 **닫지 않고** 피드 순서의 다음 기사(그 기사의 장·영역)로 바로 간다.
+   장 넘기기(쓸기·‹ ›)와는 별개: 이쪽은 '기사', 저쪽은 '장'. 지면 연결이 없는 기사는 건너뛴다. */
+function artNavList(){
+  const kept=[], seen=[];
+  const gram=a=>bigrams(artTitle(a).replace(/^\s*\d{1,3}[.)]\s*/,""));
+  const same=(A,B)=>{ let n=0; A.forEach(x=>{ if(B.has(x)) n++; }); return 2*n/((A.size+B.size)||1) >= 0.8; };
+  document.querySelectorAll("#feed .brf-art").forEach(a=>{
+    if(!a.querySelector(".brf-main") || !a.querySelector(".brf-side[data-i]")) return;
+    const g=gram(a);
+    if(g.size && seen.some(s=>same(g,s))) return;        // GPT 가 다시 보낸 같은 기사는 한 번만
+    seen.push(g); kept.push(a);
+  });
+  return kept;
+}
+function updateArtNav(){
+  const nav=$("lb-artnav"); if(!nav) return;
+  const arts=(V.pick||V.custom||!V.fromArt)?[]:artNavList();
+  let k=arts.indexOf(V.fromArt);
+  if(k<0 && V.fromArt){ const t=artTitle(V.fromArt); k=arts.findIndex(a=>artTitle(a)===t); }
+  if(k<0 || arts.length<2){ nav.hidden=true; return; }
+  nav.hidden=false;
+  $("lb-amid").innerHTML="";
+  const b=document.createElement("b"); b.textContent=(k+1)+"/"+arts.length;
+  $("lb-amid").append(b, document.createTextNode(artTitle(arts[k]).replace(/^\s*\d{1,3}[.)]\s*/,"")));
+  $("lb-aprev").disabled=k<=0;
+  $("lb-anext").disabled=k>=arts.length-1;
+}
+function goArt(step){
+  const arts=artNavList();
+  let k=arts.indexOf(V.fromArt);
+  if(k<0 && V.fromArt){ const t=artTitle(V.fromArt); k=arts.findIndex(a=>artTitle(a)===t); }
+  const n=k+step; if(k<0||n<0||n>=arts.length) return;
+  const art=arts[n], side=art.querySelector(".brf-side[data-i]"); if(!side) return;
+  const idx=+side.dataset.i;
+  const box=side.dataset.box?side.dataset.box.split(",").map(Number):null;
+  V.fromArt=art; V.movedArt=true;
+  M.sel=null;
+  if(idx===V.i && $("lb-img").naturalWidth){
+    // 같은 장이면 사진은 그대로 두고 요약 칸·확대 위치만 옮긴다(깜빡임 없음)
+    fillNote(); updateArtNav();
+    V.zoom=1; V.navPos=null; measure();
+    if(box) zoomToBox(box);
+  }else{
+    V.i=idx; V.box=box; showPage();               // showPage 안에서 기사 줄·요약 칸도 갱신
+  }
+  drawMarks();                                      // 장마다 형광펜이 따로 있다
+  showNav();
+}
+
 // ── 입력: 버튼 ──────────────────────────────────────────────────────────
 $("lb-close").onclick=closeViewer;
+$("lb-aprev").onclick=()=>goArt(-1);
+$("lb-anext").onclick=()=>goArt(1);
 $("lb-note-btn").onclick=toggleNote;
 $("lb-prev").onclick=()=>go(-1);
 $("lb-next").onclick=()=>go(1);
