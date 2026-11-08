@@ -1,41 +1,25 @@
-"""🔁 신문이 늦게 올라온 날 — 관리자가 버튼 하나로 '다시 가져오기 → 웹에 연결 → 요약 요청' 을 시키는 모듈 (2026-11-09 사용자 요청).
-
-배경: 수집기(~/newspaper/scripts/run_daily.sh)는 05:00부터 5분마다 카페를 확인하다가 07:00 이 지나면 포기한다.
-      신문 글이 7시 넘어 올라온 날은 사진이 서버에 없고, ChatGPT 아침 요약(오전 7시)도 사진 없이 나간다.
-      그동안은 서버에 들어가 명령을 손으로 쳐야 했다 → 웹의 관리자 버튼으로 같은 일을 한다.
-
-버튼이 하는 일 (순서대로, 앞이 실패하면 뒤는 하지 않는다):
-  ① 가져오기  수집기를 **딱 한 번** 돌린다(`app/main.py`, run_daily.sh 가 한 번 시도하는 것과 같음. 시각과 상관없이 시도).
-  ② 연결      scripts/news_sync.py --force 로 웹이 읽는 캐시에 연결(이 안에서 지면 글자 읽기도 시작됨).
-  ③ 요약 요청 Slack #gpt 에 ChatGPT 앱을 멘션한 부탁 글을 올린다.
-              ⚠️ 요약은 서버가 아니라 사용자의 ChatGPT 가 만든다 → 서버는 '부탁 글'만 올릴 수 있다.
-              .env 의 NEWS_REDO_GPT_MENTION (예: <@U0123ABCD>) 이 없으면 이 단계는 건너뛰고 화면에 알려 준다.
-              (ChatGPT 앱이 봇이 올린 멘션에 반응하는지는 Slack 설정에 달려 있어 서버에선 확인할 수 없음.)
-
-관리자만(로그인 관리자 또는 서버 IP 관리자). 오늘(KST) 신문만 — 수집기는 '오늘' 글만 찾는다.
-표준 라이브러리 + fastapi 만 쓴다(news_marks.py 와 같은 설치 방식).
-"""
+"""Administrator-only newspaper download and real gateway summary jobs."""
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
 import threading
 import time
-import urllib.request
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
 import gate
+import news_files
+import news_summary
+import fcntl
 
 KST = timezone(timedelta(hours=9))
 HOME = os.path.expanduser("~")
-MENTION_RE = re.compile(r"^<@[UW][A-Z0-9]{2,20}>$")           # 슬랙 멘션 모양만 허용(그 밖의 글은 그대로 올리지 않는다)
 COOLDOWN = 20                                                   # 끝난 뒤 이 초 안에 다시 누르면 무시(연타 방지)
 
-STEPS = [("collect", "카페에서 다시 가져오기"), ("sync", "웹에 연결"), ("summary", "요약 요청")]
+STEPS = [("collect", "신문 다운로드"), ("sync", "웹에 연결"), ("summary", "기사 요약")]
 
 _lock = threading.Lock()
 _state = {"running": False, "ok": None, "step": "", "message": "", "date": "", "started": 0.0, "finished": 0.0,
@@ -67,15 +51,11 @@ def collector_cmd():
     return cmd, d
 
 
-def mention():
-    m = (os.getenv("NEWS_REDO_GPT_MENTION") or "").strip()
-    return m if MENTION_RE.match(m) else ""
-
-
 # ── 단계 ─────────────────────────────────────────────────────────────────────
 def _set(**kw):
     with _lock:
         _state.update(kw)
+    persist()
 
 
 def _step(key, status, note=""):
@@ -83,6 +63,13 @@ def _step(key, status, note=""):
         _state["steps"][key] = {"status": status, "note": note}
         if status == "run":
             _state["step"] = key
+    persist()
+
+
+def persist():
+    with _lock:
+        state = dict(_state, steps={k: dict(v) for k, v in _state["steps"].items()})
+    news_summary.atomic_json(os.path.join(news_files.cache_root(), ".manual-job.json"), state)
 
 
 def _tail(text, n=6):
@@ -121,67 +108,66 @@ def run_sync(date, timeout=600):
     return False, "웹에 연결하지 못했어요(rc=%s)." % p.returncode
 
 
-def post_summary_request(date):
-    """Slack #gpt 에 ChatGPT 앱을 멘션해 요약을 부탁한다. (ok, note) — 설정이 없으면 (None, 안내)."""
-    m = mention()
-    token = os.getenv("SLACK_BOT_TOKEN")
-    channel = os.getenv("SLACK_GPT_CHANNEL", "C0BTHMT2M7X")
-    if not m:
-        return None, "NEWS_REDO_GPT_MENTION 이 없어 요약 요청은 건너뛰었어요. ChatGPT 에서 직접 요약을 돌려 주세요."
-    if not token or not channel:
-        return None, "슬랙 설정(SLACK_BOT_TOKEN)이 없어 요약 요청은 건너뛰었어요."
-    text = ("%s 오늘(%s) 신문이 늦게 올라와 사진·PDF 를 다시 준비했어요. "
-            "프로젝트 지침(chatgpt-newspaper-instructions.md)대로 오늘 신문 요약을 다시 만들어 이 채널에 보내 주세요."
-            % (m, date))
-    req = urllib.request.Request(
-        "https://slack.com/api/chat.postMessage",
-        data=json.dumps({"channel": channel, "text": text}).encode("utf-8"),
-        headers={"Content-Type": "application/json; charset=utf-8", "Authorization": "Bearer " + token})
+def run_all(date, want_summary, download=True, lease=None):
     try:
-        with urllib.request.urlopen(req, timeout=20) as r:
-            res = json.loads(r.read().decode("utf-8"))
-    except Exception as e:
-        return False, "슬랙에 올리지 못했어요: %r" % (e,)
-    if not res.get("ok"):
-        return False, "슬랙이 거절했어요: %s" % res.get("error", "알 수 없음")
-    return True, "#gpt 채널에 요약 부탁 글을 올렸어요."
-
-
-def run_all(date, want_summary):
-    try:
-        _step("collect", "run")
-        ok, note = run_collect()
-        _step("collect", "ok" if ok else "fail", note)
-        if not ok:
-            return _set(ok=False, message=note)
-        _step("sync", "run")
-        ok, note = run_sync(date)
-        _step("sync", "ok" if ok else "fail", note)
-        if not ok:
-            return _set(ok=False, message=note)
+        if download:
+            _step("collect", "run")
+            ok, note = run_collect()
+            _step("collect", "ok" if ok else "fail", note)
+            if not ok:
+                return _set(ok=False, message=note)
+        else:
+            _step("collect", "skip", "이미 받은 파일로 요약해요.")
+        if download or not news_files.load_index(date):
+            _step("sync", "run")
+            ok, note = run_sync(date)
+            _step("sync", "ok" if ok else "fail", note)
+            if not ok:
+                return _set(ok=False, message=note)
+        else:
+            _step("sync", "ok", "준비된 지면을 사용해요.")
         if not want_summary:
-            _step("summary", "skip", "요약 요청은 하지 않았어요.")
+            _step("summary", "skip", "다운로드만 완료했어요.")
             return _set(ok=True, message="신문을 다시 받아 웹에 연결했어요.")
         _step("summary", "run")
-        ok, note = post_summary_request(date)
-        _step("summary", "ok" if ok else ("skip" if ok is None else "fail"), note)
-        if ok is False:
-            return _set(ok=False, message="신문은 다시 받았지만 " + note)
-        _set(ok=True, message="신문을 다시 받았어요. " + note)
+        note = news_summary.run(date, lambda note: _step("summary", "run", note))
+        _step("summary", "ok", note)
+        _set(ok=True, message=note)
     except Exception as e:                                       # 어떤 오류가 나도 '실행 중' 표시가 남지 않게
-        _set(ok=False, message="예상 못 한 오류: %r" % (e,))
+        current = snapshot().get("step")
+        note = str(e) if isinstance(e, RuntimeError) else "처리 중 오류가 발생했어요. 다시 시도해 주세요."
+        if current:
+            _step(current, "fail", note)
+        _set(ok=False, message=note)
     finally:
-        _set(running=False, finished=time.time())
+        try:
+            _set(running=False, finished=time.time())
+        finally:
+            if lease is not None:
+                lease.close()
 
 
-def start(date, want_summary):
+def start(date, want_summary, download=True):
     """시작하면 True, 이미 도는 중이거나 방금 끝났으면 False."""
     with _lock:
         if _state["running"] or (time.time() - _state["finished"] < COOLDOWN):
             return False
+        os.makedirs(news_files.cache_root(), exist_ok=True)
+        lease = open(os.path.join(news_files.cache_root(), ".manual-summary.lock"), "a")
+        try:
+            fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            lease.close()
+            return False
         _state.update(running=True, ok=None, step="", message="", date=date, started=time.time(), finished=0.0,
                       steps={k: {"status": "wait", "note": ""} for k, _ in STEPS}, tail="")
-    threading.Thread(target=run_all, args=(date, want_summary), daemon=True).start()
+    try:
+        persist()
+        threading.Thread(target=run_all, args=(date, want_summary, download, lease), daemon=True).start()
+    except Exception:
+        lease.close()
+        _set(running=False, ok=False, finished=time.time(), message="작업을 시작하지 못했어요.")
+        raise
     return True
 
 
@@ -190,7 +176,7 @@ def snapshot():
         s = dict(_state)
         s["steps"] = {k: dict(v) for k, v in _state["steps"].items()}
     s["labels"] = dict(STEPS)
-    s["can_summary"] = bool(mention() and os.getenv("SLACK_BOT_TOKEN"))
+    s["can_summary"] = news_summary.configured()
     return s
 
 
@@ -208,6 +194,36 @@ def reply(data, code=200):
 
 
 def install(app):
+    @app.on_event("startup")
+    def resume_status_and_recover_today():
+        try:
+            with open(os.path.join(news_files.cache_root(), ".manual-job.json"), encoding="utf-8") as f:
+                saved = json.load(f)
+            if saved.get("running"):
+                saved.update(running=False, ok=False, finished=time.time(),
+                             message="서버가 재시작되어 요약이 중단됐어요. '요약만 실행'을 누르면 완료한 지면부터 이어갑니다.")
+            _set(**saved)
+        except (OSError, ValueError, TypeError):
+            pass
+        # One explicitly requested recovery, not a new recurring schedule.
+        # Expires at KST midnight; a durable claim prevents deploy/restart loops.
+        date = "2026-11-09"
+        if today_kst() != date or news_summary.messages(date):
+            return
+        if not news_summary.configured():
+            _set(date=date, running=False, ok=False, finished=time.time(),
+                 message="오늘 요약을 시작하지 못했어요. 서버의 요약 연결 설정(GATEWAY_TOKEN)을 확인해 주세요.")
+            return
+        marker = os.path.join(news_files.cache_root(), ".recovery-%s.started" % date)
+        os.makedirs(news_files.cache_root(), exist_ok=True)
+        try:
+            with open(marker, "x", encoding="utf-8") as f:
+                f.write("User requested today's summary once; see .manual-job.json for outcome.\n")
+        except FileExistsError:
+            return
+        if not start(date, True, download=False):
+            os.unlink(marker)
+
     @app.get("/api/news/redo")
     def get_redo(request: Request):
         """진행 상태. 관리자가 아니면 403 → 화면은 버튼 자체를 안 보인다."""
@@ -225,9 +241,14 @@ def install(app):
             b = await request.json()
         except Exception:
             b = {}
-        want_summary = bool(b.get("summary", True)) if isinstance(b, dict) else True
+        if not isinstance(b, dict):
+            return reply({"ok": False, "message": "요청 형식이 올바르지 않아요."}, 400)
+        mode = b.get("mode", "all" if b.get("summary", True) else "download")
+        if mode not in ("all", "download", "summary"):
+            return reply({"ok": False, "message": "실행 종류가 올바르지 않아요."}, 400)
+        want_summary = mode != "download"
         date = today_kst()                                        # 수집기는 '오늘' 신문만 찾는다
         if isinstance(b, dict) and b.get("date") and b.get("date") != date:
             return reply({"ok": False, "message": "오늘 신문만 다시 가져올 수 있어요."}, 400)
-        started = start(date, want_summary)
+        started = start(date, want_summary, download=mode != "summary")
         return reply({"ok": True, "started": started, "state": snapshot()})

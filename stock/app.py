@@ -48,7 +48,7 @@ except Exception as _marks_err:
     print("[news-marks] 로드 실패: %r" % (_marks_err,))
 
 
-# 관리자 버튼: 신문이 늦게 올라온 날 '다시 가져오기 → 웹에 연결 → 요약 요청'. 설치 실패해도 나머지는 그대로.
+# 관리자 버튼: 다운로드 / 받은 파일 요약 / 다운로드·요약.
 try:
     from news_redo import install as install_news_redo
     install_news_redo(app)
@@ -308,6 +308,13 @@ def _fetch_slack_history_api(date_str):
 def _read_slack_log(date):
     path = os.path.join(_SLACK_LOG_DIR, "%s.jsonl" % date)
     local_msgs = []
+    # Manual jobs publish locally only after every page has completed. No Slack
+    # bot mention or third-party message is needed to make the newspaper visible.
+    try:
+        from news_summary import messages as newspaper_summary_messages
+        local_msgs.extend(newspaper_summary_messages(date))
+    except Exception as e:
+        print("[news-summary] read failed: %s" % type(e).__name__)
 
     gpt_ch = os.getenv("SLACK_GPT_CHANNEL", "C0BTHMT2M7X")
 
