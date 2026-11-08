@@ -101,7 +101,7 @@ const srv = http.createServer((req, res) => {
   page.once('dialog', d => d.accept());
   const before = todayHits;
   await page.click('#news-redo');
-  await page.waitForFunction(() => document.getElementById('news-redo').disabled);
+  await page.waitForFunction(() => document.getElementById('news-redo').disabled && document.getElementById('news-redo').textContent.includes('진행 중'));
   check(posts === 1 && lastMode === 'all', '다운로드·요약 모드 요청 1번');
   check(await page.$eval('#news-summary', b => b.disabled) && await page.$eval('#news-download', b => b.disabled), '실행 중 모든 버튼 비활성화');
   check((await page.$eval('#news-redo', b => b.textContent)).includes('진행 중'), '진행 중에는 버튼이 꺼지고 "진행 중" 표시');
@@ -120,12 +120,12 @@ const srv = http.createServer((req, res) => {
   MODE='idle';
   ({ ctx, page } = await newPage());
   page.once('dialog', d => d.accept());
-  await page.click('#news-download');
+  await Promise.all([page.waitForResponse(r => r.url().endsWith('/api/news/redo') && r.request().method() === 'POST'), page.click('#news-download')]);
   await page.waitForFunction(() => document.getElementById('news-download').disabled);
   check(lastMode === 'download', '다운로드만 모드 전송');
   await page.waitForFunction(() => !document.getElementById('news-download').disabled, null, {timeout:15000});
   page.once('dialog', d => d.accept());
-  await page.click('#news-summary');
+  await Promise.all([page.waitForResponse(r => r.url().endsWith('/api/news/redo') && r.request().method() === 'POST'), page.click('#news-summary')]);
   await page.waitForFunction(() => document.getElementById('news-summary').disabled);
   check(lastMode === 'summary', '이미 받은 파일 요약 모드 전송');
   await page.waitForFunction(() => !document.getElementById('news-summary').disabled, null, {timeout:15000});

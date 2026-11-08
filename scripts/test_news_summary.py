@@ -94,6 +94,16 @@ class SummaryTests(unittest.TestCase):
                 summary.run(DATE)
         self.assertEqual(summary.messages(DATE), [])
 
+    def test_incomplete_download_is_not_treated_as_a_complete_newspaper(self):
+        ix = json.loads((self.day / 'index.json').read_text())
+        ix['expected_count'] = 30
+        (self.day / 'index.json').write_text(json.dumps(ix))
+        with mock.patch.object(summary, 'ask_page') as ask:
+            with self.assertRaisesRegex(RuntimeError, '일부가 아직'):
+                summary.run(DATE)
+            ask.assert_not_called()
+        self.assertEqual(summary.messages(DATE), [])
+
     def test_vision_request_contains_the_actual_image_and_rejects_truncation(self):
         class R:
             def __enter__(self): return self

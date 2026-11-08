@@ -129,6 +129,10 @@ def page_images(date):
     ix = news_files.load_index(date) or {}
     ims = ix.get("images") or []
     if ims:
+        expected = max(int(ix.get("expected_count") or 0), int((ix.get("pdf") or {}).get("pages") or 0))
+        failed_images = [n for n in ix.get("failed", []) if os.path.splitext(n)[1].lower() in (".jpg", ".jpeg", ".png", ".gif", ".webp")]
+        if len(ims) < expected or failed_images:
+            raise RuntimeError("신문 지면 일부가 아직 없어요. 다운로드를 다시 실행한 뒤 요약해 주세요.")
         for page, entry in enumerate(ims, 1):
             path = news_files.resolve(date, entry["name"])
             if not path:
