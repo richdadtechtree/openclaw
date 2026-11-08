@@ -48,6 +48,14 @@ except Exception as _marks_err:
     print("[news-marks] 로드 실패: %r" % (_marks_err,))
 
 
+# 관리자 버튼: 신문이 늦게 올라온 날 '다시 가져오기 → 웹에 연결 → 요약 요청'. 설치 실패해도 나머지는 그대로.
+try:
+    from news_redo import install as install_news_redo
+    install_news_redo(app)
+except Exception as _redo_err:
+    print("[news-redo] 로드 실패: %r" % (_redo_err,))
+
+
 # 시장 관심종목은 별도 저장소·웹 팝업만 사용한다. 기존 발송용 감시목록과 분리.
 try:
     from market_watch import install as install_market_watch
