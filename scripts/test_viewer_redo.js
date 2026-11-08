@@ -9,7 +9,7 @@
 const { chromium } = require('playwright');
 const http = require('http'), fs = require('fs'), path = require('path'), zlib = require('zlib');
 const HTML = path.join(__dirname, '..', 'stock', 'slack_digest_live.html');
-const CHROME = process.env.PW_CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const CHROME = process.env.PW_CHROME || chromium.executablePath();
 
 function makePng(w, h) {
   const crc32 = (buf) => { let c, crc = 0xffffffff;
@@ -29,13 +29,13 @@ function makePng(w, h) {
 }
 const PNG = makePng(800, 1200);
 const BRIEF = ['*[신문요약 1/1] 신문 요약*', '1. 기사 제목\n• WHAT: 내용임.\n• WHY: 이유임.\n• HOW: 방법임.\n• 사진: 03'].join('\n');
-let ADMIN = true, MODE = 'idle', todayHits = 0, posts = 0, polls = 0, FINISHED_DATE = null;
+let ADMIN = true, MODE = 'idle', todayHits = 0, posts = 0, polls = 0, FINISHED_DATE = null, lastMode = null;
 const STEPS = (a, b, c) => ({ collect: { status: a, note: '' }, sync: { status: b, note: '' }, summary: { status: c, note: '' } });
 const stateOf = () => {
-  const base = { labels: { collect: '카페에서 다시 가져오기', sync: '웹에 연결', summary: '요약 요청' }, can_summary: true, tail: '', date: FINISHED_DATE || '' };
+  const base = { labels: { collect: '카페에서 다시 가져오기', sync: '웹에 연결', summary: '기사 요약' }, can_summary: true, tail: '', date: FINISHED_DATE || '' };
   if (MODE === 'idle') return Object.assign(base, { running: false, ok: null, finished: 0, message: '', steps: {} });
   if (MODE === 'running') { polls++; return Object.assign(base, { running: true, ok: null, finished: 0, message: '', steps: polls < 3 ? STEPS('run', 'wait', 'wait') : STEPS('ok', 'run', 'wait') }); }
-  if (MODE === 'done') return Object.assign(base, { running: false, ok: true, finished: 1, message: '신문을 다시 받았어요. #gpt 채널에 요약 부탁 글을 올렸어요.', steps: STEPS('ok', 'ok', 'ok') });
+  if (MODE === 'done') return Object.assign(base, { running: false, ok: true, finished: 1, message: '30쪽 · 90개 기사 요약을 완료했어요.', steps: STEPS('ok', 'ok', 'ok') });
   if (MODE === 'fail') return Object.assign(base, { running: false, ok: false, finished: 1, message: '카페에서 오늘 신문 글을 아직 못 찾았거나 받기에 실패했어요.', tail: '글을 찾지 못했습니다 (로그 끝)', steps: STEPS('fail', 'wait', 'wait') });
 };
 let D0 = '2026-11-09';
@@ -53,7 +53,7 @@ const srv = http.createServer((req, res) => {
   }
   if (u === '/api/news/redo' && req.method === 'GET') return ADMIN ? json({ ok: true, state: stateOf() }) : json({ ok: false }, 403);
   if (u === '/api/news/redo' && req.method === 'POST') {
-    let b = ''; req.on('data', c => b += c); req.on('end', () => { posts++; polls = 0; MODE = 'running'; setTimeout(() => { MODE = process.env.__END || 'done'; }, 1500); json({ ok: true, started: true, state: stateOf() }); });
+    let b = ''; req.on('data', c => b += c); req.on('end', () => { posts++; lastMode = JSON.parse(b).mode; polls = 0; MODE = 'running'; setTimeout(() => { MODE = process.env.__END || 'done'; }, 1500); json({ ok: true, started: true, state: stateOf() }); });
     return;
   }
   if (u === '/api/news/terms') return json({ ok: false }, 403);
@@ -82,7 +82,7 @@ const srv = http.createServer((req, res) => {
   console.log('\n[① 관리자가 아니면]');
   ADMIN = false; MODE = 'idle';
   let { ctx, page } = await newPage();
-  check(await page.$eval('#news-redo', b => b.hidden), '버튼이 안 보임(서버 403)');
+  for(const id of ['news-redo','news-download','news-summary']) check(await page.$eval('#'+id, b => b.hidden), id+' 일반 회원에게 숨김');
   check(await page.$eval('#redo-status', b => b.hidden), '상태 칸도 안 보임');
   await ctx.close();
 
@@ -95,27 +95,42 @@ const srv = http.createServer((req, res) => {
   page.once('dialog', d => { msg = d.message(); d.dismiss(); });
   await page.click('#news-redo'); await page.waitForTimeout(400);
   check(posts === 0, '확인창에서 취소하면 서버에 아무것도 안 보냄', msg.split('\n')[0]);
-  check(/요약 부탁 글/.test(msg), '확인창이 하는 일(요약 부탁 글)을 알려 줌');
+  check(/전체 지면 요약/.test(msg), '확인창이 하는 일(전체 지면 요약)을 알려 줌');
 
   console.log('\n[③ 진행 → 완료]');
   page.once('dialog', d => d.accept());
   const before = todayHits;
   await page.click('#news-redo');
   await page.waitForFunction(() => document.getElementById('news-redo').disabled);
-  check(posts === 1, '시작 요청 1번');
+  check(posts === 1 && lastMode === 'all', '다운로드·요약 모드 요청 1번');
+  check(await page.$eval('#news-summary', b => b.disabled) && await page.$eval('#news-download', b => b.disabled), '실행 중 모든 버튼 비활성화');
   check((await page.$eval('#news-redo', b => b.textContent)).includes('진행 중'), '진행 중에는 버튼이 꺼지고 "진행 중" 표시');
   await page.waitForFunction(() => /⏳|✅/.test(document.getElementById('redo-status').textContent));
   check(!(await page.$eval('#redo-status', b => b.hidden)), '단계 상태 칸이 보임');
-  await page.waitForFunction(() => /요약 부탁 글/.test(document.getElementById('redo-status').textContent), null, { timeout: 15000 });
+  await page.waitForFunction(() => /90개 기사/.test(document.getElementById('redo-status').textContent), null, { timeout: 15000 });
   const txt = await page.$eval('#redo-status', b => b.textContent);
-  check(/✅ 카페에서 다시 가져오기/.test(txt) && /✅ 웹에 연결/.test(txt) && /✅ 요약 요청/.test(txt), '세 단계가 모두 ✅', txt.replace(/\s+/g, ' ').slice(0, 90));
+  check(/✅ 카페에서 다시 가져오기/.test(txt) && /✅ 웹에 연결/.test(txt) && /✅ 기사 요약/.test(txt), '세 단계가 모두 ✅', txt.replace(/\s+/g, ' ').slice(0, 90));
   await page.waitForTimeout(600);
   check(!(await page.$eval('#news-redo', b => b.disabled)), '끝나면 버튼이 다시 켜짐');
   check(todayHits > before + 0, '끝나면 사진 목록을 다시 불러옴', `${before}→${todayHits}`);
   check((await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)), '가로로 넘치지 않음(PC)');
   await ctx.close();
 
-  console.log('\n[④ 실패·옛 결과·폰]');
+  console.log('\n[④ 다운로드만 / 요약만]');
+  MODE='idle';
+  ({ ctx, page } = await newPage());
+  page.once('dialog', d => d.accept());
+  await page.click('#news-download');
+  await page.waitForFunction(() => document.getElementById('news-download').disabled);
+  check(lastMode === 'download', '다운로드만 모드 전송');
+  await page.waitForFunction(() => !document.getElementById('news-download').disabled, null, {timeout:15000});
+  page.once('dialog', d => d.accept());
+  await page.click('#news-summary');
+  await page.waitForFunction(() => document.getElementById('news-summary').disabled);
+  check(lastMode === 'summary', '이미 받은 파일 요약 모드 전송');
+  await page.waitForFunction(() => !document.getElementById('news-summary').disabled, null, {timeout:15000});
+  await ctx.close();
+  console.log('\n[⑤ 실패·옛 결과·폰]');
   process.env.__END = 'fail'; posts = 0; MODE = 'idle'; FINISHED_DATE = today();
   ({ ctx, page } = await newPage({ viewport: { width: 390, height: 800 }, hasTouch: true, isMobile: true }));
   page.once('dialog', d => d.accept());
@@ -126,6 +141,7 @@ const srv = http.createServer((req, res) => {
   check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), '폰 390px 에서 가로로 안 넘침');
   const r = await page.$eval('#news-redo', b => { const q = b.getBoundingClientRect(); return { l: q.left, r: q.right, vw: innerWidth }; });
   check(r.l >= 0 && r.r <= r.vw, '폰에서 버튼이 화면 안', JSON.stringify(r));
+  for(const id of ['news-download','news-summary']) check(await page.$eval('#'+id, b => {const r=b.getBoundingClientRect(); return r.left>=0 && r.right<=innerWidth;}), id+' 폰 화면 안');
   await ctx.close();
 
   MODE = 'fail'; FINISHED_DATE = '2000-01-01';

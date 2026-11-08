@@ -2,6 +2,11 @@ name: Reader and market checks
 on:
   pull_request:
     paths:
+      - 'stock/news_summary.py'
+      - 'stock/news_redo.py'
+      - 'scripts/test_news_summary.py'
+      - 'scripts/test_news_redo.py'
+      - 'scripts/test_viewer_redo.js'
       - 'stock/news_bookmark.py'
       - 'stock/news_marks.py'
       - 'stock/slack_digest_live.html'
@@ -28,6 +33,11 @@ on:
   push:
     branches: [main]
     paths:
+      - 'stock/news_summary.py'
+      - 'stock/news_redo.py'
+      - 'scripts/test_news_summary.py'
+      - 'scripts/test_news_redo.py'
+      - 'scripts/test_viewer_redo.js'
       - 'stock/news_bookmark.py'
       - 'stock/market_watch.py'
       - 'scripts/test_market_watch*'
@@ -51,9 +61,12 @@ jobs:
       - run: python -m unittest discover -s scripts -p test_market_watch.py -v
       - run: python -m unittest discover -s scripts -p test_news_bookmark.py -v
       - run: python -m unittest discover -s scripts -p test_news_marks.py -v
+      - run: python scripts/test_news_redo.py
+      - run: python scripts/test_news_summary.py
       - run: python scripts/test_challenge.py
       - run: npm install --no-save --package-lock=false playwright
       - run: npx playwright install --with-deps chromium
+      - run: node scripts/test_viewer_redo.js
       - run: node scripts/test_challenge_custom.js
       - run: node scripts/test_challenge_view.js
       - run: node scripts/test_custom_articles.js
