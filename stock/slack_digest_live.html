@@ -220,6 +220,16 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   .news-sub:empty{display:none}
   .news-refresh{order:2;margin-left:auto;padding:4px 10px;font-size:12px;line-height:1.5}
   .news-refresh[disabled]{opacity:.5;cursor:default}
+  /* 🔁 관리자 전용: 신문이 늦게 올라온 날 다시 가져오기+요약 요청 (2026-11-09). 관리자가 아니면 hidden 그대로. */
+  .news-redo{order:2;padding:4px 10px;font-size:12px;line-height:1.5}
+  .news-redo[hidden],.redo-status[hidden]{display:none}
+  .news-redo[disabled]{opacity:.55;cursor:default}
+  .redo-status{margin:0 0 10px;padding:9px 12px;border-radius:10px;background:var(--surface-2,rgba(127,127,127,.08));
+               border:1px solid var(--line);font-size:12.5px;line-height:1.7;color:var(--ink)}
+  .redo-status .st{display:block}
+  .redo-status .st.fail{color:#d33}
+  .redo-status .msg{display:block;margin-top:4px;font-weight:650}
+  .redo-status pre{margin:6px 0 0;white-space:pre-wrap;font:11px/1.5 var(--mono);color:var(--faint)}
   .news-actions{display:flex;gap:8px;flex-wrap:wrap}
   .news-actions:empty{display:none}
   .news-btn{display:inline-flex;align-items:center;gap:8px;font-family:var(--sans);font-size:13.5px;font-weight:650;
@@ -817,7 +827,9 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
       <span class="news-kicker"><span class="ico">📰</span><span id="news-title">오늘 신문 원본</span></span>
       <span class="news-sub" id="news-sub"></span>
       <button class="btn news-refresh" id="news-refresh" title="구글 드라이브에서 다시 받아오기">↻ 받아오기</button>
+      <button class="btn news-redo" id="news-redo" hidden title="관리자 전용 — 신문이 늦게 올라온 날: 카페에서 다시 받아 웹에 연결하고 ChatGPT 에 요약을 부탁합니다">🔁 다시 가져와 요약</button>
     </div>
+    <div class="redo-status" id="redo-status" hidden role="status" aria-live="polite"></div>
     <div class="news-actions" id="news-actions"></div>
     <button class="news-toggle" id="news-toggle" aria-expanded="false" hidden></button>
     <div class="news-grid" id="news-grid" hidden></div>
@@ -3973,6 +3985,60 @@ document.getElementById("news-refresh").addEventListener("click",async(e)=>{
   for(const wait of [4000,6000,10000]){ await new Promise(r=>setTimeout(r,wait)); await loadNews(); }
   newsState.busy=false; b.disabled=false; b.textContent="↻ 받아오기";
 });
+
+/* ── 🔁 다시 가져와 요약 (관리자 전용, 2026-11-09 사용자 요청) ───────────────────────────
+   수집기는 07:00 에 포기하므로 신문이 늦게 올라온 날은 사진·요약이 비어 있다. 이 버튼이 서버에게
+   ①카페에서 오늘 신문 다시 받기 ②웹에 연결 ③Slack #gpt 에 ChatGPT 요약 부탁을 차례로 시킨다.
+   관리자가 아니면 서버가 403 을 주므로 버튼이 아예 안 보인다. 진행은 3초마다 물어 화면에 보여 준다. */
+const REDO={on:false,t:null,seen:false};
+function redoRender(s){
+  const box=$("redo-status"), btn=$("news-redo");
+  btn.disabled=!!s.running;
+  btn.textContent=s.running?"🔁 진행 중…":"🔁 다시 가져와 요약";
+  const has=s.running || (s.finished>0 && s.date===todayKST());   // 어제 결과가 오늘 화면에 남지 않게
+  box.hidden=!has;
+  if(!has) return;
+  box.textContent="";
+  const icon={wait:"○",run:"⏳",ok:"✅",fail:"❌",skip:"➖"};
+  for(const k of ["collect","sync","summary"]){
+    const st=(s.steps||{})[k]||{status:"wait",note:""};
+    const row=document.createElement("span");
+    row.className="st"+(st.status==="fail"?" fail":"");
+    row.textContent=(icon[st.status]||"○")+" "+((s.labels||{})[k]||k)+(st.note?" — "+st.note:"");
+    box.append(row);
+  }
+  if(!s.running && s.message){
+    const m=document.createElement("span"); m.className="msg"; m.textContent=s.message; box.append(m);
+  }
+  if(!s.running && s.ok===false && s.tail){
+    const pre=document.createElement("pre"); pre.textContent=s.tail; box.append(pre);
+  }
+}
+async function redoPoll(){
+  clearTimeout(REDO.t);
+  let j=null;
+  try{ const r=await fetch("/api/news/redo",{cache:"no-store"}); if(!r.ok) return; j=await r.json(); }catch(_){ return; }
+  if(!j||!j.ok) return;
+  $("news-redo").hidden=false; REDO.on=true;
+  const s=j.state||{}; redoRender(s);
+  if(s.running){ REDO.t=setTimeout(redoPoll,3000); REDO.seen=true; }
+  else if(REDO.seen){ REDO.seen=false; if(s.ok){ lastNewsSnapshot=null; await loadNews(); load(); } }   // 끝나면 사진·요약을 바로 새로 그린다
+}
+$("news-redo").addEventListener("click",async()=>{
+  if(!REDO.on || $("news-redo").disabled) return;
+  const can=(await (async()=>{ try{ return (await (await fetch("/api/news/redo",{cache:"no-store"})).json()).state.can_summary; }catch(_){ return false; } })());
+  const ok=confirm("오늘 신문을 카페에서 다시 가져옵니다.\n\n① 카페에서 다시 받기 (1~3분)\n② 웹에 연결\n③ "+
+    (can?"Slack #gpt 에 ChatGPT 요약 부탁 글 올리기":"요약 요청은 설정이 없어 건너뜁니다(ChatGPT 에서 직접 요약)")+"\n\n진행할까요?");
+  if(!ok) return;
+  try{
+    const r=await fetch("/api/news/redo",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({summary:true})});
+    const j=await r.json();
+    if(!r.ok||!j.ok){ alert(j.message||"시작하지 못했어요."); return; }
+    redoRender(j.state||{});
+  }catch(_){ alert("서버에 연결하지 못했어요."); return; }
+  REDO.seen=true; redoPoll();
+});
+redoPoll();                                   // 관리자면 버튼을 보이고, 서버가 이미 일하는 중이면 진행 상황을 이어서 보여 준다
 
 document.getElementById("edtog").addEventListener("click",e=>{
   const b=e.target.closest("button[data-ed]"); if(!b || b.dataset.ed===state.edition) return;
