@@ -2,6 +2,7 @@ name: Reader and market checks
 on:
   pull_request:
     paths:
+      - 'stock/news_published.py'
       - 'stock/news_summary.py'
       - 'stock/news_redo.py'
       - 'scripts/test_news_summary.py'
@@ -33,6 +34,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'stock/news_published.py'
       - 'stock/news_summary.py'
       - 'stock/news_redo.py'
       - 'scripts/test_news_summary.py'

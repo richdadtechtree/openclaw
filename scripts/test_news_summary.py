@@ -20,6 +20,9 @@ ANSWER = {'complete': True, 'printed_date': DATE, 'articles': [
 
 class SummaryTests(unittest.TestCase):
     def setUp(self):
+        fallback = mock.patch.object(summary, 'published_messages', return_value=[])
+        fallback.start()
+        self.addCleanup(fallback.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         p = mock.patch.dict(os.environ, NEWS_CACHE_DIR=self.tmp.name, OPENCLAW_ENV='/nonexistent', GATEWAY_TOKEN='test-token')
@@ -41,9 +44,23 @@ class SummaryTests(unittest.TestCase):
         msgs = summary.messages(DATE)
         self.assertEqual(len(msgs), 2)
         self.assertIn('• WHAT: [확정] 매출 30% 증가', msgs[0]['text'])
-        self.assertIn('• HOW:\n- [조사 데이터] 수출 20조원\n- [계획] 국내 매출 10조원', msgs[0]['text'])
+        self.assertIn('• HOW:\n• [조사 데이터] 수출 20조원\n• [계획] 국내 매출 10조원', msgs[0]['text'])
         self.assertIn('• 사진: 02', msgs[1]['text'])
         self.assertIn('"bbox": [0.1, 0.2, 0.5, 0.4]', msgs[1]['text'])
+
+    def test_unreadable_page_retries_once_and_keeps_progress(self):
+        notes = []
+        with mock.patch.object(summary, 'ask_page', side_effect=[{'complete': False}, copy.deepcopy(ANSWER), copy.deepcopy(ANSWER)]) as ask:
+            summary.run(DATE, notes.append)
+        self.assertEqual(ask.call_count, 3)
+        self.assertTrue(ask.call_args_list[1].kwargs['detail_retry'])
+        self.assertTrue(any('확대' in note for note in notes))
+        self.assertEqual(len(summary.messages(DATE)), 2)
+
+    def test_decorative_page_is_not_a_reading_failure(self):
+        with mock.patch.object(summary, 'ask_page', side_effect=[copy.deepcopy(ANSWER), {'complete': True, 'articles': [], 'empty_reason': '기사 없음'}]):
+            summary.run(DATE)
+        self.assertEqual(len(summary.messages(DATE)), 1)
 
     def test_missing_or_unknown_classification_is_not_published(self):
         for text in ['계획을 확정으로 추측하지 않음', '[사실일듯] 내용', '[확정] ']:
@@ -111,6 +128,18 @@ class SummaryTests(unittest.TestCase):
             ask.assert_not_called()
         self.assertEqual(summary.messages(DATE), [])
 
+    def test_retry_request_supplies_overlapping_views_with_original_coordinates(self):
+        image = next(summary.page_images(DATE))[2]
+        class R:
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def read(self, *args): return json.dumps({'choices': [{'message': {'content': json.dumps(ANSWER)}}]}).encode()
+        with mock.patch.object(summary.urllib.request, 'urlopen', return_value=R()) as call:
+            summary.ask_page(image, DATE, 4, detail_retry=True)
+        content = json.loads(call.call_args.args[0].data)['messages'][1]['content']
+        self.assertEqual(len([x for x in content if x['type']=='image_url']), 5)
+        self.assertIn('전체 지면 기준', content[0]['text'])
+
     def test_vision_request_contains_the_actual_image_and_rejects_truncation(self):
         class R:
             def __enter__(self): return self
@@ -123,6 +152,26 @@ class SummaryTests(unittest.TestCase):
         content = payload['messages'][1]['content']
         self.assertIn('3쪽', content[0]['text'])
         self.assertTrue(content[1]['image_url']['url'].endswith('YWN0dWFsLWltYWdl'))
+
+
+class PublishedTests(unittest.TestCase):
+    def test_reviewed_edition_is_complete_dated_and_stable(self):
+        import news_published
+        self.assertEqual(len(news_published.ARTICLES), 34)
+        a = news_published.messages(DATE)
+        self.assertEqual(a, news_published.messages(DATE))
+        self.assertEqual(len(a), 29)
+        self.assertEqual(news_published.messages('2026-11-10'), [])
+        self.assertIn('[계획]', ''.join(m['text'] for m in a))
+        for m in a:
+            metadata = json.loads(m['text'].split('```json\n')[1].split('```')[0])
+            self.assertTrue(all(1 <= x['page'] <= 29 for x in metadata['articles']))
+
+    def test_cache_overrides_published_fallback(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, NEWS_CACHE_DIR=d):
+            self.assertEqual(len(summary.messages(DATE)), 29)
+            summary.atomic_json(summary.result_path(DATE), {'complete': True, 'date': DATE, 'messages': [{'text': 'new approved result'}]})
+            self.assertEqual(summary.messages(DATE), [{'text': 'new approved result'}])
 
 
 if __name__ == '__main__':
