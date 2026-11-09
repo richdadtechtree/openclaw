@@ -1,12 +1,15 @@
 /**
  * test_dig_highlight.js — 경제 공부(디그) 글 형광펜(관리자 전용, 서버 저장) 화면 확인 (실제 Chromium, 가짜 서버) — 2026-11-09 사용자 요청
- *   ① 관리자가 아니면(403) 단추·색 줄이 안 나오고 글자를 선택해도 아무 일 없음
- *   ② 글자를 선택하면 색 줄이 나오고, 노랑을 누르면 그 글자만 칠해지고 서버에 (덩어리 번호·글자 위치·색·앞부분 글) 이 저장됨
- *   ③ 굵은 글·링크가 섞인 문단도 글자(textContent)는 하나도 안 바뀌고 <mark> 로만 감싸짐
- *   ④ 두 문단에 걸친 선택은 문단마다 한 조각씩, 겹쳐 칠하면 기존 표시가 잘려 나가고, 같은 색이 맞닿으면 하나로 합쳐짐, 🧽 로 지움
- *   ⑤ 새로고침해도 서버에 저장된 표시가 같은 글자에 다시 칠해짐 · 글이 바뀌어 안 맞는 표시는 건너뜀
- *   ⑥ 형광펜 끄기/켜기(기억) · 칠한 글자를 누르면 선택돼 바로 지울 수 있음 · 다른 창이 먼저 저장했으면(409) 최신으로 교체
- *   ⑦ 폰 390px 에서 색 줄이 화면 안·가로 스크롤 없음 · 인쇄용(?print=1)은 형광펜 요청 0건
+ *   ① 관리자가 아니면(403) 단추·도구 줄이 안 나오고 글자 위를 그어도 아무 일 없음
+ *   ② 🖍 가 꺼진 기본 상태에선 그어도 칠해지지 않고 평소처럼 글자가 선택됨(복사 가능)
+ *   ③ 🖍 를 켜고 글자 위를 마우스로 쭉 그으면 손을 떼는 순간 바로 칠해지고 서버에 저장됨(글자는 하나도 안 바뀜)
+ *   ④ 색 바꾸기·겹침(기존 표시가 잘려 나감)·같은 색 합치기·두 문단에 걸친 긋기
+ *   ⑤ 🧽 지우개: 칠한 글자 위를 그으면 그 부분만 지워지고, 칠한 조각을 한 번 눌러도 지워짐
+ *   ⑥ Ctrl+Z 되돌리기 · Ctrl+Shift+Z / Ctrl+Y 다시 · 도구 줄 ↶ ↷ (기록이 없으면 꺼짐) · 지우기도 되돌릴 수 있음
+ *   ⑦ 🗑 모두 지우기(확인창, 되돌릴 수 있음)
+ *   ⑧ ✋ 손: 그어도 칠해지지 않고 글자 선택이 되며, 선택해 둔 채 색 단추를 누르면 그 글자에 칠해짐 · 펜일 땐 링크를 안 따라감
+ *   ⑨ 새로고침 유지·켠 상태 기억 · 안 맞는 표시 건너뜀 · 다른 창이 먼저 저장(409) · 끄면 Ctrl+Z 도 안 먹음
+ *   ⑩ 폰 390px: 도구 줄이 화면 안, 손가락으로 쭉 그어 칠해짐, 펜일 땐 스크롤 막힘(touch-action:none)·✋ 이면 풀림 · 인쇄용 요청 0건
  * 서버 쪽(권한·검증·저장·버전)은 python3 scripts/test_dig_marks.py 에서 따로 검사.
  * 실행: node scripts/test_dig_highlight.js   (개발 환경 전용)
  */
@@ -65,123 +68,206 @@ const srv = http.createServer((req, res) => {
     await page.waitForTimeout(400);
     return { ctx, page };
   };
-  // 덩어리 i 의 글자 [s,e) (또는 i 의 s 부터 i2 의 e2 까지)를 선택 상태로 만든다 — 끌어서 선택한 것과 같은 효과
-  const select = (page, i, s, e, i2 = null, e2 = null) => page.evaluate(([i, s, e, i2, e2]) => {
-    const U = [...document.querySelectorAll('#main p, #main h2.title, #main h2.sec, #main h3, #main li, #main .cap')];
+  const UNITS = '#main p, #main h2.title, #main h2.sec, #main h3, #main li, #main .cap';
+  // 덩어리 u 의 k 번째 글자 위치(화면 좌표). 왼쪽 1/4 지점이면 그 글자 앞, 오른쪽 3/4 지점이면 뒤로 읽힌다.
+  const charPt = (page, u, k, frac) => page.evaluate(([UNITS, u, k, frac]) => {
+    const el = [...document.querySelectorAll(UNITS)][u];
+    const tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let pos = 0, n;
+    while ((n = tw.nextNode())) {
+      if (k < pos + n.nodeValue.length) {
+        const r = document.createRange(); r.setStart(n, k - pos); r.setEnd(n, k - pos + 1);
+        const b = r.getBoundingClientRect(); return { x: b.left + b.width * frac, y: b.top + b.height / 2 };
+      }
+      pos += n.nodeValue.length;
+    }
+  }, [UNITS, u, k, frac]);
+  // 글자 [s,e) 위를 마우스로 쭉 긋는다(u2/e2 가 있으면 u 의 s 부터 u2 의 e2 까지)
+  const draw = async (page, u, s, e, u2 = null, e2 = null) => {
+    const a = await charPt(page, u, s, 0.25), b = await charPt(page, u2 === null ? u : u2, (u2 === null ? e : e2) - 1, 0.75);
+    await page.mouse.move(a.x, a.y); await page.mouse.down(); await page.mouse.move((a.x + b.x) / 2, (a.y + b.y) / 2, { steps: 4 }); await page.mouse.move(b.x, b.y, { steps: 6 }); await page.mouse.up();
+    await page.waitForTimeout(150);
+  };
+  const select = (page, i, s, e) => page.evaluate(([UNITS, i, s, e]) => {
+    const U = [...document.querySelectorAll(UNITS)];
     const at = (u, k) => { const tw = document.createTreeWalker(u, NodeFilter.SHOW_TEXT); let pos = 0, n; while ((n = tw.nextNode())) { if (k <= pos + n.nodeValue.length) return [n, k - pos]; pos += n.nodeValue.length; } };
-    const r = document.createRange(); const a = at(U[i], s), b = at(U[i2 === null ? i : i2], i2 === null ? e : e2);
+    const r = document.createRange(); const a = at(U[i], s), b = at(U[i], e);
     r.setStart(a[0], a[1]); r.setEnd(b[0], b[1]);
     const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
-  }, [i, s, e, i2, e2]);
+  }, [UNITS, i, s, e]);
   const marksText = page => page.$$eval('#main mark.hl', ms => ms.map(m => m.className.replace('hl hl-', '') + ':' + m.textContent));
   const bodyText = page => page.$eval('#main', m => m.textContent);
+  const lastMarks = u => (posts[posts.length - 1] || { marks: [] }).marks.filter(m => m.u === u).sort((a, b) => a.s - b.s).map(m => [m.c, m.s, m.e]);
+  const settle = page => page.waitForTimeout(800);
+  const pressed = (page, t) => page.$eval(`#hlbar [data-t="${t}"]`, b => b.getAttribute('aria-pressed'));
 
   console.log('\n[① 관리자가 아니면]');
   ADMIN = false; STORE = []; REV = 0; posts = [];
   let { ctx, page } = await open();
-  check(await page.$eval('#hlt', b => b.hidden), '형광펜 단추가 안 보임(서버 403)');
-  await select(page, 0, 0, 5); await page.waitForTimeout(300);
-  check(await page.$eval('#hlbar', b => b.hidden), '글자를 선택해도 색 줄이 안 나옴');
+  check(await page.$eval('#hlt', b => b.hidden) && await page.$eval('#hlbar', b => b.hidden), '🖍 단추도 도구 줄도 안 보임(서버 403)');
+  await draw(page, 1, 0, 6); await settle(page);
+  check((await marksText(page)).length === 0 && posts.length === 0, '글자 위를 그어도 아무 일 없음(칠하기·저장 요청 0건)');
   await ctx.close();
 
-  console.log('\n[② 선택 → 색 줄 → 칠하기 → 서버 저장]');
   ADMIN = true; STORE = []; REV = 0; posts = [];
+  console.log('\n[② 꺼진 기본 상태: 평소처럼 글자 선택]');
   ({ ctx, page } = await open());
-  check(!(await page.$eval('#hlt', b => b.hidden)), '관리자: 🖍 형광펜 단추가 보임');
+  const units = await page.$$eval(UNITS, us => us.map(u => u.textContent));
   const before = await bodyText(page);
-  const units = await page.$$eval('#main p, #main h2.title, #main h2.sec, #main h3, #main li, #main .cap', us => us.map(u => u.textContent));
   check(units.length === 6, '글 덩어리 6개(구역 제목·큰 제목·문단 2·요약 줄 2)', String(units.length));
-  await select(page, 1, 0, 7); await page.waitForTimeout(300);          // '파랗게 물든 ' — 끝의 공백은 칠하지 않고 뺌
-  check(!(await page.$eval('#hlbar', b => b.hidden)), '글자를 선택하면 색 줄이 나옴');
-  await page.click('#hlbar [data-c="y"]'); await page.waitForTimeout(900);
-  check((await marksText(page)).join('|') === 'y:' + units[1].slice(0, 6), '제목 앞 "파랗게 물든" 만 노랑으로 칠해짐(끝 공백은 뺌)', (await marksText(page)).join('|'));
+  check(!(await page.$eval('#hlt', b => b.hidden)) && await page.$eval('#hlbar', b => b.hidden), '관리자: 🖍 단추는 보이고 도구 줄은 꺼져 있음(실수로 칠하지 않게 기본은 꺼짐)');
+  await draw(page, 1, 0, 6);
+  check((await marksText(page)).length === 0 && posts.length === 0, '꺼진 상태에서 그으면 칠해지지 않음');
+  check(await page.evaluate(() => getSelection().toString()) === units[1].slice(0, 6), '대신 평소처럼 글자가 선택됨(복사 가능)', await page.evaluate(() => getSelection().toString()));
+  await page.evaluate(() => getSelection().removeAllRanges());
+
+  console.log('\n[③ 🖍 켜고 쭉 그으면 바로 칠해짐]');
+  await page.click('#hlt'); await page.waitForTimeout(200);
+  check(!(await page.$eval('#hlbar', b => b.hidden)) && await pressed(page, 'y') === 'true', '🖍 를 켜면 도구 줄이 나오고 노랑 펜이 골라져 있음');
+  check(await page.$eval('#main', m => getComputedStyle(m).touchAction) === 'none', '펜일 땐 글 위에서 끌어도 스크롤되지 않음(touch-action:none)');
+  await draw(page, 1, 0, 6); await settle(page);
+  check((await marksText(page)).join('|') === 'y:' + units[1].slice(0, 6), '제목 앞 "파랗게 물든" 위를 쭉 그으니 손을 떼자 바로 노랑으로 칠해짐', (await marksText(page)).join('|'));
   check(posts.length === 1 && posts[0].id === '2026-11-09' && posts[0].revision === 0, '서버에 저장 요청 1번(호 번호·버전 0)');
   const m0 = posts[0].marks[0];
   check(posts[0].marks.length === 1 && m0.u === 1 && m0.s === 0 && m0.e === 6 && m0.c === 'y' && m0.q === units[1].slice(0, 6), '저장 내용 = 덩어리 1 · 0~6 · 노랑 · 앞부분 글', JSON.stringify(m0));
   check(await bodyText(page) === before, '글자는 하나도 안 바뀜(감싸기만)');
-  check(await page.$eval('#hlbar', b => b.hidden) && await page.evaluate(() => getSelection().isCollapsed), '칠한 뒤 색 줄이 닫히고 선택이 풀림');
-
-  console.log('\n[③ 굵은 글·링크가 섞인 문단]');
-  const p2 = units[2];
-  const s0 = p2.indexOf('블루'), e0 = p2.indexOf('자세히') + 3;
-  await select(page, 2, s0, e0); await page.waitForTimeout(300);
-  await page.click('#hlbar [data-c="r"]'); await page.waitForTimeout(900);
+  check(await page.evaluate(() => getSelection().isCollapsed), '칠한 뒤 선택이 풀림');
+  // 굵은 글·링크가 섞인 문단
+  const p2 = units[2], s0 = p2.indexOf('블루'), e0 = p2.indexOf('자세히') + 3;
+  await page.click('#hlbar [data-t="r"]'); await page.waitForTimeout(100);
+  check(await pressed(page, 'r') === 'true' && await pressed(page, 'y') === 'false', '빨강 펜으로 바꿈');
+  await draw(page, 2, s0, e0); await settle(page);
   const red = (await marksText(page)).filter(x => x.startsWith('r:')).map(x => x.slice(2)).join('');
-  check(red === p2.slice(s0, e0), '굵은 글·링크 경계를 넘어도 칠한 글자를 이으면 정확히 선택한 글자', red);
+  check(red === p2.slice(s0, e0), '굵은 글·링크 경계를 넘어 그어도 칠한 글자를 이으면 정확히 그은 글자', red);
   check(await bodyText(page) === before, '여전히 글자는 하나도 안 바뀜');
-  check(await page.$eval('#main p a', a => a.href.startsWith('https://example.com') && a.textContent.length > 0), '링크는 그대로 링크');
 
-  console.log('\n[④ 두 문단에 걸침·겹침·합치기·지우기]');
-  posts.length = 0;
-  await select(page, 2, p2.length - 6, 0, 3, 5); await page.waitForTimeout(300);     // 문단2 끝 6글자 ~ 문단3 앞 5글자
-  await page.click('#hlbar [data-c="b"]'); await page.waitForTimeout(900);
+  console.log('\n[④ 두 문단에 걸침·겹침·합치기]');
+  await page.click('#hlbar [data-t="b"]');
+  await draw(page, 2, p2.length - 6, 0, 3, 5); await settle(page);                       // 문단2 끝 6글자 ~ 문단3 앞 5글자
   const blue = posts[posts.length - 1].marks.filter(m => m.c === 'b').sort((a, b) => a.u - b.u);
-  check(blue.length === 2 && blue[0].u === 2 && blue[1].u === 3 && blue[0].e === p2.length && blue[1].s === 0 && blue[1].e === 5,
-        '두 문단에 걸친 선택은 문단마다 한 조각씩(파랑 2조각)', JSON.stringify(blue.map(m => [m.u, m.s, m.e])));
-  await select(page, 3, 0, 2); await page.waitForTimeout(300);                        // 겹침: 앞 2글자를 노랑으로
-  await page.click('#hlbar [data-c="y"]'); await page.waitForTimeout(900);
-  const l2 = posts[posts.length - 1].marks.filter(m => m.u === 3).sort((a, b) => a.s - b.s);
-  check(l2.length === 2 && l2[0].c === 'y' && l2[0].e === 2 && l2[1].c === 'b' && l2[1].s === 2 && l2[1].e === 5, '겹쳐 칠하면 기존 표시가 잘려 나감(노랑 0~2 + 파랑 2~5)', JSON.stringify(l2.map(m => [m.c, m.s, m.e])));
-  await select(page, 3, 2, 3); await page.waitForTimeout(300);                        // 합치기: 바로 옆 1글자도 노랑으로
-  await page.click('#hlbar [data-c="y"]'); await page.waitForTimeout(900);
-  const l3 = posts[posts.length - 1].marks.filter(m => m.u === 3).sort((a, b) => a.s - b.s);
-  check(l3.length === 2 && l3[0].c === 'y' && l3[0].s === 0 && l3[0].e === 3 && l3[1].c === 'b' && l3[1].s === 3 && l3[1].e === 5,
-        '같은 색이 맞닿으면 하나로 합쳐짐(노랑 0~2 + 0~2 옆 2~3 → 노랑 0~3 한 조각, 파랑은 3~5)', JSON.stringify(l3.map(m => [m.c, m.s, m.e])));
-  await select(page, 3, 1, 3); await page.waitForTimeout(300);                        // 지우기
-  await page.click('#hlbar [data-c=""]'); await page.waitForTimeout(900);
-  const l4 = posts[posts.length - 1].marks.filter(m => m.u === 3).sort((a, b) => a.s - b.s);
-  check(l4.length === 2 && l4[0].c === 'y' && l4[0].s === 0 && l4[0].e === 1 && l4[1].c === 'b' && l4[1].s === 3 && l4[1].e === 5, '🧽 지우기: 노랑 1~3 만 지워지고 노랑 0~1 과 파랑 3~5 는 남음', JSON.stringify(l4.map(m => [m.c, m.s, m.e])));
-  check(await bodyText(page) === before, '지우고 겹쳐도 글자는 끝까지 그대로');
+  check(blue.length === 2 && blue[0].u === 2 && blue[1].u === 3 && blue[0].e === p2.length && blue[1].s === 0 && blue[1].e === 5, '두 문단에 걸쳐 그으면 문단마다 한 조각씩(파랑 2조각)', JSON.stringify(blue.map(m => [m.u, m.s, m.e])));
+  await page.click('#hlbar [data-t="y"]');
+  await draw(page, 3, 0, 2); await settle(page);
+  check(JSON.stringify(lastMarks(3)) === JSON.stringify([['y', 0, 2], ['b', 2, 5]]), '겹쳐 칠하면 기존 표시가 잘려 나감(노랑 0~2 + 파랑 2~5)', JSON.stringify(lastMarks(3)));
+  await draw(page, 3, 2, 3); await settle(page);
+  check(JSON.stringify(lastMarks(3)) === JSON.stringify([['y', 0, 3], ['b', 3, 5]]), '같은 색이 맞닿으면 하나로 합쳐짐(노랑 0~3 한 조각)', JSON.stringify(lastMarks(3)));
+  check(await bodyText(page) === before, '글자는 끝까지 그대로');
   await ctx.close();
 
-  console.log('\n[⑤ 새로고침해도 유지 · 안 맞는 표시는 건너뜀]');
+  console.log('\n[⑤ 🧽 지우개]');
+  STORE = []; REV = 0; posts.length = 0;
   ({ ctx, page } = await open());
-  const reloaded = await marksText(page);
-  check(reloaded.length >= 4, '서버에 저장된 표시가 새로고침 뒤에도 다시 칠해짐', reloaded.join('|').slice(0, 80));
-  check(await bodyText(page) === before, '글자 그대로');
+  await page.click('#hlt'); await draw(page, 1, 0, 6); await settle(page);
+  await page.click('#hlbar [data-t="e"]'); await page.waitForTimeout(100);
+  check(await pressed(page, 'e') === 'true', '🧽 지우개를 고름');
+  await draw(page, 1, 2, 5); await settle(page);                                      // "게 물" 위를 긋기(공백이 끼어도 지워짐)
+  check(JSON.stringify(lastMarks(1)) === JSON.stringify([['y', 0, 2], ['y', 5, 6]]), '칠한 글자 위를 그으면 그 부분만 지워져 양끝이 남음(2~5 삭제)', JSON.stringify(lastMarks(1)));
+  const n0 = posts.length;
+  await draw(page, 2, 0, 5); await settle(page);
+  check(posts.length === n0, '칠하지 않은 글자 위를 그어도 아무 변화·저장 없음');
+  const pt = await page.evaluate(() => { const m = document.querySelectorAll('#main mark.hl')[1].getBoundingClientRect(); return { x: m.left + m.width / 2, y: m.top + m.height / 2 }; });
+  await page.mouse.click(pt.x, pt.y); await settle(page);
+  check(JSON.stringify(lastMarks(1)) === JSON.stringify([['y', 0, 2]]) && (await marksText(page)).length === 1, '지우개로 칠한 조각을 한 번 누르면 그 조각이 지워짐', JSON.stringify(lastMarks(1)));
+  check(await bodyText(page) === before, '글자는 그대로');
+
+  console.log('\n[⑥ 되돌리기·다시 하기]');
+  const undoBtn = '#hlbar [data-a="undo"]', redoBtn = '#hlbar [data-a="redo"]';
+  check(!(await page.$eval(undoBtn, b => b.disabled)) && await page.$eval(redoBtn, b => b.disabled), '기록이 있으면 ↶ 켜짐, 다시할 게 없으면 ↷ 꺼짐');
+  await page.keyboard.press('Control+z'); await settle(page);
+  check(JSON.stringify(lastMarks(1)) === JSON.stringify([['y', 0, 2], ['y', 5, 6]]), 'Ctrl+Z: 방금 지운 조각이 되살아남(서버에도 저장)', JSON.stringify(lastMarks(1)));
+  await page.keyboard.press('Control+z'); await settle(page);
+  check(JSON.stringify(lastMarks(1)) === JSON.stringify([['y', 0, 6]]), 'Ctrl+Z 한 번 더: 지우개 긋기도 되돌려 처음 칠한 상태', JSON.stringify(lastMarks(1)));
+  await page.keyboard.press('Control+z'); await settle(page);
+  check((await marksText(page)).length === 0 && await page.$eval(undoBtn, b => b.disabled), '처음 칠한 것까지 되돌리면 표시 없음 · ↶ 꺼짐');
+  await page.keyboard.press('Control+Shift+z'); await settle(page);
+  check((await marksText(page)).join('|') === 'y:' + units[1].slice(0, 6), 'Ctrl+Shift+Z: 다시 하기');
+  await page.keyboard.press('Control+y'); await settle(page);
+  check(JSON.stringify(lastMarks(1)) === JSON.stringify([['y', 0, 2], ['y', 5, 6]]), 'Ctrl+Y 도 다시 하기', JSON.stringify(lastMarks(1)));
+  await page.click(undoBtn); await settle(page);
+  check(JSON.stringify(lastMarks(1)) === JSON.stringify([['y', 0, 6]]), '도구 줄 ↶ 단추도 되돌리기');
+  await page.click(redoBtn); await settle(page);
+  check(JSON.stringify(lastMarks(1)) === JSON.stringify([['y', 0, 2], ['y', 5, 6]]), '도구 줄 ↷ 단추도 다시 하기');
+  await page.click('#hlbar [data-t="y"]');
+  await draw(page, 1, 8, 10); await settle(page);
+  check(await page.$eval(redoBtn, b => b.disabled), '새로 칠하면 다시 하기 기록은 비워짐(↷ 꺼짐)');
+  check(await bodyText(page) === before, '되돌리고 다시 해도 글자는 그대로');
+
+  console.log('\n[⑦ 🗑 모두 지우기]');
+  const cnt = (await marksText(page)).length;
+  page.once('dialog', d => d.dismiss());
+  await page.click('#hlbar [data-a="clear"]'); await settle(page);
+  check((await marksText(page)).length === cnt, '확인창에서 취소하면 그대로');
+  page.once('dialog', d => { check(/모두 지울까요/.test(d.message()), '확인창이 뜸', d.message().split('\n')[0]); d.accept(); });
+  await page.click('#hlbar [data-a="clear"]'); await settle(page);
+  check((await marksText(page)).length === 0 && (posts[posts.length - 1].marks.length === 0), '확인하면 이 호의 형광펜이 모두 지워지고 서버에도 반영');
+  await page.keyboard.press('Control+z'); await settle(page);
+  check((await marksText(page)).length === cnt, '모두 지운 것도 Ctrl+Z 로 되살릴 수 있음');
+  await ctx.close();
+
+  console.log('\n[⑧ ✋ 손 · 펜일 땐 링크를 안 따라감]');
+  STORE = []; REV = 0; posts.length = 0;
+  ({ ctx, page } = await open());
+  await page.click('#hlt'); await page.click('#hlbar [data-t="h"]'); await page.waitForTimeout(100);
+  check(await page.$eval('#main', m => getComputedStyle(m).touchAction) !== 'none', '✋ 이면 스크롤이 풀림(touch-action 이 none 이 아님)');
+  await draw(page, 1, 0, 6); await settle(page);
+  check((await marksText(page)).length === 0 && await page.evaluate(() => getSelection().toString()) === units[1].slice(0, 6), '✋ 에선 그어도 칠해지지 않고 글자가 선택됨');
+  await page.click('#hlbar [data-t="b"]'); await settle(page);
+  check((await marksText(page)).join('|') === 'b:' + units[1].slice(0, 6) && await pressed(page, 'b') === 'true', '선택해 둔 채 파랑을 누르면 그 글자에 칠해지고 펜이 파랑으로 바뀜', (await marksText(page)).join('|'));
+  // 링크: 펜(파랑)일 땐 안 따라가고, ✋ 일 땐 따라감
+  const pg = () => ctx.waitForEvent('page', { timeout: 1200 }).then(() => true, () => false);
+  let w = pg(); await page.click('#main p a'); check(!(await w), '펜일 땐 링크를 눌러도 따라가지 않음');
+  await page.click('#hlbar [data-t="h"]');
+  w = pg(); await page.click('#main p a'); check(await w, '✋ 일 땐 링크가 평소처럼 열림');
+  await ctx.close();
+
+  console.log('\n[⑨ 새로고침 유지 · 켠 상태 기억 · 안 맞는 표시 · 409 · 끄면 Ctrl+Z 무효]');
+  STORE = []; REV = 0; posts.length = 0;
+  ({ ctx, page } = await open());
+  await page.click('#hlt'); await draw(page, 1, 0, 6); await settle(page);
+  await page.reload(); await page.waitForSelector('#main mark.hl'); await page.waitForTimeout(300);
+  check((await marksText(page)).join('|') === 'y:' + units[1].slice(0, 6), '새로고침해도 서버에 저장된 표시가 다시 칠해짐');
+  check(!(await page.$eval('#hlbar', b => b.hidden)) && await pressed(page, 'y') === 'true', '켜 둔 상태·고른 도구를 이 브라우저가 기억');
+  check(await page.$eval(undoBtn, b => b.disabled), '새로고침하면 되돌리기 기록은 비움(↶ 꺼짐)');
+  await page.click('#hlt'); await page.waitForTimeout(100);
+  check(await page.$eval('#hlbar', b => b.hidden) && (await marksText(page)).length === 1, '끄면 도구 줄은 사라지고 칠한 표시는 그대로 보임');
+  await draw(page, 1, 8, 10); await settle(page);
+  const np = posts.length;
+  await page.keyboard.press('Control+z'); await settle(page);
+  check(posts.length === np && (await marksText(page)).length === 1, '꺼진 동안엔 Ctrl+Z 도 안 먹음(브라우저 기본 동작만)');
   await ctx.close();
   STORE = [{ u: 1, s: 0, e: 3, c: 'y', q: '틀린글' }, { u: 1, s: 0, e: 3, c: 'r', q: units[1].slice(0, 3) }, { u: 99, s: 0, e: 3, c: 'b', q: 'x' }];
   ({ ctx, page } = await open());
-  check((await marksText(page)).join('|') === 'r:' + units[1].slice(0, 3), '글이 안 맞거나 없는 덩어리의 표시는 건너뛰고 맞는 것만 칠함', (await marksText(page)).join('|'));
+  check((await marksText(page)).join('|') === 'r:' + units[1].slice(0, 3), '글이 안 맞거나 없는 덩어리의 표시는 건너뛰고 맞는 것만 칠함');
   await ctx.close();
-
-  console.log('\n[⑥ 끄기·켜기 · 눌러서 지우기 · 다른 창이 먼저 저장(409)]');
   STORE = []; REV = 0; posts.length = 0;
   ({ ctx, page } = await open());
-  await select(page, 1, 0, 3); await page.waitForTimeout(300);
-  await page.click('#hlbar [data-c="y"]'); await page.waitForTimeout(900);
-  await page.click('#hlt'); await page.waitForTimeout(100);
-  check(await page.$eval('#hlt', b => b.getAttribute('aria-pressed')) === 'false', '🖍 끄면 눌림 표시가 풀림');
-  await select(page, 2, 0, 4); await page.waitForTimeout(300);
-  check(await page.$eval('#hlbar', b => b.hidden), '끄면 글자를 선택해도 색 줄이 안 나옴');
-  check((await marksText(page)).length === 1, '끄더라도 이미 칠한 표시는 그대로 보임');
-  check(await page.evaluate(() => localStorage.getItem('dig.hl')) === '0', '끈 상태를 이 브라우저에 기억');
-  await page.click('#hlt'); await page.waitForTimeout(100);
-  await page.evaluate(() => getSelection().removeAllRanges());
-  await page.click('#main mark.hl'); await page.waitForTimeout(300);
-  check(!(await page.$eval('#hlbar', b => b.hidden)) && await page.evaluate(() => getSelection().toString()) === units[1].slice(0, 3), '칠한 글자를 누르면 그 조각이 선택되고 색 줄이 나옴');
-  posts.length = 0;
-  await page.click('#hlbar [data-c=""]'); await page.waitForTimeout(900);
-  check((await marksText(page)).length === 0 && posts[posts.length - 1].marks.length === 0, '🧽 로 지우면 서버에도 빈 목록이 저장됨');
-  FORCE409 = true;
-  await select(page, 2, 0, 4); await page.waitForTimeout(300);
-  await page.click('#hlbar [data-c="y"]'); await page.waitForTimeout(1200);
+  await page.click('#hlt'); FORCE409 = true;
+  await draw(page, 2, 0, 4); await page.waitForTimeout(1300);
   check((await marksText(page)).join('|') === 'r:' + units[3].slice(0, 5), '다른 창이 먼저 저장했으면(409) 서버의 최신 표시로 바뀜', (await marksText(page)).join('|'));
+  check(await page.$eval(undoBtn, b => b.disabled), '그때는 되돌리기 기록도 비움(남의 변경을 되돌리지 않게)');
   await ctx.close();
 
-  console.log('\n[⑦ 폰 390px · 인쇄용]');
-  STORE = []; REV = 0;
+  console.log('\n[⑩ 폰 390px · 인쇄용]');
+  STORE = []; REV = 0; posts.length = 0;
   ({ ctx, page } = await open({ viewport: { width: 390, height: 800 }, hasTouch: true, isMobile: true }));
-  await select(page, 2, 0, 8); await page.waitForTimeout(300);
+  await page.tap('#hlt'); await page.waitForTimeout(200);
   const geo = await page.$eval('#hlbar', b => { const r = b.getBoundingClientRect(); return { hidden: b.hidden, l: r.left, r: r.right, b: r.bottom, vw: innerWidth, vh: innerHeight }; });
-  check(!geo.hidden && geo.l >= 0 && geo.r <= geo.vw && geo.b <= geo.vh, '폰에서 색 줄이 화면 안', JSON.stringify(geo));
+  check(!geo.hidden && geo.l >= 0 && geo.r <= geo.vw && geo.b <= geo.vh, '폰에서 도구 줄이 화면 안', JSON.stringify(geo));
+  check((await page.$eval('#hlbar', b => b.getBoundingClientRect().height)) < 64, '폰에서도 도구 줄이 한 줄(두 줄로 접혀 글을 가리지 않음)');
   check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), '가로 스크롤 없음');
-  await page.tap('#hlbar [data-c="y"]'); await page.waitForTimeout(900);
-  check((await marksText(page)).length === 1, '폰에서 탭으로도 칠해짐');
+  check(await page.$eval('#main', m => getComputedStyle(m).touchAction) === 'none', '펜일 땐 손가락으로 끌어도 화면이 스크롤되지 않음');
+  const cdp = await ctx.newCDPSession(page);                                       // 진짜 손가락 터치로 긋기
+  const a = await charPt(page, 2, 0, 0.25), b = await charPt(page, 2, 11, 0.75);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: a.x, y: a.y }] });
+  for (let i = 1; i <= 6; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: a.x + (b.x - a.x) * i / 6, y: a.y + (b.y - a.y) * i / 6 }] });
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await settle(page);
+  check((await marksText(page)).join('') === 'y:' + units[2].slice(0, 12), '손가락으로 쭉 그으면 칠해짐', (await marksText(page)).join('|'));
+  await page.tap('#hlbar [data-t="h"]');
+  check(await page.$eval('#main', m => getComputedStyle(m).touchAction) !== 'none', '✋ 를 고르면 다시 스크롤할 수 있음');
   await ctx.close();
   marksGets = 0;
   ({ ctx, page } = await open({}, '/dig?print=1'));
-  check(marksGets === 0 && await page.$eval('#hlt', b => b.hidden), '인쇄용(?print=1)은 형광펜 요청 0건·단추 없음');
+  check(marksGets === 0 && await page.$eval('#hlt', b => b.hidden) && await page.$eval('#hlbar', b => b.hidden), '인쇄용(?print=1)은 형광펜 요청 0건·단추·도구 줄 없음');
   await ctx.close();
 
   await browser.close(); srv.close();
