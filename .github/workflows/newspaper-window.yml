@@ -1,0 +1,24 @@
+name: Newspaper retry window
+on:
+  pull_request:
+    paths:
+      - 'scripts/extend_newspaper_window.py'
+      - 'scripts/test_newspaper_window.py'
+      - 'scripts/git-auto-pull.sh'
+      - 'scripts/set-newspaper-schedule.sh'
+      - '.github/workflows/newspaper-window.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/extend_newspaper_window.py'
+      - 'scripts/test_newspaper_window.py'
+      - 'scripts/git-auto-pull.sh'
+      - 'scripts/set-newspaper-schedule.sh'
+      - '.github/workflows/newspaper-window.yml'
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/test_newspaper_window.py
+      - run: bash -n scripts/git-auto-pull.sh scripts/set-newspaper-schedule.sh

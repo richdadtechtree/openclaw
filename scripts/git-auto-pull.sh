@@ -73,6 +73,12 @@ if [ -f "$STOCK_SYNC" ]; then
   bash "$STOCK_SYNC" || log "stock 동기화 실패(무시하고 계속)" >&2
 fi
 
+# Keep the external collector's retry window aligned on every tick, including
+# after a previous deployment attempt failed. This does not start a download.
+if [ -f "$REPO_DIR/scripts/extend_newspaper_window.py" ]; then
+  python3 "$REPO_DIR/scripts/extend_newspaper_window.py" || log "신문 재시도 마감 변경 실패 — 다음 tick에서 재시도" >&2
+fi
+
 if [ "$LOCAL" = "$REMOTE" ]; then
   # 새 커밋 없음 → 설정 동기화·게이트웨이 재시작은 생략(조용히 종료)
   exit 0
