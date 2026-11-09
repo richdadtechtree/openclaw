@@ -111,7 +111,7 @@ def run_sync(date, timeout=600):
 
 
 def audio_cmd(date):
-    """NotebookLM 오디오 만들기 명령. 기본: ~/newspaper-claude 의 venv-nlm 파이썬으로 notebook_audio.py <날짜>.
+    """NotebookLM 오디오 만들기 명령. 기본: ~/newspaper-claude 의 venv-nlm 파이썬으로 notebook_audio.py --date <날짜> --force (사용법: [--date DATE] [--cleanup] [--slot {09,18}] [--force]).
     서버에서 인자 모양이 다르면 .env 의 NEWS_AUDIO_CMD 로 바꾼다({date} 자리에 날짜가 들어감)."""
     custom = os.getenv("NEWS_AUDIO_CMD") or gate._env("NEWS_AUDIO_CMD")
     d = os.path.expanduser(os.getenv("NEWSPAPER_CLAUDE_DIR", "~/newspaper-claude"))
@@ -120,7 +120,7 @@ def audio_cmd(date):
     py = os.path.join(d, "venv-nlm", "bin", "python")
     if not os.path.isfile(py):
         py = sys.executable
-    return [py, os.path.join(d, "notebook_audio.py"), date], d
+    return [py, os.path.join(d, "notebook_audio.py"), "--date", date, "--force"], d
 
 
 def run_audio(date, timeout=1800):
