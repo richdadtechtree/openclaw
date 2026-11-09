@@ -140,11 +140,10 @@ def run_all(date, want_summary, download=True, lease=None):
             _step(current, "fail", note)
         _set(ok=False, message=note)
     finally:
-        try:
-            _set(running=False, finished=time.time())
-        finally:
-            if lease is not None:
-                lease.close()
+        # Release the process lease before advertising completion.
+        if lease is not None:
+            lease.close()
+        _set(running=False, finished=time.time())
 
 
 def start(date, want_summary, download=True):
