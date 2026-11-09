@@ -28,7 +28,9 @@ function makePng(w, h) {
     chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
 }
 const PNG = makePng(800, 1200);
-const BRIEF = ['*[신문요약 1/1] 신문 요약*', '1. 기사 제목\n• WHAT: 내용임.\n• WHY: 이유임.\n• HOW: 방법임.\n• 사진: 03'].join('\n');
+const {execFileSync}=require('child_process');
+const PUBLISHED=JSON.parse(execFileSync('python3',['-c',
+  "import sys,json;sys.path.insert(0,'stock');import news_published;print(json.dumps(news_published.messages('2026-11-09')))"] ,{cwd:path.join(__dirname,'..'),encoding:'utf8'}));
 let ADMIN = true, MODE = 'idle', todayHits = 0, posts = 0, polls = 0, FINISHED_DATE = null, lastMode = null;
 const STEPS = (a, b, c) => ({ collect: { status: a, note: '' }, sync: { status: b, note: '' }, summary: { status: c, note: '' } });
 const stateOf = () => {
@@ -45,11 +47,11 @@ const srv = http.createServer((req, res) => {
   const send = (t, b, code = 200) => { res.writeHead(code, { 'Content-Type': t }); res.end(b); };
   const json = (o, code = 200) => send('application/json', JSON.stringify(o), code);
   if (u === '/' || u === '/economy') return send('text/html; charset=utf-8', fs.readFileSync(HTML));
-  if (u === '/economy/data') return json({ date: D, messages: [{ ts: D + 'T06:29:00', source: 'user', kind: 'text', text: BRIEF }] });
+  if (u === '/economy/data') return json({ date: D, messages: PUBLISHED });
   if (u === '/api/news/today') {
     todayHits++;
-    const images = Array.from({ length: 6 }, (_, i) => { const n = String(i + 1).padStart(2, '0') + '.jpg'; return { name: n, url: '/page.png?n=' + n, thumb: '/page.png?t=' + n, download_url: '/page.png' }; });
-    return json({ ok: true, ready: true, date: D, count: 6, images });
+    const images = Array.from({ length: 30 }, (_, i) => { const n = String(i + 1).padStart(2, '0') + '.jpg'; return { name: n, url: '/page.png?n=' + n, thumb: '/page.png?t=' + n, download_url: '/page.png' }; });
+    return json({ ok: true, ready: true, date: D, count: 30, images });
   }
   if (u === '/api/news/redo' && req.method === 'GET') return ADMIN ? json({ ok: true, state: stateOf() }) : json({ ok: false }, 403);
   if (u === '/api/news/redo' && req.method === 'POST') {
@@ -90,6 +92,9 @@ const srv = http.createServer((req, res) => {
   ADMIN = true; MODE = 'idle'; posts = 0; FINISHED_DATE = today();
   ({ ctx, page } = await newPage());
   check(!(await page.$eval('#news-redo', b => b.hidden)), '버튼이 보임');
+  await page.waitForFunction(() => document.querySelectorAll('.brf-art').length === 34);
+  check(await page.locator('.brf-art').count() === 34, '오늘 검수한 기사 34개가 요약 화면에 표시됨');
+  for(const kind of ['fact','plan','anal','fore','data']) check(await page.locator('.brf-tagx[data-tg="'+kind+'"]').count()>0, kind+' 분류 표지가 실제 게시 요약에 표시됨');
   check(await page.$eval('#redo-status', b => b.hidden), '아직 한 적 없으면 상태 칸은 숨김');
   let msg = '';
   page.once('dialog', d => { msg = d.message(); d.dismiss(); });
