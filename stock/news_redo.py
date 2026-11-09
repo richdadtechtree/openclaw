@@ -123,8 +123,32 @@ def audio_cmd(date):
     return [py, os.path.join(d, "notebook_audio.py"), "--date", date, "--force"], d
 
 
+def ensure_summary_file(date):
+    """notebook_audio.py 는 ~/newspaper-claude/summaries/summary-<날짜>.txt 를 읽는다.
+    웹에서 만든 요약(manual_summary.json)은 그 파일이 없으니, 없을 때만 웹 요약 글로 만들어 준다(있으면 건드리지 않음)."""
+    d = os.path.expanduser(os.getenv("NEWSPAPER_CLAUDE_DIR", "~/newspaper-claude"))
+    path = os.path.join(d, "summaries", "summary-%s.txt" % date)
+    if os.path.isfile(path) and os.path.getsize(path) > 0:
+        return path
+    texts = [str(m.get("text") or "").strip() for m in news_summary.messages(date) if isinstance(m, dict)]
+    texts = [t for t in texts if t]
+    if not texts:
+        return None
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write("\n\n".join(texts) + "\n")
+    os.replace(tmp, path)
+    return path
+
+
 def run_audio(date, timeout=1800):
     cmd, cwd = audio_cmd(date)
+    try:
+        if not ensure_summary_file(date):
+            return False, "오디오에 쓸 요약 파일이 없어요: ~/newspaper-claude/summaries/summary-%s.txt" % date
+    except OSError as e:
+        return False, "요약 파일을 만들지 못했어요: %r" % (e,)
     if not os.path.isfile(cmd[1] if len(cmd) > 1 else cmd[0]) and not os.getenv("NEWS_AUDIO_CMD"):
         return False, "오디오 만들기 프로그램을 찾지 못했어요: %s" % cmd[1]
     try:

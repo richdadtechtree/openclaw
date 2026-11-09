@@ -199,6 +199,21 @@ class RedoTests(unittest.TestCase):
         with mock.patch.dict(redo.os.environ, {'NEWS_AUDIO_CMD': 'echo hi {date}'}):
             self.assertEqual(redo.audio_cmd('2026-11-09')[0], ['echo', 'hi', '2026-11-09'])
 
+    def test_summary_file_made_from_web_summary_only_when_missing(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(redo.os.environ, {'NEWSPAPER_CLAUDE_DIR': d}), \
+             mock.patch.object(redo.news_summary, 'messages', return_value=[{'text': '기사 A'}, {'text': '기사 B'}]):
+            p = redo.ensure_summary_file('2026-11-09')
+            self.assertTrue(p.endswith('summaries/summary-2026-11-09.txt'))
+            self.assertEqual(open(p, encoding='utf-8').read(), '기사 A\n\n기사 B\n')
+            open(p, 'w', encoding='utf-8').write('기존')
+            redo.ensure_summary_file('2026-11-09')
+            self.assertEqual(open(p, encoding='utf-8').read(), '기존')      # 있으면 안 덮음
+
+    def test_summary_file_none_without_web_summary(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(redo.os.environ, {'NEWSPAPER_CLAUDE_DIR': d}), \
+             mock.patch.object(redo.news_summary, 'messages', return_value=[]):
+            self.assertIsNone(redo.ensure_summary_file('2026-11-09'))
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
