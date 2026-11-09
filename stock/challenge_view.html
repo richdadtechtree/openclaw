@@ -314,8 +314,8 @@
     cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
   .mobile-hand[aria-pressed="true"]{opacity:.5;background:#dbeafe;border-color:#2563eb}
   .mobile-hand:focus-visible{outline:3px solid #2563eb;outline-offset:3px}
-  .touch-reader .mobile-hand:not([hidden]){display:grid;place-items:center}
-  @media(max-width:900px),(any-pointer:coarse),(hover:none){.mobile-hand:not([hidden]){display:grid;place-items:center}}
+  /* 2026-11-09 사용자 요청: PC 에선 가운데 ✋ 가 아예 없다(휠 버튼·M 키로 옮김). 손가락이 주 입력인 기기(폰·태블릿)에서만 보인다 */
+  @media(pointer:coarse){.mobile-hand:not([hidden]){display:grid;place-items:center}}
 </style>
 </head>
 <body>
