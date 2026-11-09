@@ -4,6 +4,7 @@
 필요: fastapi + httpx (없으면 건너뜀). 개발 환경 전용.
 실행: python3 scripts/test_gate.py
 """
+from unittest import mock
 import os
 import sys
 import tempfile
@@ -582,7 +583,9 @@ check("https 로 열면 경고 없음", "암호화되지 않았어요" not in ip
 check("도메인에서는 IP 로그인 화면이 없는 것처럼(404)", client(app_ip).get("/gate/ip-login").status_code == 404)
 check("IP 접속에서 구글/카카오 로그인 주소는 IP 로그인으로 보냄", ci.get("/gate/login").headers["location"] == "/gate/ip-login"
       and ci.get("/gate/google/start").headers["location"] == "/gate/ip-login" and ci.get("/gate/account").headers["location"] == "/gate/ip-login")
-check("IP 접속에서 쓰기 요청(/gate/theme 등)은 403", ci.post("/gate/theme", content='{"theme":"dark"}', headers=tj).status_code == 403)
+check("IP 접속에서 쓰기 요청(/gate/nickname 등)은 403 — 화면 모드(/gate/theme)만 예외(관리자 비밀번호로 입장한 뒤에만)",
+      ci.post("/gate/nickname", content="nickname=x", headers={"content-type": "application/x-www-form-urlencoded"}).status_code == 403
+      and ci.post("/gate/theme", content='{"theme":"dark"}', headers=tj).status_code == 401)   # 아직 IP 로그인 전 → 저장 불가
 FORMD = {"content-type": "application/x-www-form-urlencoded"}
 r = ci.post("/gate/ip-login", content="password=wrong-password-123&next=%2Feconomy", headers=FORMD)
 check("틀린 비밀번호는 거부(쿠키 없음)", r.status_code == 303 and "m=bad" in r.headers["location"] and "gate_ipadm" not in r.headers.get("set-cookie", ""))
@@ -595,6 +598,22 @@ check("http 이므로 Secure 표시는 없음(있으면 http 에서 쿠키가 �
 check("입장 후 페이지·데이터 주소 모두 열림", ci.get("/economy").status_code == 200 and ci.get("/economy/data").status_code == 200
       and ci.get("/dig").status_code == 200 and ci.get("/api/dig/item").status_code == 200)
 check("쿠키 값에 비밀번호가 들어 있지 않음", IPPW not in ck and IPPW not in str(ci.cookies))
+# 화면 모드(2026-11-09 사용자 제보: IP 관리자 모드에선 메뉴마다 화이트/다크가 따로 놀았다) — IP 모드는 첫 관리자 계정의 값을 읽고 쓴다
+_adm_c, _adm = mk_user("google", "ip-theme-admin", "IP테마관리자"); gate.set_admin(_adm, True)
+_first = gate.first_admin_user()
+check("(준비) IP 모드가 대신 쓰는 계정 = 승인된 관리자 중 가장 먼저 만든 계정", _first is not None and _first["is_admin"] == 1 and _first["status"] == "approved")
+check("IP 관리자 모드에서도 화면 모드 저장 가능(첫 관리자 계정에 저장)",
+      ci.post("/gate/theme", content='{"theme":"dark"}', headers=tj).status_code == 200 and gate.get_user(_first["id"])["theme"] == "dark")
+check("IP 관리자 모드 화면들이 그 값을 머리글로 받음(메뉴 전체 공통)", 'window.__GATE_THEME="dark"' in ci.get("/themehead").text)
+check("같은 관리자 계정으로 로그인해도 같은 값", 'window.__GATE_THEME="dark"' in (lambda c: (c.cookies.set("gate_sess", gate._session_token(_first["id"])), c.get("/themehead").text)[1])(client(app_ip)))
+check("IP 모드에서도 엉뚱한 값은 거부·기존 값 유지", ci.post("/gate/theme", content='{"theme":"<script>"}', headers=tj).status_code == 400
+      and gate.get_user(_first["id"])["theme"] == "dark")
+check("IP 로그인을 안 한 접속자는 읽기·저장 모두 불가", ipclient(app_ip).get("/themehead").text == "" and ipclient(app_ip).post("/gate/theme", content='{"theme":"light"}', headers=tj).status_code in (401, 403))
+_cdm = client(app_ip); _cdm.cookies.set("gate_ipadm", ci.cookies.get("gate_ipadm"))
+check("IP 쿠키를 도메인 접속에 붙여도 화면 모드 읽기·저장 불가", _cdm.get("/themehead").text == "" and _cdm.post("/gate/theme", content='{"theme":"light"}', headers=tj).status_code == 401)
+check("다른 사이트에서 보낸 요청은 IP 모드에서도 거부", ci.post("/gate/theme", content='{"theme":"light"}', headers={**tj, "sec-fetch-site": "cross-site"}).status_code == 403)
+with mock.patch.object(gate, "first_admin_user", return_value=None):
+    check("관리자 계정이 하나도 없으면 IP 모드는 저장 안 함(화면은 브라우저 기억으로 동작)", ci.post("/gate/theme", content='{"theme":"light"}', headers=tj).status_code == 401 and ci.get("/themehead").text == "")
 check("위쪽 표시: IP 관리자 모드 + 관리 + 로그아웃", all(x in ci.get("/who").text for x in ("IP 관리자 모드", "/gate/admin", "/gate/ip-logout")))
 # 쿠키를 도메인 접속으로 가져가도 소용없음
 cd = client(app_ip); cd.cookies.set("gate_ipadm", ci.cookies.get("gate_ipadm"))
