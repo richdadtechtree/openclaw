@@ -194,7 +194,8 @@ class RedoTests(unittest.TestCase):
 
     def test_audio_command_default_and_custom(self):
         cmd, _ = redo.audio_cmd('2026-11-09')
-        self.assertTrue(cmd[1].endswith('notebook_audio.py') and cmd[-1] == '2026-11-09')
+        self.assertTrue(cmd[1].endswith('notebook_audio.py'))
+        self.assertEqual(cmd[2:], ['--date', '2026-11-09', '--force'])
         with mock.patch.dict(redo.os.environ, {'NEWS_AUDIO_CMD': 'echo hi {date}'}):
             self.assertEqual(redo.audio_cmd('2026-11-09')[0], ['echo', 'hi', '2026-11-09'])
 
