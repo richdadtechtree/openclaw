@@ -2,6 +2,13 @@
 <html lang="ko" data-theme="dark">
 <head>
   <meta charset="UTF-8">
+  <!--GATE_THEME-->
+  <script>
+    /* 2026-11-09 사용자 요청: 신문 요약·경제 공부·AI 소식·챌린지와 같은 '계정별 화이트/다크' 를 시장 지수에도.
+       /market 으로 열렸을 때만 서버가 위 자리표에 계정 값(window.__GATE_THEME)을 넣는다.
+       'auto'(기기 설정 따름)면 이 화면은 data-theme 가 꼭 있어야 하므로 기기 설정을 읽어 정한다. */
+    try{ if(window.__GATE_THEME==='auto') document.documentElement.setAttribute('data-theme', matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'); }catch(e){}
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>주가 및 투자 타이밍 대시보드 | OpenClaw Stock Briefing</title>
   <meta name="description" content="실시간 주가지수, 역대 최고가(ATH) 대비 하락률, 단계별 분할 매수 타이밍 대시보드">
@@ -1554,11 +1561,21 @@
       const next = current === 'light' ? 'dark' : 'light';
       html.setAttribute('data-theme', next);
       localStorage.setItem('dashboard_theme', next);
+      saveThemeToAccount(next);                 // /market 에서만 계정에 저장(아래 함수가 판단)
       document.getElementById('theme-toggle-btn').textContent = next === 'light' ? '☀️ 모드' : '🌙 모드';
     });
 
-    // Restore Theme Preference
-    const savedTheme = localStorage.getItem('dashboard_theme');
+    // 계정별 화이트/다크 저장 (2026-11-09 사용자 요청) — /market(로그인한 사람만 보는 화면)에서만. 슬랙 캡처용 '/' 는 예전 그대로.
+    function saveThemeToAccount(t) {
+      if (!document.documentElement.classList.contains('in-market')) return;
+      try { fetch('/gate/theme', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({theme: t}), keepalive: true}).catch(() => {}); } catch (e) {}
+    }
+
+    // Restore Theme Preference — 계정에 저장된 값(window.__GATE_THEME)이 있으면 그게 먼저(머리글에서 이미 적용됨, 글자만 맞춤)
+    const _acct = document.documentElement.classList.contains('in-market') ? window.__GATE_THEME : undefined;
+    const savedTheme = _acct ? document.documentElement.getAttribute('data-theme') : localStorage.getItem('dashboard_theme');
+    // 계정에 아직 값이 없고 이 브라우저에 예전 선택이 있으면 한 번 올려 준다(옮겨 담기)
+    if (!_acct && (savedTheme === 'light' || savedTheme === 'dark')) saveThemeToAccount(savedTheme);
     if (savedTheme) {
       document.documentElement.setAttribute('data-theme', savedTheme);
       document.getElementById('theme-toggle-btn').textContent = savedTheme === 'light' ? '☀️ 모드' : '🌙 모드';
