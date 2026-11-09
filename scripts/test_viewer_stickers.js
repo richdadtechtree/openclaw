@@ -211,14 +211,19 @@ const server=http.createServer((req,res)=>{
     check((await list(page)).length===0,'guest stickers follow existing temporary-mark lifetime');
     await ctx.close();[ctx,page]=await context({width:1024,height:1366},true);
     await page.goto(base+'/economy');await open(page);
-    check(await page.locator("#lb-hand-float").isVisible()&&await page.evaluate(()=>!M.on),
-      "wide tablet shows the centered hand before the newspaper pen is enabled");
+    check(await page.locator("#lb-hand-float").isHidden(),
+      "centered hand is hidden while the top hand button is off (clean screenshots)");
+    await page.evaluate(()=>setHand(true));
+    check(await page.locator("#lb-hand-float").isVisible()&&await page.evaluate(()=>V.hand&&!V.go),
+      "centered hand appears once the top hand button is pressed, movement still off");
     await page.locator("#lb-hand-float").tap();
-    check(await page.evaluate(()=>M.on&&V.hand&&markList().length===0),
-      "tablet newspaper hand enables movement without drawing");
+    check(await page.evaluate(()=>V.hand&&V.go&&markList().length===0),
+      "tapping the centered hand enables movement without drawing");
     await page.locator("#lb-hand-float").tap();
-    check(await page.evaluate(()=>M.on&&!V.hand&&markList().length===0),
-      "tablet newspaper hand returns to the pen without the top toolbar");
+    check(await page.evaluate(()=>V.hand&&!V.go&&markList().length===0),
+      "tapping it again turns movement off");
+    await page.evaluate(()=>setHand(false));
+    check(await page.locator("#lb-hand-float").isHidden(),"turning the top hand off hides the centered hand");
     check(errors.length===0,'no browser script errors: '+errors.join(';'));
     console.log('PASS: '+checks+' sticker browser checks');
   }finally{await ctx.close();await browser.close();await new Promise(r=>server.close(r));}

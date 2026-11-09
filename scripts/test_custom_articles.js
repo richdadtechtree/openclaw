@@ -153,10 +153,12 @@ const server=http.createServer((req,res)=>{
     check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth&&document.getElementById('section-jump').getBoundingClientRect().right<=innerWidth),'four-item navigation fits the mobile screen');
     await page.locator('#custom-files').setInputFiles({name:'mobile.png',mimeType:'image/png',buffer:png});await imported(1);
     await page.locator('.custom-preview').click();await viewer();await stamp('4');
+    await page.evaluate(()=>setHand(true));
     await page.locator('#lb-hand-float').click();
-    check(await page.evaluate(()=>V.hand&&M.on&&!STICK.active&&V.pts.size===0&&markList().length===1),'floating hand overrides a selected center CHECK without moving or erasing it');
+    check(await page.evaluate(()=>V.hand&&V.go&&M.on&&!STICK.active&&V.pts.size===0&&markList().length===1),'floating hand overrides a selected center CHECK without moving or erasing it');
     await page.locator('#lb-hand-float').click();
-    check(await page.evaluate(()=>!V.hand&&M.on&&markList().length===1),'floating hand returns custom photos to the pen');
+    check(await page.evaluate(()=>V.hand&&!V.go&&M.on&&markList().length===1),'floating hand turns movement off again');
+    await page.evaluate(()=>setHand(false,true));
     await page.keyboard.press('Escape');
     check((await marks())[0].label==='CHECK','mobile custom images support stickers');
     check(errors.length===0,'no browser script errors: '+errors.join(';'));

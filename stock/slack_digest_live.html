@@ -2933,7 +2933,7 @@ function setPen(on){
   $("lb-stage").classList.remove("movable","moving");
   $("lb-pen").setAttribute("aria-pressed", on?"true":"false");
   $("lb-tools").hidden=!on;
-  $("lb-hand-float").hidden=$("lb").hidden;
+  updateFloat();
   $("lb").classList.toggle("marking", on);    // 상단 ✋ 숨기고 도구모음 안 ✋ 를 쓴다
   $("lb-stage").classList.toggle("marking", on);
   const eraseBtn=$("lb-erase"); if(eraseBtn) eraseBtn.setAttribute("aria-pressed","false");
@@ -2996,7 +2996,7 @@ function openViewer(i,opts={}){
   V.fromArt=opts.art||null;                    // 이 기사에서 열었다 → 옆 요약 칸에서 맨 위·강조
   $("lb-pick").hidden=!V.pick;
   $("lb").hidden=false;
-  $("lb-hand-float").hidden=false;
+  V.go=false;
   document.body.style.overflow="hidden";     // 뒤쪽 페이지가 같이 스크롤되지 않게
   ctxProbe();                                  // 확장 프로그램이 우클릭을 가로채는지(처음 한 번)
   if(opts.pen && !M.on) setPen(true);         // 도구모음을 먼저 펴 두고 사진 크기를 잰다(다시 열어도 기사 확대가 풀리지 않게)
@@ -3017,7 +3017,7 @@ function closeViewer(){
   lbGuards(false);                             // 열 때 붙인 우클릭·끌기 막기를 뗀다
   dlMenu(false);
   $("lb").hidden=true;
-  $("lb-hand-float").hidden=true;
+  V.go=false; updateFloat();
   document.body.style.overflow="";
   clearTimeout(V.navT);                        // 닫은 뒤 타이머가 남아 돌지 않게
   resetPointers();                             // 닫는 순간 남은 손가락 기록도 비운다
@@ -3124,16 +3124,16 @@ const HAND_DEFAULT=(()=>{
 function setHand(on, keep){
   finishStickerMode();
   V.hand=!!on;
+  if(!on) V.go=false;                          // 상단 ✋ 를 끄면 가운데 손 단추도 사라지고 이동도 꺼진다
   /* keep(2026-10-16): 🖍·색·도구·지우개를 고르느라 손바닥이 저절로 꺼질 땐 옮겨 둔 자리를 그대로 둔다
      ("손바닥으로 옮긴 뒤 펜을 누르면 사진이 원래 자리로 돌아간다" — 사용자 요청). ✋ 버튼·M 키로 직접 끌 때만 정상 범위로. */
   if(!on && keep){ if(V.stage) keepLoose(); } else if(!on){ V.loose=false; if(V.stage) clampPan(); }   // 직접 끄면 바로 정상 범위로
   $("lb-hand").setAttribute("aria-pressed", V.hand?"true":"false");
   $("lb-t-hand").setAttribute("aria-pressed", V.hand?"true":"false");
-  $("lb-hand-float").setAttribute("aria-pressed",V.hand?"true":"false");
-  $("lb-hand-float").setAttribute("aria-label",V.hand?"펜으로 돌아가기":"화면 이동 켜기");
+  updateFloat();
   // 도구모음은 '하나만 고르기' 처럼 보이게 — 손바닥이면 직선·동그라미·자유 표시를 잠시 끈다(끄면 고르던 도구로 돌아옴)
   try{ TOOLS.forEach(([id,k])=>$(id).setAttribute("aria-pressed", !V.hand && k===M.tool?"true":"false")); }catch(e){}
-  $("lb-stage").classList.toggle("hand", V.hand);
+  $("lb-stage").classList.toggle("hand", handGo());
   if(V.stage) paint();
 }
 let paintQueued=false;
@@ -3287,9 +3287,21 @@ $("lb-hand").onclick=()=>setHand(!V.hand);
 $("lb-warn-x").onclick=()=>{ $("lb-warn").hidden=true; };   // 확장 프로그램 우클릭 가로채기 알림 닫기
 // 편집 도구모음 안 ✋: 켜면 옮기기, 다시 누르면 옮겨 둔 자리 그대로 긋기로(가운데로 안 돌아감)
 $("lb-t-hand").onclick=()=>{ if(V.hand) setHand(false,true); else { if(M.erase) setErase(false); setHand(true); } };
+/* 2026-11-09 사용자 요청(캡처할 때 가운데 손이 거슬림): 폰의 가운데 ✋ 는 상단 ✋ 가 눌려 있을 때만 보이고,
+   그 가운데 ✋ 를 눌러야(V.go) 화면 이동이 된다. 상단 ✋ 가 꺼져 있으면 보이지도 않는다. */
+function floatShown(){ return getComputedStyle($("lb-hand-float")).display!=="none"; }
+function handGo(){ return V.hand && (!floatShown() || V.go); }     // PC 처럼 가운데 단추가 없으면 예전처럼 ✋ 만으로 이동
+function updateFloat(){
+  const f=$("lb-hand-float");
+  f.hidden=$("lb").hidden || !V.hand;
+  f.setAttribute("aria-pressed",V.go?"true":"false");
+  f.setAttribute("aria-label",V.go?"화면 이동 끄기":"화면 이동 켜기");
+  $("lb-stage").classList.toggle("hand", handGo());
+}
 function toggleFloatingHand(){
-  if(!M.on)setPen(true);
-  $("lb-t-hand").click();
+  if(!V.hand) return;
+  V.go=!V.go;
+  updateFloat();
 }
 let handTouchUntil=0;
 $("lb-hand-float").onclick=e=>{
@@ -3565,7 +3577,7 @@ stage.addEventListener("pointerdown",e=>{
   if(e.button===0 && V.space) V.spaceUsed=true;
   if(e.button===1) e.preventDefault();                    // 휠 버튼의 '자동 스크롤' 동그라미가 뜨지 않게
   const ctrlPan=e.button===0 && e.ctrlKey && e.pointerType==="mouse";   // Ctrl 누른 채 왼쪽 버튼 = 옮기기
-  if(e.button===2 || e.button===1 || (V.space && e.button===0) || ctrlPan || (V.hand && e.button===0 && V.pts.size===1)){
+  if(e.button===2 || e.button===1 || (V.space && e.button===0) || ctrlPan || (handGo() && e.button===0 && V.pts.size===1)){
     M.cur=null;
     /* 2026-10-19: 오른쪽 버튼은 1배(확대 안 함)에서도 옮긴다 — 1배의 정상 범위는 '가운데 고정'이라 그대로는 안 움직이므로,
        손바닥처럼 넓은 범위(V.loose)를 허용한다. 장 넘김·resetZoom·✋ 끄기 때 가운데로 돌아온다. 확대 중엔 예전처럼 정상 범위. */
@@ -3633,7 +3645,7 @@ stage.addEventListener("pointermove",e=>{
   if(!V.drag) return;
   const dx=e.clientX-V.drag.x, dy=e.clientY-V.drag.y;
   V.drag.moved=Math.max(V.drag.moved,Math.hypot(dx,dy));
-  if(V.zoom>1.001 || V.hand || V.drag.pan){ V.tx=V.drag.tx+dx; V.ty=V.drag.ty+dy; paint(); }   // 손바닥·오른쪽 버튼은 1배에서도 옮긴다
+  if(V.zoom>1.001 || handGo() || V.drag.pan){ V.tx=V.drag.tx+dx; V.ty=V.drag.ty+dy; paint(); }   // 손바닥·오른쪽 버튼은 1배에서도 옮긴다
 });
 /* 누르지 않고 지나가기만 할 때 — 고른 동그라미 위면 커서를 '옮기기' 모양으로.
    (손가락에는 커서가 없으니 마우스일 때만 본다) */
@@ -3667,7 +3679,7 @@ function endPointer(e){
   if(V.drag && V.drag.pan){
     stage.classList.remove("panning");
     // ✋ 손바닥 모드에서 끌지 않고 '톡' 누른 것은 옮기기가 아니라 클릭 → 아래의 두 번 눌러 확대·바깥 눌러 닫기로 넘긴다
-    const tap = V.hand && e.button===0 && V.drag.moved<6;
+    const tap = handGo() && e.button===0 && V.drag.moved<6;
     if(!tap){ V.drag=null; return; }
   }
   if(M.on){ V.drag=null; return; }             // 형광펜 모드에선 넘기기·닫기 동작 안 함
