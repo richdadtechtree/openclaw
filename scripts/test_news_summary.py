@@ -14,8 +14,8 @@ import news_summary as summary
 
 DATE = '2026-11-09'
 ANSWER = {'complete': True, 'printed_date': DATE, 'articles': [
-    {'title': '실제 기사 제목', 'kind': 'news', 'what': '매출 30% 증가',
-     'why': '수출 증가', 'how': ['수출 20조원', '국내 매출 10조원'], 'bbox': [.1, .2, .5, .4]}]}
+    {'title': '실제 기사 제목', 'kind': 'news', 'what': '[확정] 매출 30% 증가',
+     'why': '[기자 해석] 수출 증가', 'how': ['[조사 데이터] 수출 20조원', '[계획] 국내 매출 10조원'], 'bbox': [.1, .2, .5, .4]}]}
 
 
 class SummaryTests(unittest.TestCase):
@@ -40,10 +40,17 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(len(notes), 2)
         msgs = summary.messages(DATE)
         self.assertEqual(len(msgs), 2)
-        self.assertIn('• WHAT: 매출 30% 증가', msgs[0]['text'])
-        self.assertIn('• HOW: 수출 20조원 / 국내 매출 10조원', msgs[0]['text'])
+        self.assertIn('• WHAT: [확정] 매출 30% 증가', msgs[0]['text'])
+        self.assertIn('• HOW:\n- [조사 데이터] 수출 20조원\n- [계획] 국내 매출 10조원', msgs[0]['text'])
         self.assertIn('• 사진: 02', msgs[1]['text'])
         self.assertIn('"bbox": [0.1, 0.2, 0.5, 0.4]', msgs[1]['text'])
+
+    def test_missing_or_unknown_classification_is_not_published(self):
+        for text in ['계획을 확정으로 추측하지 않음', '[사실일듯] 내용', '[확정] ']:
+            with self.assertRaises(RuntimeError):
+                summary.classified(text)
+        for label in summary.LABELS:
+            self.assertEqual(summary.classified('[' + label + '] 내용'), '[' + label + '] 내용')
 
     def test_partial_failure_preserves_previous_complete_summary_and_resumes(self):
         previous = {'date': DATE, 'complete': True, 'messages': [{'text': 'previous'}]}
