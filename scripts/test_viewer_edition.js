@@ -161,7 +161,7 @@ const srv = http.createServer((req, res) => {
     await page.click('#section-jump [data-section="'+id+'"]');
     const result=await page.evaluate(id=>{
       const top=document.getElementById(id).getBoundingClientRect().top;
-      const offset=document.querySelector('.sitenav').getBoundingClientRect().height+document.getElementById('toolbar').getBoundingClientRect().height+16;
+      const offset=document.querySelector('.sitenav').getBoundingClientRect().height+document.getElementById('pickbar').getBoundingClientRect().height+document.getElementById('toolbar').getBoundingClientRect().height+16;   // 2026-11-09: 종이/온라인·날짜 고정 줄(#pickbar)도 가리는 높이에 포함
       return {top,offset,selected:document.querySelector('#section-jump [aria-current=location]')?.dataset.section};
     },id);
     check(Math.abs(result.top-result.offset)<2&&result.selected===id,id+' 누르면 상단 메뉴 아래로 즉시 이동',JSON.stringify(result));
