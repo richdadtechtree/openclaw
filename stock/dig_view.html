@@ -58,13 +58,40 @@
   .sitefoot{max-width:760px;margin:0 auto;padding:0 16px 40px;text-align:center;font-size:13px;color:var(--sub)}
   .sitefoot a{color:var(--sub)}
 
+  /* ── 🖍 형광펜(관리자 전용, 2026-11-09 사용자 요청) ─────────────────────────────
+     글자를 끌어 선택하면 아래에 색 단추가 나오고, 누르면 그 글자에 색이 칠해진다(노랑·빨강·파랑). 서버에 저장되고 관리자만 본다. */
+  mark.hl{color:inherit;border-radius:3px;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+  mark.hl-y{background:rgba(255,217,59,.6)} mark.hl-r{background:rgba(255,91,91,.42)} mark.hl-b{background:rgba(77,163,255,.42)}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]) mark.hl-y{background:rgba(255,217,59,.4)}
+    :root:not([data-theme="light"]) mark.hl-r{background:rgba(255,91,91,.45)}
+    :root:not([data-theme="light"]) mark.hl-b{background:rgba(77,163,255,.45)}
+  }
+  :root[data-theme="dark"] mark.hl-y{background:rgba(255,217,59,.4)}
+  :root[data-theme="dark"] mark.hl-r{background:rgba(255,91,91,.45)}
+  :root[data-theme="dark"] mark.hl-b{background:rgba(77,163,255,.45)}
+  body.hl-on mark.hl{cursor:pointer}
+  @media (max-width:1180px){.hlt-l{display:none}}   /* 좁으면 아이콘만(맨 위 줄이 두 줄로 밀리지 않게) */
+  #hlt[aria-pressed="true"]{background:var(--soft);border-color:var(--blue);color:var(--blue)}
+  #hlt[hidden],#hlbar[hidden],#hlst[hidden]{display:none}
+  #hlbar{position:fixed;left:50%;transform:translateX(-50%);bottom:max(16px,env(safe-area-inset-bottom));z-index:30;
+         display:flex;gap:8px;align-items:center;padding:8px 10px;background:var(--card);color:var(--ink);
+         border:1px solid var(--line);border-radius:999px;box-shadow:0 6px 24px #0004;user-select:none;-webkit-user-select:none;
+         max-width:calc(100vw - 24px)}
+  #hlbar button{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-width:44px;height:40px;padding:0 12px;
+         border-radius:999px;font-size:14px;font-weight:600;touch-action:manipulation}
+  #hlbar .sw{width:18px;height:18px;border-radius:50%;border:1px solid #0003;display:inline-block}
+  #hlbar .sw.y{background:#ffd93b} #hlbar .sw.r{background:#ff5b5b} #hlbar .sw.b{background:#4da3ff}
+  #hlst{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(max(16px,env(safe-area-inset-bottom)) + 62px);z-index:30;
+        background:#111d;color:#fff;border-radius:999px;padding:6px 14px;font-size:13px;pointer-events:none}
   /* ── 인쇄/PDF 용 ──────────────────────────────────────────────
      다크를 골라 둬도 종이엔 늘 흰 바탕·진한 글씨. 도구줄은 빼고, 소제목·사진·요약 상자가 쪽 경계에서 잘리지 않게 한다.
      (서버의 PDF 만들기와 브라우저 Ctrl+P 가 같은 규칙을 쓴다) */
   @media print{
     :root,:root[data-theme="dark"],:root:not([data-theme="light"]){
       --bg:#fff;--card:#fff;--ink:#111;--sub:#555;--line:#ddd;--blue:#1f5fbf;--soft:#eef4fc;color-scheme:light}
-    .top,.sitefoot{display:none}
+    .top,.sitefoot,#hlbar,#hlst{display:none}
+    mark.hl{background:none!important}
     main{max-width:none;padding:0}
     .card{border:none;border-radius:0;padding:0;margin:0 0 18px}
     h2.title{break-after:avoid}
@@ -93,9 +120,17 @@
   <button id="fp" title="글자 크게">가+</button>
   <button id="pdf" title="이 호를 PDF 파일로 받기">⤓ PDF</button>
   <button id="th" title="화면 색: 자동 → 화이트 → 다크">🌓 자동</button>
+  <button id="hlt" hidden aria-pressed="true" aria-label="형광펜 켜기/끄기" title="형광펜 켜기/끄기 (관리자 전용)">🖍<span class="hlt-l"> 형광펜</span></button>
   <button id="rf" title="Gmail 에서 새 메일 확인">↻</button>
 </div>
 <main id="main"><div class="empty">불러오는 중…</div></main>
+<div id="hlbar" hidden role="toolbar" aria-label="형광펜 색 고르기">
+  <button type="button" data-c="y" aria-label="노랑 형광펜"><span class="sw y"></span>노랑</button>
+  <button type="button" data-c="r" aria-label="빨강 형광펜"><span class="sw r"></span>빨강</button>
+  <button type="button" data-c="b" aria-label="파랑 형광펜"><span class="sw b"></span>파랑</button>
+  <button type="button" data-c="" aria-label="선택한 글자의 형광펜 지우기">🧽 지우기</button>
+</div>
+<div id="hlst" hidden role="status" aria-live="polite"></div>
 <!--GATE_FOOT-->
 
 <script>
@@ -189,11 +224,12 @@ function syncNav(){ const i=items.findIndex(x=>x.id===cur);
   $('prev').disabled = i<0 || i>=items.length-1;   // 목록은 최신순 → 오른쪽 끝이 가장 옛날
   $('next').disabled = i<=0; }
 async function open(id){
+  hlFlush();                                          // 다른 호로 가기 전에 칠한 표시 저장 마무리
   cur=id; $('sel').value=id; syncNav();
   try{
     const r=await fetch('/api/dig/item?id='+encodeURIComponent(id)); const j=await r.json();
     if(!j.ok) throw new Error(j.reason||'없음');
-    render(j.issue); history.replaceState(null,'','?id='+id);
+    render(j.issue); history.replaceState(null,'','?id='+id); hlLoad(id);
   }catch(e){ $('main').textContent=''; $('main').appendChild(el('div','empty','이 호를 불러오지 못했어요: '+e.message)); }
 }
 async function loadList(keep){
@@ -222,6 +258,141 @@ $('rf').onclick=async()=>{
 };
 document.addEventListener('keydown',e=>{ if(e.target.tagName==='SELECT') return;
   if(e.key==='ArrowLeft') $('prev').click(); if(e.key==='ArrowRight') $('next').click(); });
+
+// ── 🖍 형광펜 (관리자 전용, 2026-11-09 사용자 요청) ─────────────────────────
+// 글 덩어리(문단·제목·요약 줄…)마다 번호 u 를 매기고, '그 덩어리 글자 몇 번째부터 몇 번째까지' 를 색과 함께 저장한다.
+// 글자 수로 저장하므로 화면 크기·글자 크기·다크/화이트가 달라도 같은 글자에 붙는다. 글자(textContent)는 절대 바꾸지 않고 <mark> 로 감싸기만 한다.
+// 관리자가 아니면 서버가 403 을 주므로 이 기능은 통째로 꺼져 있다(단추도 안 보임, 관리자 표시도 안 내려옴).
+const UNIT_SEL='p, h2.title, h2.sec, h3, li, .cap';
+const HL={admin:false, enabled:true, marks:[], rev:0, dirty:false, saving:false, saveT:null, selT:null, last:null, barDown:false, toastT:null};
+try{ HL.enabled = localStorage.getItem('dig.hl')!=='0'; }catch(e){}
+function hlUnits(){ return [...$('main').querySelectorAll(UNIT_SEL)]; }
+function hlOff(u,node,off){            // 덩어리 u 안에서 (node, off) 가 글자 몇 번째인지
+  const r=document.createRange(); r.selectNodeContents(u); r.setEnd(node,off); return r.toString().length; }
+function hlSegs(range){                // 선택한 범위 → [{u,s,e}] (덩어리마다 하나, 앞뒤 공백 뺌)
+  const out=[];
+  hlUnits().forEach((u,i)=>{
+    if(!range.intersectsNode(u)) return;
+    const t=u.textContent;
+    let s=u.contains(range.startContainer)?hlOff(u,range.startContainer,range.startOffset):0;
+    let e=u.contains(range.endContainer)?hlOff(u,range.endContainer,range.endOffset):t.length;
+    while(s<e&&/\s/.test(t[s])) s++;
+    while(e>s&&/\s/.test(t[e-1])) e--;
+    if(e>s) out.push({u:i,s,e});
+  });
+  return out;
+}
+function hlQ(U,u,s,e){ return (U[u]?U[u].textContent.slice(s,e):'').slice(0,40); }
+function hlSubtract(list,u,s,e,U){    // 같은 덩어리에서 [s,e) 와 겹치는 부분을 기존 표시에서 도려낸다(색이 달라도)
+  const out=[];
+  for(const m of list){
+    if(m.u!==u||m.e<=s||m.s>=e){ out.push(m); continue; }
+    if(m.s<s) out.push({u:m.u,s:m.s,e:s,c:m.c,q:hlQ(U,u,m.s,s)});
+    if(m.e>e) out.push({u:m.u,s:e,e:m.e,c:m.c,q:hlQ(U,u,e,m.e)});
+  }
+  return out;
+}
+function hlMerge(list,U){              // 같은 색이 맞닿아 있으면 하나로
+  const a=list.slice().sort((x,y)=>x.u-y.u||x.s-y.s), out=[];
+  for(const m of a){
+    const p=out[out.length-1];
+    if(p&&p.u===m.u&&p.c===m.c&&p.e>=m.s){ p.e=Math.max(p.e,m.e); p.q=hlQ(U,p.u,p.s,p.e); } else out.push({...m});
+  }
+  return out;
+}
+function hlWrap(u,s,e,c){              // 덩어리 u 의 글자 [s,e) 를 <mark> 로 감싼다(글자 자체는 그대로)
+  const tw=document.createTreeWalker(u,NodeFilter.SHOW_TEXT), nodes=[]; let n;
+  while((n=tw.nextNode())) nodes.push(n);
+  let pos=0;
+  for(const t of nodes){
+    const len=t.nodeValue.length, a=Math.max(s,pos), b=Math.min(e,pos+len);
+    if(b>a){
+      let mid=t; if(a>pos) mid=t.splitText(a-pos);
+      if(b-a<mid.nodeValue.length) mid.splitText(b-a);
+      const mk=document.createElement('mark'); mk.className='hl hl-'+c; mid.replaceWith(mk); mk.appendChild(mid);
+    }
+    pos+=len;
+  }
+}
+function hlPaintUnit(u,i,U){
+  u.querySelectorAll('mark.hl').forEach(m=>m.replaceWith(...m.childNodes)); u.normalize();
+  const t=u.textContent;
+  HL.marks.filter(m=>m.u===i).sort((a,b)=>a.s-b.s).forEach(m=>{
+    if(m.e>t.length||t.slice(m.s,m.e).slice(0,40)!==m.q) return;     // 글이 바뀌어 안 맞으면 건너뜀(엉뚱한 자리에 칠하지 않음)
+    hlWrap(u,m.s,m.e,m.c);
+  });
+}
+function hlPaintAll(){ const U=hlUnits(); U.forEach((u,i)=>hlPaintUnit(u,i,U)); }
+function hlToast(msg){ const t=$('hlst'); t.textContent=msg; t.hidden=false; clearTimeout(HL.toastT); HL.toastT=setTimeout(()=>{t.hidden=true;},2200); }
+function hlApply(c){                   // 선택한 글자에 색 칠하기(c='' 이면 지우기)
+  const r=HL.last; if(!r) return;
+  const U=hlUnits(), segs=hlSegs(r); if(!segs.length) return;
+  let list=HL.marks;
+  for(const g of segs){
+    list=hlSubtract(list,g.u,g.s,g.e,U);
+    if(c) list.push({u:g.u,s:g.s,e:g.e,c,q:hlQ(U,g.u,g.s,g.e)});
+  }
+  HL.marks=hlMerge(list,U);
+  new Set(segs.map(g=>g.u)).forEach(i=>hlPaintUnit(U[i],i,U));
+  try{ getSelection().removeAllRanges(); }catch(e){}
+  HL.last=null; $('hlbar').hidden=true;
+  hlDirty();
+}
+// 저장: 바뀐 뒤 0.5초 모아서 서버에 통째로 보낸다. 다른 창이 먼저 저장했으면(409) 그쪽 최신으로 바꿔 덮어쓰지 않는다.
+function hlDirty(){ HL.dirty=true; clearTimeout(HL.saveT); HL.saveT=setTimeout(hlSave,500); }
+async function hlSave(){
+  if(!HL.dirty||!HL.admin) return;
+  if(HL.saving){ HL.saveT=setTimeout(hlSave,300); return; }
+  HL.saving=true; HL.dirty=false;
+  const body={id:HL.id,revision:HL.rev,marks:HL.marks};
+  try{
+    const r=await fetch('/api/dig/marks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),keepalive:true});
+    const j=await r.json().catch(()=>({}));
+    if(r.ok&&j.ok){ HL.rev=j.revision; hlToast('저장됨 ✓'); }
+    else if(r.status===409&&HL.id===cur){ HL.marks=j.marks||[]; HL.rev=j.revision||0; hlPaintAll(); hlToast('다른 창에서 먼저 저장해서 최신으로 바꿨어요'); }
+    else { HL.dirty=true; hlToast('저장하지 못했어요 — 다음 변경 때 다시 시도해요'); }
+  }catch(e){ HL.dirty=true; hlToast('저장하지 못했어요 — 다음 변경 때 다시 시도해요'); }
+  HL.saving=false;
+  if(HL.dirty){ clearTimeout(HL.saveT); HL.saveT=setTimeout(hlSave,100); }     // 저장하는 사이 또 바뀌었으면 한 번 더
+}
+function hlFlush(){ if(HL.dirty){ clearTimeout(HL.saveT); HL.saveT=null; hlSave(); } }
+async function hlLoad(id){             // 호를 열 때마다: 관리자면 그 호의 표시를 받아 칠한다
+  if(PRINT) return;
+  HL.id=id; HL.marks=[]; HL.rev=0; HL.dirty=false;
+  let j=null;
+  try{ const r=await fetch('/api/dig/marks?id='+encodeURIComponent(id),{cache:'no-store'}); if(!r.ok){ HL.admin=false; return; } j=await r.json(); }catch(e){ return; }
+  if(!j||!j.ok||id!==cur) return;
+  HL.admin=true; HL.marks=j.marks||[]; HL.rev=j.revision||0;
+  $('hlt').hidden=false; hlSyncBtn();
+  hlPaintAll();
+}
+function hlSyncBtn(){ $('hlt').setAttribute('aria-pressed',HL.enabled?'true':'false'); document.body.classList.toggle('hl-on',HL.admin&&HL.enabled); }
+$('hlt').onclick=()=>{ HL.enabled=!HL.enabled; try{ localStorage.setItem('dig.hl',HL.enabled?'1':'0'); }catch(e){} hlSyncBtn(); if(!HL.enabled) $('hlbar').hidden=true; };
+// 글자를 끌어 선택하면 색 단추 줄이 나온다(화면 아래 가운데 — 폰의 기본 복사 메뉴와 안 겹치게).
+function hlSel(){
+  const bar=$('hlbar');
+  if(!HL.admin||!HL.enabled||PRINT){ bar.hidden=true; return; }
+  if(HL.barDown) return;               // 단추를 누르는 중엔 선택이 풀려도 줄을 유지
+  const sel=getSelection();
+  if(!sel||sel.isCollapsed||!sel.rangeCount){ bar.hidden=true; return; }
+  const r=sel.getRangeAt(0);
+  if(!$('main').contains(r.commonAncestorContainer)){ bar.hidden=true; return; }
+  HL.last=r.cloneRange();
+  bar.hidden=!hlSegs(HL.last).length;
+}
+document.addEventListener('selectionchange',()=>{ clearTimeout(HL.selT); HL.selT=setTimeout(hlSel,100); });
+$('hlbar').addEventListener('pointerdown',e=>{ HL.barDown=true; e.preventDefault(); });   // 단추를 눌러도 선택이 안 풀리게
+['pointerup','pointercancel'].forEach(t=>$('hlbar').addEventListener(t,()=>setTimeout(()=>{HL.barDown=false;},300)));
+$('hlbar').addEventListener('click',e=>{ const b=e.target.closest('button[data-c]'); if(b) hlApply(b.dataset.c); });
+// 칠한 글자를 누르면 그 조각이 선택돼서(→ 🧽 지우기) 바로 지울 수 있다. 링크 위에선 링크가 우선.
+$('main').addEventListener('click',e=>{
+  const m=e.target.closest&&e.target.closest('mark.hl');
+  if(!m||!HL.admin||!HL.enabled||e.target.closest('a')) return;
+  const sel=getSelection(); if(sel&&sel.isCollapsed) sel.selectAllChildren(m);
+});
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&!$('hlbar').hidden){ $('hlbar').hidden=true; try{getSelection().removeAllRanges();}catch(_){} } });
+window.addEventListener('pagehide',hlFlush);
+document.addEventListener('visibilitychange',()=>{ if(document.hidden) hlFlush(); });
 
 applyFs(); applyTheme(); loadList(false);
 </script>

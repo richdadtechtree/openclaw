@@ -48,6 +48,14 @@ except Exception as _marks_err:
     print("[news-marks] 로드 실패: %r" % (_marks_err,))
 
 
+# 경제 공부(디그) 글 형광펜: 관리자만 서버에 보관. 설치 실패해도 나머지는 그대로.
+try:
+    from dig_marks import install as install_dig_marks
+    install_dig_marks(app)
+except Exception as _dm_err:
+    print("[dig-marks] 로드 실패: %r" % (_dm_err,))
+
+
 # 관리자 버튼: 다운로드 / 받은 파일 요약 / 다운로드·요약.
 try:
     from news_redo import install as install_news_redo
