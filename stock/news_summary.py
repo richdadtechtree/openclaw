@@ -95,7 +95,7 @@ def ask_page(image, date, page, detail_retry=False):
     if detail_retry:
         from PIL import Image
         content = payload["messages"][1]["content"]
-        content[0]["text"] += " 이전 응답에서 판독을 완료하지 못했습니다. 전체 지면과 겹치는 네 확대 조각을 함께 읽고, 중복 기사는 합쳐 주세요. 여전히 불명확하면 complete=false로 응답하세요."
+        content[0]["text"] += " 이전 응답에서 판독을 완료하지 못했습니다. 전체 지면과 겹치는 네 확대 조각을 함께 읽고, 중복 기사는 합쳐 주세요. bbox는 확대 조각이 아닌 첫 번째 전체 지면 기준 좌표를 쓰세요. 여전히 불명확하면 complete=false로 응답하세요."
         with Image.open(io.BytesIO(image)) as original:
             w, h = original.size
             for box in ((0, 0, int(w*.6), int(h*.6)), (int(w*.4), 0, w, int(h*.6)),
@@ -208,11 +208,11 @@ def format_messages(date, pages):
     for page, articles in pages:
         if not articles:
             continue
-        lines, meta = ["[신문요약] %s · %02d쪽" % (date, page)], []
+        lines, meta = ["%s · %02d쪽 신문요약" % (date, page)], []
         for a in articles:
             number += 1
             lines.extend(["", "📝 사설" if a["kind"] == "editorial" else "", "%d. %s" % (number, a["title"]),
-                          "• WHAT: " + a["what"], "• WHY: " + a["why"], "• HOW:\n" + "\n".join("- " + detail for detail in a["how"]), "• 사진: %02d" % page])
+                          "• WHAT: " + a["what"], "• WHY: " + a["why"], "• HOW:\n" + "\n".join("• " + detail for detail in a["how"]), "• 사진: %02d" % page])
             m = {"article_id": "%s-%03d" % (date.replace("-", ""), number), "title": a["title"], "page": page}
             if "bbox" in a:
                 m["bbox"] = a["bbox"]

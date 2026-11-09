@@ -44,7 +44,7 @@ class SummaryTests(unittest.TestCase):
         msgs = summary.messages(DATE)
         self.assertEqual(len(msgs), 2)
         self.assertIn('• WHAT: [확정] 매출 30% 증가', msgs[0]['text'])
-        self.assertIn('• HOW:\n- [조사 데이터] 수출 20조원\n- [계획] 국내 매출 10조원', msgs[0]['text'])
+        self.assertIn('• HOW:\n• [조사 데이터] 수출 20조원\n• [계획] 국내 매출 10조원', msgs[0]['text'])
         self.assertIn('• 사진: 02', msgs[1]['text'])
         self.assertIn('"bbox": [0.1, 0.2, 0.5, 0.4]', msgs[1]['text'])
 
@@ -127,6 +127,18 @@ class SummaryTests(unittest.TestCase):
                 summary.run(DATE)
             ask.assert_not_called()
         self.assertEqual(summary.messages(DATE), [])
+
+    def test_retry_request_supplies_overlapping_views_with_original_coordinates(self):
+        image = next(summary.page_images(DATE))[2]
+        class R:
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def read(self, *args): return json.dumps({'choices': [{'message': {'content': json.dumps(ANSWER)}}]}).encode()
+        with mock.patch.object(summary.urllib.request, 'urlopen', return_value=R()) as call:
+            summary.ask_page(image, DATE, 4, detail_retry=True)
+        content = json.loads(call.call_args.args[0].data)['messages'][1]['content']
+        self.assertEqual(len([x for x in content if x['type']=='image_url']), 5)
+        self.assertIn('전체 지면 기준', content[0]['text'])
 
     def test_vision_request_contains_the_actual_image_and_rejects_truncation(self):
         class R:
