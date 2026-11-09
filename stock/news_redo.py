@@ -2,6 +2,7 @@
 import json
 import os
 import shutil
+import shlex
 import subprocess
 import sys
 import threading
@@ -13,17 +14,18 @@ from fastapi.responses import JSONResponse
 import gate
 import news_files
 import news_summary
+import news_podcast
 import fcntl
 
 KST = timezone(timedelta(hours=9))
 HOME = os.path.expanduser("~")
 COOLDOWN = 20                                                   # 끝난 뒤 이 초 안에 다시 누르면 무시(연타 방지)
 
-STEPS = [("collect", "신문 다운로드"), ("sync", "웹에 연결"), ("summary", "기사 요약")]
+STEPS = [("collect", "신문 다운로드"), ("sync", "웹에 연결"), ("summary", "기사 요약"), ("audio", "오디오 파일 만들기")]
 
 _lock = threading.Lock()
 _state = {"running": False, "ok": None, "step": "", "message": "", "date": "", "started": 0.0, "finished": 0.0,
-          "steps": {}, "tail": ""}
+          "steps": {}, "tail": "", "job": ""}
 
 
 # ── 설정(환경변수) ─────────────────────────────────────────────────────────────
@@ -108,6 +110,55 @@ def run_sync(date, timeout=600):
     return False, "웹에 연결하지 못했어요(rc=%s)." % p.returncode
 
 
+def audio_cmd(date):
+    """NotebookLM 오디오 만들기 명령. 기본: ~/newspaper-claude 의 venv-nlm 파이썬으로 notebook_audio.py <날짜>.
+    서버에서 인자 모양이 다르면 .env 의 NEWS_AUDIO_CMD 로 바꾼다({date} 자리에 날짜가 들어감)."""
+    custom = os.getenv("NEWS_AUDIO_CMD") or gate._env("NEWS_AUDIO_CMD")
+    d = os.path.expanduser(os.getenv("NEWSPAPER_CLAUDE_DIR", "~/newspaper-claude"))
+    if custom:
+        return shlex.split(custom.replace("{date}", date)), d
+    py = os.path.join(d, "venv-nlm", "bin", "python")
+    if not os.path.isfile(py):
+        py = sys.executable
+    return [py, os.path.join(d, "notebook_audio.py"), date], d
+
+
+def run_audio(date, timeout=1800):
+    cmd, cwd = audio_cmd(date)
+    if not os.path.isfile(cmd[1] if len(cmd) > 1 else cmd[0]) and not os.getenv("NEWS_AUDIO_CMD"):
+        return False, "오디오 만들기 프로그램을 찾지 못했어요: %s" % cmd[1]
+    try:
+        p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return False, "오디오 만들기가 %d분 안에 끝나지 않았어요." % (timeout // 60)
+    except Exception as e:
+        return False, "오디오 만들기를 실행하지 못했어요: %r" % (e,)
+    _set(tail=_tail((p.stdout or "") + "\n" + (p.stderr or "")))
+    if p.returncode != 0:
+        return False, "오디오 만들기에 실패했어요(rc=%s). 아래 로그 끝부분을 확인해 주세요." % p.returncode
+    if not news_podcast.info(date).get("ok"):
+        return False, "프로그램은 끝났는데 오디오 파일이 아직 보이지 않아요."
+    return True, "오디오 파일을 만들었어요."
+
+
+def run_audio_only(date, lease=None):
+    try:
+        if not news_summary.messages(date) and not os.path.isfile(os.path.join(os.path.expanduser("~/.openclaw/slack_logs"), date + ".jsonl")):
+            _step("audio", "fail", "오늘 요약이 아직 없어요. 요약을 먼저 올려 주세요.")
+            return _set(ok=False, message="오늘 요약이 아직 없어서 오디오를 만들 수 없어요.")
+        _step("audio", "run", "NotebookLM 에서 만드는 중(10~20분 걸릴 수 있어요)")
+        ok, note = run_audio(date)
+        _step("audio", "ok" if ok else "fail", note)
+        _set(ok=ok, message=note)
+    except Exception:
+        _step("audio", "fail", "처리 중 오류가 발생했어요.")
+        _set(ok=False, message="오디오 만들기 중 오류가 발생했어요.")
+    finally:
+        if lease is not None:
+            lease.close()
+        _set(running=False, finished=time.time())
+
+
 def run_all(date, want_summary, download=True, lease=None):
     try:
         if download:
@@ -146,7 +197,7 @@ def run_all(date, want_summary, download=True, lease=None):
         _set(running=False, finished=time.time())
 
 
-def start(date, want_summary, download=True):
+def start(date, want_summary, download=True, audio=False):
     """시작하면 True, 이미 도는 중이거나 방금 끝났으면 False."""
     with _lock:
         if _state["running"] or (time.time() - _state["finished"] < COOLDOWN):
@@ -159,10 +210,13 @@ def start(date, want_summary, download=True):
             lease.close()
             return False
         _state.update(running=True, ok=None, step="", message="", date=date, started=time.time(), finished=0.0,
-                      steps={k: {"status": "wait", "note": ""} for k, _ in STEPS}, tail="")
+                      steps={k: {"status": "wait", "note": ""} for k, _ in STEPS}, tail="", job="audio" if audio else "")
     try:
         persist()
-        threading.Thread(target=run_all, args=(date, want_summary, download, lease), daemon=True).start()
+        if audio:
+            threading.Thread(target=run_audio_only, args=(date, lease), daemon=True).start()
+        else:
+            threading.Thread(target=run_all, args=(date, want_summary, download, lease), daemon=True).start()
     except Exception:
         lease.close()
         _set(running=False, ok=False, finished=time.time(), message="작업을 시작하지 못했어요.")
@@ -243,11 +297,11 @@ def install(app):
         if not isinstance(b, dict):
             return reply({"ok": False, "message": "요청 형식이 올바르지 않아요."}, 400)
         mode = b.get("mode", "all" if b.get("summary", True) else "download")
-        if mode not in ("all", "download", "summary"):
+        if mode not in ("all", "download", "summary", "audio"):
             return reply({"ok": False, "message": "실행 종류가 올바르지 않아요."}, 400)
         want_summary = mode != "download"
         date = today_kst()                                        # 수집기는 '오늘' 신문만 찾는다
         if isinstance(b, dict) and b.get("date") and b.get("date") != date:
             return reply({"ok": False, "message": "오늘 신문만 다시 가져올 수 있어요."}, 400)
-        started = start(date, want_summary, download=mode != "summary")
+        started = start(date, want_summary, download=mode not in ("summary", "audio"), audio=mode == "audio")
         return reply({"ok": True, "started": started, "state": snapshot()})
