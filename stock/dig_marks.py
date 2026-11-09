@@ -1,4 +1,4 @@
-"""경제 공부(디그) 글 형광펜: 관리자만 서버에 보관 (2026-11-09 사용자 요청).
+"""경제 공부(디그) 글 + 신문 요약 화면의 사설 형광펜: 관리자만 서버에 보관 (2026-11-09 사용자 요청).
 
 글자를 끌어 선택해 노랑·빨강·파랑으로 칠한 표시를 호(날짜)별로 저장한다. 일반 이용자는 읽기·쓰기 모두 못 하고(403),
 관리자가 칠한 표시는 일반 이용자 화면에 나오지 않는다. 신문 지면 형광펜(news_marks.py)과 같은 관리자 판별
@@ -22,6 +22,7 @@ MAX_BODY = 128 * 1024
 MAX_MARKS = 800                              # 한 호에 칠할 수 있는 조각 수
 ID_RE = re.compile(r"\d{4}-\d{2}-\d{2}")     # 디그 호 번호 = 날짜(dig_mail 과 같은 모양)
 COLORS = ("y", "r", "b")                     # 노랑·빨강·파랑
+ED_PREFIX = "ed-"                            # 사설 표시는 같은 표에 이 글자를 앞에 붙여 저장(같은 날짜의 디그 표시와 분리)
 
 
 @contextmanager
@@ -71,42 +72,62 @@ def load(uid, issue):
     return (json.loads(row["marks"]), row["revision"]) if row else ([], 0)
 
 
+def _get(request, day, prefix):
+    uid = owner(request)
+    if uid is None:
+        return reply({"ok": False, "reason": "forbidden"}, 403)
+    if not ID_RE.fullmatch(day or ""):
+        return reply({"ok": False, "message": "호 번호를 확인해 주세요."}, 400)
+    marks, rev = load(uid, prefix + day)
+    return reply({"ok": True, "marks": marks, "revision": rev})
+
+
+async def _put(request, prefix):
+    uid = owner(request)
+    if uid is None:
+        return reply({"ok": False, "reason": "forbidden"}, 403)
+    if request.headers.get("content-type", "").split(";")[0] != "application/json" or request.headers.get("sec-fetch-site") == "cross-site":
+        return reply({"ok": False, "message": "허용되지 않은 요청입니다."}, 403)
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw.extend(chunk)
+        if len(raw) > MAX_BODY:
+            return reply({"ok": False, "message": "표시가 너무 많아 저장하지 못했어요."}, 413)
+    try:
+        b = json.loads(raw)
+        marks = validate(b)
+    except (ValueError, TypeError):
+        return reply({"ok": False, "message": "표시 데이터를 확인해 주세요."}, 400)
+    key = prefix + b["id"]
+    with db() as con:
+        row = con.execute("SELECT revision FROM dig_marks WHERE owner=? AND issue=?", (uid, key)).fetchone()
+        cur = row["revision"] if row else 0
+        if cur != b["revision"]:                       # 다른 창이 먼저 저장했다 → 덮어쓰지 않고 최신을 알려 줌
+            cur_marks = json.loads(con.execute("SELECT marks FROM dig_marks WHERE owner=? AND issue=?", (uid, key)).fetchone()["marks"]) if row else []
+            return reply({"ok": False, "conflict": True, "message": "다른 창에서 먼저 저장했어요.", "marks": cur_marks, "revision": cur}, 409)
+        con.execute("INSERT OR REPLACE INTO dig_marks(owner, issue, marks, revision) VALUES(?,?,?,?)",
+                    (uid, key, json.dumps(marks, ensure_ascii=False, separators=(",", ":")), cur + 1))
+    return reply({"ok": True, "revision": cur + 1, "count": len(marks)})
+
+
 def install(app):
+    # ① 경제 공부(디그) 글: 호 번호(날짜) 그대로 저장
     @app.get("/api/dig/marks")
     def get_dig_marks(request: Request, id: str = ""):
         """관리자가 칠한 표시. 관리자가 아니면 403 → 화면은 형광펜 단추 자체를 안 보인다."""
-        uid = owner(request)
-        if uid is None:
-            return reply({"ok": False, "reason": "forbidden"}, 403)
-        if not ID_RE.fullmatch(id or ""):
-            return reply({"ok": False, "message": "호 번호를 확인해 주세요."}, 400)
-        marks, rev = load(uid, id)
-        return reply({"ok": True, "marks": marks, "revision": rev})
+        return _get(request, id, "")
 
     @app.post("/api/dig/marks")
     async def put_dig_marks(request: Request):
         """본문 {"id":"YYYY-MM-DD","revision":N,"marks":[...]} → 통째로 저장(버전이 맞을 때만)."""
-        uid = owner(request)
-        if uid is None:
-            return reply({"ok": False, "reason": "forbidden"}, 403)
-        if request.headers.get("content-type", "").split(";")[0] != "application/json" or request.headers.get("sec-fetch-site") == "cross-site":
-            return reply({"ok": False, "message": "허용되지 않은 요청입니다."}, 403)
-        raw = bytearray()
-        async for chunk in request.stream():
-            raw.extend(chunk)
-            if len(raw) > MAX_BODY:
-                return reply({"ok": False, "message": "표시가 너무 많아 저장하지 못했어요."}, 413)
-        try:
-            b = json.loads(raw)
-            marks = validate(b)
-        except (ValueError, TypeError):
-            return reply({"ok": False, "message": "표시 데이터를 확인해 주세요."}, 400)
-        with db() as con:
-            row = con.execute("SELECT revision FROM dig_marks WHERE owner=? AND issue=?", (uid, b["id"])).fetchone()
-            cur = row["revision"] if row else 0
-            if cur != b["revision"]:                       # 다른 창이 먼저 저장했다 → 덮어쓰지 않고 최신을 알려 줌
-                cur_marks = json.loads(con.execute("SELECT marks FROM dig_marks WHERE owner=? AND issue=?", (uid, b["id"])).fetchone()["marks"]) if row else []
-                return reply({"ok": False, "conflict": True, "message": "다른 창에서 먼저 저장했어요.", "marks": cur_marks, "revision": cur}, 409)
-            con.execute("INSERT OR REPLACE INTO dig_marks(owner, issue, marks, revision) VALUES(?,?,?,?)",
-                        (uid, b["id"], json.dumps(marks, ensure_ascii=False, separators=(",", ":")), cur + 1))
-        return reply({"ok": True, "revision": cur + 1, "count": len(marks)})
+        return await _put(request, "")
+
+    # ② 신문 요약 화면 맨 아래 '사설'(2026-11-09 사용자 요청: 디그와 같은 방식): 같은 표에 'ed-' 를 붙여 따로 저장 → 같은 날짜의 디그와 안 섞임
+    @app.get("/api/news/edmarks")
+    def get_ed_marks(request: Request, date: str = ""):
+        return _get(request, date, ED_PREFIX)
+
+    @app.post("/api/news/edmarks")
+    async def put_ed_marks(request: Request):
+        """본문 {"id":"YYYY-MM-DD"(사설 날짜),"revision":N,"marks":[...]}"""
+        return await _put(request, ED_PREFIX)

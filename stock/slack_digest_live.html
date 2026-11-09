@@ -580,6 +580,50 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   .mk-ed-empty a{color:var(--accent-bright);font-weight:600;text-decoration:none}
   .mk-ed-stale{display:inline-block;margin-left:6px;font-size:11px;font-weight:700;color:var(--c-alert)}
   @media (max-width:520px){ .mk-ed{margin-left:0;padding:18px 16px 18px;border-radius:14px} }
+  /* ── 🖍 사설 형광펜(관리자 전용, 2026-11-09 사용자 요청: 경제 공부(디그)와 같은 방식) ─────────────────────────
+     🖍 를 켜고 색(또는 🧽)을 고른 뒤 사설 글자 위를 쭉 그으면 손을 떼는 순간 칠해진다. 서버에 저장·관리자만 본다. */
+  #mk-ed-list mark.hl{color:inherit;border-radius:3px;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+  #mk-ed-list mark.hl-y{background:rgba(255,217,59,.6)} #mk-ed-list mark.hl-r{background:rgba(255,91,91,.42)} #mk-ed-list mark.hl-b{background:rgba(77,163,255,.42)}
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]) #mk-ed-list mark.hl-y{background:rgba(255,217,59,.4)}
+    :root:not([data-theme="light"]) #mk-ed-list mark.hl-r{background:rgba(255,91,91,.45)}
+    :root:not([data-theme="light"]) #mk-ed-list mark.hl-b{background:rgba(77,163,255,.45)}
+  }
+  :root[data-theme="dark"] #mk-ed-list mark.hl-y{background:rgba(255,217,59,.4)}
+  :root[data-theme="dark"] #mk-ed-list mark.hl-r{background:rgba(255,91,91,.45)}
+  :root[data-theme="dark"] #mk-ed-list mark.hl-b{background:rgba(77,163,255,.45)}
+  .mk-ed-hl{appearance:none;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);font:inherit;font-size:12.5px;
+            font-weight:600;border-radius:999px;padding:3px 11px;cursor:pointer;line-height:1.5}
+  .mk-ed-hl[aria-pressed="true"]{border-color:var(--accent-bright);background:color-mix(in srgb,var(--accent-bright) 14%,transparent)}
+  .mk-ed-hl[hidden],#edhl-bar[hidden],#edhl-st[hidden]{display:none}
+  /* 도구 줄은 사설 칸이 화면에 보일 때만 아래 가운데에 뜬다 */
+  #edhl-bar{position:fixed;left:8px;right:8px;width:max-content;margin:0 auto;bottom:max(16px,env(safe-area-inset-bottom));z-index:72;
+            display:flex;flex-wrap:wrap;justify-content:center;gap:4px;align-items:center;padding:6px 8px;background:var(--surface);color:var(--ink);
+            border:1px solid var(--line-strong);border-radius:26px;box-shadow:0 6px 24px #0004;user-select:none;-webkit-user-select:none;max-width:calc(100vw - 16px)}
+  #edhl-bar button{display:inline-flex;align-items:center;justify-content:center;min-width:40px;height:40px;padding:0 8px;border-radius:999px;
+            font-size:17px;line-height:1;border:2px solid transparent;background:transparent;color:inherit;cursor:pointer;touch-action:manipulation}
+  #edhl-bar button[aria-pressed="true"]{border-color:var(--accent-bright);background:color-mix(in srgb,var(--accent-bright) 14%,transparent)}
+  #edhl-bar button:disabled{opacity:.3;cursor:default}
+  #edhl-bar .sep{width:1px;height:22px;background:var(--line-strong);margin:0 2px}
+  #edhl-bar .sw{width:20px;height:20px;border-radius:50%;border:1px solid #0003;display:inline-block}
+  #edhl-bar .sw.y{background:#ffd93b} #edhl-bar .sw.r{background:#ff5b5b} #edhl-bar .sw.b{background:#4da3ff}
+  @media (max-width:480px){ #edhl-bar{gap:2px;padding:5px 6px} #edhl-bar button{min-width:34px;height:38px;padding:0 3px} #edhl-bar .sep{margin:0 1px} }
+  /* 그리는 도구일 땐 사설 위에서 끌어도 화면이 스크롤되지 않는다(✋ 를 고르면 다시 스크롤). 마우스 커서는 펜·지우개 모양 */
+  #mk-ed-list.edhl-draw{touch-action:none;-webkit-touch-callout:none}
+  #mk-ed-list.edhl-draw,#mk-ed-list.edhl-draw *{cursor:var(--hlcur,text)}
+  #mk-ed-list.edhl-draw button,#mk-ed-list.edhl-draw a{cursor:pointer}
+  #mk-ed-list[data-tool="y"]{--hlcur:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cg transform='rotate%28-45 16 16%29' stroke='%23222' stroke-width='1.2' stroke-linejoin='round'%3E%3Crect x='13' y='12' width='17' height='8' rx='1.5' fill='%23fff'/%3E%3Crect x='9' y='12' width='5' height='8' fill='%23ffd93b'/%3E%3Cpolygon points='9%2C12 9%2C20 3%2C16' fill='%23ffd93b'/%3E%3Crect x='25' y='12' width='5' height='8' rx='1.5' fill='%23ffd93b' stroke='none' opacity='.0'/%3E%3C/g%3E%3C/svg%3E") 7 25,text}
+  #mk-ed-list[data-tool="r"]{--hlcur:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cg transform='rotate%28-45 16 16%29' stroke='%23222' stroke-width='1.2' stroke-linejoin='round'%3E%3Crect x='13' y='12' width='17' height='8' rx='1.5' fill='%23fff'/%3E%3Crect x='9' y='12' width='5' height='8' fill='%23ff5b5b'/%3E%3Cpolygon points='9%2C12 9%2C20 3%2C16' fill='%23ff5b5b'/%3E%3Crect x='25' y='12' width='5' height='8' rx='1.5' fill='%23ff5b5b' stroke='none' opacity='.0'/%3E%3C/g%3E%3C/svg%3E") 7 25,text}
+  #mk-ed-list[data-tool="b"]{--hlcur:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cg transform='rotate%28-45 16 16%29' stroke='%23222' stroke-width='1.2' stroke-linejoin='round'%3E%3Crect x='13' y='12' width='17' height='8' rx='1.5' fill='%23fff'/%3E%3Crect x='9' y='12' width='5' height='8' fill='%234da3ff'/%3E%3Cpolygon points='9%2C12 9%2C20 3%2C16' fill='%234da3ff'/%3E%3Crect x='25' y='12' width='5' height='8' rx='1.5' fill='%234da3ff' stroke='none' opacity='.0'/%3E%3C/g%3E%3C/svg%3E") 7 25,text}
+  #mk-ed-list[data-tool="e"]{--hlcur:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cg transform='rotate%28-45 16 16%29' stroke='%23222' stroke-width='1.2' stroke-linejoin='round'%3E%3Crect x='5' y='10' width='22' height='12' rx='2.5' fill='%23f9a8d4'/%3E%3Crect x='5' y='10' width='9' height='12' rx='2.5' fill='%23fff'/%3E%3C/g%3E%3C/svg%3E") 8 24,text}
+  #edhl-st{position:fixed;left:8px;right:8px;width:max-content;margin:0 auto;bottom:calc(max(16px,env(safe-area-inset-bottom)) + 62px);z-index:72;
+           background:#111d;color:#fff;border-radius:999px;padding:6px 14px;font-size:13px;pointer-events:none;max-width:calc(100vw - 24px);text-align:center}
+  /* 도구 줄이 떠 있는 동안 아래쪽 책갈피·용어 버튼과 폰의 구역 이동 줄은 한 줄 위로 */
+  body.edhl-on .reader-actions{bottom:calc(72px + env(safe-area-inset-bottom,0px))}
+  body.edhl-on .bm-toast{bottom:calc(122px + env(safe-area-inset-bottom,0px))}
+  @media (max-width:899px){ body.edhl-on .section-jump{bottom:calc(80px + env(safe-area-inset-bottom,0px))} }
+  @media (max-width:599px){ body.edhl-on .section-jump{bottom:calc(130px + env(safe-area-inset-bottom,0px))} }
+  @media print{#edhl-bar,#edhl-st,.mk-ed-hl{display:none} #mk-ed-list mark.hl{background:none!important}}
 
   /* ── '연결 5가지' 기사 고리 (2026-10-20) ── */
   .brf-num.is-flow{padding:14px 16px;margin:.7em 0;border:1px solid var(--line);border-radius:14px;
@@ -861,9 +905,22 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   <main class="feed" id="feed" tabindex="-1" aria-label="기사 요약"></main>
   <!-- 2026-10-20 사용자 요청: 매일경제 사설을 맨 아래 늘 (서버 stock/mk_editorial.py → /api/news/editorial) -->
   <section class="mk-ed" id="mk-ed" tabindex="-1" hidden aria-labelledby="mk-ed-h">
-    <div class="mk-ed-head"><span class="mk-ed-kicker">오피니언</span><h2 id="mk-ed-h">매일경제 사설</h2><span class="mk-ed-date" id="mk-ed-date"></span></div>
+    <div class="mk-ed-head"><span class="mk-ed-kicker">오피니언</span><h2 id="mk-ed-h">매일경제 사설</h2><span class="mk-ed-date" id="mk-ed-date"></span><button type="button" class="mk-ed-hl" id="edhl-t" hidden aria-pressed="false" title="형광펜 켜기/끄기 (관리자 전용) — 켜고 사설 글자 위를 쭉 그으면 칠해져요">🖍 줄 긋기</button></div>
     <div id="mk-ed-list"></div>
   </section>
+  <div id="edhl-bar" hidden role="toolbar" aria-label="사설 형광펜 도구">
+    <button type="button" data-t="h" aria-pressed="false" aria-label="손 — 스크롤·글자 선택(그어도 칠해지지 않음)" title="손 (스크롤·복사)">✋</button>
+    <span class="sep"></span>
+    <button type="button" data-t="y" aria-pressed="true" aria-label="노랑 펜" title="노랑 펜 — 글자 위를 쭉 그으면 바로 칠해져요"><span class="sw y"></span></button>
+    <button type="button" data-t="r" aria-pressed="false" aria-label="빨강 펜" title="빨강 펜"><span class="sw r"></span></button>
+    <button type="button" data-t="b" aria-pressed="false" aria-label="파랑 펜" title="파랑 펜"><span class="sw b"></span></button>
+    <button type="button" data-t="e" aria-pressed="false" aria-label="지우개 — 지울 글자 위를 그으세요" title="지우개 — 칠한 글자 위를 그으면 지워져요 (칠한 조각을 한 번 눌러도 지워져요)">🧽</button>
+    <span class="sep"></span>
+    <button type="button" data-a="undo" aria-label="되돌리기" title="되돌리기 (Ctrl+Z)" disabled>↶</button>
+    <button type="button" data-a="redo" aria-label="다시 하기" title="다시 하기 (Ctrl+Shift+Z)" disabled>↷</button>
+    <button type="button" data-a="clear" aria-label="이 날짜 사설의 형광펜 모두 지우기" title="이 날짜 사설의 형광펜 모두 지우기 (되돌리기로 살릴 수 있어요)">🗑</button>
+  </div>
+  <div id="edhl-st" hidden role="status" aria-live="polite"></div>
   <section class="custom-workspace" id="customize" tabindex="-1" aria-labelledby="custom-h">
     <div class="custom-head"><div><h2 id="custom-h">✂️ 커스터마이징</h2><p>직접 넣은 기사 사진에 줄을 긋고 스티커를 붙여 보세요.</p></div>
       <button class="btn" type="button" id="custom-add">사진 선택</button>
@@ -1870,13 +1927,241 @@ async function loadEditorial(){
     document.getElementById("mk-ed-h").textContent=groups[0].p+" 사설";
     list.innerHTML=groups.map((g,i)=>(i?'<div class="mk-ed-head mk-ed-sub"><span class="mk-ed-kicker">오피니언</span><h2>'+esc(g.p)+' 사설</h2></div>':"")+g.h.join("")).join("");
   }
-  sec.hidden=false;
+  sec.hidden=false;  EDHL.onRender(day);                                          // 관리자면 이 날짜의 형광펜을 받아 다시 칠한다(다시 그릴 때마다 지워지므로)
 }
 document.addEventListener("click",e=>{
   const b=e.target.closest(".mk-ed-more"); if(!b) return;
   const body=document.getElementById("mk-ed-b"+b.dataset.k), open=!body.classList.contains("open");
   body.classList.toggle("open",open); b.textContent=open?"접기":"전문 펼치기"; b.setAttribute("aria-expanded",String(open));
 });
+/* ── 🖍 사설 형광펜 (관리자 전용, 2026-11-09 사용자 요청: 경제 공부(디그)와 같은 방식) ─────────────────────────────
+   사설 머리의 🖍 줄 긋기를 켜고 색(또는 🧽 지우개)을 고른 뒤 사설 글자 위를 쭉 그으면, 손을 떼는 순간 바로 칠해진다(마우스·터치·펜).
+   ✋ 를 고르면 그어도 칠해지지 않고 스크롤·복사가 평소처럼 된다. Ctrl+Z 되돌리기 / Ctrl+Shift+Z 다시.
+   사설 항목마다 제목(h3)·문단(p)을 '글 덩어리' 번호 u 로 매기고, '그 덩어리 글자 몇 번째~몇 번째' 를 색과 함께 서버에 저장한다
+   (글자 수로 저장 → 화면 크기·글자 크기·다크/화이트가 달라도 같은 글자에 붙음, 글자는 안 바꾸고 <mark> 로 감싸기만).
+   접혀서 안 보이는 문단(전문 펼치기 전)은 칠하지 않는다. 관리자가 아니면 서버가 403 이라 이 기능은 통째로 꺼져 있다.
+   ⚠️ 디그 화면(stock/dig_view.html)의 엔진과 같은 방식을 이 화면용으로 옮긴 것 — 한쪽을 고치면 다른 쪽도 같이 볼 것. */
+const EDHL=(()=>{
+  const UNIT_SEL='.mk-ed-item h3, .mk-ed-body p';
+  const S={admin:false,enabled:false,tool:'y',marks:[],rev:0,dirty:false,saving:false,saveT:null,last:null,barDown:false,
+           toastT:null,draw:null,undo:[],redo:[],date:'',inView:false};
+  try{ S.enabled=localStorage.getItem('ed.hl')==='1'; const t=localStorage.getItem('ed.hl.tool'); if(['h','y','r','b','e'].includes(t)) S.tool=t; }catch(e){}
+  const el=id=>document.getElementById(id), R=()=>el('mk-ed-list');
+  const units=()=>[...R().querySelectorAll(UNIT_SEL)];
+  const off=(u,node,o)=>{ const r=document.createRange(); r.selectNodeContents(u); r.setEnd(node,o); return r.toString().length; };
+  function segs(range){                 // 선택한 범위 → [{u,s,e}] (덩어리마다 하나, 앞뒤 공백 뺌, 안 보이는 덩어리는 건너뜀)
+    const out=[];
+    units().forEach((u,i)=>{
+      if(!range.intersectsNode(u)||!u.getClientRects().length) return;
+      const t=u.textContent;
+      let s=u.contains(range.startContainer)?off(u,range.startContainer,range.startOffset):0;
+      let e=u.contains(range.endContainer)?off(u,range.endContainer,range.endOffset):t.length;
+      while(s<e&&/\s/.test(t[s])) s++;
+      while(e>s&&/\s/.test(t[e-1])) e--;
+      if(e>s) out.push({u:i,s,e});
+    });
+    return out;
+  }
+  const q=(U,u,s,e)=>(U[u]?U[u].textContent.slice(s,e):'').slice(0,40);
+  function subtract(list,u,s,e,U){      // 같은 덩어리에서 [s,e) 와 겹치는 부분을 기존 표시에서 도려낸다(색이 달라도)
+    const out=[];
+    for(const m of list){
+      if(m.u!==u||m.e<=s||m.s>=e){ out.push(m); continue; }
+      if(m.s<s) out.push({u:m.u,s:m.s,e:s,c:m.c,q:q(U,u,m.s,s)});
+      if(m.e>e) out.push({u:m.u,s:e,e:m.e,c:m.c,q:q(U,u,e,m.e)});
+    }
+    return out;
+  }
+  function merge(list,U){               // 같은 색이 맞닿아 있으면 하나로(복사본만 고침 → 되돌리기 기록이 안전)
+    const a=list.slice().sort((x,y)=>x.u-y.u||x.s-y.s), out=[];
+    for(const m of a){
+      const p=out[out.length-1];
+      if(p&&p.u===m.u&&p.c===m.c&&p.e>=m.s){ p.e=Math.max(p.e,m.e); p.q=q(U,p.u,p.s,p.e); } else out.push({...m});
+    }
+    return out;
+  }
+  function wrap(u,s,e,c){               // 글 덩어리 u 의 글자 [s,e) 를 <mark> 로 감싼다
+    const tw=document.createTreeWalker(u,NodeFilter.SHOW_TEXT), nodes=[]; let n;
+    while((n=tw.nextNode())) nodes.push(n);
+    let pos=0;
+    for(const t of nodes){
+      const len=t.nodeValue.length, a=Math.max(s,pos), b=Math.min(e,pos+len);
+      if(b>a){
+        let mid=t; if(a>pos) mid=t.splitText(a-pos);
+        if(b-a<mid.nodeValue.length) mid.splitText(b-a);
+        const mk=document.createElement('mark'); mk.className='hl hl-'+c; mid.replaceWith(mk); mk.appendChild(mid);
+      }
+      pos+=len;
+    }
+  }
+  function paintUnit(u,i){
+    u.querySelectorAll('mark.hl').forEach(m=>m.replaceWith(...m.childNodes)); u.normalize();
+    const t=u.textContent;
+    S.marks.filter(m=>m.u===i).sort((a,b)=>a.s-b.s).forEach(m=>{
+      if(m.e>t.length||t.slice(m.s,m.e).slice(0,40)!==m.q) return;     // 글이 바뀌어 안 맞으면 건너뜀(엉뚱한 자리에 칠하지 않음)
+      wrap(u,m.s,m.e,m.c);
+    });
+  }
+  const paintAll=()=>units().forEach((u,i)=>paintUnit(u,i));
+  function toast(msg){ const t=el('edhl-st'); t.textContent=msg; t.hidden=false; clearTimeout(S.toastT); S.toastT=setTimeout(()=>{t.hidden=true;},2400); }
+  const drawing=()=>S.admin&&S.enabled&&(S.tool==='y'||S.tool==='r'||S.tool==='b'||S.tool==='e');
+  function sync(){                      // 단추 모양·도구 줄 보이기(사설 칸이 보일 때만)·스크롤 막기·커서를 현재 상태에 맞춤
+    const on=S.admin&&S.enabled, show=on&&S.inView;
+    el('edhl-t').setAttribute('aria-pressed',on?'true':'false');
+    el('edhl-bar').hidden=!show;
+    document.body.classList.toggle('edhl-on',show);
+    R().classList.toggle('edhl-draw',drawing());
+    R().dataset.tool=S.tool;
+    document.querySelectorAll('#edhl-bar [data-t]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.t===S.tool?'true':'false'));
+    document.querySelector('#edhl-bar [data-a="undo"]').disabled=!S.undo.length;
+    document.querySelector('#edhl-bar [data-a="redo"]').disabled=!S.redo.length;
+  }
+  function commit(list){                // 고치기는 모두 여기를 거친다 → 한 번에 한 칸씩 되돌리기 기록
+    S.undo.push(S.marks); if(S.undo.length>100) S.undo.shift();
+    S.redo=[]; S.marks=list; dirty(); sync();
+  }
+  function applyRange(range,c){         // 범위에 색 칠하기(c='' 이면 지우기). 바뀐 게 없으면 기록하지 않음
+    const U=units(), sg=segs(range); if(!sg.length) return false;
+    let list=S.marks;
+    for(const g of sg){
+      list=subtract(list,g.u,g.s,g.e,U);
+      if(c) list.push({u:g.u,s:g.s,e:g.e,c,q:q(U,g.u,g.s,g.e)});
+    }
+    list=merge(list,U);
+    if(JSON.stringify(list)===JSON.stringify(S.marks)) return false;
+    commit(list);
+    new Set(sg.map(g=>g.u)).forEach(i=>paintUnit(U[i],i));
+    return true;
+  }
+  function undo(){ if(!S.undo.length) return; S.redo.push(S.marks); S.marks=S.undo.pop(); paintAll(); dirty(); sync(); }
+  function redo(){ if(!S.redo.length) return; S.undo.push(S.marks); S.marks=S.redo.pop(); paintAll(); dirty(); sync(); }
+  function clearAll(){
+    if(!S.marks.length){ toast('지울 형광펜이 없어요'); return; }
+    if(!confirm('이 날짜 사설의 형광펜 '+S.marks.length+'곳을 모두 지울까요?\n(↶ 되돌리기로 다시 살릴 수 있어요)')) return;
+    commit([]); paintAll();
+  }
+  function eraseMark(mk){               // 지우개로 칠한 조각을 한 번 눌러 지우기: 그 조각이 속한 저장 표시 하나를 통째로
+    const u=mk.closest(UNIT_SEL), U=units(), i=U.indexOf(u); if(i<0) return;
+    const r=document.createRange(); r.selectNodeContents(u); r.setEnd(mk,0);
+    const s=r.toString().length, hit=S.marks.find(m=>m.u===i&&m.s<=s&&s<m.e); if(!hit) return;
+    commit(S.marks.filter(m=>m!==hit)); paintUnit(u,i);
+  }
+  // ── 저장: 바뀐 뒤 0.5초 모아서 서버에 통째로. 다른 창이 먼저 저장했으면(409) 그쪽 최신으로 바꿔 덮어쓰지 않는다 ──
+  function dirty(){ S.dirty=true; clearTimeout(S.saveT); S.saveT=setTimeout(save,500); }
+  async function save(){
+    if(!S.dirty||!S.admin) return;
+    if(S.saving){ S.saveT=setTimeout(save,300); return; }
+    S.saving=true; S.dirty=false;
+    const day=S.date, body={id:day,revision:S.rev,marks:S.marks};
+    try{
+      const r=await fetch('/api/news/edmarks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),keepalive:true});
+      const j=await r.json().catch(()=>({}));
+      if(r.ok&&j.ok){ if(S.date===day) S.rev=j.revision; toast('저장됨 ✓'); }
+      else if(r.status===409&&S.date===day){ S.marks=j.marks||[]; S.rev=j.revision||0; S.undo=[]; S.redo=[]; paintAll(); sync(); toast('다른 창에서 먼저 저장해서 최신으로 바꿨어요'); }
+      else { S.dirty=true; toast('저장하지 못했어요 — 다음 변경 때 다시 시도해요'); }
+    }catch(e){ S.dirty=true; toast('저장하지 못했어요 — 다음 변경 때 다시 시도해요'); }
+    S.saving=false;
+    if(S.dirty){ clearTimeout(S.saveT); S.saveT=setTimeout(save,100); }       // 저장하는 사이 또 바뀌었으면 한 번 더
+  }
+  function flush(){ if(S.dirty){ clearTimeout(S.saveT); S.saveT=null; save(); } }
+  async function onRender(day){         // 사설을 (다시) 그릴 때마다: 같은 날짜면 가진 표시로 다시 칠하고, 날짜가 바뀌었으면 서버에서 받는다
+    if(S.date&&S.date!==day) flush();                                       // 다른 날짜로 가기 전에 저장 마무리
+    if(S.date===day&&S.admin){ paintAll(); sync(); return; }
+    S.date=day; S.marks=[]; S.rev=0; S.dirty=false; S.undo=[]; S.redo=[]; S.draw=null;
+    let j=null;
+    try{ const r=await fetch('/api/news/edmarks?date='+encodeURIComponent(day),{cache:'no-store'}); if(!r.ok){ S.admin=false; sync(); return; } j=await r.json(); }catch(e){ return; }
+    if(!j||!j.ok||S.date!==day) return;
+    S.admin=true; S.marks=j.marks||[]; S.rev=j.revision||0;
+    el('edhl-t').hidden=false; sync(); paintAll();
+  }
+  // ── 켜기/끄기 · 도구 고르기 ──
+  el('edhl-t').onclick=()=>{
+    S.enabled=!S.enabled; S.draw=null;
+    try{ localStorage.setItem('ed.hl',S.enabled?'1':'0'); }catch(e){}
+    sync();
+    if(S.enabled) toast(drawing()?'펜 켜짐 — 사설 글자를 쭉 그으면 바로 칠해져요':'손 — 스크롤·복사만 돼요. 칠하려면 색을 고르세요');
+  };
+  const bar=el('edhl-bar');
+  bar.addEventListener('pointerdown',e=>{ S.barDown=true; e.preventDefault(); });          // 단추를 눌러도 글자 선택이 안 풀리게
+  ['pointerup','pointercancel'].forEach(t=>bar.addEventListener(t,()=>setTimeout(()=>{S.barDown=false;},300)));
+  bar.addEventListener('click',e=>{
+    const b=e.target.closest('button'); if(!b||b.disabled) return;
+    if(b.dataset.a==='undo') return undo();
+    if(b.dataset.a==='redo') return redo();
+    if(b.dataset.a==='clear') return clearAll();
+    const t=b.dataset.t; if(!t) return;
+    S.tool=t; try{ localStorage.setItem('ed.hl.tool',t); }catch(_){}
+    if(t!=='h'&&S.last&&!S.last.collapsed){                                  // 글자를 이미 선택해 둔 채 색(또는 🧽)을 누르면 그 글자에 바로 적용
+      applyRange(S.last,t==='e'?'':t);
+      try{ getSelection().removeAllRanges(); }catch(_){}
+      S.last=null;
+    }
+    sync();
+  });
+  // ── 글자 위를 쭉 긋기: 눌렀을 때와 움직이는 곳의 글자 위치를 찾아 그 사이를 선택해 보여 주고, 손을 떼면 칠한다 ──
+  function caret(x,y){
+    if(document.caretRangeFromPoint){ const r=document.caretRangeFromPoint(x,y); return r?{n:r.startContainer,o:r.startOffset}:null; }
+    if(document.caretPositionFromPoint){ const p=document.caretPositionFromPoint(x,y); return p?{n:p.offsetNode,o:p.offset}:null; }
+    return null;
+  }
+  function between(a,b){
+    const r1=document.createRange(); r1.setStart(a.n,a.o); r1.collapse(true);
+    const r2=document.createRange(); r2.setStart(b.n,b.o); r2.collapse(true);
+    const first=r1.compareBoundaryPoints(Range.START_TO_START,r2)<=0?r1:r2, second=first===r1?r2:r1;
+    const r=document.createRange(); r.setStart(first.startContainer,first.startOffset); r.setEnd(second.startContainer,second.startOffset); return r;
+  }
+  const root=R(), skip=t=>t.closest&&t.closest('button,a,input,select,textarea');       // 전문 펼치기·원문 링크는 평소처럼 눌리게
+  root.addEventListener('mousedown',e=>{ if(drawing()&&e.button===0&&e.target!==root&&!skip(e.target)) e.preventDefault(); });
+  root.addEventListener('pointerdown',e=>{
+    if(!drawing()||!e.isPrimary||(e.pointerType==='mouse'&&e.button!==0)||skip(e.target)) return;
+    const c=caret(e.clientX,e.clientY); if(!c||!root.contains(c.n)) return;
+    S.draw={id:e.pointerId,a:c,moved:false,range:null};
+    try{ root.setPointerCapture(e.pointerId); }catch(_){}
+    e.preventDefault();
+  });
+  root.addEventListener('pointermove',e=>{
+    const d=S.draw; if(!d||e.pointerId!==d.id) return;
+    const c=caret(e.clientX,e.clientY); if(!c||!root.contains(c.n)) return;
+    const r=between(d.a,c); if(!r.collapsed) d.moved=true; d.range=r;
+    const sel=getSelection(); sel.removeAllRanges(); sel.addRange(r);
+  });
+  function endDraw(e,cancel){
+    const d=S.draw; if(!d||e.pointerId!==d.id) return;
+    S.draw=null;
+    try{ root.releasePointerCapture(e.pointerId); }catch(_){}
+    try{ getSelection().removeAllRanges(); }catch(_){}
+    if(cancel) return;
+    if(d.moved&&d.range&&!d.range.collapsed) applyRange(d.range,S.tool==='e'?'':S.tool);
+    else if(S.tool==='e'){                                                    // 안 끌고 한 번 눌렀다: 지우개면 눌린 칠한 조각을 지움
+      const x=document.elementFromPoint(e.clientX,e.clientY), m=x&&x.closest&&x.closest('mark.hl');
+      if(m) eraseMark(m);
+    }
+  }
+  root.addEventListener('pointerup',e=>endDraw(e,false));
+  root.addEventListener('pointercancel',e=>endDraw(e,true));
+  document.addEventListener('selectionchange',()=>{                          // ✋ 에서 선택해 둔 글자를 기억했다가 색 단추로 칠할 수 있게
+    if(S.draw) return;
+    const sel=getSelection();
+    if(!S.admin||!S.enabled||!sel||sel.isCollapsed||!sel.rangeCount){ if(!S.barDown) S.last=null; return; }
+    const r=sel.getRangeAt(0);
+    S.last=root.contains(r.commonAncestorContainer)?r.cloneRange():null;
+  });
+  document.addEventListener('keydown',e=>{
+    if(!S.admin||!S.enabled||!S.inView) return;
+    if(!el('lb').hidden||!el('tn-panel').hidden) return;                     // 신문 사진 창·용어 노트가 열려 있으면 그쪽 단축키가 먼저
+    const tg=e.target&&e.target.tagName; if(tg==='SELECT'||tg==='INPUT'||tg==='TEXTAREA') return;
+    const k=(e.key||'').toLowerCase(), mod=e.ctrlKey||e.metaKey;
+    if(mod&&k==='z'&&!e.shiftKey){ e.preventDefault(); undo(); }
+    else if(mod&&(k==='y'||(k==='z'&&e.shiftKey))){ e.preventDefault(); redo(); }
+    else if(k==='escape'&&(S.draw||S.last)){ S.draw=null; S.last=null; try{ getSelection().removeAllRanges(); }catch(_){} }
+  });
+  window.addEventListener('pagehide',flush);
+  document.addEventListener('visibilitychange',()=>{ if(document.hidden) flush(); });
+  // 사설 칸이 화면에 보이는 동안에만 도구 줄을 띄운다(위쪽 요약을 읽을 땐 방해하지 않게)
+  if('IntersectionObserver' in window) new IntersectionObserver(es=>{ S.inView=es[es.length-1].isIntersecting; sync(); },{threshold:0}).observe(el('mk-ed'));
+  else S.inView=true;
+  return {onRender};
+})();
 /* ── AI 오디오 브리핑 (2026-10-27) — NotebookLM 오디오 오버뷰. 그날 파일이 없으면 칸을 숨긴다.
    오디오는 요약 게시 뒤 10~20분 뒤에 생기므로, 없을 땐 3분마다 다시 확인한다.
    온라인신문(2026-10-28)은 09시·18시 브리핑이 따로라, 있어도 3분마다 확인해 18시 것을 붙인다.
