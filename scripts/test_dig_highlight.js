@@ -140,6 +140,25 @@ const srv = http.createServer((req, res) => {
   check(red === p2.slice(s0, e0), '굵은 글·링크 경계를 넘어 그어도 칠한 글자를 이으면 정확히 그은 글자', red);
   check(await bodyText(page) === before, '여전히 글자는 하나도 안 바뀜');
 
+  console.log('\n[③-2 마우스 커서가 펜 모양]');
+  const cur = (sel) => page.$eval(sel, e => getComputedStyle(e).cursor);
+  await page.click('#hlbar [data-t="y"]');                       // (앞 단계에서 빨강을 골랐으므로 노랑으로 맞춰 둔다)
+  const penY = await cur('#main');
+  check(/^url\("data:image\/svg\+xml,/.test(penY) && /, text$/.test(penY), '🖍 를 켜면 글 위 커서가 펜 그림(SVG)으로 바뀜(그림이 안 되는 브라우저용 text 대체 포함)', penY.slice(0, 60));
+  check(await cur('#main p') === penY && await cur('#main p a') === penY && await cur('#main mark.hl') === penY, '문단·링크·칠한 글자 위에서도 같은 펜 커서');
+  check(await cur('#hlbar button') !== penY && await cur('.top button') !== penY, '도구 줄·위쪽 단추 위에서는 펜이 아니라 평소 커서');
+  await page.click('#hlbar [data-t="r"]'); const penR = await cur('#main');
+  await page.click('#hlbar [data-t="b"]'); const penB = await cur('#main');
+  await page.click('#hlbar [data-t="e"]'); const eras = await cur('#main');
+  check(new Set([penY, penR, penB, eras]).size === 4 && /^url\(/.test(eras), '색마다 다른 펜(노랑·빨강·파랑), 🧽 는 지우개 그림');
+  await page.click('#hlbar [data-t="h"]');
+  check(!/^url\(/.test(await cur('#main')) && !/^url\(/.test(await cur('#main p')), '✋ 손일 땐 펜 커서가 아니라 평소 커서');
+  await page.click('#hlbar [data-t="y"]');
+  check(await cur('#main') === penY, '다시 노랑 펜을 고르면 노랑 펜 커서');
+  await page.click('#hlt'); await page.waitForTimeout(100);
+  check(!/^url\(/.test(await cur('#main')), '🖍 를 끄면 평소 커서로 돌아감');
+  await page.click('#hlt'); await page.waitForTimeout(100);
+
   console.log('\n[④ 두 문단에 걸침·겹침·합치기]');
   await page.click('#hlbar [data-t="b"]');
   await draw(page, 2, p2.length - 6, 0, 3, 5); await settle(page);                       // 문단2 끝 6글자 ~ 문단3 앞 5글자
