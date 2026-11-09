@@ -430,11 +430,31 @@ def set_theme(uid, theme):
     return True
 
 
+def first_admin_user():
+    """IP 관리자 모드(로그인 계정이 없음)가 대신 쓰는 계정: 승인된 관리자 중 가장 먼저 만든 계정 — 용어 노트·형광펜과 같은 기준."""
+    try:
+        with _db() as con:
+            return con.execute("SELECT * FROM users WHERE is_admin=1 AND status='approved' ORDER BY id LIMIT 1").fetchone()
+    except Exception:
+        return None
+
+
+def theme_user(request):
+    """화면 모드를 읽고 쓸 계정. 로그인한 계정이 있으면 그 계정, 서버 IP 관리자 모드면 첫 관리자 계정(2026-11-09 사용자 제보:
+    IP 관리자 모드에선 계정이 없어 메뉴마다 화면 모드가 따로 놀았다), 그 밖엔 없음."""
+    u = session_user(request)
+    if u is not None:
+        return u
+    if request is not None and ip_admin_ok(request):
+        return first_admin_user()
+    return None
+
+
 def theme_head(request):
     """<head> 에 끼워 넣는 짧은 스크립트: 이 계정이 고른 화면 모드를 그림이 그려지기 전에 적용(깜빡임 방지).
     고른 적 없으면 빈 글 → 화면이 예전처럼 이 브라우저의 기억/기기 설정을 따른다. 값은 허용 목록에서만 나오므로 그대로 넣어도 안전."""
     try:
-        u = session_user(request) if (request is not None and cfg()["enabled"]) else None
+        u = theme_user(request) if (request is not None and cfg()["enabled"]) else None
     except Exception:
         u = None
     t = (u["theme"] if u and "theme" in u.keys() else None)
@@ -1232,7 +1252,7 @@ def install(app):
                 and (request.url.path.startswith("/gate/") or _is_gated(request.url.path)):
             return JSONResponse({"ok": False, "reason": "cross-site"}, status_code=403)
         if cfg()["enabled"] and is_ip_host(request) and request.url.path.startswith("/gate/") \
-                and request.url.path not in ("/gate/ip-login", "/gate/ip-logout", "/gate/admin", "/gate/admin/act", "/gate/privacy"):
+                and request.url.path not in ("/gate/ip-login", "/gate/ip-logout", "/gate/admin", "/gate/admin/act", "/gate/privacy", "/gate/theme"):
             # IP 접속에서는 구글/카카오 로그인·가입·내 정보가 의미 없다 → 관리자 비밀번호 화면으로
             if request.method in ("GET", "HEAD"):
                 return RedirectResponse("/gate/ip-login", 302)
@@ -1494,7 +1514,7 @@ def install(app):
     @r.post("/gate/theme")
     async def theme_save(request: Request):
         """화면이 부르는 저장 주소: 본문 {"theme":"auto|light|dark"}. 로그인·승인된 본인 계정에만 저장."""
-        u = session_user(request)
+        u = theme_user(request)               # 로그인 계정, 또는 IP 관리자 모드면 첫 관리자 계정
         if not u or u["status"] != "approved":
             return JSONResponse({"ok": False}, status_code=401)
         try:
