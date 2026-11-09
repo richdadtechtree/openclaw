@@ -65,7 +65,7 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   html,body{margin:0}
   body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.65;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
   .wrap{max-width:calc(720px + max(0px, (var(--fs) - 1) * 420px));margin:0 auto;padding:0 20px 96px}
-  header.mast{padding:40px 0 18px}
+  header.mast{padding:40px 0 4px}
   .eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--faint);font-weight:600;display:flex;align-items:center;gap:10px}
   .eyebrow .label{font-family:var(--sans);letter-spacing:.04em;font-size:12.5px}
   .eyebrow .live{display:inline-flex;align-items:center;gap:6px;color:var(--live);letter-spacing:.08em}
@@ -73,8 +73,8 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   .eyebrow::after{content:"";flex:1;height:1px;background:var(--line-strong)}
   h1.date{font-size:clamp(27px,6vw,38px);font-weight:800;letter-spacing:-.02em;margin:14px 0 6px;line-height:1.12;text-wrap:balance;font-variant-numeric:tabular-nums}
   .lede{color:var(--muted);font-size:15px;margin:0 0 16px;max-width:52ch}
-  .datebar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
-  .edtog{display:inline-flex;gap:0;margin:0 0 12px;border:1px solid var(--line-strong);border-radius:10px;overflow:hidden;background:var(--surface)}
+  .datebar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0}
+  .edtog{display:inline-flex;gap:0;margin:0;border:1px solid var(--line-strong);border-radius:10px;overflow:hidden;background:var(--surface)}
   .edtog button{font-family:var(--sans);font-size:14px;font-weight:700;color:var(--muted);background:transparent;border:0;padding:8px 16px;cursor:pointer}
   .edtog button+button{border-left:1px solid var(--line-strong)}
   .edtog button[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
@@ -666,7 +666,22 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   /* 2026-10-29 사용자 요청: 스크롤해도 맨 위 메뉴(신문 요약·디그·AI 소식)가 계속 보이게 → 화면 맨 위에 붙임.
      아래 도구줄(.toolbar)은 메뉴 높이(--navh, 스크립트가 잼)만큼 내려 붙어 서로 겹치지 않는다. */
   .sitenav{position:sticky;top:0;z-index:6;margin:0 -20px;padding:12px 20px 8px;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
-  .toolbar{top:var(--navh,0px)}
+  .toolbar{top:calc(var(--navh,0px) + var(--pickh,0px))}   /* 맨 위 메뉴 + 종이/온라인·날짜 줄 아래에 붙는다(높이는 스크립트가 잼) */
+  /* 종이/온라인 전환 + 날짜 고르기 고정 줄(2026-11-09). 맨 위 메뉴(.sitenav) 바로 아래에 붙고, 도구 줄(.toolbar)은 그 아래에 붙는다 */
+  .pickbar{position:sticky;top:var(--navh,0px);z-index:5;margin:8px -20px 0;padding:8px 20px;display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;
+           background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+  .pickbar .edtog button{padding:7px 14px}
+  .pickbar .datebar{flex:1 1 auto;min-width:0}
+  @media (max-width:520px){
+    .pickbar{padding:6px 12px;gap:6px 8px}
+    .pickbar .edtog button{font-size:13px;padding:7px 10px}
+    .pickbar .datebar{gap:6px}
+    .pickbar .datebar input[type=date]{font-size:12.5px;padding:5px 6px}
+    .pickbar .btn{padding:5px 9px}
+    .pickbar .updated{display:none}            /* 좁은 화면에선 갱신 시각을 숨겨 한 줄에 들어가게 */
+    .pickbar .edx{display:none}                 /* 폰에선 "종이신문"→"종이", "온라인신문"→"온라인" 으로 줄여 한 줄에 */
+  }
+  @media print{.pickbar{display:none}}
   .sitenav a{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:999px;font-size:14px;font-weight:600;
              color:var(--muted);text-decoration:none;border:1px solid var(--line-strong);background:var(--surface)}
   .sitenav a:hover{color:var(--ink)}
@@ -853,17 +868,21 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
     <div class="eyebrow"><span class="label" id="ed-label">오늘 신문 요약</span><span class="live"><span class="pulse"></span>LIVE</span></div>
     <h1 class="date" id="date">불러오는 중…</h1>
     <p class="lede">쉽게 보는 오늘 뉴스</p>
-    <!-- 2026-10-27 사용자 요청: 종이신문(아침 지면) / 온라인신문(네이버 경제 주요 기사, 9시·18시) 고르기 -->
+  </header>
+  <!-- 2026-10-27 사용자 요청: 종이신문(아침 지면) / 온라인신문(네이버 경제 주요 기사, 9시·18시) 고르기
+       2026-11-09 사용자 요청: 아래로 내려가도 이 줄(종이/온라인 전환 + 날짜 고르기)이 늘 보이게 고정 — 바로 누를 수 있게.
+       머리말 안에 있으면 머리말이 스크롤되며 같이 사라지므로 밖으로 꺼내 맨 위 메뉴(.sitenav) 바로 아래에 붙인다. -->
+  <div class="pickbar" id="pickbar">
     <div class="edtog" id="edtog" role="group" aria-label="신문 종류">
-      <button type="button" data-ed="paper" aria-pressed="true">📰 종이신문</button>
-      <button type="button" data-ed="online" aria-pressed="false">🌐 온라인신문</button>
+      <button type="button" data-ed="paper" aria-pressed="true">📰 종이<span class="edx">신문</span></button>
+      <button type="button" data-ed="online" aria-pressed="false">🌐 온라인<span class="edx">신문</span></button>
     </div>
     <div class="datebar">
       <input type="date" id="datepick" aria-label="날짜 선택">
       <button class="btn" id="today">오늘</button>
       <span class="updated" id="updated"></span>
     </div>
-  </header>
+  </div>
 
   <!-- 오늘 신문 원본: 구글 드라이브에 올라온 그날 PDF·사진을 바로 내려받는 칸 -->
   <section class="news" id="news" hidden>
@@ -898,8 +917,11 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   /* 고정 메뉴 높이를 재서 --navh 로 알려 줌(폰에서 메뉴가 두 줄이 되거나 글자 크기가 바뀌어도 도구줄이 그 아래에 붙게) */
   (function(){
     const nav=document.querySelector(".sitenav"); if(!nav) return;
-    const set=()=>document.documentElement.style.setProperty("--navh", nav.offsetHeight+"px");
-    set(); if(window.ResizeObserver) new ResizeObserver(set).observe(nav); else addEventListener("resize", set);
+    const pick=document.getElementById("pickbar");
+    const set=()=>{ const r=document.documentElement.style;
+      r.setProperty("--navh", nav.offsetHeight+"px");
+      r.setProperty("--pickh", (pick?pick.offsetHeight:0)+"px"); };          // 종이/온라인·날짜 고정 줄 높이(2026-11-09)
+    set(); if(window.ResizeObserver){ const ro=new ResizeObserver(set); ro.observe(nav); if(pick) ro.observe(pick); } else addEventListener("resize", set);
   })();
   </script>
   <main class="feed" id="feed" tabindex="-1" aria-label="기사 요약"></main>
@@ -4444,7 +4466,7 @@ tnLoad();
   const nav=document.getElementById("section-jump");
   const buttons=[...nav.querySelectorAll("button[data-section]")];
   const viewer=document.getElementById("lb");
-  const offset=()=>[document.querySelector(".sitenav"),document.getElementById("toolbar")]
+  const offset=()=>[document.querySelector(".sitenav"),document.getElementById("pickbar"),document.getElementById("toolbar")]
     .reduce((h,el)=>h+(el?el.getBoundingClientRect().height:0),16);
   function setMode(){
     const mode=state.edition==="online"?"online":"paper";
@@ -4504,7 +4526,7 @@ tnLoad();
   if(window.__CUSTOM_ONLY)return;
   const controls=$("bm-controls"),status=$("bm-status");
   const BM={bookmark:null,csrf:"",busy:false,deadline:0,timer:null,expired:false,notice:null};
-  const offset=()=>[document.querySelector(".sitenav"),$("toolbar")]
+  const offset=()=>[document.querySelector(".sitenav"),$("pickbar"),$("toolbar")]
     .reduce((n,el)=>n+(el?el.getBoundingClientRect().height:0),16);
   function notify(message){
     clearTimeout(BM.notice);status.textContent=message;status.hidden=false;
