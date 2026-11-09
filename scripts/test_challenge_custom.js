@@ -66,13 +66,14 @@ const check=(v,label)=>{assert.ok(v,label);checks++;console.log('OK '+label);};
       check(await page.locator("#customcard").evaluate(el=>{const r=el.getBoundingClientRect();return r.top===0&&r.width===innerWidth&&r.height===innerHeight;}),
         "editing fills the screen above the challenge header: "+width);
       if(touch){
+        await frame.evaluate(()=>setHand(true));
         const position=await frameUI.locator("#lb-hand-float").evaluate(b=>{
           const r=b.getBoundingClientRect(),s=document.getElementById("lb-stage").getBoundingClientRect();
           return {dx:Math.abs(r.x+r.width/2-s.x-s.width/2),dy:Math.abs(r.y+r.height/2-s.y-s.height/2),opacity:+getComputedStyle(b).opacity};
         });
         check(position.dx<1&&position.dy<1&&position.opacity<=.3,"shared editor hand button is centered and translucent");
         await frameUI.locator("#lb-hand-float").tap();
-        check(await frame.evaluate(()=>V.hand&&M.on&&markList().length===0),"touching the shared hand button activates movement without drawing");
+        check(await frame.evaluate(()=>V.hand&&V.go&&M.on&&markList().length===0),"touching the shared hand button activates movement without drawing");
         await frame.evaluate(()=>zoomAt(1.6));
         await frame.waitForFunction(()=>Math.abs(document.getElementById("lb-img").getBoundingClientRect().width-V.fitW*V.zoom)<1);
         const drag=await frameUI.locator("#lb-stage").boundingBox(),touch=await context.newCDPSession(page);
@@ -82,9 +83,10 @@ const check=(v,label)=>{assert.ok(v,label);checks++;console.log('OK '+label);};
         await touch.send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]});await touch.detach();
         check(await frame.evaluate(p=>(V.tx!==p[0]||V.ty!==p[1])&&markList().length===0,prior),"touch drag pans the shared editor without highlights");
         await frameUI.locator("#lb-hand-float").tap();
-        check(await frame.evaluate(()=>!V.hand&&M.on),"second tap restores the shared pen");
+        check(await frame.evaluate(()=>V.hand&&!V.go&&M.on),"second tap turns movement off");
         await frame.waitForTimeout(350);
-        check(await frame.evaluate(()=>!V.hand&&M.on),"delayed touch clicks do not toggle the hand twice");
+        check(await frame.evaluate(()=>V.hand&&!V.go&&M.on),"delayed touch clicks do not toggle the hand twice");
+        await frame.evaluate(()=>setHand(false,true));
         await frame.evaluate(()=>resetZoom());
         await frame.waitForFunction(()=>Math.abs(document.getElementById("lb-img").getBoundingClientRect().width-V.fitW)<1);
       }else check(await frameUI.locator("#lb-hand-float").isHidden(),"desktop keeps its existing hand controls");
