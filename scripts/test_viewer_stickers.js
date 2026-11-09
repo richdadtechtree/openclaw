@@ -224,6 +224,11 @@ const server=http.createServer((req,res)=>{
       "tapping it again turns movement off");
     await page.evaluate(()=>setHand(false));
     check(await page.locator("#lb-hand-float").isHidden(),"turning the top hand off hides the centered hand");
+    await ctx.close();[ctx,page]=await context({width:700,height:900},false);
+    await page.goto(base+'/economy');await open(page);
+    await page.evaluate(()=>setHand(true));
+    check(await page.locator("#lb-hand-float").isHidden()&&await page.evaluate(()=>V.hand),
+      "PC (mouse) never shows the centered hand, even in a narrow window; hand mode still works");
     check(errors.length===0,'no browser script errors: '+errors.join(';'));
     console.log('PASS: '+checks+' sticker browser checks');
   }finally{await ctx.close();await browser.close();await new Promise(r=>server.close(r));}

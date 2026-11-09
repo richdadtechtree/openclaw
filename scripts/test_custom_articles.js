@@ -28,7 +28,7 @@ const server=http.createServer((req,res)=>{
   let ctx,page;
   const check=(v,label)=>{assert.ok(v,label);checks++;console.log('OK '+label);};
   async function context(viewport={width:1280,height:900}){
-    ctx=await browser.newContext({viewport,acceptDownloads:true});await ctx.route('https://**/*',r=>r.abort());
+    ctx=await browser.newContext({viewport,acceptDownloads:true,...(viewport.width<500?{isMobile:true,hasTouch:true}:{})});await ctx.route('https://**/*',r=>r.abort());
     page=await ctx.newPage();page.on('pageerror',e=>errors.push(e.message));await page.goto(base+'/economy');
     await page.waitForFunction(()=>newsState.images.length===2&&markDay&&['admin','guest'].includes(markDay.mode));
   }
