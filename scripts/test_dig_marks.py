@@ -149,6 +149,45 @@ class DigMarksTests(unittest.TestCase):
         self.post([mark(q="<img src=x onerror=1>")])
         self.assertEqual(self.get().json()["marks"][0]["q"], "<img src=x onerror=1>")
 
+    # ⑥ 사설(신문 요약 화면 맨 아래) 표시: 같은 표·'ed-' 접두어로 따로 저장 (2026-11-09)
+    def eget(self, c=None, day="2026-11-09"):
+        return (c or self.admin).get("/api/news/edmarks", params={"date": day})
+
+    def epost(self, marks=None, rev=0, day="2026-11-09", c=None):
+        return (c or self.admin).post("/api/news/edmarks", json={"id": day, "revision": rev, "marks": [mark()] if marks is None else marks})
+
+    def test_editorial_marks_admin_only(self):
+        self.epost()
+        self.assertEqual(self.eget(self.guest).status_code, 403)
+        self.assertEqual(self.epost(c=self.guest).status_code, 403)
+        anon = TestClient(self.app, base_url="https://example.test")
+        self.assertIn(self.eget(anon).status_code, (401, 403))
+        self.assertEqual(self.eget().json()["marks"], [mark()])
+
+    def test_editorial_marks_separate_from_dig_marks(self):
+        self.post([mark(c="y")])                                  # 같은 날짜(2026-11-09)의 디그 표시
+        self.epost([mark(c="r"), mark(u=2, c="b", q="글")])         # 같은 날짜의 사설 표시
+        self.assertEqual([m["c"] for m in self.get().json()["marks"]], ["y"])
+        self.assertEqual([m["c"] for m in self.eget().json()["marks"]], ["r", "b"])
+        self.assertEqual((self.get().json()["revision"], self.eget().json()["revision"]), (1, 1))
+
+    def test_editorial_marks_revision_and_validation(self):
+        self.assertEqual(self.epost().json()["revision"], 1)
+        r = self.epost([mark(c="r")], rev=0)
+        self.assertEqual((r.status_code, r.json()["conflict"], r.json()["marks"][0]["c"]), (409, True, "y"))
+        self.assertEqual(self.epost([mark(c="g")], rev=1).status_code, 400)
+        self.assertEqual(self.epost(rev=1, day="../x").status_code, 400)
+        for day in ("", "x", "2026-11-9", "../x"):
+            self.assertEqual(self.eget(day=day).status_code, 400, day)
+
+    def test_editorial_marks_ip_admin_and_cross_site(self):
+        self.epost()
+        c = TestClient(self.app, base_url="https://127.0.0.1")
+        c.cookies.set(gate.COOKIE_IPADM, gate._sign({"k": "ipadm", "v": gate._ipadm_ver()}, 3600))
+        self.assertEqual(self.eget(c).json()["marks"], [mark()])
+        self.assertEqual(self.admin.post("/api/news/edmarks", json={"id": "2026-11-09", "revision": 1, "marks": []},
+                                         headers={"sec-fetch-site": "cross-site"}).status_code, 403)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
