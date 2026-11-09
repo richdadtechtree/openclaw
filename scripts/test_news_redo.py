@@ -164,6 +164,40 @@ class RedoTests(unittest.TestCase):
             start.assert_called_once_with('2026-11-09', True, download=False)
         marker.unlink(missing_ok=True)
 
+    # 오디오 파일 수동 만들기 (2026-11-09)
+    def test_audio_only_runs_just_audio_step(self):
+        with mock.patch.object(redo.news_summary, 'messages', return_value=[{'text': 'x'}]), \
+             mock.patch.object(redo, 'run_audio', return_value=(True, '오디오 파일을 만들었어요.')) as audio:
+            self.assertTrue(self.post('audio').json()['started'])
+            s = wait_done(self.admin)
+        self.assertTrue(s['ok'])
+        self.assertEqual((s['job'], s['steps']['audio']['status']), ('audio', 'ok'))
+        audio.assert_called_once()
+        self.collect.assert_not_called(); self.sync.assert_not_called(); self.summary.assert_not_called()
+
+    def test_audio_needs_summary_first(self):
+        with mock.patch.object(redo.news_summary, 'messages', return_value=[]), \
+             mock.patch.object(redo.os.path, 'isfile', return_value=False), \
+             mock.patch.object(redo, 'run_audio') as audio:
+            self.post('audio')
+            s = wait_done(self.admin)
+        self.assertFalse(s['ok']); audio.assert_not_called()
+        self.assertEqual(s['steps']['audio']['status'], 'fail')
+
+    def test_audio_failure_shows_reason_and_guest_denied(self):
+        with mock.patch.object(redo.news_summary, 'messages', return_value=[{'text': 'x'}]), \
+             mock.patch.object(redo, 'run_audio', return_value=(False, '오디오 만들기에 실패했어요')):
+            self.post('audio')
+            s = wait_done(self.admin)
+        self.assertFalse(s['ok']); self.assertIn('실패', s['message'])
+        self.assertIn(self.post('audio', client=self.clients['guest']).status_code, (401, 403))
+
+    def test_audio_command_default_and_custom(self):
+        cmd, _ = redo.audio_cmd('2026-11-09')
+        self.assertTrue(cmd[1].endswith('notebook_audio.py') and cmd[-1] == '2026-11-09')
+        with mock.patch.dict(redo.os.environ, {'NEWS_AUDIO_CMD': 'echo hi {date}'}):
+            self.assertEqual(redo.audio_cmd('2026-11-09')[0], ['echo', 'hi', '2026-11-09'])
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

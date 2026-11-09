@@ -893,6 +893,7 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
       <button class="btn news-redo" id="news-redo" hidden title="관리자 전용 — 오늘 신문을 다운로드하고 실제 요약을 실행합니다">🔁 다운로드·요약</button>
       <button class="btn news-redo" id="news-download" hidden>↓ 다운로드만</button>
       <button class="btn news-redo" id="news-summary" hidden>📰 요약만 실행</button>
+      <button class="btn news-redo" id="news-audio" hidden title="관리자 전용 — 오늘 요약으로 NotebookLM 오디오 파일을 만듭니다">🎧 오디오 파일 만들기</button>
     </div>
     <div class="redo-status" id="redo-status" hidden role="status" aria-live="polite"></div>
     <div class="news-actions" id="news-actions"></div>
@@ -4299,14 +4300,14 @@ document.getElementById("news-refresh").addEventListener("click",async(e)=>{
 const REDO={on:false,t:null,seen:false};
 function redoRender(s){
   const box=$("redo-status"), btn=$("news-redo");
-  for(const id of ["news-redo","news-download","news-summary"]) $(id).disabled=!!s.running;
+  for(const id of ["news-redo","news-download","news-summary","news-audio"]) $(id).disabled=!!s.running;
   btn.textContent=s.running?"🔁 진행 중…":"🔁 다운로드·요약";
   const has=s.running || (s.finished>0 && s.date===todayKST());   // 어제 결과가 오늘 화면에 남지 않게
   box.hidden=!has;
   if(!has) return;
   box.textContent="";
   const icon={wait:"○",run:"⏳",ok:"✅",fail:"❌",skip:"➖"};
-  for(const k of ["collect","sync","summary"]){
+  for(const k of (s.job==="audio"?["audio"]:["collect","sync","summary"])){
     const st=(s.steps||{})[k]||{status:"wait",note:""};
     const row=document.createElement("span");
     row.className="st"+(st.status==="fail"?" fail":"");
@@ -4326,16 +4327,16 @@ async function redoPoll(){
   let j=null;
   try{ const r=await fetch("/api/news/redo",{cache:"no-store"}); if(!r.ok) return; j=await r.json(); }catch(_){ return; }
   if(!j||!j.ok) return;
-  for(const id of ["news-redo","news-download","news-summary"]) $(id).hidden=false; REDO.on=true;
+  for(const id of ["news-redo","news-download","news-summary","news-audio"]) $(id).hidden=false; REDO.on=true;
   const s=j.state||{}; redoRender(s);
   if(s.running){ REDO.t=setTimeout(redoPoll,3000); REDO.seen=true; }
-  else if(REDO.seen){ REDO.seen=false; if(s.ok){ lastNewsSnapshot=null; await loadNews(); load(); } }   // 끝나면 사진·요약을 바로 새로 그린다
+  else if(REDO.seen){ REDO.seen=false; if(s.ok){ lastNewsSnapshot=null; await loadNews(); load(); if(s.job==="audio"&&typeof loadPodcast==="function") loadPodcast(); } }   // 끝나면 사진·요약을 바로 새로 그린다
 }
 async function redoStart(mode){
   if(!REDO.on || $("news-redo").disabled) return;
-  const description={all:"오늘 신문을 다운로드하고 전체 지면 요약을 실행합니다.",download:"오늘 신문을 다운로드합니다.",summary:"이미 받은 오늘 신문으로 전체 지면 요약을 실행합니다."};
+  const description={all:"오늘 신문을 다운로드하고 전체 지면 요약을 실행합니다.",download:"오늘 신문을 다운로드합니다.",summary:"이미 받은 오늘 신문으로 전체 지면 요약을 실행합니다.",audio:"오늘 요약으로 NotebookLM 오디오 파일을 만듭니다. 10~20분 걸릴 수 있어요."};
   if(!confirm(description[mode]+"\n완료한 지면은 이어서 처리하며, 진행 상황은 아래에 표시됩니다.")) return;
-  for(const id of ["news-redo","news-download","news-summary"]) $(id).disabled=true;
+  for(const id of ["news-redo","news-download","news-summary","news-audio"]) $(id).disabled=true;
   try{
     const r=await fetch("/api/news/redo",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode})});
     const j=await r.json();
@@ -4344,7 +4345,7 @@ async function redoStart(mode){
     if(!j.started && !(j.state||{}).running) alert("방금 실행을 마쳤어요. 잠시 후 다시 눌러 주세요.");
   }catch(e){
     alert(e.message||"서버에 연결하지 못했어요.");
-    for(const id of ["news-redo","news-download","news-summary"]) $(id).disabled=false;
+    for(const id of ["news-redo","news-download","news-summary","news-audio"]) $(id).disabled=false;
     return;
   }
   REDO.seen=true; redoPoll();
@@ -4352,6 +4353,7 @@ async function redoStart(mode){
 $("news-redo").addEventListener("click",()=>redoStart("all"));
 $("news-download").addEventListener("click",()=>redoStart("download"));
 $("news-summary").addEventListener("click",()=>redoStart("summary"));
+$("news-audio").addEventListener("click",()=>redoStart("audio"));
 redoPoll();                                   // 관리자면 버튼을 보이고, 서버가 이미 일하는 중이면 진행 상황을 이어서 보여 준다
 
 document.getElementById("edtog").addEventListener("click",e=>{
