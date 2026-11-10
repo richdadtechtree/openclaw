@@ -188,7 +188,7 @@ check("…시작 기록이 있으면 원래 가려던 곳으로", c.get("/gate/g
 fake_identity()
 check("이미 동의한 사람이 로그인하면 바로 입장",client(app).get("/gate/login?manual=1").status_code == 200 and login(client(app)).headers["location"] == "/economy")
 check("DB 에 이메일·전화·실명 같은 열이 없음(최소 수집, 닉네임·화면 모드·챌린지 역할 열만 추가)",
-      {r["name"] for r in gate._db().execute("PRAGMA table_info(users)")} == {"id", "provider", "provider_uid", "nickname", "status", "consent_version", "consent_at", "created_at", "last_login_at", "is_admin", "expires_at", "nick_set", "nick_key", "theme", "role", "cohort_id", "celebrated_at", "apply"})
+      {r["name"] for r in gate._db().execute("PRAGMA table_info(users)")} == {"id", "provider", "provider_uid", "nickname", "status", "consent_version", "consent_at", "created_at", "last_login_at", "is_admin", "expires_at", "nick_set", "nick_key", "theme", "role", "cohort_id", "celebrated_at", "apply", "pen"})
 
 print("[누가 로그인했는지 화면에 표시]")
 cg = client(make_app()); login(cg, provider="google", uid="w-1", nick="누리"); cg.post("/gate/consent", content=agree_for(cg), headers=FORM)
@@ -559,6 +559,35 @@ with gate._db() as con:
     con.execute("UPDATE users SET theme='<img src=x onerror=1>' WHERE nickname='테마닉'")
 check("DB 에 이상한 값이 있어도 머리글에 나오지 않음(허용 목록만)", ct.get("/themehead").text == "")
 check("처리방침에 화면 모드 저장 명시", "화면 모드" in ct.get("/privacy").text)
+
+print("[🖍 형광펜 색을 계정에 저장 — 2026-11-10 사용자 요청]")
+cp = client(app_t); login(cp, uid="p-1", nick="펜닉"); cp.post("/gate/consent", content=agree_for(cp), headers=FORM)
+check("처음엔 저장된 색이 없어 머리글에 펜 값이 없음(기본 색으로 시작)", "__GATE_PEN" not in cp.get("/themehead").text)
+r = cp.post("/gate/pen", content='{"kind":"photo","color":"#4da3ff"}', headers=tj)
+check("사진 펜 파랑 저장", r.status_code == 200 and r.json() == {"ok": True, "kind": "photo", "color": "#4da3ff"})
+check("저장한 색이 머리글로 내려옴", 'window.__GATE_PEN={"photo": "#4da3ff"};' in cp.get("/themehead").text)
+check("글자 펜 색은 따로 저장되고 사진 펜 색은 그대로", cp.post("/gate/pen", content='{"kind":"text","color":"r"}', headers=tj).status_code == 200
+      and 'window.__GATE_PEN={"photo": "#4da3ff", "text": "r"};' in cp.get("/themehead").text)
+check("색을 또 바꾸면 마지막 값만 남음", cp.post("/gate/pen", content='{"kind":"photo","color":"#ffd93b"}', headers=tj).status_code == 200
+      and 'window.__GATE_PEN={"photo": "#ffd93b", "text": "r"};' in cp.get("/themehead").text)
+check("다른 기기(새 브라우저)에서 같은 계정으로 로그인해도 같은 색", (lambda c2: (login(c2, uid="p-1", nick="펜닉"), '"photo": "#ffd93b"' in c2.get("/themehead").text)[1])(client(app_t)))
+check("다른 계정에는 영향 없음", "__GATE_PEN" not in other.get("/themehead").text)
+check("화면 모드와 함께 써도 둘 다 내려옴", cp.post("/gate/theme", content='{"theme":"dark"}', headers=tj).status_code == 200
+      and '__GATE_THEME="dark"' in cp.get("/themehead").text and "__GATE_PEN=" in cp.get("/themehead").text)
+for bad in ('{"kind":"photo","color":"#000000"}', '{"kind":"photo","color":"</script>"}', '{"kind":"text","color":"e"}', '{"kind":"x","color":"y"}',
+            '{"kind":["photo"],"color":"#ff5b5b"}', '{"kind":"text","color":1}', '{"color":"y"}', '[]', 'not json', ''):
+    check("엉뚱한 값은 거부하고 기존 값 유지: %r" % bad, cp.post("/gate/pen", content=bad, headers=tj).status_code == 400
+          and '{"photo": "#ffd93b", "text": "r"}' in cp.get("/themehead").text)
+check("로그인 안 한 사람은 저장 불가(401)", client(app_t).post("/gate/pen", content='{"kind":"text","color":"y"}', headers=tj).status_code == 401)
+check("다른 사이트에서 보낸 요청은 거부", cp.post("/gate/pen", content='{"kind":"text","color":"y"}', headers={**tj, "sec-fetch-site": "cross-site"}).status_code == 403)
+with gate._db() as con:
+    con.execute("""UPDATE users SET pen='{"photo":"<img src=x onerror=1>","text":"b","zz":"y"}' WHERE nickname='펜닉'""")
+check("DB 에 이상한 값이 있어도 허용 목록의 색만 머리글에 나옴", 'window.__GATE_PEN={"text": "b"};' in cp.get("/themehead").text and "onerror" not in cp.get("/themehead").text)
+with gate._db() as con:
+    con.execute("UPDATE users SET pen='not json' WHERE nickname='펜닉'")
+check("DB 값이 깨져 있어도 화면은 그대로(펜 값만 없음) · 다시 저장하면 복구", "__GATE_PEN" not in cp.get("/themehead").text
+      and cp.post("/gate/pen", content='{"kind":"text","color":"y"}', headers=tj).status_code == 200 and 'window.__GATE_PEN={"text": "y"};' in cp.get("/themehead").text)
+check("처리방침에 형광펜 색 저장 명시", "형광펜 색" in cp.get("/privacy").text)
 
 print("[서버 IP 접속: 관리자 비밀번호]")
 IPPW = "Correct-Horse-9-Staple"

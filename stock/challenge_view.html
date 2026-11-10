@@ -572,6 +572,13 @@ const PV=(()=>{
   const WEIGHTS=[["가늘게",0.6],["보통",1],["굵게",1.7]];
   const V={s:1,tx:0,ty:0,bw:1,bh:1,nw:1,nh:1,min:1,hand:true,pen:false,erase:false,tool:"line",color:"#ff5b5b",wi:1,
            key:null,marks:{},undo:{},ptr:new Map(),act:null,space:false};
+  // 🖍 계정에 저장해 둔 마지막 색으로 시작(2026-11-10 사용자 요청 — 신문 요약 뷰어와 같은 값을 함께 쓴다). 없으면 기본 빨강.
+  const PEN_COLORS=["#ff5b5b","#4da3ff","#ffd93b"];
+  try{ const pc=window.__GATE_PEN&&window.__GATE_PEN.photo; if(PEN_COLORS.includes(pc)) V.color=pc; }catch(e){}
+  function savePenToAccount(color){   // 실패해도(로그인 전 등) 화면은 그대로 동작
+    try{ (window.__GATE_PEN=window.__GATE_PEN||{}).photo=color;
+         fetch("/gate/pen",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind:"photo",color}),keepalive:true}).catch(()=>{}); }catch(e){}
+  }
   const list=()=>V.marks[V.key]||(V.marks[V.key]=[]);
   const hist=()=>V.undo[V.key]||(V.undo[V.key]=[]);
   function layout(keep){
@@ -640,7 +647,8 @@ const PV=(()=>{
   function cursor(){st.classList.toggle("pen",V.pen&&!V.hand&&!V.erase);st.classList.toggle("erase",V.pen&&!V.hand&&V.erase);}
   function pick(attr,val,sel){document.querySelectorAll(sel).forEach(b=>b.setAttribute("aria-pressed",b.dataset[attr]===val));}
   document.querySelectorAll("#pv-pentools [data-tool]").forEach(b=>b.onclick=()=>{V.tool=b.dataset.tool;pick("tool",V.tool,"#pv-pentools [data-tool]");V.erase=false;$("pv-erase").setAttribute("aria-pressed","false");setHand(false);});
-  document.querySelectorAll("#pv-pentools [data-color]").forEach(b=>b.onclick=()=>{V.color=b.dataset.color;pick("color",V.color,"#pv-pentools [data-color]");V.erase=false;$("pv-erase").setAttribute("aria-pressed","false");setHand(false);});
+  document.querySelectorAll("#pv-pentools [data-color]").forEach(b=>b.onclick=()=>{V.color=b.dataset.color;pick("color",V.color,"#pv-pentools [data-color]");savePenToAccount(V.color);V.erase=false;$("pv-erase").setAttribute("aria-pressed","false");setHand(false);});
+  pick("color",V.color,"#pv-pentools [data-color]");   // 저장된 색 단추를 눌린 모양으로
   function weight(d){V.wi=(V.wi+d+3)%3;$("pv-weight").textContent=WEIGHTS[V.wi][0];}
   $("pv-weight").onclick=()=>weight(1);
   $("pv-erase").onclick=()=>{V.erase=!V.erase;$("pv-erase").setAttribute("aria-pressed",V.erase);if(V.erase)setHand(false);cursor();};

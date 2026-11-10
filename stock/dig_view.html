@@ -292,6 +292,12 @@ const UNIT_SEL='p, h2.title, h2.sec, h3, li, .cap';
 const HL={admin:false, enabled:false, tool:'y', marks:[], rev:0, dirty:false, saving:false, saveT:null, last:null, barDown:false,
           toastT:null, draw:null, undo:[], redo:[], id:''};
 try{ HL.enabled = localStorage.getItem('dig.hl')==='1'; const t=localStorage.getItem('dig.hl.tool'); if(['h','y','r','b','e'].includes(t)) HL.tool=t; }catch(e){}
+// 계정에 저장된 마지막 색이 먼저(2026-11-10 사용자 요청). 단, 이 브라우저에서 ✋ 손·🧽 지우개로 두었으면 그대로 둔다(색만 계정 값을 따른다).
+try{ const pc=window.__GATE_PEN&&window.__GATE_PEN.text; if(['y','r','b'].includes(pc)&&HL.tool!=='h'&&HL.tool!=='e') HL.tool=pc; }catch(e){}
+function savePenToAccount(kind,color){   // 고른 색을 계정에 저장 → 다음에 열 때·다른 기기에서도 같은 색. 실패해도 화면은 그대로 동작
+  try{ (window.__GATE_PEN=window.__GATE_PEN||{})[kind]=color;
+       fetch('/gate/pen',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind,color}),keepalive:true}).catch(()=>{}); }catch(e){}
+}
 const MAINEL=$('main');
 function hlUnits(){ return [...MAINEL.querySelectorAll(UNIT_SEL)]; }
 function hlOff(u,node,off){            // 덩어리 u 안에서 (node, off) 가 글자 몇 번째인지
@@ -438,6 +444,7 @@ $('hlbar').addEventListener('click',e=>{
   if(b.dataset.a==='clear') return hlClearAll();
   const t=b.dataset.t; if(!t) return;
   HL.tool=t; try{ localStorage.setItem('dig.hl.tool',t); }catch(_){}
+  if(t==='y'||t==='r'||t==='b') savePenToAccount('text',t);
   // 글자를 이미 선택해 둔 채 색(또는 🧽)을 누르면 그 글자에 바로 적용(키보드·길게 눌러 선택한 경우)
   if(t!=='h'&&HL.last&&!HL.last.collapsed){
     hlApplyRange(HL.last,t==='e'?'':t);

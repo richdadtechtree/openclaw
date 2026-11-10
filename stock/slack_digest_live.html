@@ -1969,6 +1969,8 @@ const EDHL=(()=>{
   const S={admin:false,enabled:false,tool:'y',marks:[],rev:0,dirty:false,saving:false,saveT:null,last:null,barDown:false,
            toastT:null,draw:null,undo:[],redo:[],date:'',inView:false};
   try{ S.enabled=localStorage.getItem('ed.hl')==='1'; const t=localStorage.getItem('ed.hl.tool'); if(['h','y','r','b','e'].includes(t)) S.tool=t; }catch(e){}
+  // 계정에 저장된 마지막 색이 먼저(2026-11-10). 단, 이 브라우저에서 ✋ 손·🧽 지우개로 두었으면 그대로 둔다(색만 계정 값을 따른다).
+  try{ const pc=window.__GATE_PEN&&window.__GATE_PEN.text; if(['y','r','b'].includes(pc)&&S.tool!=='h'&&S.tool!=='e') S.tool=pc; }catch(e){}
   const el=id=>document.getElementById(id), R=()=>el('mk-ed-list');
   const units=()=>[...R().querySelectorAll(UNIT_SEL)];
   const off=(u,node,o)=>{ const r=document.createRange(); r.selectNodeContents(u); r.setEnd(node,o); return r.toString().length; };
@@ -2114,6 +2116,7 @@ const EDHL=(()=>{
     if(b.dataset.a==='clear') return clearAll();
     const t=b.dataset.t; if(!t) return;
     S.tool=t; try{ localStorage.setItem('ed.hl.tool',t); }catch(_){}
+    if(t==='y'||t==='r'||t==='b') savePenToAccount('text',t);                // 마지막으로 고른 색을 계정에 기억
     if(t!=='h'&&S.last&&!S.last.collapsed){                                  // 글자를 이미 선택해 둔 채 색(또는 🧽)을 누르면 그 글자에 바로 적용
       applyRange(S.last,t==='e'?'':t);
       try{ getSelection().removeAllRanges(); }catch(_){}
@@ -3319,15 +3322,25 @@ for(const type of ["pointerdown","pointermove","pointerup","pointercancel","dblc
 $("lb-pen-off").onclick=()=>setPen(false);
 // 색 고르기 — 빨강 · 파랑 · 노랑
 const COLORS=[["lb-c1","#ff5b5b"],["lb-c2","#4da3ff"],["lb-c3","#ffd93b"]];
+// 🖍 고른 색을 계정에 저장(2026-11-10): 다음에 열 때·다른 기기에서도 같은 색. 로그인 안 했거나 실패해도 화면은 그대로 동작.
+//   kind: "photo"=사진 위 줄 긋기 펜 · "text"=사설 글자 칠하기 펜
+function savePenToAccount(kind,color){
+  if(window.__CUSTOM_ONLY) return;
+  try{ (window.__GATE_PEN=window.__GATE_PEN||{})[kind]=color;
+       fetch("/gate/pen",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind,color}),keepalive:true}).catch(()=>{}); }catch(e){}
+}
 COLORS.forEach(([id,col])=>{
   $(id).onclick=()=>{
     M.color=col; setErase(false); setHand(false,true);   // 색을 고르면 '그리려는 것' → 손바닥 끔
+    savePenToAccount("photo",col);             // 마지막으로 고른 색을 계정에 기억
     COLORS.forEach(([k])=>$(k).setAttribute("aria-pressed", k===id?"true":"false"));
     const sel=selStroke();                     // 방금 그린 동그라미는 색도 바로 바뀐다
     if(sel){ sel.c=col; marksChanged(); drawMarks(); }
   };
 });
-$("lb-c1").setAttribute("aria-pressed","true");        // 기본은 빨강
+// 계정에 저장해 둔 마지막 색이 있으면 그 색으로 시작(2026-11-10 사용자 요청). 없으면 기본 빨강.
+try{ const pc=window.__GATE_PEN&&window.__GATE_PEN.photo; if(COLORS.some(([,c])=>c===pc)) M.color=pc; }catch(e){}
+COLORS.forEach(([id,c])=>$(id).setAttribute("aria-pressed", c===M.color?"true":"false"));
 
 // 도구 고르기 — 직선(기본) · 동그라미 · 자유
 const TOOLS=[["lb-t-line","line"],["lb-t-oval","oval"],["lb-t-free","free"]];

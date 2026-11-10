@@ -231,7 +231,7 @@ def _db():
     for col, ddl in (("is_admin", "INTEGER NOT NULL DEFAULT 0"), ("expires_at", "TEXT"),
                      ("nick_set", "INTEGER NOT NULL DEFAULT 0"), ("nick_key", "TEXT"), ("theme", "TEXT"),
                      ("role", "TEXT"), ("cohort_id", "INTEGER"), ("celebrated_at", "TEXT"),
-                     ("apply", "TEXT")):                     # apply='charles' = 챌린지 입구로 가입·신청(찰스 승인 대기)       # 예전에 만든 DB 도 가입자 정보를 그대로 둔 채 이어서 쓴다
+                     ("apply", "TEXT"), ("pen", "TEXT")):                     # apply='charles' = 챌린지 입구로 가입·신청(찰스 승인 대기)       # 예전에 만든 DB 도 가입자 정보를 그대로 둔 채 이어서 쓴다
         if col not in have:
             con.execute("ALTER TABLE users ADD COLUMN %s %s" % (col, ddl))
     _cp = {r["name"] for r in con.execute("PRAGMA table_info(challenge_posts)")}
@@ -430,6 +430,34 @@ def set_theme(uid, theme):
     return True
 
 
+# 🖍 형광펜 마지막 색(2026-11-10 사용자 요청): 계정마다 기억했다가 다음에 그 색으로 연다.
+#   photo = 신문 사진 위에 줄 긋는 펜(신문 요약 뷰어·챌린지 뷰어 공통)  ·  text = 글자 위에 칠하는 펜(경제 공부·사설 공통)
+#   허용 목록에 있는 색만 저장·출력한다 → 화면 <head> 에 그대로 넣어도 안전.
+PEN_COLORS = {"photo": ("#ff5b5b", "#4da3ff", "#ffd93b"), "text": ("y", "r", "b")}
+
+
+def pen_of(u):
+    """계정에 저장된 펜 색 {종류: 색}. 깨진 값·허용 목록 밖의 값은 버린다(없으면 빈 dict)."""
+    try:
+        d = json.loads(u["pen"]) if (u and "pen" in u.keys() and u["pen"]) else {}
+    except Exception:
+        d = {}
+    if not isinstance(d, dict):
+        return {}
+    return {k: d[k] for k in PEN_COLORS if isinstance(d.get(k), str) and d[k] in PEN_COLORS[k]}
+
+
+def set_pen(uid, kind, color):
+    """계정별 펜 색 저장. 종류·색이 허용 목록에 없으면 저장하지 않는다. 다른 종류의 색은 그대로 둔다."""
+    if kind not in PEN_COLORS or not isinstance(color, str) or color not in PEN_COLORS[kind]:
+        return False
+    with _db() as con:
+        d = pen_of(con.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone())
+        d[kind] = color
+        con.execute("UPDATE users SET pen=? WHERE id=?", (json.dumps(d, sort_keys=True), uid))
+    return True
+
+
 def first_admin_user():
     """IP 관리자 모드(로그인 계정이 없음)가 대신 쓰는 계정: 승인된 관리자 중 가장 먼저 만든 계정 — 용어 노트·형광펜과 같은 기준."""
     try:
@@ -458,10 +486,14 @@ def theme_head(request):
     except Exception:
         u = None
     t = (u["theme"] if u and "theme" in u.keys() else None)
-    if t not in THEMES:
-        return ""
-    return ('<script>window.__GATE_THEME="%s";(function(t){var d=document.documentElement;'
-            'if(t==="auto")d.removeAttribute("data-theme");else d.setAttribute("data-theme",t);})("%s");</script>' % (t, t))
+    out = ""
+    if t in THEMES:
+        out = ('<script>window.__GATE_THEME="%s";(function(t){var d=document.documentElement;'
+               'if(t==="auto")d.removeAttribute("data-theme");else d.setAttribute("data-theme",t);})("%s");</script>' % (t, t))
+    pen = pen_of(u)                           # 🖍 계정에 저장된 형광펜 색 → 화면이 열릴 때 그 색으로 시작
+    if pen:
+        out += "<script>window.__GATE_PEN=%s;</script>" % json.dumps(pen, sort_keys=True)
+    return out
 
 
 def is_admin(u):
@@ -788,7 +820,7 @@ def privacy_html():
 
 <h2>1. 처리하는 개인정보 항목과 목적</h2>
 <table>
-<tr><th>항목</th><td>소셜 로그인(구글 또는 카카오)이 알려 주는 <b>고유 식별번호</b>, 가입할 때 이용자가 직접 정한 <b>닉네임</b>, 가입 시각·최근 접속 시각, 동의 이력, <b>화면 모드 설정</b>(화이트/다크/자동 — 선택한 경우에만), <b>당일 신문 책갈피</b>(저장한 날짜·신문 종류·요약 또는 지면 위치 한 개, 선택 시, 한국시간 다음 날 00시 만료),
+<tr><th>항목</th><td>소셜 로그인(구글 또는 카카오)이 알려 주는 <b>고유 식별번호</b>, 가입할 때 이용자가 직접 정한 <b>닉네임</b>, 가입 시각·최근 접속 시각, 동의 이력, <b>화면 모드 설정</b>(화이트/다크/자동 — 선택한 경우에만), <b>형광펜 색 설정</b>(마지막으로 고른 색 — 고른 경우에만), <b>당일 신문 책갈피</b>(저장한 날짜·신문 종류·요약 또는 지면 위치 한 개, 선택 시, 한국시간 다음 날 00시 만료),
 <b>(챌린지 참가자만)</b> 이용자가 직접 작성한 <b>챌린지 글</b>(WHAT·WHY·HOW·생각 &amp; 투자에 적용할 점, 고른 신문 쪽)과 작성·수정 시각</td></tr>
 <tr><th>목적</th><td>이용자 확인(본인 계정 식별), 서비스 이용 권한·기한 관리(승인 여부와 이용 기한 확인), 부정 이용 방지,
 챌린지 운영(참여 기록·진행도 확인, 같은 기수 참가자 간 글 공유, 완수 시 이용 권한 부여)</td></tr>
@@ -840,7 +872,7 @@ def consent_html(nick_value, nxt, error="", checks=()):
 <b>실명·전화번호·이메일은 쓰지 마세요.</b> 나중에 내 정보 화면에서 바꿀 수 있어요.</p>
 <h2>개인정보 수집·이용 동의 (필수)</h2>
 <table>
-<tr><th>수집 항목</th><td>소셜 로그인 고유 식별번호, 위에서 직접 입력한 닉네임, 화면 모드 설정·최신 신문 책갈피(선택 시), (챌린지 참가자만) 직접 작성한 챌린지 글과 작성 시각 (구글·카카오의 이름·이메일은 받지 않아요)</td></tr>
+<tr><th>수집 항목</th><td>소셜 로그인 고유 식별번호, 위에서 직접 입력한 닉네임, 화면 모드 설정·형광펜 색 설정·최신 신문 책갈피(선택 시), (챌린지 참가자만) 직접 작성한 챌린지 글과 작성 시각 (구글·카카오의 이름·이메일은 받지 않아요)</td></tr>
 <tr><th>이용 목적</th><td>이용자 확인, 서비스 이용 권한·기한 관리, 부정 이용 방지, 챌린지 운영(진행도·같은 기수 글 공유)</td></tr>
 <tr><th>보유 기간</th><td>탈퇴 시까지 (탈퇴하면 즉시 삭제)</td></tr>
 <tr><th>동의 거부 권리</th><td>동의하지 않을 수 있으며, 이 경우 서비스를 이용할 수 없습니다.</td></tr>
@@ -1252,7 +1284,7 @@ def install(app):
                 and (request.url.path.startswith("/gate/") or _is_gated(request.url.path)):
             return JSONResponse({"ok": False, "reason": "cross-site"}, status_code=403)
         if cfg()["enabled"] and is_ip_host(request) and request.url.path.startswith("/gate/") \
-                and request.url.path not in ("/gate/ip-login", "/gate/ip-logout", "/gate/admin", "/gate/admin/act", "/gate/privacy", "/gate/theme"):
+                and request.url.path not in ("/gate/ip-login", "/gate/ip-logout", "/gate/admin", "/gate/admin/act", "/gate/privacy", "/gate/theme", "/gate/pen"):
             # IP 접속에서는 구글/카카오 로그인·가입·내 정보가 의미 없다 → 관리자 비밀번호 화면으로
             if request.method in ("GET", "HEAD"):
                 return RedirectResponse("/gate/ip-login", 302)
@@ -1525,6 +1557,21 @@ def install(app):
         if not set_theme(u["id"], t):
             return JSONResponse({"ok": False, "reason": "bad theme"}, status_code=400)
         return JSONResponse({"ok": True, "theme": t})
+
+    @r.post("/gate/pen")
+    async def pen_save(request: Request):
+        """🖍 형광펜 색 저장 주소: 본문 {"kind":"photo|text","color":"..."}. 로그인·승인된 본인 계정에만 저장(화면 모드와 같은 기준)."""
+        u = theme_user(request)               # 로그인 계정, 또는 IP 관리자 모드면 첫 관리자 계정
+        if not u or u["status"] != "approved":
+            return JSONResponse({"ok": False}, status_code=401)
+        try:
+            data = json.loads((await request.body() or b"{}")[:200])
+            k, c = (data.get("kind"), data.get("color")) if isinstance(data, dict) else (None, None)
+        except Exception:
+            k = c = None
+        if not isinstance(k, str) or not set_pen(u["id"], k, c):
+            return JSONResponse({"ok": False, "reason": "bad pen"}, status_code=400)
+        return JSONResponse({"ok": True, "kind": k, "color": c})
 
     @r.post("/gate/nickname")
     async def nickname_change(request: Request):
