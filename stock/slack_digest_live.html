@@ -845,6 +845,19 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   .mobile-hand:focus-visible{outline:3px solid #2563eb;outline-offset:3px}
   /* 2026-11-09 사용자 요청: PC 에선 가운데 ✋ 가 아예 없다(휠 버튼·M 키로 옮김). 손가락이 주 입력인 기기(폰·태블릿)에서만 보인다 */
   @media(pointer:coarse){.mobile-hand:not([hidden]){display:grid;place-items:center}}
+
+  /* Editorial hierarchy, shared with the challenge reading experience. */
+  .mast{padding:32px 0 28px;border-bottom:2px solid var(--accent);margin-bottom:20px}
+  .eyebrow .edition-note{font:10px var(--mono);letter-spacing:.16em;color:var(--muted)}
+  h1.date{font-size:clamp(30px,5vw,48px);letter-spacing:-.045em;line-height:1.25;margin:22px 0 14px}
+  .mast .lede{font-size:clamp(18px,3vw,23px);font-weight:600;color:var(--ink);margin-bottom:8px;letter-spacing:-.035em}
+  .mast-guide{font-size:14px;color:var(--muted);margin:0;line-height:1.7}
+  .brf-art{padding-bottom:24px;border-bottom:1px solid var(--line);margin-bottom:30px}
+  .brf-art:last-child{border-bottom:0;padding-bottom:0}
+  .brf-cat{border-left-width:3px;padding-left:14px;letter-spacing:-.035em}
+  .sitenav a{transition:background .15s,border-color .15s}
+  @media(max-width:599px){.mast{padding:22px 0}.mast-guide{font-size:13px}.eyebrow .edition-note{font-size:9px;letter-spacing:.08em}}
+  @media(prefers-reduced-motion:reduce){.sitenav a{transition:none}}
 </style>
 </head>
 <body class="paper">
@@ -865,9 +878,9 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
     <!--GATE_WHO-->
   </nav>
   <header class="mast">
-    <div class="eyebrow"><span class="label" id="ed-label">오늘 신문 요약</span><span class="live"><span class="pulse"></span>LIVE</span></div>
+    <div class="eyebrow"><span class="label" id="ed-label">오늘 신문 요약</span><span class="edition-note">DAILY BRIEFING</span></div>
     <h1 class="date" id="date">불러오는 중…</h1>
-    <p class="lede">쉽게 보는 오늘 뉴스</p>
+    <p class="lede">뉴스를 읽고, 흐름을 이해하는 시간.</p><p class="mast-guide">핵심 기사부터 경제의 맥락까지, 나만의 관점으로 읽어보세요.</p>
   </header>
   <!-- 2026-10-27 사용자 요청: 종이신문(아침 지면) / 온라인신문(네이버 경제 주요 기사, 9시·18시) 고르기
        2026-11-09 사용자 요청: 아래로 내려가도 이 줄(종이/온라인 전환 + 날짜 고르기)이 늘 보이게 고정 — 바로 누를 수 있게.

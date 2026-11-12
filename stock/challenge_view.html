@@ -316,6 +316,27 @@
   .mobile-hand:focus-visible{outline:3px solid #2563eb;outline-offset:3px}
   /* 2026-11-09 사용자 요청: PC 에선 가운데 ✋ 가 아예 없다(휠 버튼·M 키로 옮김). 손가락이 주 입력인 기기(폰·태블릿)에서만 보인다 */
   @media(pointer:coarse){.mobile-hand:not([hidden]){display:grid;place-items:center}}
+
+  /* Quiet navy accents and an editorial introduction; existing state colors remain. */
+  .challenge-intro{padding:24px 4px 30px;margin-bottom:24px;border-bottom:2px solid var(--ink)}
+  .intro-label{font-size:10px;font-weight:700;letter-spacing:.18em;color:var(--sub)}
+  .challenge-intro h2{font-size:clamp(29px,4vw,42px);line-height:1.3;letter-spacing:-.045em;margin:16px 0}
+  .challenge-intro p{color:var(--sub);font-size:15px;margin:0}
+  .reading-steps{display:flex;gap:24px;flex-wrap:wrap;margin-top:24px;font-size:13px;color:var(--sub)}
+  .reading-steps b{color:var(--ink);font-size:11px;margin-right:7px;font-variant-numeric:tabular-nums}
+  .hero{background:var(--card);border-top:3px solid #34466f;padding:26px}
+  .hero h2{font-size:23px;letter-spacing:-.035em}
+  .hero .meta{margin:6px 0 22px}
+  .bar{height:6px}.bar i{background:linear-gradient(90deg,#34466f,#8094bf)}
+  .count{margin:14px 0 20px;color:var(--sub)}.count b{font-size:26px;color:var(--ink)}
+  .days{gap:8px}.day{border-radius:10px;min-width:52px}
+  .day.today,.day.wait{border-color:var(--blue);color:var(--blue)}
+  .card{box-shadow:none}.dayhead{margin-bottom:18px}
+  .tile{border-radius:12px;transition:box-shadow .15s,transform .15s}
+  @media(hover:hover){.tile:hover{transform:translateY(-3px);box-shadow:0 8px 20px #17203318}}
+  button:focus-visible,a:focus-visible{outline:2px solid var(--blue);outline-offset:4px}
+  @media(max-width:560px){.challenge-intro{padding-top:16px}.reading-steps{gap:12px;font-size:12px}.hero{padding:20px}.challenge-intro p{font-size:14px}}
+  @media(prefers-reduced-motion:reduce){.tile,.bar i{transition:none}}
 </style>
 </head>
 <body>
@@ -330,6 +351,12 @@
   <h1>🔥 챌린지</h1>
 </div>
 <main>
+  <header class="challenge-intro">
+    <span class="intro-label">DAILY READING CHALLENGE</span>
+    <h2>읽는 습관이,<br>나만의 관점이 되도록.</h2>
+    <p>기사 하나를 깊이 읽고, 오늘의 생각을 남겨보세요.</p>
+    <div class="reading-steps" aria-label="챌린지 참여 순서"><span><b>01</b> 기사 선택</span><span><b>02</b> 핵심 정리</span><span><b>03</b> 내 생각 기록</span></div>
+  </header>
   <section class="card hero" id="hero"><div class="empty">불러오는 중…</div></section>
   <div class="vtabs" role="tablist" aria-label="보기">
     <button role="tab" id="v-day" aria-selected="true">📰 오늘 신문</button>
