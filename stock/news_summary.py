@@ -10,6 +10,7 @@ import json
 import os
 import re
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
@@ -80,7 +81,38 @@ def configured():
     return bool(gate._env("GATEWAY_TOKEN"))
 
 
-def ask_page(image, date, page, detail_retry=False):
+# 게이트웨이(ChatGPT)가 "요청이 너무 많다/잠시 바쁘다"(429·502·503·504)고 하면 바로 포기하지 않고 기다렸다 다시 묻는다.
+# 28쪽을 연달아 보내다 보면 429 가 흔하다(2026-11-14 실제 발생). 쪽마다 결과를 저장해 두므로 끝내 안 되면 '요약만' 다시 눌러 이어서 한다.
+RETRY_CODES = (429, 502, 503, 504)
+RETRY_WAITS = (30, 60, 120, 240)       # 초. 서버가 Retry-After 를 주면 그 값(5~300초)을 따른다
+
+
+def _wait_seconds(error, attempt):
+    try:
+        given = int(float(error.headers.get("Retry-After", "")))
+    except (AttributeError, TypeError, ValueError):
+        given = 0
+    return min(max(given, 5), 300) if given else RETRY_WAITS[attempt]
+
+
+def _post(req, on_wait=None):
+    """게이트웨이에 보내고 JSON 을 돌려준다. 일시적 오류(RETRY_CODES)는 RETRY_WAITS 만큼 기다리며 다시 시도."""
+    for attempt in range(len(RETRY_WAITS) + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=240) as r:
+                return json.load(r)
+        except urllib.error.HTTPError as e:
+            if e.code not in RETRY_CODES:
+                raise RuntimeError("요약 연결 HTTP %d. 관리자에게 게이트웨이 상태를 확인해 주세요." % e.code) from None
+            if attempt == len(RETRY_WAITS):
+                raise RuntimeError("요약 연결 HTTP %d(요청이 몰렸거나 사용량 제한). 몇 분 뒤 '요약만'을 다시 누르면 읽은 쪽은 건너뛰고 이어서 해요." % e.code) from None
+            wait = _wait_seconds(e, attempt)
+            if on_wait:
+                on_wait("게이트웨이가 바빠요(HTTP %d) — %d초 뒤 다시 시도해요 (%d/%d)" % (e.code, wait, attempt + 1, len(RETRY_WAITS)))
+            time.sleep(wait)
+
+
+def ask_page(image, date, page, detail_retry=False, on_wait=None):
     token = gate._env("GATEWAY_TOKEN")
     if not token:
         raise RuntimeError("요약 연결 설정(GATEWAY_TOKEN)이 없어요. 다운로드한 파일은 보존했어요.")
@@ -107,10 +139,7 @@ def ask_page(image, date, page, detail_retry=False):
     req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers={
         "Authorization": "Bearer " + token, "Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=240) as r:
-            body = json.load(r)
-    except urllib.error.HTTPError as e:
-        raise RuntimeError("요약 연결 HTTP %d. 관리자에게 게이트웨이 상태를 확인해 주세요." % e.code) from None
+        body = _post(req, on_wait)
     except (OSError, ValueError):
         raise RuntimeError("요약 연결 응답을 받지 못했어요. 잠시 후 요약만 다시 눌러 주세요.") from None
     try:
@@ -240,14 +269,14 @@ def run(date, progress=lambda note: None):
             answer = None
         if answer is None:
             try:
-                answer = ask_page(image, date, page)
+                answer = ask_page(image, date, page, on_wait=lambda note: progress("%d / %d쪽 — %s" % (page, total, note)))
                 articles = validate(answer, date, page)
             except RuntimeError as error:
                 # Retry incomplete visual/structured answers, not missing credentials or HTTP failures.
                 if "쪽" not in str(error) and "분류" not in str(error):
                     raise
                 progress("%d / %d쪽 확대해서 다시 읽는 중" % (page, total))
-                answer = ask_page(image, date, page, detail_retry=True)
+                answer = ask_page(image, date, page, detail_retry=True, on_wait=lambda note: progress("%d / %d쪽 — %s" % (page, total, note)))
                 articles = validate(answer, date, page)
             atomic_json(cp, {"version": VERSION, "hash": digest, "answer": answer})
         else:
