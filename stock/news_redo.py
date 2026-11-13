@@ -41,6 +41,15 @@ def today_kst():
     return datetime.now(KST).strftime("%Y-%m-%d")
 
 
+def collector_supports_force(d):
+    """수집기 app/main.py 에 --force(이미 받은 날도 새로 받기) 옵션이 있으면 True."""
+    try:
+        with open(os.path.join(d, "app", "main.py"), encoding="utf-8") as f:
+            return '"--force"' in f.read()
+    except OSError:
+        return False
+
+
 def collector_cmd():
     """run_daily.sh 와 같은 방식: 수집기 venv 파이썬으로 app/main.py, 화면 없는 서버면 xvfb-run 으로 감싼다."""
     d = newspaper_dir()
@@ -48,6 +57,10 @@ def collector_cmd():
     if not os.path.isfile(py):
         py = sys.executable
     cmd = [py, os.path.join("app", "main.py")]
+    # 버튼은 '무조건 새로 받기' — 이미 받은 날(잘못 받은 글 포함)이어도 카페에서 다시 가져온다.
+    # 단, 수집기가 --force 를 아는 버전일 때만 붙인다(예전 수집기에 붙이면 '모르는 옵션'으로 실패).
+    if collector_supports_force(d):
+        cmd.append("--force")
     if shutil.which("xvfb-run"):
         cmd = ["xvfb-run", "-a"] + cmd
     return cmd, d
@@ -79,8 +92,28 @@ def _tail(text, n=6):
     return "\n".join(lines[-n:])[:600]
 
 
+def pull_collector():
+    """수집기가 예전 버전이면 GitHub 최신 코드를 지금 받아 본다(openclaw scripts/newspaper_auto_pull.py --now).
+    돌려주는 값: 결과 이유 한 줄(예: '수집기 코드 받음 …', '… git 폴더가 아니라서 …')."""
+    script = os.path.expanduser(os.getenv("NEWSPAPER_PULL_SCRIPT", "~/.openclaw/scripts/newspaper_auto_pull.py"))
+    if not os.path.isfile(script):
+        return "자동 받기 스크립트가 없어요: %s" % script
+    try:
+        p = subprocess.run([sys.executable, script, "--now"], capture_output=True, text=True, timeout=180,
+                           env=dict(os.environ, NEWSPAPER_DIR=newspaper_dir()))
+    except Exception as e:
+        return "자동 받기를 실행하지 못했어요: %r" % (e,)
+    lines = [l for l in (p.stdout or "").splitlines() if l.startswith("결과: ")]
+    return lines[-1][4:] if lines else _tail(p.stdout + "\n" + p.stderr, 2)
+
+
 def run_collect(timeout=900):
     cmd, cwd = collector_cmd()
+    pulled = ""
+    if os.path.isdir(cwd) and "--force" not in cmd:
+        # 예전 수집기 → 버튼을 누른 김에 바로 최신 코드를 받아 보고, 되면 --force 로 새로 받기
+        pulled = pull_collector()
+        cmd, cwd = collector_cmd()
     if not os.path.isdir(cwd):
         return False, "수집기 폴더가 없어요: %s" % cwd
     try:
@@ -91,7 +124,31 @@ def run_collect(timeout=900):
         return False, "수집기를 실행하지 못했어요: %r" % (e,)
     out = (p.stdout or "") + "\n" + (p.stderr or "")
     _set(tail=_tail(out))
-    return p.returncode == 0, ("" if p.returncode == 0 else "카페에서 오늘 신문 글을 아직 못 찾았거나 받기에 실패했어요.")
+    if p.returncode != 0:
+        return False, "카페에서 오늘 '신문스크랩' 글을 아직 못 찾았거나 받기에 실패했어요. (이미 받아 둔 파일은 그대로 둬요)"
+    if "--force" not in cmd:
+        return True, ("⚠️ 수집기가 예전 버전이라 이미 받은 날은 새로 받지 않았어요. 자동 받기 결과: %s"
+                      % (pulled or "확인 못 함"))
+    return True, ("수집기를 최신으로 받은 뒤 새로 받았어요." if pulled.startswith("수집기 코드 받음") else "")
+
+
+def start_page_ocr(date):
+    """지면 글자 읽기(news_page_text.py)를 뒤에서 따로 돌린다 — 끝나길 기다리지 않음.
+
+    한 장에 30초~1분이라 29장이면 15~30분 걸린다. 예전엔 news_sync 가 이것까지 마친 뒤에야
+    '웹에 연결'이 끝나서, 10분 제한에 걸려 실패하고 요약 단계로 못 넘어갔다(2026-11-13).
+    요약은 이 결과를 쓰지 않는다(지면↔기사 자동 연결에만 씀). 같은 날짜를 이미 읽는 중이면
+    news_page_text 의 잠금 파일 때문에 두 번째는 안내만 하고 끝나고, 30분마다 도는 동기화도 이어서 읽는다."""
+    script = os.path.join(os.path.dirname(sync_script()), "news_page_text.py")
+    if not os.path.isfile(script) or os.getenv("NEWS_PAGE_OCR", "1") == "0":
+        return False
+    try:
+        subprocess.Popen([sys.executable, script, date, "--quiet"], cwd=os.path.dirname(script),
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)       # 서버 앱이 다시 켜져도 글자 읽기는 계속
+        return True
+    except Exception:
+        return False
 
 
 def run_sync(date, timeout=600):
@@ -99,11 +156,13 @@ def run_sync(date, timeout=600):
     if not os.path.isfile(script):
         return False, "동기화 스크립트가 없어요: %s" % script
     try:
-        p = subprocess.run([sys.executable, script, date, "--force", "--quiet"], capture_output=True, text=True, timeout=timeout)
+        # 사진 연결만 하고 바로 끝낸다(NEWS_PAGE_OCR=0) — 글자 읽기는 아래에서 뒤로 돌림
+        p = subprocess.run([sys.executable, script, date, "--force", "--quiet"], capture_output=True, text=True,
+                           timeout=timeout, env=dict(os.environ, NEWS_PAGE_OCR="0"))
     except Exception as e:
         return False, "웹에 연결하지 못했어요: %r" % (e,)
     if p.returncode == 0:
-        return True, ""
+        return True, ("지면 글자 읽기는 뒤에서 계속해요(15~30분)." if start_page_ocr(date) else "")
     if p.returncode == 2:
         return False, "수집은 됐는데 웹이 읽을 신문 파일을 아직 못 찾았어요."
     _set(tail=_tail((p.stdout or "") + "\n" + (p.stderr or "")))

@@ -21,6 +21,9 @@ from fastapi.testclient import TestClient
 import gate
 import news_redo as redo
 
+REAL_RUN_COLLECT = redo.run_collect          # setUp 이 가짜로 바꾸기 전의 진짜 함수
+REAL_RUN_SYNC = redo.run_sync
+
 
 def wait_done(c):
     end = time.time() + 5
@@ -245,6 +248,60 @@ class RedoTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d, mock.patch.dict(redo.os.environ, {'NEWSPAPER_CLAUDE_DIR': d}), \
              mock.patch.object(redo.news_summary, 'messages', return_value=[]):
             self.assertIsNone(redo.ensure_summary_file('2026-11-09'))
+
+
+    def test_collector_force_only_when_supported(self):
+        """버튼 = 무조건 새로 받기(--force). 단 예전 수집기엔 붙이지 않고 경고만."""
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, 'app'))
+            main = os.path.join(d, 'app', 'main.py')
+            with mock.patch.dict(os.environ, {'NEWSPAPER_DIR': d}):
+                Path(main).write_text('parser.add_argument("--pdf-only")\n', encoding='utf-8')
+                self.assertNotIn('--force', redo.collector_cmd()[0])
+                fake = mock.Mock(returncode=0, stdout='이미 처리했습니다', stderr='')
+                with mock.patch.object(redo, 'pull_collector', return_value='서버의 폴더가 git 폴더가 아니라서 …') as pull, \
+                        mock.patch.object(redo.subprocess, 'run', return_value=fake):
+                    ok, note = REAL_RUN_COLLECT()
+                self.assertTrue(ok)
+                pull.assert_called_once()                       # 예전 버전이면 바로 받아 봄
+                self.assertIn('git 폴더가 아니라서', note)        # 못 받은 이유를 화면에
+                # 받아 보니 새 버전이 되면 → 그 자리에서 --force 로 새로 받기
+                def upgrade():
+                    Path(main).write_text('parser.add_argument("--force")\n', encoding='utf-8')
+                    return '수집기 코드 받음: d7a584b → 350a98b'
+                Path(main).write_text('parser.add_argument("--pdf-only")\n', encoding='utf-8')
+                with mock.patch.object(redo, 'pull_collector', side_effect=upgrade), \
+                        mock.patch.object(redo.subprocess, 'run', return_value=fake) as run:
+                    ok, note = REAL_RUN_COLLECT()
+                self.assertEqual(run.call_args[0][0][-1], '--force')
+                self.assertIn('최신으로 받은 뒤', note)
+                Path(main).write_text('parser.add_argument("--force", action="store_true")\n', encoding='utf-8')
+                cmd = redo.collector_cmd()[0]
+                self.assertIn(os.path.join('app', 'main.py'), cmd)
+                self.assertEqual(cmd[-1], '--force')
+                with mock.patch.object(redo.subprocess, 'run', return_value=fake) as run:
+                    ok, note = REAL_RUN_COLLECT()
+                self.assertEqual((ok, note), (True, ''))
+                self.assertEqual(run.call_args[0][0][-1], '--force')
+
+
+    def test_sync_does_not_wait_for_page_ocr(self):
+        """'웹에 연결' 은 글자 읽기(29장 15~30분)를 기다리지 않는다 — 10분 제한에 걸려 요약을 못 하던 문제."""
+        with tempfile.TemporaryDirectory() as d:
+            sync = os.path.join(d, 'news_sync.py')
+            Path(sync).write_text('', encoding='utf-8')
+            Path(os.path.join(d, 'news_page_text.py')).write_text('', encoding='utf-8')
+            ok_run = mock.Mock(returncode=0, stdout='', stderr='')
+            with mock.patch.dict(os.environ, {'NEWS_SYNC_SCRIPT': sync}), \
+                    mock.patch.object(redo.subprocess, 'run', return_value=ok_run) as run, \
+                    mock.patch.object(redo.subprocess, 'Popen') as popen:
+                ok, note = REAL_RUN_SYNC('2026-11-13')
+            self.assertTrue(ok)
+            self.assertEqual(run.call_args.kwargs['env']['NEWS_PAGE_OCR'], '0')   # 동기화 중엔 글자 읽기 끔
+            args = popen.call_args[0][0]
+            self.assertTrue(args[1].endswith('news_page_text.py') and args[2] == '2026-11-13')
+            self.assertTrue(popen.call_args.kwargs['start_new_session'])          # 뒤에서 따로
+            self.assertIn('뒤에서', note)
 
 
 if __name__ == '__main__':

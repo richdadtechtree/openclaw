@@ -79,6 +79,14 @@ if [ -f "$REPO_DIR/scripts/extend_newspaper_window.py" ]; then
   python3 "$REPO_DIR/scripts/extend_newspaper_window.py" || log "신문 재시도 마감 변경 실패 — 다음 tick에서 재시도" >&2
 fi
 
+# 신문 수집기(~/newspaper, 별도 저장소 richdadtechtree/newspaper)도 GitHub 최신으로.
+# 그 저장소엔 자동 받기 장치가 없어서 여기서 대신 한다. 5분에 한 번만 GitHub 확인,
+# 수집기가 돌고 있거나 서버에서 고친 파일과 겹치면 안 받는다(자세한 규칙은 스크립트 머리말).
+# 실패해도 openclaw 동기화는 계속. 끄기: NEWSPAPER_AUTO_PULL=off
+if [ -f "$REPO_DIR/scripts/newspaper_auto_pull.py" ]; then
+  python3 "$REPO_DIR/scripts/newspaper_auto_pull.py" || true
+fi
+
 if [ "$LOCAL" = "$REMOTE" ]; then
   # 새 커밋 없음 → 설정 동기화·게이트웨이 재시작은 생략(조용히 종료)
   exit 0
