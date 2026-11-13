@@ -41,6 +41,15 @@ def today_kst():
     return datetime.now(KST).strftime("%Y-%m-%d")
 
 
+def collector_supports_force(d):
+    """수집기 app/main.py 에 --force(이미 받은 날도 새로 받기) 옵션이 있으면 True."""
+    try:
+        with open(os.path.join(d, "app", "main.py"), encoding="utf-8") as f:
+            return '"--force"' in f.read()
+    except OSError:
+        return False
+
+
 def collector_cmd():
     """run_daily.sh 와 같은 방식: 수집기 venv 파이썬으로 app/main.py, 화면 없는 서버면 xvfb-run 으로 감싼다."""
     d = newspaper_dir()
@@ -48,6 +57,10 @@ def collector_cmd():
     if not os.path.isfile(py):
         py = sys.executable
     cmd = [py, os.path.join("app", "main.py")]
+    # 버튼은 '무조건 새로 받기' — 이미 받은 날(잘못 받은 글 포함)이어도 카페에서 다시 가져온다.
+    # 단, 수집기가 --force 를 아는 버전일 때만 붙인다(예전 수집기에 붙이면 '모르는 옵션'으로 실패).
+    if collector_supports_force(d):
+        cmd.append("--force")
     if shutil.which("xvfb-run"):
         cmd = ["xvfb-run", "-a"] + cmd
     return cmd, d
@@ -91,7 +104,11 @@ def run_collect(timeout=900):
         return False, "수집기를 실행하지 못했어요: %r" % (e,)
     out = (p.stdout or "") + "\n" + (p.stderr or "")
     _set(tail=_tail(out))
-    return p.returncode == 0, ("" if p.returncode == 0 else "카페에서 오늘 신문 글을 아직 못 찾았거나 받기에 실패했어요.")
+    if p.returncode != 0:
+        return False, "카페에서 오늘 '신문스크랩' 글을 아직 못 찾았거나 받기에 실패했어요. (이미 받아 둔 파일은 그대로 둬요)"
+    if "--force" not in cmd:
+        return True, "⚠️ 수집기가 예전 버전이라 이미 받은 날은 새로 받지 않았어요 — 서버에서 ~/newspaper 를 git pull 해 주세요."
+    return True, ""
 
 
 def run_sync(date, timeout=600):

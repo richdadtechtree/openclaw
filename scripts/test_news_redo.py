@@ -21,6 +21,8 @@ from fastapi.testclient import TestClient
 import gate
 import news_redo as redo
 
+REAL_RUN_COLLECT = redo.run_collect          # setUp 이 가짜로 바꾸기 전의 진짜 함수
+
 
 def wait_done(c):
     end = time.time() + 5
@@ -213,6 +215,29 @@ class RedoTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d, mock.patch.dict(redo.os.environ, {'NEWSPAPER_CLAUDE_DIR': d}), \
              mock.patch.object(redo.news_summary, 'messages', return_value=[]):
             self.assertIsNone(redo.ensure_summary_file('2026-11-09'))
+
+
+    def test_collector_force_only_when_supported(self):
+        """버튼 = 무조건 새로 받기(--force). 단 예전 수집기엔 붙이지 않고 경고만."""
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, 'app'))
+            main = os.path.join(d, 'app', 'main.py')
+            with mock.patch.dict(os.environ, {'NEWSPAPER_DIR': d}):
+                Path(main).write_text('parser.add_argument("--pdf-only")\n', encoding='utf-8')
+                self.assertNotIn('--force', redo.collector_cmd()[0])
+                fake = mock.Mock(returncode=0, stdout='이미 처리했습니다', stderr='')
+                with mock.patch.object(redo.subprocess, 'run', return_value=fake):
+                    ok, note = REAL_RUN_COLLECT()
+                self.assertTrue(ok)
+                self.assertIn('git pull', note)
+                Path(main).write_text('parser.add_argument("--force", action="store_true")\n', encoding='utf-8')
+                cmd = redo.collector_cmd()[0]
+                self.assertIn(os.path.join('app', 'main.py'), cmd)
+                self.assertEqual(cmd[-1], '--force')
+                with mock.patch.object(redo.subprocess, 'run', return_value=fake) as run:
+                    ok, note = REAL_RUN_COLLECT()
+                self.assertEqual((ok, note), (True, ''))
+                self.assertEqual(run.call_args[0][0][-1], '--force')
 
 
 if __name__ == '__main__':
