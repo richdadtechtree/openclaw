@@ -120,7 +120,36 @@ def audio_cmd(date):
     py = os.path.join(d, "venv-nlm", "bin", "python")
     if not os.path.isfile(py):
         py = sys.executable
-    return [py, os.path.join(d, "notebook_audio.py"), "--date", date, "--force"], d
+    return [py, os.path.join(d, "notebook_audio.py"), "--date", date, "--force", "--source", audio_source()], d
+
+
+def audio_source():
+    """오디오 재료. 기본 'pdf'(신문 PDF 원본, 2026-11-13 사용자 요청) — 예전 방식은 .env 의 NEWS_AUDIO_SOURCE=summary."""
+    v = (os.getenv("NEWS_AUDIO_SOURCE") or gate._env("NEWS_AUDIO_SOURCE") or "pdf").strip().lower()
+    return "summary" if v == "summary" else "pdf"
+
+
+def has_pdf(date):
+    """그날 신문 PDF 가 웹 캐시에 있나(끊어진 링크·빈 파일은 없는 것으로)."""
+    try:
+        names = []
+        idx = news_files.load_index(date) or {}
+        if (idx.get("pdf") or {}).get("name"):
+            names.append(os.path.basename(idx["pdf"]["name"]))
+        names.append(date + ".pdf")
+        d = news_files.day_dir(date)
+        for n in names:
+            real = os.path.realpath(os.path.join(d, n))
+            if os.path.isfile(real) and os.path.getsize(real) > 0:
+                return True
+        if os.path.isdir(d):
+            for n in os.listdir(d):
+                real = os.path.realpath(os.path.join(d, n))
+                if n.lower().endswith(".pdf") and os.path.isfile(real) and os.path.getsize(real) > 0:
+                    return True
+    except Exception:
+        pass
+    return False
 
 
 def ensure_summary_file(date):
@@ -144,11 +173,22 @@ def ensure_summary_file(date):
 
 def run_audio(date, timeout=1800):
     cmd, cwd = audio_cmd(date)
-    try:
-        if not ensure_summary_file(date):
-            return False, "오디오에 쓸 요약 파일이 없어요: ~/newspaper-claude/summaries/summary-%s.txt" % date
-    except OSError as e:
-        return False, "요약 파일을 만들지 못했어요: %r" % (e,)
+    if audio_source() == "pdf":
+        if not has_pdf(date):
+            return False, "오늘 신문 PDF 가 아직 없어요. 신문을 먼저 가져와 주세요(🔁 다시 가져오기)."
+        script = cmd[1] if len(cmd) > 1 else ""
+        if not os.getenv("NEWS_AUDIO_CMD") and os.path.isfile(script):
+            try:
+                if "--source" not in open(script, encoding="utf-8", errors="replace").read():
+                    return False, "서버의 notebook_audio.py 가 옛 버전이에요(PDF 지원 없음). 서버에서 scripts/install-notebook-audio.sh 를 한 번 실행해 주세요."
+            except OSError:
+                pass
+    else:
+        try:
+            if not ensure_summary_file(date):
+                return False, "오디오에 쓸 요약 파일이 없어요: ~/newspaper-claude/summaries/summary-%s.txt" % date
+        except OSError as e:
+            return False, "요약 파일을 만들지 못했어요: %r" % (e,)
     if not os.path.isfile(cmd[1] if len(cmd) > 1 else cmd[0]) and not os.getenv("NEWS_AUDIO_CMD"):
         return False, "오디오 만들기 프로그램을 찾지 못했어요: %s" % cmd[1]
     try:
@@ -167,10 +207,14 @@ def run_audio(date, timeout=1800):
 
 def run_audio_only(date, lease=None):
     try:
-        if not news_summary.messages(date) and not os.path.isfile(os.path.join(os.path.expanduser("~/.openclaw/slack_logs"), date + ".jsonl")):
+        if audio_source() == "pdf":
+            if not has_pdf(date):
+                _step("audio", "fail", "오늘 신문 PDF 가 아직 없어요. 신문을 먼저 가져와 주세요.")
+                return _set(ok=False, message="오늘 신문 PDF 가 아직 없어서 오디오를 만들 수 없어요.")
+        elif not news_summary.messages(date) and not os.path.isfile(os.path.join(os.path.expanduser("~/.openclaw/slack_logs"), date + ".jsonl")):
             _step("audio", "fail", "오늘 요약이 아직 없어요. 요약을 먼저 올려 주세요.")
             return _set(ok=False, message="오늘 요약이 아직 없어서 오디오를 만들 수 없어요.")
-        _step("audio", "run", "NotebookLM 에서 만드는 중(10~20분 걸릴 수 있어요)")
+        _step("audio", "run", "NotebookLM 에서 %s 로 만드는 중(10~20분 걸릴 수 있어요)" % ("신문 PDF" if audio_source() == "pdf" else "요약 글"))
         ok, note = run_audio(date)
         _step("audio", "ok" if ok else "fail", note)
         _set(ok=ok, message=note)

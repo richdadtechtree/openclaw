@@ -166,7 +166,7 @@ class RedoTests(unittest.TestCase):
 
     # 오디오 파일 수동 만들기 (2026-11-09)
     def test_audio_only_runs_just_audio_step(self):
-        with mock.patch.object(redo.news_summary, 'messages', return_value=[{'text': 'x'}]), \
+        with mock.patch.object(redo, 'has_pdf', return_value=True), \
              mock.patch.object(redo, 'run_audio', return_value=(True, '오디오 파일을 만들었어요.')) as audio:
             self.assertTrue(self.post('audio').json()['started'])
             s = wait_done(self.admin)
@@ -175,17 +175,27 @@ class RedoTests(unittest.TestCase):
         audio.assert_called_once()
         self.collect.assert_not_called(); self.sync.assert_not_called(); self.summary.assert_not_called()
 
-    def test_audio_needs_summary_first(self):
-        with mock.patch.object(redo.news_summary, 'messages', return_value=[]), \
-             mock.patch.object(redo.os.path, 'isfile', return_value=False), \
+    def test_audio_needs_pdf_first(self):
+        with mock.patch.object(redo, 'has_pdf', return_value=False), \
              mock.patch.object(redo, 'run_audio') as audio:
             self.post('audio')
             s = wait_done(self.admin)
         self.assertFalse(s['ok']); audio.assert_not_called()
         self.assertEqual(s['steps']['audio']['status'], 'fail')
+        self.assertIn('PDF', s['message'])
+
+    def test_audio_summary_mode_still_needs_summary(self):
+        with mock.patch.dict(redo.os.environ, {'NEWS_AUDIO_SOURCE': 'summary'}), \
+             mock.patch.object(redo.news_summary, 'messages', return_value=[]), \
+             mock.patch.object(redo.os.path, 'isfile', return_value=False), \
+             mock.patch.object(redo, 'run_audio') as audio:
+            self.post('audio')
+            s = wait_done(self.admin)
+        self.assertFalse(s['ok']); audio.assert_not_called()
+        self.assertIn('요약', s['message'])
 
     def test_audio_failure_shows_reason_and_guest_denied(self):
-        with mock.patch.object(redo.news_summary, 'messages', return_value=[{'text': 'x'}]), \
+        with mock.patch.object(redo, 'has_pdf', return_value=True), \
              mock.patch.object(redo, 'run_audio', return_value=(False, '오디오 만들기에 실패했어요')):
             self.post('audio')
             s = wait_done(self.admin)
@@ -195,7 +205,9 @@ class RedoTests(unittest.TestCase):
     def test_audio_command_default_and_custom(self):
         cmd, _ = redo.audio_cmd('2026-11-09')
         self.assertTrue(cmd[1].endswith('notebook_audio.py'))
-        self.assertEqual(cmd[2:], ['--date', '2026-11-09', '--force'])
+        self.assertEqual(cmd[2:], ['--date', '2026-11-09', '--force', '--source', 'pdf'])   # 기본은 PDF(2026-11-13)
+        with mock.patch.dict(redo.os.environ, {'NEWS_AUDIO_SOURCE': 'summary'}):
+            self.assertEqual(redo.audio_cmd('2026-11-09')[0][-2:], ['--source', 'summary'])
         with mock.patch.dict(redo.os.environ, {'NEWS_AUDIO_CMD': 'echo hi {date}'}):
             self.assertEqual(redo.audio_cmd('2026-11-09')[0], ['echo', 'hi', '2026-11-09'])
 
@@ -208,6 +220,26 @@ class RedoTests(unittest.TestCase):
             open(p, 'w', encoding='utf-8').write('기존')
             redo.ensure_summary_file('2026-11-09')
             self.assertEqual(open(p, encoding='utf-8').read(), '기존')      # 있으면 안 덮음
+
+    def test_has_pdf_checks_cache_and_ignores_empty_or_broken(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(redo.os.environ, {'NEWS_CACHE_DIR': d}):
+            day = Path(d) / '2026-11-13'; day.mkdir()
+            self.assertFalse(redo.has_pdf('2026-11-13'))
+            (day / '2026-11-13.pdf').write_bytes(b'')                       # 빈 파일
+            self.assertFalse(redo.has_pdf('2026-11-13'))
+            (day / '2026-11-13.pdf').unlink()
+            (day / '2026-11-13.pdf').symlink_to(day / 'nowhere.pdf')        # 끊어진 링크
+            self.assertFalse(redo.has_pdf('2026-11-13'))
+            (day / '2026-11-13.pdf').unlink()
+            (day / 'x.pdf').write_bytes(b'%PDF-1.4 x')                      # 이름이 달라도 *.pdf
+            self.assertTrue(redo.has_pdf('2026-11-13'))
+
+    def test_old_server_script_gets_clear_message(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(redo.os.environ, {'NEWSPAPER_CLAUDE_DIR': d}), \
+             mock.patch.object(redo, 'has_pdf', return_value=True):
+            Path(d, 'notebook_audio.py').write_text('# 옛 버전: --date 만 받음\n', encoding='utf-8')
+            ok, note = redo.run_audio('2026-11-13')
+        self.assertFalse(ok); self.assertIn('install-notebook-audio.sh', note)
 
     def test_summary_file_none_without_web_summary(self):
         with tempfile.TemporaryDirectory() as d, mock.patch.dict(redo.os.environ, {'NEWSPAPER_CLAUDE_DIR': d}), \
