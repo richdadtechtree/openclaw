@@ -166,10 +166,34 @@ class AutoPull(unittest.TestCase):
         self.assertEqual(self.run_pull(), 1)
         plain = os.path.join(self.tmp, "plain")
         os.makedirs(plain)
-        self.assertEqual(ap.run(plain, force_now=True), 0)              # git 폴더 아님 → 조용히
+        self.assertEqual(ap.run(plain, force_now=True), 1)              # git 폴더 아님 → 이유 남김
+        self.assertIn("git 폴더가 아니", ap.RESULT["msg"])
 
     def test_unknown_server_branch_uses_default(self):
         sh(self.srv, "git", "checkout", "-q", "-b", "main")             # GitHub 에 없는 이름
+        v2 = self.push_new_version()
+        self.assertEqual(self.run_pull(), 0)
+        self.assertEqual(self.head(), v2)
+
+    def test_server_on_other_branch_explains_why(self):
+        # 서버가 다른 실험 브랜치(예: PressReader 시험)에 있고 거기에만 커밋이 있으면 → 이유를 남김
+        sh(self.srv, "git", "checkout", "-q", "-b", "experiment")
+        self.write(self.srv, "probe.py", "x = 1\n")
+        sh(self.srv, "git", "add", "probe.py")
+        sh(self.srv, "git", "commit", "-q", "-m", "probe")
+        sh(self.srv, "git", "push", "-q", "origin", "experiment")
+        self.push_new_version()
+        status = os.path.join(self.tmp, "status.json")
+        with mock.patch.dict(os.environ, {"NEWSPAPER_DIR": self.srv, "NEWSPAPER_PULL_STATUS": status}):
+            self.assertEqual(ap.main(["--now"]), 1)
+        import json
+        saved = json.load(open(status, encoding="utf-8"))
+        self.assertIn("experiment", saved["msg"])
+        self.assertIn("갈라져", saved["msg"])
+
+    def test_default_branch_used_when_server_branch_has_nothing_new(self):
+        sh(self.srv, "git", "checkout", "-q", "-b", "old-copy")          # 기본 브랜치의 옛 지점
+        sh(self.srv, "git", "push", "-q", "origin", "old-copy")
         v2 = self.push_new_version()
         self.assertEqual(self.run_pull(), 0)
         self.assertEqual(self.head(), v2)

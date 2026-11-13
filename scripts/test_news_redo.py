@@ -226,10 +226,22 @@ class RedoTests(unittest.TestCase):
                 Path(main).write_text('parser.add_argument("--pdf-only")\n', encoding='utf-8')
                 self.assertNotIn('--force', redo.collector_cmd()[0])
                 fake = mock.Mock(returncode=0, stdout='이미 처리했습니다', stderr='')
-                with mock.patch.object(redo.subprocess, 'run', return_value=fake):
+                with mock.patch.object(redo, 'pull_collector', return_value='서버의 폴더가 git 폴더가 아니라서 …') as pull, \
+                        mock.patch.object(redo.subprocess, 'run', return_value=fake):
                     ok, note = REAL_RUN_COLLECT()
                 self.assertTrue(ok)
-                self.assertIn('git pull', note)
+                pull.assert_called_once()                       # 예전 버전이면 바로 받아 봄
+                self.assertIn('git 폴더가 아니라서', note)        # 못 받은 이유를 화면에
+                # 받아 보니 새 버전이 되면 → 그 자리에서 --force 로 새로 받기
+                def upgrade():
+                    Path(main).write_text('parser.add_argument("--force")\n', encoding='utf-8')
+                    return '수집기 코드 받음: d7a584b → 350a98b'
+                Path(main).write_text('parser.add_argument("--pdf-only")\n', encoding='utf-8')
+                with mock.patch.object(redo, 'pull_collector', side_effect=upgrade), \
+                        mock.patch.object(redo.subprocess, 'run', return_value=fake) as run:
+                    ok, note = REAL_RUN_COLLECT()
+                self.assertEqual(run.call_args[0][0][-1], '--force')
+                self.assertIn('최신으로 받은 뒤', note)
                 Path(main).write_text('parser.add_argument("--force", action="store_true")\n', encoding='utf-8')
                 cmd = redo.collector_cmd()[0]
                 self.assertIn(os.path.join('app', 'main.py'), cmd)

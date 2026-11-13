@@ -92,8 +92,28 @@ def _tail(text, n=6):
     return "\n".join(lines[-n:])[:600]
 
 
+def pull_collector():
+    """수집기가 예전 버전이면 GitHub 최신 코드를 지금 받아 본다(openclaw scripts/newspaper_auto_pull.py --now).
+    돌려주는 값: 결과 이유 한 줄(예: '수집기 코드 받음 …', '… git 폴더가 아니라서 …')."""
+    script = os.path.expanduser(os.getenv("NEWSPAPER_PULL_SCRIPT", "~/.openclaw/scripts/newspaper_auto_pull.py"))
+    if not os.path.isfile(script):
+        return "자동 받기 스크립트가 없어요: %s" % script
+    try:
+        p = subprocess.run([sys.executable, script, "--now"], capture_output=True, text=True, timeout=180,
+                           env=dict(os.environ, NEWSPAPER_DIR=newspaper_dir()))
+    except Exception as e:
+        return "자동 받기를 실행하지 못했어요: %r" % (e,)
+    lines = [l for l in (p.stdout or "").splitlines() if l.startswith("결과: ")]
+    return lines[-1][4:] if lines else _tail(p.stdout + "\n" + p.stderr, 2)
+
+
 def run_collect(timeout=900):
     cmd, cwd = collector_cmd()
+    pulled = ""
+    if os.path.isdir(cwd) and "--force" not in cmd:
+        # 예전 수집기 → 버튼을 누른 김에 바로 최신 코드를 받아 보고, 되면 --force 로 새로 받기
+        pulled = pull_collector()
+        cmd, cwd = collector_cmd()
     if not os.path.isdir(cwd):
         return False, "수집기 폴더가 없어요: %s" % cwd
     try:
@@ -107,8 +127,9 @@ def run_collect(timeout=900):
     if p.returncode != 0:
         return False, "카페에서 오늘 '신문스크랩' 글을 아직 못 찾았거나 받기에 실패했어요. (이미 받아 둔 파일은 그대로 둬요)"
     if "--force" not in cmd:
-        return True, "⚠️ 수집기가 예전 버전이라 이미 받은 날은 새로 받지 않았어요 — 서버에서 ~/newspaper 를 git pull 해 주세요."
-    return True, ""
+        return True, ("⚠️ 수집기가 예전 버전이라 이미 받은 날은 새로 받지 않았어요. 자동 받기 결과: %s"
+                      % (pulled or "확인 못 함"))
+    return True, ("수집기를 최신으로 받은 뒤 새로 받았어요." if pulled.startswith("수집기 코드 받음") else "")
 
 
 def run_sync(date, timeout=600):

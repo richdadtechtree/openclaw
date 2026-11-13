@@ -66,6 +66,14 @@ def only_title_patch(server_src, head_src):
     return body.rstrip() == head_src.rstrip()
 
 
+RESULT = {"msg": "", "head": "", "branch": ""}       # 이번 실행 결과(이유) — --now 때 출력, 웹 버튼이 보여 줌
+
+
+def note(msg, **kw):
+    RESULT["msg"] = msg
+    RESULT.update(kw)
+
+
 def log(msg):
     print("[newspaper-pull] %s %s" % (time.strftime("%F %T"), msg), flush=True)
 
@@ -98,6 +106,7 @@ def throttled(path, seconds):
 
 def warn_once(d, key, msg):
     """같은 경고는 1시간에 한 번만(매분 로그가 쌓이지 않게)."""
+    note(msg)
     if not throttled(state_file(d, "warn-" + key), 3600):
         log(msg)
 
@@ -151,59 +160,80 @@ def syntax_ok(d):
     return True, ""
 
 
+def default_branch(d):
+    m = re.search(r"ref: refs/heads/(\S+)\s+HEAD", git(d, "ls-remote", "--symref", "origin", "HEAD", check=False))
+    return m.group(1) if m else ""
+
+
 def run(d, branch=None, force_now=False, status_only=False, every=300):
     if not os.path.isdir(os.path.join(d, ".git")):
+        note("서버의 %s 가 git 폴더가 아니라서 자동으로 받을 수 없어요 (GitHub 에서 받은 폴더가 아님)" % d)
         if status_only:
-            log("git 폴더가 아님: %s" % d)
-        return 0                                    # git 폴더가 아니면 할 일 없음(조용히)
+            log(RESULT["msg"])
+        return 1
     url = git(d, "config", "--get", "remote.origin.url", check=False)
     if not REPO_RE.search(url or ""):
-        warn_once(d, "origin", "origin 이 richdadtechtree/newspaper 가 아님(%s) — 자동 받기 안 함" % url)
+        warn_once(d, "origin", "수집기 폴더의 GitHub 주소가 richdadtechtree/newspaper 가 아님(%s) — 자동 받기 안 함"
+                  % re.sub(r"//[^@/]+@", "//***@", url or "없음"))
         return 1
-    branch = branch or git(d, "rev-parse", "--abbrev-ref", "HEAD", check=False)
-    if not branch or branch == "HEAD":
-        warn_once(d, "detached", "브랜치가 아닌 상태(detached) — 자동 받기 안 함")
-        return 1
-
+    current = git(d, "rev-parse", "--abbrev-ref", "HEAD", check=False)
     head = git(d, "rev-parse", "HEAD")
+    RESULT.update(head=head[:7], branch=current)
     if status_only:
-        log("폴더 %s · 브랜치 %s · 지금 %s" % (d, branch, head[:7]))
+        log("폴더 %s · 브랜치 %s · 지금 %s" % (d, current, head[:7]))
         dirty = git(d, "diff", "--name-only", "HEAD", check=False).split()
         log("서버에서 고친 파일: %s" % (", ".join(dirty) or "없음"))
+        note("브랜치 %s · 커밋 %s" % (current, head[:7]))
         return 0
 
     if not force_now and throttled(state_file(d, "fetch"), every):
+        note("")                                    # 5분 안 → 확인 안 함(기록도 안 바꿈)
         return 0
     if collector_running():
-        log("수집기가 실행 중 — 이번엔 건너뜀(다음에 다시 확인)")
+        note("수집기가 실행 중이라 끝난 뒤 받을게요")
+        log(RESULT["msg"])
         try:
             os.remove(state_file(d, "fetch"))      # 끝나면 바로 다시 확인하도록
         except OSError:
             pass
         return 0
 
-    try:
-        git(d, "fetch", "--quiet", "origin", branch)
-    except RuntimeError:
-        # 서버 브랜치 이름이 GitHub 에 없으면(예: 손으로 만든 main) 저장소 기본 브랜치로
-        m = re.search(r"ref: refs/heads/(\S+)\s+HEAD", git(d, "ls-remote", "--symref", "origin", "HEAD"))
-        if not m or m.group(1) == branch:
-            raise
-        branch = m.group(1)
-        git(d, "fetch", "--quiet", "origin", branch)
-    remote = git(d, "rev-parse", "FETCH_HEAD")
-    if remote == head:
-        return 0                                    # 이미 최신
     def is_ancestor(a, b):
         return subprocess.run(["git", "-C", d, "merge-base", "--is-ancestor", a, b],
                               capture_output=True).returncode == 0
 
+    # 어느 브랜치를 따라갈지: 지정값 > 서버가 쓰는 브랜치 > 저장소 기본 브랜치.
+    # 서버 브랜치에 새 커밋이 없어도, 기본 브랜치가 '앞으로 감기'로 이어지면 기본 브랜치를 받는다.
+    candidates = [branch] if branch else [b for b in (current if current != "HEAD" else "", default_branch(d)) if b]
+    seen, remote, picked = set(), "", ""
+    for b in candidates:
+        if b in seen:
+            continue
+        seen.add(b)
+        if subprocess.run(["git", "-C", d, "fetch", "--quiet", "origin", b], capture_output=True).returncode != 0:
+            continue
+        r = git(d, "rev-parse", "FETCH_HEAD")
+        if r != head and is_ancestor(head, r):
+            remote, picked = r, b
+            break
+        if not picked or (remote == head and r != head):
+            remote, picked = r, b                   # 앞으로 감기는 안 되지만 이유를 알려 주려고 기억
+                                                    # (서버 브랜치는 그대로인데 기본 브랜치가 다르면 그쪽 이유가 중요)
+    if not picked:
+        warn_once(d, "fetch", "GitHub 에서 %s 브랜치를 받아 오지 못했어요" % "/".join(candidates))
+        return 1
+    if remote == head:
+        note("이미 최신이에요 (브랜치 %s · 커밋 %s)" % (current, head[:7]))
+        return 0                                    # 이미 최신
     if is_ancestor(remote, head):
-        warn_once(d, "ahead", "서버 쪽 커밋이 더 앞서 있음(%s) — 자동 받기 안 함" % head[:7])
+        warn_once(d, "ahead", "서버 쪽 커밋(%s)이 GitHub %s 보다 앞서 있어 자동 받기 안 함" % (head[:7], picked))
         return 1
     if not is_ancestor(head, remote):
-        warn_once(d, "diverged", "서버와 GitHub 기록이 갈라짐(%s vs %s) — 자동 받기 안 함" % (head[:7], remote[:7]))
+        warn_once(d, "diverged", "서버는 '%s' 브랜치(%s)인데 GitHub 새 코드(%s %s)와 기록이 갈라져서 자동 받기 안 함"
+                  % (current, head[:7], picked, remote[:7]))
         return 1
+    if picked != current and current not in ("", "HEAD"):
+        log("서버 브랜치 %s 에는 새 커밋이 없어 기본 브랜치 %s 를 받음" % (current, picked))
 
     changed_upstream = set(git(d, "diff", "--name-only", head, remote).splitlines())
     dirty = git(d, "diff", "--name-only", "HEAD").splitlines()     # 서버에서 고친(추적 중인) 파일
@@ -247,7 +277,29 @@ def run(d, branch=None, force_now=False, status_only=False, every=300):
         msg += " · 예전 제목 필터 패치는 새 코드에 포함돼 지움(백업 %s)" % ", ".join(
             os.path.basename(b) for b in backups.values())
     log(msg)
+    note(msg, head=remote[:7])
     return 0
+
+
+def status_path():
+    default = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs", "newspaper-pull.json")
+    return os.path.expanduser(os.getenv("NEWSPAPER_PULL_STATUS", default))
+
+
+def save_status(code):
+    """웹(🔁 버튼)이 읽을 수 있게 마지막 결과를 파일로 남긴다(5분 안이라 확인 안 한 tick 은 안 씀)."""
+    if not RESULT["msg"]:
+        return
+    try:
+        import json
+        path = status_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(dict(RESULT, code=code, at=time.strftime("%F %T")), f, ensure_ascii=False)
+        os.replace(tmp, path)
+    except OSError:
+        pass
 
 
 def main(argv):
@@ -259,14 +311,20 @@ def main(argv):
     except ValueError:
         every = 300
     try:
-        return run(d, os.getenv("NEWSPAPER_GIT_BRANCH") or None,
+        code = run(d, os.getenv("NEWSPAPER_GIT_BRANCH") or None,
                    force_now="--now" in argv, status_only="--status" in argv, every=every)
     except Exception as e:                          # 어떤 오류도 openclaw 자동 받기를 막지 않게
+        note("오류(아무것도 안 바꿈): %s" % e)
         try:
-            warn_once(d, "error", "오류(아무것도 안 바꿈): %s" % e)
+            warn_once(d, "error", RESULT["msg"])
         except Exception:
-            log("오류(아무것도 안 바꿈): %s" % e)
-        return 1
+            log(RESULT["msg"])
+        code = 1
+    if "--status" not in argv:
+        save_status(code)
+    if "--now" in argv or "--status" in argv:
+        print("결과: " + (RESULT["msg"] or "확인 안 함"), flush=True)
+    return code
 
 
 if __name__ == "__main__":
