@@ -154,6 +154,65 @@ class SummaryTests(unittest.TestCase):
         self.assertTrue(content[1]['image_url']['url'].endswith('YWN0dWFsLWltYWdl'))
 
 
+    # 429(요청 과다)·일시 오류는 기다렸다 다시 시도 (2026-11-14)
+    def _http_error(self, code, retry_after=None):
+        import urllib.error, email.message
+        h = email.message.Message()
+        if retry_after is not None:
+            h['Retry-After'] = str(retry_after)
+        return urllib.error.HTTPError('http://gw', code, 'x', h, None)
+
+    def _ok_response(self):
+        import io
+        body = json.dumps({'choices': [{'finish_reason': 'stop', 'message': {'content': json.dumps(ANSWER)}}]}).encode()
+        resp = mock.MagicMock()
+        resp.__enter__.return_value = io.BytesIO(body)
+        return resp
+
+    def test_429_waits_and_retries_then_succeeds(self):
+        notes, slept = [], []
+        with mock.patch.object(summary.urllib.request, 'urlopen', side_effect=[self._http_error(429), self._http_error(503), self._ok_response()]), \
+             mock.patch.object(summary.time, 'sleep', side_effect=slept.append):
+            answer = summary.ask_page(b'\xff\xd8', DATE, 1, on_wait=notes.append)
+        self.assertEqual(answer['articles'][0]['title'], '실제 기사 제목')
+        self.assertEqual(slept, [30, 60])                                   # 점점 길게 기다림
+        self.assertIn('429', notes[0]); self.assertIn('30초', notes[0])
+
+    def test_retry_after_header_is_followed_and_capped(self):
+        slept = []
+        with mock.patch.object(summary.urllib.request, 'urlopen', side_effect=[self._http_error(429, 12), self._http_error(429, 9999), self._ok_response()]), \
+             mock.patch.object(summary.time, 'sleep', side_effect=slept.append):
+            summary.ask_page(b'\xff\xd8', DATE, 1)
+        self.assertEqual(slept, [12, 300])
+
+    def test_429_gives_up_after_all_retries_with_resume_hint(self):
+        slept = []
+        with mock.patch.object(summary.urllib.request, 'urlopen', side_effect=[self._http_error(429)] * 5), \
+             mock.patch.object(summary.time, 'sleep', side_effect=slept.append):
+            with self.assertRaises(RuntimeError) as cm:
+                summary.ask_page(b'\xff\xd8', DATE, 1)
+        self.assertEqual(slept, [30, 60, 120, 240])
+        self.assertIn('429', str(cm.exception)); self.assertIn('이어서', str(cm.exception))
+
+    def test_other_http_errors_do_not_retry(self):
+        with mock.patch.object(summary.urllib.request, 'urlopen', side_effect=[self._http_error(401)]) as op, \
+             mock.patch.object(summary.time, 'sleep') as sl:
+            with self.assertRaises(RuntimeError) as cm:
+                summary.ask_page(b'\xff\xd8', DATE, 1)
+        self.assertEqual(op.call_count, 1); sl.assert_not_called()
+        self.assertIn('HTTP 401', str(cm.exception))
+
+    def test_run_shows_wait_note_and_resumes_from_saved_pages(self):
+        notes = []
+        def ask(image, date, page, detail_retry=False, on_wait=None):
+            if page == 2 and on_wait:
+                on_wait('게이트웨이가 바빠요(HTTP 429) — 30초 뒤 다시 시도해요 (1/4)')
+            return copy.deepcopy(ANSWER)
+        with mock.patch.object(summary, 'ask_page', side_effect=ask):
+            summary.run(DATE, notes.append)
+        self.assertTrue(any('2 / 2쪽 — 게이트웨이가 바빠요' in n for n in notes))
+
+
 class PublishedTests(unittest.TestCase):
     def test_reviewed_edition_is_complete_dated_and_stable(self):
         import news_published
@@ -172,6 +231,7 @@ class PublishedTests(unittest.TestCase):
             self.assertEqual(len(summary.messages(DATE)), 29)
             summary.atomic_json(summary.result_path(DATE), {'complete': True, 'date': DATE, 'messages': [{'text': 'new approved result'}]})
             self.assertEqual(summary.messages(DATE), [{'text': 'new approved result'}])
+
 
 
 if __name__ == '__main__':
