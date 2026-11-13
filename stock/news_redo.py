@@ -132,16 +132,37 @@ def run_collect(timeout=900):
     return True, ("수집기를 최신으로 받은 뒤 새로 받았어요." if pulled.startswith("수집기 코드 받음") else "")
 
 
+def start_page_ocr(date):
+    """지면 글자 읽기(news_page_text.py)를 뒤에서 따로 돌린다 — 끝나길 기다리지 않음.
+
+    한 장에 30초~1분이라 29장이면 15~30분 걸린다. 예전엔 news_sync 가 이것까지 마친 뒤에야
+    '웹에 연결'이 끝나서, 10분 제한에 걸려 실패하고 요약 단계로 못 넘어갔다(2026-11-13).
+    요약은 이 결과를 쓰지 않는다(지면↔기사 자동 연결에만 씀). 같은 날짜를 이미 읽는 중이면
+    news_page_text 의 잠금 파일 때문에 두 번째는 안내만 하고 끝나고, 30분마다 도는 동기화도 이어서 읽는다."""
+    script = os.path.join(os.path.dirname(sync_script()), "news_page_text.py")
+    if not os.path.isfile(script) or os.getenv("NEWS_PAGE_OCR", "1") == "0":
+        return False
+    try:
+        subprocess.Popen([sys.executable, script, date, "--quiet"], cwd=os.path.dirname(script),
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)       # 서버 앱이 다시 켜져도 글자 읽기는 계속
+        return True
+    except Exception:
+        return False
+
+
 def run_sync(date, timeout=600):
     script = sync_script()
     if not os.path.isfile(script):
         return False, "동기화 스크립트가 없어요: %s" % script
     try:
-        p = subprocess.run([sys.executable, script, date, "--force", "--quiet"], capture_output=True, text=True, timeout=timeout)
+        # 사진 연결만 하고 바로 끝낸다(NEWS_PAGE_OCR=0) — 글자 읽기는 아래에서 뒤로 돌림
+        p = subprocess.run([sys.executable, script, date, "--force", "--quiet"], capture_output=True, text=True,
+                           timeout=timeout, env=dict(os.environ, NEWS_PAGE_OCR="0"))
     except Exception as e:
         return False, "웹에 연결하지 못했어요: %r" % (e,)
     if p.returncode == 0:
-        return True, ""
+        return True, ("지면 글자 읽기는 뒤에서 계속해요(15~30분)." if start_page_ocr(date) else "")
     if p.returncode == 2:
         return False, "수집은 됐는데 웹이 읽을 신문 파일을 아직 못 찾았어요."
     _set(tail=_tail((p.stdout or "") + "\n" + (p.stderr or "")))
