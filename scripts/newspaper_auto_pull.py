@@ -205,20 +205,28 @@ def run(d, branch=None, force_now=False, status_only=False, every=300):
     # 어느 브랜치를 따라갈지: 지정값 > 서버가 쓰는 브랜치 > 저장소 기본 브랜치.
     # 서버 브랜치에 새 커밋이 없어도, 기본 브랜치가 '앞으로 감기'로 이어지면 기본 브랜치를 받는다.
     candidates = [branch] if branch else [b for b in (current if current != "HEAD" else "", default_branch(d)) if b]
-    seen, remote, picked = set(), "", ""
+    fetched = []                                    # [(브랜치, GitHub 커밋)]
+    remote, picked = "", ""
     for b in candidates:
-        if b in seen:
+        if b in [x for x, _ in fetched]:
             continue
-        seen.add(b)
         if subprocess.run(["git", "-C", d, "fetch", "--quiet", "origin", b], capture_output=True).returncode != 0:
             continue
         r = git(d, "rev-parse", "FETCH_HEAD")
-        if r != head and is_ancestor(head, r):
+        fetched.append((b, r))
+        if r != head and is_ancestor(head, r):      # 앞으로 감기로 받을 수 있는 쪽을 찾으면 그걸로
             remote, picked = r, b
             break
-        if not picked or (remote == head and r != head):
-            remote, picked = r, b                   # 앞으로 감기는 안 되지만 이유를 알려 주려고 기억
-                                                    # (서버 브랜치는 그대로인데 기본 브랜치가 다르면 그쪽 이유가 중요)
+    if not picked and fetched:
+        behind = [(b, r) for b, r in fetched if r != head and not is_ancestor(r, head)]
+        if not behind and any(r == head for _, r in fetched):
+            # 서버가 어느 후보와 같고 나머지 후보도 다 서버 커밋 안에 들어 있음 → 최신. (예: 실험 브랜치 이름으로 남아 있어도
+            #  그 실험을 합친 기본 브랜치를 받아 둔 상태면, 옛 브랜치가 '뒤처져' 보이는 건 문제 아님)
+            remote, picked = head, fetched[0][0]
+        elif not behind:
+            picked, remote = fetched[-1]            # 서버에만 있는 커밋 → 아래 '앞서 있음' 경고
+        else:
+            picked, remote = behind[-1]             # 못 받는 이유는 서버에 없는 커밋이 있는 후보(보통 기본 브랜치) 기준
     if not picked:
         warn_once(d, "fetch", "GitHub 에서 %s 브랜치를 받아 오지 못했어요" % "/".join(candidates))
         return 1

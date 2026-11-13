@@ -191,6 +191,27 @@ class AutoPull(unittest.TestCase):
         self.assertIn("experiment", saved["msg"])
         self.assertIn("갈라져", saved["msg"])
 
+    def test_experiment_branch_merged_into_default_then_quiet(self):
+        # 2026-11-13 실제 상황: 서버가 실험 브랜치(adoring-ride)에 있음 → 기본 브랜치에 그 실험을 합쳐 올림
+        sh(self.srv, "git", "checkout", "-q", "-b", "experiment")
+        self.write(self.srv, "probe.py", "x = 1\n")
+        sh(self.srv, "git", "add", "probe.py")
+        sh(self.srv, "git", "commit", "-q", "-m", "probe")
+        sh(self.srv, "git", "push", "-q", "origin", "experiment")
+        self.push_new_version()
+        sh(self.dev, "git", "fetch", "-q", "origin", "experiment")
+        sh(self.dev, "git", "merge", "-q", "--no-ff", "-m", "merge probe", "FETCH_HEAD")
+        sh(self.dev, "git", "push", "-q", "origin", BR)
+        merged = sh(self.dev, "git", "rev-parse", "HEAD")
+        self.assertEqual(self.run_pull(), 0)
+        self.assertEqual(self.head(), merged)                           # 기본 브랜치로 앞으로 감기
+        self.assertIn('"--force"', self.read("app/main.py"))
+        self.assertIn("keep today", self.read("app/drive_uploader.py"))
+        self.assertTrue(os.path.exists(os.path.join(self.srv, "probe.py")))
+        # 다음 확인: 서버 브랜치 이름은 그대로 experiment(옛 커밋)지만 경고 없이 '최신'
+        self.assertEqual(self.run_pull(), 0)
+        self.assertIn("최신", ap.RESULT["msg"])
+
     def test_default_branch_used_when_server_branch_has_nothing_new(self):
         sh(self.srv, "git", "checkout", "-q", "-b", "old-copy")          # 기본 브랜치의 옛 지점
         sh(self.srv, "git", "push", "-q", "origin", "old-copy")
