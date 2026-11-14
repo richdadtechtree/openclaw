@@ -194,6 +194,21 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(slept, [30, 60, 120, 240])
         self.assertIn('429', str(cm.exception)); self.assertIn('이어서', str(cm.exception))
 
+    def test_usage_limit_429_fails_fast_with_reset_time(self):
+        import io, urllib.error, email.message
+        body = (b'{"error":{"message":"You\'ve reached your Codex subscription usage limit. Next reset in 4 days, '
+                b'Nov 17 at 7:06 PM GMT+9. Wait until the reset time, use another Codex account if available.",'
+                b'"type":"rate_limit_error"}}')
+        err = urllib.error.HTTPError('http://gw', 429, 'Too Many Requests', email.message.Message(), io.BytesIO(body))
+        with mock.patch.object(summary.urllib.request, 'urlopen', side_effect=[err]) as op, \
+             mock.patch.object(summary.time, 'sleep') as sl:
+            with self.assertRaises(RuntimeError) as cm:
+                summary.ask_page(b'\xff\xd8', DATE, 1)
+        self.assertEqual(op.call_count, 1); sl.assert_not_called()          # 기다리지 않음
+        msg = str(cm.exception)
+        self.assertIn('사용량 한도', msg); self.assertIn('4 days, Nov 17 at 7:06 PM GMT+9', msg)
+        self.assertIn('요약만 실행', msg)
+
     def test_other_http_errors_do_not_retry(self):
         with mock.patch.object(summary.urllib.request, 'urlopen', side_effect=[self._http_error(401)]) as op, \
              mock.patch.object(summary.time, 'sleep') as sl:
