@@ -95,6 +95,21 @@ def _wait_seconds(error, attempt):
     return min(max(given, 5), 300) if given else RETRY_WAITS[attempt]
 
 
+def _usage_limit_note(error):
+    """429 본문이 '구독 사용량 한도'(기다려서는 안 풀리는 것)면 안내 글을, 아니면 ''.
+    예: You've reached your Codex subscription usage limit. Next reset in 4 days, Nov 17 at 7:06 PM GMT+9. Wait until…"""
+    try:
+        body = error.read().decode("utf-8", "replace")
+    except Exception:
+        return ""
+    if "usage limit" not in body.lower():
+        return ""
+    m = re.search(r"Next reset in (.+?)\.\s", body + " ")
+    when = " 풀리는 때: %s." % m.group(1).strip() if m else ""
+    return ("요약 AI(ChatGPT/Codex)의 사용량 한도에 도달했어요.%s 기다려도 그 전에는 풀리지 않아요. "
+            "한도가 풀린 뒤 '요약만 실행'을 다시 누르면 읽은 쪽은 건너뛰고 이어서 해요." % when)
+
+
 def _post(req, on_wait=None):
     """게이트웨이에 보내고 JSON 을 돌려준다. 일시적 오류(RETRY_CODES)는 RETRY_WAITS 만큼 기다리며 다시 시도."""
     for attempt in range(len(RETRY_WAITS) + 1):
@@ -104,6 +119,9 @@ def _post(req, on_wait=None):
         except urllib.error.HTTPError as e:
             if e.code not in RETRY_CODES:
                 raise RuntimeError("요약 연결 HTTP %d. 관리자에게 게이트웨이 상태를 확인해 주세요." % e.code) from None
+            limit = _usage_limit_note(e) if e.code == 429 else ""
+            if limit:                                   # 사용량 한도는 몇 분 기다려도 안 풀리므로 바로 알려 준다
+                raise RuntimeError(limit) from None
             if attempt == len(RETRY_WAITS):
                 raise RuntimeError("요약 연결 HTTP %d(요청이 몰렸거나 사용량 제한). 몇 분 뒤 '요약만'을 다시 누르면 읽은 쪽은 건너뛰고 이어서 해요." % e.code) from None
             wait = _wait_seconds(e, attempt)
