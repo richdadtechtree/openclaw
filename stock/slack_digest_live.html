@@ -255,6 +255,13 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   .news-cell .dl{position:absolute;right:4px;bottom:4px;font-size:11px;line-height:1;color:#fff;text-decoration:none;
                  background:rgba(15,20,32,.62);border-radius:6px;padding:4px 6px}
   .news-cell .dl:hover{background:var(--accent-bright)}
+  /* 2026-11-16 사용자 요청: 뷰어에서 CHECK(✓) 스티커를 붙인 지면은 사진 목록에서도 한눈에 알 수 있게 —
+     오른쪽 위 빨간 ✓ 배지(스티커가 여럿이면 ✓2)와 빨간 테두리. 왼쪽 위 쪽 번호·오른쪽 아래 ⤓ 와 안 겹친다. */
+  .news-cell .chk{position:absolute;right:4px;top:4px;min-width:20px;height:20px;padding:0 5px;border-radius:99px;
+                  background:#dc2626;color:#fff;font:700 12px/20px var(--sans);text-align:center;
+                  box-shadow:0 1px 4px rgba(0,0,0,.4);pointer-events:none}
+  .news-cell .chk[hidden]{display:none}
+  .news-cell.has-check{border-color:#dc2626;box-shadow:0 0 0 2px rgba(220,38,38,.6)}
   .news-note{font-size:12.5px;color:var(--muted);margin-top:10px;line-height:1.6}
   .news-note a{color:var(--accent-bright);text-decoration:none}
   .news.waiting{border-style:dashed;box-shadow:none}
@@ -2361,6 +2368,7 @@ function fillGrid(d){
     `<a class="news-cell" href="${im.url}" data-i="${i}" title="${im.name}">`+
     `<img loading="lazy" decoding="async" src="${im.thumb}" alt="${im.name}">`+
     `<span class="no">${String(i+1).padStart(2,"0")}</span>`+
+    `<span class="chk" hidden aria-label="체크 스티커가 있는 지면"></span>`+
     `<span class="dl" data-href="${im.download_url}" title="이 장만 저장">⤓</span></a>`).join("");
   // 썸네일 클릭 → 뷰어 열기(새 탭 대신). ⤓ 는 링크 안의 링크라 <a> 로 못 넣어 클릭을 가로챈다.
   grid.querySelectorAll(".news-cell").forEach(cell=>{
@@ -2368,6 +2376,21 @@ function fillGrid(d){
   });
   grid.querySelectorAll(".dl").forEach(el=>{
     el.addEventListener("click",ev=>{ev.preventDefault();ev.stopPropagation();location.href=el.dataset.href;});
+  });
+  // 뷰어를 안 열어도 서버에 저장된 표시를 불러와(관리자) CHECK 스티커 있는 지면에 ✓ 를 단다 — 불러오는 중이면 끝난 뒤 syncGridChecks 가 다시 부른다
+  try{ resetMarksIfNewDate(); }catch(e){}
+  syncGridChecks();
+}
+/* 사진 목록 썸네일에 CHECK 스티커 표시. 표시 데이터(M.marks)가 이 날짜 것일 때만 믿는다(불러오는 중·다른 날이면 표시 없음). */
+function syncGridChecks(){
+  const grid=document.getElementById("news-grid"); if(!grid) return;
+  const ready=M.date===state.date && newsState.date===state.date && !window.__CUSTOM_ONLY;
+  grid.querySelectorAll(".news-cell").forEach(cell=>{
+    const im=newsState.images[+cell.dataset.i];
+    const n=ready&&im ? (M.marks[im.name]||[]).filter(st=>st&&st.t==="sticker"&&st.label==="CHECK").length : 0;
+    cell.classList.toggle("has-check",n>0);
+    const c=cell.querySelector(".chk");
+    if(c){ c.hidden=!n; c.textContent=n>1?"✓"+n:"✓"; c.title=n?"체크 스티커 "+n+"개":""; }
   });
 }
 
@@ -2626,13 +2649,14 @@ function resetMarksIfNewDate(){
         }
         d.mode="admin";
       }).catch(()=>{d.mode="error";})
-      .finally(()=>{if(markDay===d){drawMarks();drawSideMarks();setSaved(marksHint());}});
+      .finally(()=>{if(markDay===d){drawMarks();drawSideMarks();setSaved(marksHint());syncGridChecks();}});
   }
   markDay=d; M.marks=d.marks;
 }
 function marksChanged(){
   if(V.custom){setSaved(marksHint());return;}
   syncArticleChecks();
+  syncGridChecks();                            // 사진 목록 썸네일의 ✓ 표시도 같이(2026-11-16)
   const d=markDay, page=markName();
   if(!d || d.mode!=="admin" || !page) return;
   let j=d.jobs.get(page);
