@@ -802,6 +802,15 @@ try{ const t=localStorage.getItem("digest.theme"); if(t==="light"||t==="dark") d
   .reader-actions{position:fixed;right:14px;bottom:calc(14px + env(safe-area-inset-bottom,0px));
     z-index:70;display:flex;gap:8px;align-items:center;max-width:calc(100vw - 28px)}
   .reader-actions .tn-fab{position:static;white-space:nowrap;min-height:40px}
+  /* 2026-11-16 사용자 요청: 떠 있는 책갈피·불러오기·용어 단추가 뒤의 글을 가려 읽기 어렵다 → 배경을 반투명하게(뒤 글이 비침).
+     글자는 그대로 진하게(#1f2328) 두고 배경만 .6 — 단추 글자 대비 6:1 이상 유지. 그림자도 옅게(진한 그림자가 뒤 글을 어둡게 했음).
+     손을 올리거나(PC)·누르거나·키보드로 고르면 거의 불투명(.96)해서 누를 때 또렷하다. */
+  .reader-actions .tn-fab{background:rgba(251,248,241,.6);border-color:rgba(217,210,195,.8);
+    box-shadow:0 2px 8px rgba(0,0,0,.14);transition:background-color .15s,box-shadow .15s}
+  .reader-actions .tn-fab:active,.reader-actions .tn-fab:focus-visible,.reader-actions .tn-fab[aria-expanded="true"]{
+    background:rgba(251,248,241,.96);box-shadow:0 6px 18px rgba(0,0,0,.3)}
+  @media (hover:hover){.reader-actions .tn-fab:hover{background:rgba(251,248,241,.96);box-shadow:0 6px 18px rgba(0,0,0,.3)}}
+  @media (prefers-reduced-motion:reduce){.reader-actions .tn-fab{transition:none}}
   .bm-controls{display:flex;gap:8px;align-items:center}
   .bm-controls[hidden]{display:none}
   .bm-controls button:disabled{opacity:.5;cursor:wait}
