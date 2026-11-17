@@ -1,4 +1,8 @@
-"""Administrator-only newspaper download and real gateway summary jobs."""
+"""Administrator-only newspaper download and Claude Code summary jobs.
+
+요약은 Claude Code(newspaper-claude/run_date.sh)만 한다. 예전 GPT 게이트웨이 요약
+(news_summary.run)은 2026-11-17에 여기서 뺐다. news_summary.messages()는
+이미 만들어 둔 예전 수동 요약 파일을 읽는 용도로만 남겨 둔다."""
 import json
 import os
 import shutil
@@ -286,6 +290,40 @@ def run_audio_only(date, lease=None):
         _set(running=False, finished=time.time())
 
 
+def _claude_bin():
+    """Claude Code 실행 파일. 2026-11-14에 ~/.local/bin 으로 옮겨졌다(예전 npm 위치 아님)."""
+    for p in (os.path.expanduser("~/.local/bin/claude"), shutil.which("claude")):
+        if p and os.path.isfile(p):
+            return p
+    return None
+
+
+def run_claude_summary(date, timeout=7200):
+    """Claude Code로 그날 신문을 요약·게시한다(newspaper-claude/run_date.sh --force).
+
+    GPT 게이트웨이(news_summary.run) 대신 쓰는 유일한 요약 경로다. 이미 게시된
+    요약이 있어도 버튼을 누른 뜻대로 다시 요약한다. run_date.sh가 원본을
+    ~/newspaper/data에서 못 찾으면 웹 캐시(~/.openclaw/news_cache)에서 읽는다."""
+    script = os.path.join(os.path.expanduser(os.getenv("NEWSPAPER_CLAUDE_DIR", "~/newspaper-claude")),
+                          "run_date.sh")
+    if not os.path.isfile(script):
+        return False, "Claude 요약 스크립트가 없어요: %s" % script
+    if _claude_bin() is None:
+        return False, "Claude Code가 서버에 없어요. 다시 설치해야 해요."
+    try:
+        p = subprocess.run(["/bin/bash", script, date, "--force"], capture_output=True, text=True,
+                           timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return False, "Claude 요약이 %d분 안에 끝나지 않았어요." % (timeout // 60)
+    except Exception as e:
+        return False, "Claude 요약을 실행하지 못했어요: %r" % (e,)
+    out = (p.stdout or "") + "\n" + (p.stderr or "")
+    _set(tail=_tail(out))
+    if p.returncode != 0:
+        return False, "Claude 요약 실패. 로그(newspaper-claude/logs/%s.log)를 확인해 주세요." % date
+    return True, "Claude 요약·게시 완료"
+
+
 def run_all(date, want_summary, download=True, lease=None):
     try:
         if download:
@@ -308,8 +346,10 @@ def run_all(date, want_summary, download=True, lease=None):
             _step("summary", "skip", "다운로드만 완료했어요.")
             return _set(ok=True, message="신문을 다시 받아 웹에 연결했어요.")
         _step("summary", "run")
-        note = news_summary.run(date, lambda note: _step("summary", "run", note))
-        _step("summary", "ok", note)
+        ok, note = run_claude_summary(date)
+        _step("summary", "ok" if ok else "fail", note)
+        if not ok:
+            return _set(ok=False, message=note)
         _set(ok=True, message=note)
     except Exception as e:                                       # 어떤 오류가 나도 '실행 중' 표시가 남지 않게
         current = snapshot().get("step")
@@ -356,7 +396,7 @@ def snapshot():
         s = dict(_state)
         s["steps"] = {k: dict(v) for k, v in _state["steps"].items()}
     s["labels"] = dict(STEPS)
-    s["can_summary"] = news_summary.configured()
+    s["can_summary"] = _claude_bin() is not None
     return s
 
 
