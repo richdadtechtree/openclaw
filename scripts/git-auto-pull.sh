@@ -4,11 +4,11 @@
 #
 # 동작:
 #   1. 원격 브랜치를 fetch
-#   2. stock 소스 동기화(sync-stock.sh)는 새 커밋 여부와 무관하게 매 tick 마다 실행
-#      - sync-stock.sh 자체가 rsync 체크섬 비교라 변경 없으면 사실상 no-op.
+#   2. economy 레포 동기화(ops/auto_pull.sh)는 새 커밋 여부와 무관하게 매 tick 마다 실행
+#      - auto_pull.sh 는 git pull + app/ 변경 시 스케줄러 재시작이라 변경 없으면 no-op.
 #      - ⚠️ 예전엔 "새 커밋 감지" 분기 안에서만 호출돼서, 그 실행이 락 경합 등으로
 #        실패하면 리포가 이미 최신이라 다음 tick부터는 영원히 재시도가 안 되고
-#        실행 폴더(~/stock/stock)가 조용히 옛날 코드에 고정되는 사일런트 버그가
+#        실행 폴더가 조용히 옛날 코드에 고정되는 사일런트 버그가
 #        있었다(2026-08/09월에 두 번 재현). 매 tick 무조건 실행으로 근본 해결.
 #   3. 새 커밋이 없으면 나머지(설정 동기화·게이트웨이 재시작)는 생략
 #   4. 새 커밋이 있으면 "설정 파일(git 추적 대상)만" 원격 상태로 강제 동기화
@@ -65,26 +65,18 @@ fi
 LOCAL="$(git rev-parse HEAD)"
 REMOTE="$(git rev-parse "origin/$BRANCH")"
 
-# --- stock 소스 동기화: 새 커밋 여부와 무관하게 매 tick 무조건 실행 -------------
+# --- economy 레포 동기화: 새 커밋 여부와 무관하게 매 tick 무조건 실행 -----------
 # 리포가 이미 최신이어도(=아래서 곧 exit 0) 이 실행 폴더 동기화는 반드시 시도한다.
-# sync-stock.sh 는 rsync 체크섬 비교라 변경 없으면 사실상 no-op.
-STOCK_SYNC="$REPO_DIR/scripts/sync-stock.sh"
-if [ -f "$STOCK_SYNC" ]; then
-  bash "$STOCK_SYNC" || log "stock 동기화 실패(무시하고 계속)" >&2
+# ops/auto_pull.sh 는 git pull + app/ 변경 시 스케줄러 재시작. 변경 없으면 no-op.
+ECONOMY_PULL="$HOME/economy/ops/auto_pull.sh"
+if [ -f "$ECONOMY_PULL" ]; then
+  bash "$ECONOMY_PULL" || log "economy 동기화 실패(무시하고 계속)" >&2
 fi
 
-# Keep the external collector's retry window aligned on every tick, including
-# after a previous deployment attempt failed. This does not start a download.
+# 수집기 재시도 마감(CUTOFF 08:00)을 매 tick 유지한다. 다운로드하지 않는다.
+# 수집기는 이제 economy 레포(~/economy/collector)에 있다.
 if [ -f "$REPO_DIR/scripts/extend_newspaper_window.py" ]; then
-  python3 "$REPO_DIR/scripts/extend_newspaper_window.py" || log "신문 재시도 마감 변경 실패 — 다음 tick에서 재시도" >&2
-fi
-
-# 신문 수집기(~/newspaper, 별도 저장소 richdadtechtree/newspaper)도 GitHub 최신으로.
-# 그 저장소엔 자동 받기 장치가 없어서 여기서 대신 한다. 5분에 한 번만 GitHub 확인,
-# 수집기가 돌고 있거나 서버에서 고친 파일과 겹치면 안 받는다(자세한 규칙은 스크립트 머리말).
-# 실패해도 openclaw 동기화는 계속. 끄기: NEWSPAPER_AUTO_PULL=off
-if [ -f "$REPO_DIR/scripts/newspaper_auto_pull.py" ]; then
-  python3 "$REPO_DIR/scripts/newspaper_auto_pull.py" || true
+  NEWSPAPER_DIR="$HOME/economy/collector" python3 "$REPO_DIR/scripts/extend_newspaper_window.py" || log "신문 재시도 마감 변경 실패 — 다음 tick에서 재시도" >&2
 fi
 
 if [ "$LOCAL" = "$REMOTE" ]; then
@@ -96,7 +88,7 @@ log "새 커밋 감지: ${LOCAL:0:8} → ${REMOTE:0:8}"
 
 # openclaw 게이트웨이 재시작이 필요한 변경인지 판단.
 #   stock/ · scripts/ · 루트 문서만 바뀌면 openclaw 재시작 불필요(뚜떵또 대화 중단 방지).
-#   stock scheduler 는 sync-stock.sh 가 따로 재시작하고, scripts/문서는 런타임 무관.
+#   economy 앱은 ops/auto_pull.sh 가 따로 재시작하고, scripts/문서는 런타임 무관.
 #   workspace/ · agents/ · cron/ · openclaw 설정 등이 바뀔 때만 게이트웨이 재시작.
 CHANGED="$(git diff --name-only "$LOCAL" "$REMOTE" 2>/dev/null || true)"
 NEED_OC_RESTART=0
@@ -119,12 +111,11 @@ git checkout --quiet --force -- .
 
 log "설정 동기화 완료 (런타임 파일 보존됨)"
 
-# --- stock 소스 2차 동기화 (체크아웃 직후) ------------------------------------
-# 위(2번)의 1차 호출은 아직 옛 working tree 를 복사한다. 새 커밋이 있었던 tick
-# 에서는 체크아웃으로 파일이 막 갱신됐으므로 여기서 한 번 더 돌려야 stock 실행
-# 폴더(~/stock/stock)에 같은 tick 안에 반영된다. (예전엔 다음 tick 까지 1분 지연)
-if [ -f "$STOCK_SYNC" ]; then
-  bash "$STOCK_SYNC" || log "stock 동기화 실패(2차, 무시하고 계속)" >&2
+# --- economy 2차 동기화 (체크아웃 직후) ---------------------------------------
+# 위 1차 호출은 openclaw 체크아웃 전 상태라, 새 커밋이 있었던 tick에서는 여기서
+# 한 번 더 돌려야 economy 실행 폴더에 같은 tick 안에 반영된다.
+if [ -f "$ECONOMY_PULL" ]; then
+  bash "$ECONOMY_PULL" || log "economy 동기화 실패(2차, 무시하고 계속)" >&2
 fi
 
 # --- openclaw 게이트웨이 재시작 (필요할 때만) ----------------------------------
